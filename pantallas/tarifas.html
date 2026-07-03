@@ -2,14 +2,29 @@
         <div class="section-head">
           <span class="section-title">Tarifas por zona</span>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-sm" onclick="addZonaRow()">+ Agregar zona</button>
-            <button class="btn btn-sm btn-primary" onclick="saveTarifas()">Guardar cambios</button>
+            <button class="btn btn-sm" onclick="descargarPlantillaTarifas()">📥 Descargar plantilla</button>
+            <button class="btn btn-sm btn-primary" onclick="document.getElementById('tarifas-file-input').click()">📤 Importar tarifas actualizadas</button>
+            <input type="file" id="tarifas-file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="importTarifas(event)" />
           </div>
         </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" style="display:flex;gap:12px;align-items:flex-start">
+            <div style="font-size:20px;line-height:1">🗓️</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5">
+              El tarifario se actualiza cargando un archivo (aprox. cada 30 días).
+              <strong>1)</strong> Descargá la plantilla (viene con las zonas y valores actuales).
+              <strong>2)</strong> Actualizá solo los valores que cambiaron.
+              <strong>3)</strong> Subila con “Importar tarifas actualizadas”.
+              Las zonas se actualizan por nombre; los valores en blanco conservan su precio actual.
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-body" style="padding:0">
-            <div style="display:grid; grid-template-columns: 2fr 1fr 90px 90px 90px 40px; gap:0; padding: 10px 16px; background:var(--surface-0); border-bottom:1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px;">
-              <span>Zona</span><span>Categoría</span><span style="text-align:right">S/ Colecta</span><span style="text-align:right">C/ Colecta</span><span style="text-align:right">SLA Cumpl.</span><span></span>
+            <div style="display:grid; grid-template-columns: 2fr 1fr 110px 110px 110px; gap:0; padding: 10px 16px; background:var(--surface-0); border-bottom:1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px;">
+              <span>Zona</span><span>Categoría</span><span style="text-align:right">S/ Colecta</span><span style="text-align:right">C/ Colecta</span><span style="text-align:right">SLA Cumpl.</span>
             </div>
             <div id="tarifas-rows" style="max-height:60vh;overflow-y:auto;"></div>
           </div>
