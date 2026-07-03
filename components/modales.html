@@ -1,0 +1,255 @@
+<div class="modal-backdrop" id="modal-conductor-backdrop" onclick="closeConductorModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:460px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-conductor-title">Agregar conductor</span>
+      <button class="modal-close" onclick="closeConductorModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">ID del conductor <span style="font-weight:400;color:var(--text-muted)">(se genera automáticamente, podés editarlo)</span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="mc-id" class="form-input" placeholder="LH00001" style="width:140px;font-family:monospace;font-weight:600;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+          <span style="font-size:11px;color:var(--text-muted)">← generado al escribir el nombre</span>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Nombre del conductor</label>
+        <input type="text" id="mc-nombre" class="form-input" placeholder="Ej: GARCIA JUAN" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase(); autoGenerarId()" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Condición <span style="font-weight:400;color:var(--text-muted)">(determina el día de pago)</span></label>
+        <select id="mc-condicion" class="form-input" style="width:100%">
+          <option value="">Sin asignar</option>
+          <option value="Titular">Titular — pago los viernes</option>
+          <option value="Semi Titular">Semi Titular — pago los lunes</option>
+          <option value="Suplente">Suplente — pago los martes</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Categorización de precios</label>
+        <select id="mc-categoria" class="form-input" style="width:100%">
+          <option value="">Seleccionar...</option>
+          <option value="s_colecta">S/ Colecta</option>
+          <option value="c_colecta">C/ Colecta</option>
+          <option value="sla">SLA Cumplido</option>
+          <option value="super_sla">Super SLA</option>
+        </select>
+      </div>
+      <div style="background:var(--surface-0);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);line-height:1.6" id="mc-info-condicion"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+        <button class="btn" onclick="closeConductorModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarConductorModal()">Guardar conductor</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" onclick="closeModal(event)">
+  <div class="modal" id="modal-content">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Detalle</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- MODAL GENERAR LIQUIDACIÓN (con descuentos) -->
+<div class="modal-backdrop" id="modal-liq-backdrop" onclick="closeLiqModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header" style="background:linear-gradient(135deg,#1a2744,#2d4fa1);color:white;padding:16px 20px;border-radius:8px 8px 0 0">
+      <span class="modal-title" id="modal-liq-title" style="color:white;font-size:16px;font-weight:600">Generar liquidación</span>
+      <button class="modal-close" onclick="closeLiqModal()" style="color:white;background:transparent;border:0;font-size:20px;cursor:pointer">✕</button>
+    </div>
+
+    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+
+      <!-- Info conductor -->
+      <div id="liq-modal-info" style="background:#ebf0fc;border-left:4px solid #2d4fa1;padding:10px 12px;border-radius:4px;font-size:12px;line-height:1.5">
+        <!-- se llena dinámicamente -->
+      </div>
+
+      <!-- Total bruto -->
+      <div style="background:#f7f8fa;padding:12px 14px;border-radius:6px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:10px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Total bruto (recorridos)</div>
+          <div style="font-size:11px;color:#6b7280" id="liq-modal-recorridos-info">— recorridos entregados</div>
+        </div>
+        <div id="liq-modal-total-bruto" style="font-size:20px;font-weight:700;color:#1a2744">$0</div>
+      </div>
+
+      <!-- Descuentos -->
+      <div>
+        <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <span>🎫 Descuentos aplicables</span>
+          <span id="liq-desc-origen" style="font-size:10px;font-weight:500;color:#059669;text-transform:none;letter-spacing:normal"></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px">⛽ Combustible</label>
+            <input type="number" id="liq-desc-combustible" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px">📦 Envíos extraviados / rotos</label>
+            <input type="number" id="liq-desc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px">💵 Adelantos</label>
+            <input type="number" id="liq-desc-adelantos" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px">🧾 Servicio proveedores</label>
+            <input type="number" id="liq-desc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Observación opcional -->
+      <div>
+        <label class="form-label" style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">Observaciones (opcional)</label>
+        <textarea id="liq-desc-obs" class="form-input" rows="2" placeholder="Notas o comentarios que aparecerán en el PDF..." style="width:100%;font-size:12px;resize:vertical"></textarea>
+      </div>
+
+      <!-- Total neto -->
+      <div style="background:linear-gradient(135deg,#1a2744,#2d4fa1);color:white;padding:14px 16px;border-radius:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;opacity:0.85">
+          <span>Total bruto</span>
+          <span id="liq-modal-linea-bruto" style="font-family:monospace">$0</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;opacity:0.85">
+          <span>Descuentos totales</span>
+          <span id="liq-modal-linea-desc" style="font-family:monospace;color:#fca5a5">$0</span>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:8px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;opacity:0.85">Total neto a pagar</div>
+          </div>
+          <div id="liq-modal-total-neto" style="font-size:24px;font-weight:700">$0</div>
+        </div>
+      </div>
+
+      <!-- Acciones -->
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="btn" onclick="closeLiqModal()">Cancelar</button>
+        <button class="btn" onclick="guardarDescuentosEnPanel()" title="Guarda los descuentos ingresados en el panel Descuento Conductores">💾 Guardar en panel</button>
+        <button class="btn" onclick="verDetalleDesdeModal()">Ver detalle</button>
+        <button class="btn btn-primary" onclick="confirmarYDescargarPDF()">⬇ Confirmar y descargar PDF</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DESCUENTO CONDUCTOR -->
+<div class="modal-backdrop" id="modal-desc-backdrop" onclick="closeDescModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-desc-title">Agregar descuento</span>
+      <button class="modal-close" onclick="closeDescModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Conductor</label>
+        <input type="text" id="mdesc-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" list="mdesc-conductores-list" />
+        <datalist id="mdesc-conductores-list"></datalist>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">⛽ Combustible ($)</label>
+        <input type="number" id="mdesc-combustible" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">📦 Envíos extraviados / rotos ($)</label>
+        <input type="number" id="mdesc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">💵 Adelantos ($)</label>
+        <input type="number" id="mdesc-adelantos" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">🧾 Servicio proveedores ($)</label>
+        <input type="number" id="mdesc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones (opcional)</label>
+        <textarea id="mdesc-obs" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="closeDescModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarDescuentoModal()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL KM DE DESVÍO -->
+<div class="modal-backdrop" id="modal-kmdesvio-backdrop" onclick="closeKmDesvioModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-kmdesvio-title">Agregar km de desvío</span>
+      <button class="modal-close" onclick="closeKmDesvioModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Conductor</label>
+        <input type="text" id="mkm-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" list="mkm-conductores-list" />
+        <datalist id="mkm-conductores-list"></datalist>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">🛣 Km de desvío</label>
+        <input type="number" id="mkm-km" class="form-input" placeholder="0" min="0" step="0.1" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">💵 Monto ($)</label>
+        <input type="number" id="mkm-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones (opcional)</label>
+        <textarea id="mkm-obs" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="closeKmDesvioModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarKmDesvioModal()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DIMENSIÓN ESPECIAL -->
+<div class="modal-backdrop" id="modal-dim-backdrop" onclick="closeDimModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-dim-title">Agregar dimensión especial</span>
+      <button class="modal-close" onclick="closeDimModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Fecha</label>
+        <input type="date" id="md-fecha" class="form-input" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Tracking</label>
+        <input type="text" id="md-tracking" class="form-input" placeholder="Ej: 12345678" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Cliente</label>
+        <input type="text" id="md-cliente" class="form-input" placeholder="Nombre del cliente" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Zona</label>
+        <input type="text" id="md-zona" class="form-input" placeholder="Ej: LA PLATA" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Condición Especial</label>
+        <input type="text" id="md-condicion" class="form-input" placeholder="Ej: Volumen grande, Frágil, Peligroso..." style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Valor especial ($)</label>
+        <input type="number" id="md-valor" class="form-input" placeholder="4500" style="width:100%" min="0" step="1" />
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="closeDimModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarDimensionModal()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>

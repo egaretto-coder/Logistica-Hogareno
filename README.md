@@ -18,16 +18,49 @@ respaldado en **Supabase** (PostgreSQL + Auth).
 ## Arquitectura
 
 Sitio **estático** (HTML/CSS/JS, sin build) que usa el SDK de Supabase por CDN.
+La interfaz se arma en tiempo de ejecución cargando parciales HTML por `fetch`
+(no hay framework ni compilación).
 
 ```
-index.html              → la aplicación completa (UI + lógica)
-supabase-config.js      → cliente Supabase + capa de datos (DB.loadAll / DB.replaceAll)
-manifest.webmanifest    → manifiesto PWA
-sw.js                   → service worker (caché offline)
-assets/icons/           → iconos PWA
-data/registros_seed.json→ set inicial de registros (opcional, para sembrar)
-supabase/schema.sql     → esquema de la base de datos (referencia)
+index.html                → shell: <head>, puntos de montaje y carga de scripts
+css/
+  styles.css              → todos los estilos
+components/               → parciales de UI reutilizables
+  sidebar.html            → barra lateral / navegación
+  header.html             → barra superior
+  modales.html            → todos los modales
+pantallas/               → una pantalla por archivo (HTML)
+  login.html
+  dashboard.html
+  importar-datos.html
+  liquidaciones.html
+  conductores.html
+  reporte-zona.html
+  reporte-conductor.html
+  tarifas.html
+  super-sla.html
+  panel-conductores.html
+  dimensiones-especiales.html
+  descuento-conductores.html
+src/                     → lógica por responsabilidad (JS)
+  supabase.js             → cliente Supabase + capa de datos (DB.loadAll / replaceAll)
+  core.js                 → estado (AppData), helpers, cálculo de liquidaciones
+  auth.js                 → login, sesión y permisos por rol
+  datos.js                → hidratación/sincronización con Supabase + seed
+  dashboard.js, liquidaciones.js, liquidaciones-pdf.js, conductores.js,
+  reportes.js, importar.js, config-tarifas.js, config-supersla.js,
+  panel-conductores.js, dimensiones-especiales.js, descuento-conductores.js
+app/
+  main.js                 → router (showPage) + bootstrap (carga parciales) + init
+manifest.webmanifest      → manifiesto PWA
+sw.js                     → service worker (caché offline)
+assets/icons/             → iconos PWA
+data/registros_seed.json  → set inicial de registros (opcional, para sembrar)
+supabase/schema.sql       → esquema de la base de datos (referencia)
 ```
+
+> Como la UI se carga con `fetch`, la app **debe** servirse por http(s), no con
+> `file://` (ver “Uso local”).
 
 ### Base de datos (Supabase)
 

@@ -1,0 +1,21 @@
+  <div class="login-card">
+    <div class="login-logo">📦</div>
+    <div class="login-title">Logística Hogareño</div>
+    <div class="login-sub">Sistema de Liquidaciones</div>
+
+    <div class="login-error" id="login-error">Usuario o contraseña incorrectos</div>
+
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="usuario@logisticahogar.com" autocomplete="username" onkeydown="if(event.key==='Enter') attemptLogin()">
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') attemptLogin()">
+    </div>
+    <button class="login-btn" onclick="attemptLogin()">Iniciar sesión</button>
+
+    <div class="login-footer">
+      © Logística Hogareño · Acceso restringido
+    </div>
+  </div>

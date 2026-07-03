@@ -1,0 +1,54 @@
+      <div id="page-upload" class="page">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span class="card-title">Importar base de datos de recorridos</span></div>
+          <div class="card-body">
+            <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+              <div class="upload-icon">📊</div>
+              <div class="upload-title">Arrastrá tu archivo Excel o CSV aquí</div>
+              <div class="upload-sub">Formatos aceptados: .xlsx, .xls, .csv</div>
+              <button class="btn btn-primary" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
+                Seleccionar archivo
+              </button>
+            </div>
+            <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)" />
+            <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <button class="btn btn-sm" onclick="cargarSeedRegistros()">📥 Cargar registros de ejemplo</button>
+              <span style="font-size:11px;color:var(--text-muted)">Carga el set inicial (~5.500 registros) para probar; luego usá “☁️ Guardar en la nube”.</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="column-mapper" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Mapear columnas</span>
+              <span style="font-size:11px;color:var(--text-muted)">Indicá qué columna del archivo corresponde a cada campo</span>
+            </div>
+            <div class="card-body">
+              <div id="mapper-rows"></div>
+              <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('column-mapper').style.display='none'">Cancelar</button>
+                <button class="btn btn-primary" onclick="processUpload()">Procesar datos ↗</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="upload-preview" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title" id="preview-title">Vista previa</span>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-primary btn-sm" onclick="guardarRegistrosEnNube()">☁️ Guardar en la nube</button>
+                <button class="btn btn-sm" onclick="clearData()">🗑 Limpiar datos</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="alert alert-success" id="upload-success-msg"></div>
+            </div>
+            <div class="table-wrap" id="preview-table-wrap"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LIQUIDACIONES -->

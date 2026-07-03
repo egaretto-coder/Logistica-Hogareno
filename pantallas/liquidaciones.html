@@ -1,0 +1,66 @@
+      <div id="page-liquidaciones" class="page">
+
+        <!-- Filtro de fechas liquidaciones -->
+        <div class="card" style="margin-bottom:16px;padding:14px 18px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">📅 Período</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm liq-fecha-btn active" onclick="setLiqFechaPreset(this,'todo')">Todo</button>
+              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'hoy')">Hoy</button>
+              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'semana')">Esta semana</button>
+              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'mes')">Este mes</button>
+              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'personalizado')">Personalizado</button>
+            </div>
+            <div id="liq-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:4px">
+                <label style="font-size:11px;color:var(--text-muted)">Desde</label>
+                <input type="date" id="liq-fecha-desde" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()">
+              </div>
+              <div style="display:flex;align-items:center;gap:4px">
+                <label style="font-size:11px;color:var(--text-muted)">Hasta</label>
+                <input type="date" id="liq-fecha-hasta" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()">
+              </div>
+            </div>
+            <span id="liq-fecha-label" style="font-size:11px;color:var(--text-muted);margin-left:4px"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Liquidaciones por conductor</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="search" id="liq-search" placeholder="Buscar conductor..." style="width:180px;" oninput="renderLiquidaciones()">
+              <select id="liq-filter-condicion" onchange="renderLiquidaciones()">
+                <option value="">Todas las condiciones</option>
+                <option value="Titular">Titular</option>
+                <option value="Semi Titular">Semi Titular</option>
+                <option value="Suplente">Suplente</option>
+                <option value="sin_asignar">Sin condición asignada</option>
+              </select>
+              <button class="btn btn-sm btn-primary" onclick="exportAllPDFs()">⬇ Exportar todos PDF</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Conductor</th>
+                  <th>Categoría</th>
+                  <th>Recorridos</th>
+                  <th>Sin Colecta</th>
+                  <th>Con Colecta</th>
+                  <th>SLA</th>
+                  <th>Super SLA</th>
+                  <th>Total</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="liq-table-body">
+                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos primero</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONDUCTORES -->

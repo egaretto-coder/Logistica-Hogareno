@@ -1,0 +1,72 @@
+      <div id="page-dashboard" class="page active">
+
+        <!-- Filtro de fechas -->
+        <div class="card" style="margin-bottom:16px;padding:14px 18px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">📅 Período</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm dash-fecha-btn active" onclick="setDashFechaPreset(this,'todo')">Todo</button>
+              <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'hoy')">Hoy</button>
+              <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'semana')">Esta semana</button>
+              <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'mes')">Este mes</button>
+              <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'personalizado')">Personalizado</button>
+            </div>
+            <div id="dash-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:4px">
+                <label style="font-size:11px;color:var(--text-muted)">Desde</label>
+                <input type="date" id="dash-fecha-desde" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderDashboard()" oninput="renderDashboard()">
+              </div>
+              <div style="display:flex;align-items:center;gap:4px">
+                <label style="font-size:11px;color:var(--text-muted)">Hasta</label>
+                <input type="date" id="dash-fecha-hasta" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderDashboard()" oninput="renderDashboard()">
+              </div>
+            </div>
+            <span id="dash-fecha-label" style="font-size:11px;color:var(--text-muted);margin-left:4px"></span>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label">Total liquidado</div>
+            <div class="metric-value" id="metric-total">$0</div>
+            <div class="metric-sub" id="metric-sub-total">Sin datos</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Conductores activos</div>
+            <div class="metric-value" id="metric-conductores">0</div>
+            <div class="metric-sub">En el período</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Promedio por conductor</div>
+            <div class="metric-value" id="metric-promedio">$0</div>
+            <div class="metric-sub" id="metric-promedio-sub">En el período</div>
+          </div>
+          <div class="metric-card accent">
+            <div class="metric-label">Conductores en panel</div>
+            <div class="metric-value" id="metric-panel-total">0</div>
+            <div class="metric-sub">Registrados en el sistema</div>
+          </div>
+        </div>
+
+        <div id="no-data-alert" class="alert alert-info">
+          ℹ️ <span>No hay datos cargados. Usá el módulo <strong>Importar datos</strong> para cargar tu base de recorridos.</span>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span class="card-title">Conductores por condición</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm dash-cond-btn active" data-cond="" onclick="setDashCondFilter(this,'')">Todos</button>
+              <button class="btn btn-sm dash-cond-btn" data-cond="Titular" onclick="setDashCondFilter(this,'Titular')">Titulares</button>
+              <button class="btn btn-sm dash-cond-btn" data-cond="Semi Titular" onclick="setDashCondFilter(this,'Semi Titular')">Semi Titulares</button>
+              <button class="btn btn-sm dash-cond-btn" data-cond="Suplente" onclick="setDashCondFilter(this,'Suplente')">Suplentes</button>
+            </div>
+          </div>
+          <div id="dash-conductores-panel-body" style="padding:16px">
+            <div class="empty-state"><div class="empty-sub">Sin datos</div></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- UPLOAD -->

@@ -1,0 +1,28 @@
+      <div id="page-reporte-conductor" class="page">
+        <div class="section-head">
+          <span class="section-title">Reporte por conductor</span>
+          <button class="btn btn-sm btn-primary" onclick="exportAllPDFs()">⬇ Exportar todos en PDF</button>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Conductor</th>
+                  <th>Categoría</th>
+                  <th>Zonas visitadas</th>
+                  <th>Total recorridos</th>
+                  <th>Total liquidado</th>
+                  <th>Super SLA activo</th>
+                  <th>PDF</th>
+                </tr>
+              </thead>
+              <tbody id="rep-cond-body">
+                <tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFIG TARIFAS -->

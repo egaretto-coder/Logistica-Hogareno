@@ -1,0 +1,106 @@
+      <div id="page-descuento-conductores" class="page">
+
+        <div class="section-head" style="margin-bottom:8px">
+          <span class="section-title">Descuento Conductores</span>
+        </div>
+
+        <div class="tabs" id="desc-tabs">
+          <button class="tab active" id="tab-btn-descuentos" onclick="switchDescTab('descuentos')">🎫 Descuentos</button>
+          <button class="tab" id="tab-btn-kmdesvio" onclick="switchDescTab('kmdesvio')">🛣 Km de desvío</button>
+        </div>
+
+        <!-- PANEL: DESCUENTOS -->
+        <div id="desc-tab-descuentos">
+
+        <div class="section-head" style="margin-bottom:8px">
+          <span></span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <label class="btn btn-sm" style="cursor:pointer;margin:0">
+              📂 Importar Excel
+              <input type="file" id="desc-file-input" accept=".xlsx,.xls,.csv" onchange="importDescuentosConductores(event)" style="display:none">
+            </label>
+            <button class="btn btn-sm" onclick="openAddDescuentoModal()">+ Agregar manual</button>
+            <button class="btn btn-sm" onclick="descargarPlantillaDescuentos()">⬇ Plantilla Excel</button>
+            <button class="btn btn-sm" onclick="limpiarDescuentos()" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          🎫 Los descuentos cargados acá se <strong>sincronizan automáticamente</strong> con el modal de generación de liquidación. Al abrir "📄 Generar" para un conductor, los montos aparecerán pre-cargados y podrás modificarlos si es necesario antes de descargar el PDF.<br><span style="font-size:11px;color:#6b7280;margin-top:4px;display:inline-block">📥 La plantilla Excel descargable tiene una estructura fija. <strong>No modifiques ni reordenes los encabezados.</strong> Completá los datos y volvé a subirla.</span>
+        </div>
+
+        <!-- FILTROS -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <input type="search" id="desc-search" placeholder="Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescuentosConductores()">
+          <span id="desc-count" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+
+        <!-- TABLA DESCUENTOS -->
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Conductor</th>
+                  <th style="text-align:right">⛽ Combustible</th>
+                  <th style="text-align:right">📦 Extraviados/Rotos</th>
+                  <th style="text-align:right">💵 Adelantos</th>
+                  <th style="text-align:right">🧾 Serv. Proveedores</th>
+                  <th style="text-align:right">Total</th>
+                  <th>Observaciones</th>
+                  <th style="width:90px">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="desc-table-body">
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-title">Sin descuentos cargados</div><div class="empty-sub">Importá un Excel o agregá manualmente</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        </div><!-- /desc-tab-descuentos -->
+
+        <!-- PANEL: KM DE DESVÍO -->
+        <div id="desc-tab-kmdesvio" style="display:none">
+
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-sm" onclick="openAddKmDesvioModal()">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="limpiarKmDesvio()" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+            </div>
+          </div>
+
+          <div class="alert alert-info" style="margin-bottom:16px">
+            🛣 Cargá acá los kilómetros de desvío recorridos por cada conductor y el monto de compensación correspondiente. Estos registros son independientes de los descuentos y no afectan el total de la liquidación automática; sirven como referencia adicional para el conductor.
+          </div>
+
+          <!-- FILTROS -->
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="kmdesvio-search" placeholder="Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderKmDesvio()">
+            <span id="kmdesvio-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <!-- TABLA KM DE DESVÍO -->
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conductor</th>
+                    <th style="text-align:right">🛣 Km de desvío</th>
+                    <th style="text-align:right">💵 Monto ($)</th>
+                    <th>Observaciones</th>
+                    <th style="width:90px">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="kmdesvio-table-body">
+                  <tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🛣</div><div class="empty-title">Sin registros cargados</div><div class="empty-sub">Agregá un registro manualmente</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /desc-tab-kmdesvio -->
+
+      </div>

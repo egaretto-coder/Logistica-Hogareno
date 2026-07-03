@@ -1,0 +1,56 @@
+      <div id="page-panel-conductores" class="page">
+
+        <div class="section-head" style="margin-bottom:8px">
+          <span class="section-title">Panel de conductores</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="openAddConductorModal()">+ Agregar conductor</button>
+            <button class="btn btn-sm btn-primary" onclick="savePanelConductores()">Guardar cambios</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          ℹ️ Registrá cada conductor con su condición (determina el día de pago) y su categorización de precios. Usá los filtros para exportar las liquidaciones por grupo.
+        </div>
+
+        <!-- FILTROS POR CONDICIÓN -->
+        <div class="filter-tabs" id="panel-filter-tabs">
+          <button class="filter-tab active-all" onclick="setPanelFiltro('all')">Todos</button>
+          <button class="filter-tab" onclick="setPanelFiltro('Titular')">🔵 Titular — pago viernes</button>
+          <button class="filter-tab" onclick="setPanelFiltro('Semi Titular')">🟡 Semi Titular — pago lunes</button>
+          <button class="filter-tab" onclick="setPanelFiltro('Suplente')">🟣 Suplente — pago martes</button>
+        </div>
+
+        <!-- BOTONES DE EXPORTACIÓN POR CONDICIÓN -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+          <button class="btn btn-sm" onclick="exportPDFsporCondicion('Titular')" style="border-color:#c5d6fc;color:#1a4fa3">
+            ⬇ PDFs Titulares (viernes)
+          </button>
+          <button class="btn btn-sm" onclick="exportPDFsporCondicion('Semi Titular')" style="border-color:#ffe082;color:#7a5c00">
+            ⬇ PDFs Semi Titulares (lunes)
+          </button>
+          <button class="btn btn-sm" onclick="exportPDFsporCondicion('Suplente')" style="border-color:#d8b4fe;color:#6b21a8">
+            ⬇ PDFs Suplentes (martes)
+          </button>
+        </div>
+
+        <!-- TABLA PANEL -->
+        <div class="card">
+          <div class="card-body" style="padding:0">
+            <!-- HEADER -->
+            <div style="display:grid;grid-template-columns:100px 2fr 1fr 1fr 90px;gap:12px;padding:10px 16px;background:var(--surface-0);border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;">
+              <span>ID</span>
+              <span>Conductor</span>
+              <span>Condición <span style="font-weight:400;text-transform:none;font-size:10px">(día de pago)</span></span>
+              <span>Categorización</span>
+              <span></span>
+            </div>
+            <div id="panel-conductores-rows" style="max-height:65vh;overflow-y:auto;"></div>
+          </div>
+        </div>
+
+        <!-- RESUMEN POR CONDICIÓN -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px;" id="panel-resumen"></div>
+
+      </div>
+
+      <!-- DIMENSIONES ESPECIALES -->

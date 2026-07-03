@@ -4,14 +4,51 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v1';
+const CACHE = 'liq-cache-v2';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
   './',
   './index.html',
-  './supabase-config.js',
+  './css/styles.css',
   './manifest.webmanifest',
+  // Backend / núcleo
+  './src/supabase.js',
+  './src/core.js',
+  './src/auth.js',
+  './src/datos.js',
+  // Pantallas (JS)
+  './src/dashboard.js',
+  './src/liquidaciones.js',
+  './src/liquidaciones-pdf.js',
+  './src/conductores.js',
+  './src/reportes.js',
+  './src/importar.js',
+  './src/config-tarifas.js',
+  './src/config-supersla.js',
+  './src/panel-conductores.js',
+  './src/dimensiones-especiales.js',
+  './src/descuento-conductores.js',
+  // Orquestación
+  './app/main.js',
+  // Componentes (HTML)
+  './components/sidebar.html',
+  './components/header.html',
+  './components/modales.html',
+  // Pantallas (HTML)
+  './pantallas/login.html',
+  './pantallas/dashboard.html',
+  './pantallas/importar-datos.html',
+  './pantallas/liquidaciones.html',
+  './pantallas/conductores.html',
+  './pantallas/reporte-zona.html',
+  './pantallas/reporte-conductor.html',
+  './pantallas/tarifas.html',
+  './pantallas/super-sla.html',
+  './pantallas/panel-conductores.html',
+  './pantallas/dimensiones-especiales.html',
+  './pantallas/descuento-conductores.html',
+  // Iconos
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/icon-maskable-512.png',

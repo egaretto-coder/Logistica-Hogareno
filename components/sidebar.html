@@ -1,0 +1,60 @@
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">
+        <div class="logo-icon">L</div>
+        <span class="logo-text">Liquidaciones</span>
+      </div>
+      <div class="logo-sub">Sistema de Gestión</div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-section">Principal</div>
+      <button class="nav-item active" onclick="showPage('dashboard')">
+        <span class="nav-icon">📊</span> Dashboard
+      </button>
+      <button class="nav-item" onclick="showPage('upload')">
+        <span class="nav-icon">📂</span> Importar datos
+      </button>
+      <button class="nav-item" onclick="showPage('liquidaciones')">
+        <span class="nav-icon">💰</span> Liquidaciones
+      </button>
+      <button class="nav-item" onclick="showPage('conductores')">
+        <span class="nav-icon">🚗</span> Conductores
+      </button>
+      <div class="nav-section">Reportes</div>
+      <button class="nav-item" onclick="showPage('reporte-zona')">
+        <span class="nav-icon">📍</span> Por zona
+      </button>
+      <button class="nav-item" onclick="showPage('reporte-conductor')">
+        <span class="nav-icon">👤</span> Por conductor
+      </button>
+      <div class="nav-section">Configuración</div>
+      <button class="nav-item" onclick="showPage('panel-conductores')">
+        <span class="nav-icon">🚗</span> Panel de conductores
+      </button>
+      <button class="nav-item" onclick="showPage('config-tarifas')">
+        <span class="nav-icon">💲</span> Tarifas
+      </button>
+      <button class="nav-item" onclick="showPage('config-supersla')">
+        <span class="nav-icon">⭐</span> Super SLA
+      </button>
+      <button class="nav-item" onclick="showPage('dimensiones-especiales')">
+        <span class="nav-icon">📦</span> Dimensiones Especiales
+      </button>
+      <button class="nav-item" onclick="showPage('descuento-conductores')">
+        <span class="nav-icon">🎫</span> Descuento Conductores
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-badge" id="user-badge" style="display:none">
+        <div class="user-name"><span id="user-icon">👤</span> <span id="user-name-txt"></span></div>
+        <div class="user-role" id="user-role-txt"></div>
+      </div>
+      <button class="logout-btn" id="logout-btn" onclick="logout()" style="display:none;margin-bottom:8px">↪ Cerrar sesión</button>
+      <div class="data-badge">
+        <strong id="sidebar-conductor-count">0 conductores</strong>
+        <span id="sidebar-record-count">Sin datos cargados</span>
+      </div>
+    </div>
+  </nav>
