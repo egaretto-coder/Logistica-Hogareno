@@ -44,6 +44,28 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="modal-supersla-backdrop" onclick="closeAgregarConductorSuperSLA(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Agregar conductor a Super SLA</span>
+      <button class="modal-close" onclick="closeAgregarConductorSuperSLA()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Conductor del panel</label>
+        <select id="supersla-nuevo-conductor" class="form-input" style="width:100%"></select>
+      </div>
+      <div style="background:var(--surface-0);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);line-height:1.6">
+        El conductor pasará a categoría <strong>⭐ Super SLA</strong> y aparecerá acá para configurarle zonas con precio especial.
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+        <button class="btn" onclick="closeAgregarConductorSuperSLA()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarAgregarConductorSuperSLA()">Agregar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-backdrop" onclick="closeModal(event)">
   <div class="modal" id="modal-content">
     <div class="modal-header">

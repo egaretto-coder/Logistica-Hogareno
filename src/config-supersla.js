@@ -111,5 +111,47 @@ function saveSuperSLA() {
   showToast('Tarifas Super SLA guardadas');
 }
 
+// Abre el modal para sumar a Super SLA un conductor ya existente del panel.
+function openAgregarConductorSuperSLA() {
+  const elegibles = AppData.panelConductores
+    .filter(c => (c.categoria || '') !== 'super_sla')
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+
+  if (!elegibles.length) {
+    showToast('Todos los conductores del panel ya están en Super SLA');
+    return;
+  }
+
+  const sel = document.getElementById('supersla-nuevo-conductor');
+  sel.innerHTML = elegibles.map(c => {
+    const cat = c.categoria ? ((CATEGORIA_INFO[c.categoria] && CATEGORIA_INFO[c.categoria].label) || c.categoria) : 'Sin categoría';
+    return `<option value="${c.id}">${c.nombre} — ${cat}</option>`;
+  }).join('');
+
+  document.getElementById('modal-supersla-backdrop').style.display = 'flex';
+}
+
+function closeAgregarConductorSuperSLA(e) {
+  if (!e || e.target.id === 'modal-supersla-backdrop') {
+    document.getElementById('modal-supersla-backdrop').style.display = 'none';
+  }
+}
+
+// Pasa el conductor elegido a categoría Super SLA (se refleja también en el panel).
+function confirmarAgregarConductorSuperSLA() {
+  const sel = document.getElementById('supersla-nuevo-conductor');
+  const id = sel && sel.value;
+  const cond = AppData.panelConductores.find(c => String(c.id) === String(id));
+  if (!cond) { showToast('Seleccioná un conductor'); return; }
+
+  cond.categoria = 'super_sla';
+  localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
+  dbPush('panel_conductores');
+
+  document.getElementById('modal-supersla-backdrop').style.display = 'none';
+  renderSuperSLA();
+  showToast('✅ ' + cond.nombre + ' agregado a Super SLA — cargale sus zonas con "+ Agregar zona"');
+}
+
 // ===== PANEL DE CONDUCTORES =====
 
