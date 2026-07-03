@@ -1,8 +1,10 @@
 function renderSuperSLA() {
-  const conductoresSuperSLA = AppData.panelConductores.filter(c => c.categoria === 'super_sla');
+  const todos = AppData.panelConductores.filter(c => c.categoria === 'super_sla');
   const wrap = document.getElementById('supersla-conductor-bloques');
+  const countEl = document.getElementById('supersla-count');
 
-  if (!conductoresSuperSLA.length) {
+  if (!todos.length) {
+    if (countEl) countEl.textContent = '';
     wrap.innerHTML = `
       <div class="empty-state" style="padding:60px 20px">
         <div class="empty-icon">⭐</div>
@@ -11,6 +13,26 @@ function renderSuperSLA() {
         <div style="margin-top:16px">
           <button class="btn btn-primary" onclick="showPage('panel-conductores')">Ir al Panel de conductores ↗</button>
         </div>
+      </div>`;
+    return;
+  }
+
+  // Filtro del buscador: por nombre o ID del conductor.
+  const q = (document.getElementById('supersla-search')?.value || '').toLowerCase().trim();
+  const conductoresSuperSLA = q
+    ? todos.filter(c =>
+        String(c.nombre).toLowerCase().includes(q) ||
+        String(c.id).toLowerCase().includes(q))
+    : todos;
+
+  if (countEl) countEl.textContent = conductoresSuperSLA.length + ' de ' + todos.length + ' conductores';
+
+  if (!conductoresSuperSLA.length) {
+    wrap.innerHTML = `
+      <div class="empty-state" style="padding:40px 20px">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">Sin resultados</div>
+        <div class="empty-sub">Ningún conductor Super SLA coincide con “${q}”.</div>
       </div>`;
     return;
   }

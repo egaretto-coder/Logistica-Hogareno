@@ -11,6 +11,11 @@
           ⭐ Acá configurás las <strong>zonas con precio especial</strong> para cada conductor con categoría Super SLA. El precio especial aplica <strong>solo en esas zonas</strong>. En cualquier otra zona, el conductor usa el precio SLA Cumplido estándar.
         </div>
 
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <input type="search" id="supersla-search" placeholder="🔍 Buscar conductor por nombre o ID..." style="width:320px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderSuperSLA()">
+          <span id="supersla-count" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+
         <div id="supersla-conductor-bloques"></div>
       </div>
 
