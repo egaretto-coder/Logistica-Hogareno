@@ -115,8 +115,17 @@ document.addEventListener('DOMContentLoaded', bootstrap);
 
 // 3) Service Worker (PWA) — sólo por http(s)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  // Cuando un SW nuevo toma el control, recargamos UNA vez para usar la
+  // última versión de la app automáticamente (sin limpiar caché a mano).
+  let _swRefrescando = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_swRefrescando) return;
+    _swRefrescando = true;
+    location.reload();
+  });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err =>
-      console.warn('No se pudo registrar el Service Worker:', err));
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => reg.update())
+      .catch(err => console.warn('No se pudo registrar el Service Worker:', err));
   });
 }

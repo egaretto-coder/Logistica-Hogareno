@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v3';
+const CACHE = 'liq-cache-v4';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -92,30 +92,36 @@ self.addEventListener('fetch', (event) => {
   // Nunca cachear llamadas a Supabase (REST/Auth/Realtime): siempre a la red.
   if (url.hostname.endsWith('supabase.co')) return;
 
-  // Navegación: network-first, con index.html cacheado como respaldo offline.
-  if (req.mode === 'navigate') {
+  const sameOrigin = url.origin === self.location.origin;
+
+  // Código propio de la app (mismo origen: HTML, JS, CSS, parciales) →
+  // NETWORK-FIRST: siempre la última versión si hay conexión; el caché es sólo
+  // respaldo offline. Así una actualización se ve al instante, sin quedar pegado
+  // a una versión vieja cacheada.
+  if (sameOrigin) {
     event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
       try {
-        return await fetch(req);
+        const res = await fetch(req);
+        if (res && res.ok) cache.put(req, res.clone());
+        return res;
       } catch (e) {
-        const cache = await caches.open(CACHE);
-        return (await cache.match('./index.html')) || Response.error();
+        const cached = await cache.match(req);
+        if (cached) return cached;
+        if (req.mode === 'navigate') {
+          return (await cache.match('./index.html')) || Response.error();
+        }
+        return Response.error();
       }
     })());
     return;
   }
 
-  // Resto (estáticos + CDN): cache-first con actualización en segundo plano.
+  // Terceros (CDN de librerías, versionados y estables) → CACHE-FIRST.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    const cached = await cache.match(req, { ignoreSearch: false });
-    if (cached) {
-      // Revalida en segundo plano sin bloquear la respuesta.
-      fetch(req).then((res) => {
-        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
-      }).catch(() => {});
-      return cached;
-    }
+    const cached = await cache.match(req);
+    if (cached) return cached;
     try {
       const res = await fetch(req);
       if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
