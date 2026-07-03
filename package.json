@@ -1,0 +1,14 @@
+{
+  "name": "logistica-liquidaciones",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema de gestión de finanzas y liquidaciones — Logística Hogareño (web/PWA sobre Supabase).",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js --no-open"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

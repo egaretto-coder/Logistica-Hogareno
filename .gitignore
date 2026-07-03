@@ -5,6 +5,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Node
+node_modules/
+npm-debug.log*
+
 # Temporales
 *.tmp
 scratchpad/

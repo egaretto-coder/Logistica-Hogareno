@@ -84,13 +84,17 @@ control por rol (analista/administrativo) se aplica en la interfaz.
 
 ## Uso local
 
-Por el service worker y las llamadas a Supabase, servila por **http(s)** (no `file://`):
+Requiere **Node.js ≥ 16** (sin dependencias que instalar). Desde la raíz del proyecto:
 
 ```bash
-# con Python
-python -m http.server 5173
-# luego abrir http://localhost:5173
+npm run dev
 ```
+
+Levanta `http://localhost:5173` y abre el navegador automáticamente.
+`npm start` hace lo mismo sin abrir el navegador. Para otro puerto: `PORT=5174 npm run dev`.
+
+> Servila siempre por **http(s)** (lo hace `npm run dev`), no con `file://`: el
+> service worker y la carga de pantallas por `fetch` no funcionan desde el sistema de archivos.
 
 Primer arranque: al loguearte, si las tablas base están vacías se **siembran
 automáticamente** las tarifas, el Super SLA y el panel de conductores desde los
