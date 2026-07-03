@@ -1,0 +1,13 @@
+# Sistema / editores
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Temporales
+*.tmp
+scratchpad/
+
+# Config local de Claude Code (específica de la máquina)
+.claude/settings.local.json
