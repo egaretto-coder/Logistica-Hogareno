@@ -86,17 +86,19 @@ function importTarifas(event) {
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       if (rows.length < 2) { alert('El archivo está vacío o no tiene datos suficientes.'); return; }
 
-      // Ubicar la fila de encabezados (la que contiene "Zona").
+      // Ubicar la fila de encabezados: una celda debe SER exactamente "Zona".
+      // (La fila de instrucciones menciona la palabra "zona", así que buscar por
+      //  "incluye" la confundía con el encabezado real. Exigimos igualdad exacta.)
+      const norm = s => String(s).toLowerCase().replace(/[^a-z]/g, '');
       let hIdx = -1;
-      for (let r = 0; r < Math.min(rows.length, 6); r++) {
-        if (rows[r].some(h => String(h).toLowerCase().includes('zona'))) { hIdx = r; break; }
+      for (let r = 0; r < Math.min(rows.length, 8); r++) {
+        if (rows[r].map(norm).includes('zona')) { hIdx = r; break; }
       }
       if (hIdx < 0) {
-        alert('No se encontró la fila de encabezados (debe incluir "Zona").\n\nDescargá la plantilla oficial para usar la estructura correcta.');
+        alert('No se encontró la fila de encabezados (debe existir una columna llamada exactamente "Zona").\n\nDescargá la plantilla oficial para usar la estructura correcta.');
         return;
       }
 
-      const norm = s => String(s).toLowerCase().replace(/[^a-z]/g, '');
       const header = rows[hIdx].map(norm);
       const col = {
         zona:      header.findIndex(h => h.includes('zona')),

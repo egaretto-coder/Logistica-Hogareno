@@ -365,10 +365,13 @@ function importDescuentosConductores(event) {
       // Pero el usuario podría también subir un Excel sin la fila de instrucciones
       // (encabezados en fila 0).  Intentamos detectar dónde están los headers.
 
+      // La celda debe SER exactamente "Conductor" (o "Cadete"/"Nombre"): la fila
+      // de instrucciones menciona la palabra "conductor", así que buscar por
+      // "incluye" la confundía con el encabezado real. Exigimos igualdad exacta.
       let headerRowIdx = -1;
       for (let r = 0; r < Math.min(rows.length, 5); r++) {
-        const cells = rows[r].map(h => String(h).toLowerCase().trim());
-        if (cells.some(h => h.includes('conductor') || h.includes('cadete') || h.includes('nombre'))) {
+        const cells = rows[r].map(h => String(h).toLowerCase().replace(/[^a-z]/g, ''));
+        if (cells.includes('conductor') || cells.includes('cadete') || cells.includes('nombre')) {
           headerRowIdx = r;
           break;
         }
