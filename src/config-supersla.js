@@ -149,8 +149,9 @@ function confirmarAgregarConductorSuperSLA() {
   dbPush('panel_conductores');
 
   document.getElementById('modal-supersla-backdrop').style.display = 'none';
-  renderSuperSLA();
-  showToast('✅ ' + cond.nombre + ' agregado a Super SLA — cargale sus zonas con "+ Agregar zona"');
+  // Deja una zona vacía lista para completar (renderiza y enfoca el campo Zona).
+  addZonaSuperSLA(cond.nombre);
+  showToast('✅ ' + cond.nombre + ' agregado a Super SLA — completá la zona y guardá');
 }
 
 // ===== PANEL DE CONDUCTORES =====

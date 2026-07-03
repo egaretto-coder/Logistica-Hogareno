@@ -114,15 +114,9 @@ async function bootstrap() {
 document.addEventListener('DOMContentLoaded', bootstrap);
 
 // 3) Service Worker (PWA) — sólo por http(s)
+// La recarga tras una actualización la fuerza el propio SW (evento activate),
+// que recarga las pestañas abiertas. Acá sólo registramos y pedimos update.
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  // Cuando un SW nuevo toma el control, recargamos UNA vez para usar la
-  // última versión de la app automáticamente (sin limpiar caché a mano).
-  let _swRefrescando = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (_swRefrescando) return;
-    _swRefrescando = true;
-    location.reload();
-  });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js')
       .then(reg => reg.update())

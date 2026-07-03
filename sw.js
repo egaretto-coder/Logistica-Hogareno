@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v6';
+const CACHE = 'liq-cache-v7';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -78,7 +78,14 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
-    self.clients.claim();
+    await self.clients.claim();
+    // Rescatar pestañas abiertas: recargarlas para que tomen la versión nueva
+    // (network-first). Así una actualización nunca queda "pegada" a la versión
+    // vieja cacheada, sin que el usuario tenga que limpiar nada a mano.
+    const windows = await self.clients.matchAll({ type: 'window' });
+    for (const c of windows) {
+      try { await c.navigate(c.url); } catch (e) { /* algunos navegadores lo restringen */ }
+    }
   })());
 });
 
