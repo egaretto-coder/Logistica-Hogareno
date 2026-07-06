@@ -29,17 +29,28 @@ function setPanelFiltro(filtro) {
 }
 
 function renderPanelConductores() {
-  const lista = panelFiltroActivo === 'all'
+  // Filtro por condición (pestañas) + buscador por nombre o ID.
+  let lista = panelFiltroActivo === 'all'
     ? AppData.panelConductores
     : AppData.panelConductores.filter(c => c.condicion === panelFiltroActivo);
+
+  const q = (document.getElementById('panel-search')?.value || '').toLowerCase().trim();
+  if (q) {
+    lista = lista.filter(c =>
+      String(c.nombre).toLowerCase().includes(q) ||
+      String(c.id).toLowerCase().includes(q));
+  }
+
+  const countEl = document.getElementById('panel-count');
+  if (countEl) countEl.textContent = lista.length + ' de ' + AppData.panelConductores.length + ' conductores';
 
   const body = document.getElementById('panel-conductores-rows');
 
   if (!lista.length) {
     body.innerHTML = `<div class="empty-state" style="padding:40px">
-      <div class="empty-icon" style="font-size:36px;opacity:0.3">🚗</div>
-      <div class="empty-title">Sin conductores${panelFiltroActivo !== 'all' ? ' con condición "' + panelFiltroActivo + '"' : ''}</div>
-      <div class="empty-sub">Usá el botón "+ Agregar conductor" para cargar el primero</div>
+      <div class="empty-icon" style="font-size:36px;opacity:0.3">${q ? '🔍' : '🚗'}</div>
+      <div class="empty-title">${q ? 'Sin resultados para “' + q + '”' : 'Sin conductores' + (panelFiltroActivo !== 'all' ? ' con condición "' + panelFiltroActivo + '"' : '')}</div>
+      <div class="empty-sub">${q ? 'Probá con otro nombre o ID' : 'Usá el botón "+ Agregar conductor" para cargar el primero'}</div>
     </div>`;
   } else {
     body.innerHTML = lista.map((c, i) => {

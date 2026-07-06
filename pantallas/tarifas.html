@@ -21,6 +21,11 @@
           </div>
         </div>
 
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <input type="search" id="tarifas-search" placeholder="🔍 Buscar zona o categoría..." style="width:320px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderTarifas()">
+          <span id="tarifas-count" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+
         <div class="card">
           <div class="card-body" style="padding:0">
             <div style="display:grid; grid-template-columns: 2fr 1fr 110px 110px 110px; gap:0; padding: 10px 16px; background:var(--surface-0); border-bottom:1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px;">

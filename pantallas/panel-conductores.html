@@ -33,6 +33,12 @@
           </button>
         </div>
 
+        <!-- BUSCADOR -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <input type="search" id="panel-search" placeholder="🔍 Buscar conductor por nombre o ID..." style="width:320px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderPanelConductores()">
+          <span id="panel-count" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+
         <!-- TABLA PANEL -->
         <div class="card">
           <div class="card-body" style="padding:0">

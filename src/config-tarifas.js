@@ -9,7 +9,19 @@ const PLANTILLA_TARIFAS_HEADERS = ['Zona', 'Categoría', 'S/ Colecta', 'C/ Colec
 function renderTarifas() {
   const cont = document.getElementById('tarifas-rows');
   if (!cont) return;
-  const filas = AppData.tarifas.map(t => `
+
+  // Buscador por zona o categoría.
+  const q = (document.getElementById('tarifas-search')?.value || '').toLowerCase().trim();
+  const lista = q
+    ? AppData.tarifas.filter(t =>
+        String(t.zona).toLowerCase().includes(q) ||
+        String(t.categoria || '').toLowerCase().includes(q))
+    : AppData.tarifas;
+
+  const countEl = document.getElementById('tarifas-count');
+  if (countEl) countEl.textContent = lista.length + ' de ' + AppData.tarifas.length + ' zonas';
+
+  const filas = lista.map(t => `
     <div style="display:grid;grid-template-columns:2fr 1fr 110px 110px 110px;gap:0;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;font-size:13px">
       <span style="font-weight:500">${t.zona}</span>
       <span style="font-size:12px;color:var(--text-secondary)">${t.categoria || '—'}</span>
@@ -17,8 +29,10 @@ function renderTarifas() {
       <span style="text-align:right">${fmtPeso(t.c_colecta)}</span>
       <span style="text-align:right">${fmtPeso(t.sla)}</span>
     </div>`).join('');
-  cont.innerHTML = filas ||
-    '<div style="padding:28px;text-align:center;color:var(--text-muted)">Sin tarifas cargadas. Descargá la plantilla, completala y subila.</div>';
+
+  cont.innerHTML = filas || (q
+    ? '<div style="padding:28px;text-align:center;color:var(--text-muted)">🔍 Ninguna zona coincide con “' + q + '”.</div>'
+    : '<div style="padding:28px;text-align:center;color:var(--text-muted)">Sin tarifas cargadas. Descargá la plantilla, completala y subila.</div>');
 }
 
 function saveTarifas() {
