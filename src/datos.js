@@ -85,7 +85,8 @@ async function hydrateFromSupabase() {
   }));
   AppData.descuentosConductores = (data.descuentos_conductores || []).map(d => ({
     conductor: d.conductor, combustible: _num(d.combustible),
-    extraviados: _num(d.extraviados), adelantos: _num(d.adelantos), obs: d.obs || ''
+    extraviados: _num(d.extraviados), adelantos: _num(d.adelantos),
+    proveedores: _num(d.proveedores), obs: d.obs || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
     conductor: d.conductor, km: _num(d.km), monto: _num(d.monto), obs: d.obs || ''
@@ -137,7 +138,8 @@ function dbPush(table) {
     })),
     descuentos_conductores: () => AppData.descuentosConductores.map(d => ({
       conductor: d.conductor, combustible: _num(d.combustible),
-      extraviados: _num(d.extraviados), adelantos: _num(d.adelantos), obs: d.obs || ''
+      extraviados: _num(d.extraviados), adelantos: _num(d.adelantos),
+      proveedores: _num(d.proveedores), obs: d.obs || ''
     })).filter(d => d.conductor),
     km_desvio: () => AppData.kmDesvio.map(d => ({
       conductor: d.conductor, km: _num(d.km), monto: _num(d.monto), obs: d.obs || ''

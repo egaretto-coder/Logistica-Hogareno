@@ -48,6 +48,52 @@ function filtrarRecordsLiq(records) {
   });
 }
 
+// Liquidación completa calculada SOLO sobre los registros del período filtrado
+// en el panel Liquidaciones (incluye dimensiones especiales y Super SLA).
+// La usan el modal individual y las exportaciones masivas de PDFs, para que
+// TODOS los PDFs respeten el mismo período que se ve en pantalla.
+function calcLiquidacionesFiltradas() {
+  const liqBase = {};
+  filtrarRecordsLiq(AppData.records).forEach(r => {
+    const cond = (r.cadete || '').trim(); if (!cond) return;
+    const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
+    const estadoNorm = (r.estado || '').toUpperCase().trim();
+    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
+    if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond };
+    if (contabiliza) {
+      const dim = r.tracking ? findDimensionEspecial(r.tracking) : null;
+      let precio, tipo, es_super=false, sin_tarifa=false, es_dim_especial=false, dim_cliente='', dim_condicion='';
+      if (dim) {
+        precio = dim.valor; tipo = 'dim_especial'; es_dim_especial=true;
+        dim_cliente=dim.cliente||''; dim_condicion=dim.condicion||'';
+      } else {
+        const p = getPrecio(cond, zona);
+        precio=p.precio; tipo=p.tipo; es_super=p.es_super; sin_tarifa=p.sin_tarifa;
+      }
+      liqBase[cond].total += precio;
+      liqBase[cond].filas.push({
+        tracking: r.tracking, zona, zona_precio: r.zona_precio||'', fecha: r.fecha, estado: r.estado,
+        tipo, precio, subtotal: precio, es_super, sin_tarifa, es_dim_especial, dim_cliente, dim_condicion
+      });
+    } else {
+      liqBase[cond].filas_excluidas.push({ tracking: r.tracking, zona, fecha: r.fecha, estado: r.estado });
+    }
+  });
+  return liqBase;
+}
+
+// Rango de fechas activo del panel Liquidaciones, formateado DD/MM/YYYY
+// para mostrarse en los PDFs. Devuelve null si no hay filtro aplicado.
+function getLiqRangoFechasLabel() {
+  const rango = getLiqFechaRango();
+  if (!rango) return null;
+  const fmtF = date => date.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  return {
+    desde: rango.desde ? fmtF(rango.desde) : '',
+    hasta: rango.hasta ? fmtF(rango.hasta) : ''
+  };
+}
+
 function renderLiquidaciones() {
   // Calcular liquidaciones sobre los registros filtrados por fecha
   const recordsFiltrados = filtrarRecordsLiq(AppData.records);

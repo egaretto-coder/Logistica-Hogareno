@@ -87,6 +87,7 @@ create table if not exists public.descuentos_conductores (
   combustible numeric default 0,
   extraviados numeric default 0,
   adelantos numeric default 0,
+  proveedores numeric default 0,
   obs text default '',
   updated_at timestamptz not null default now()
 );

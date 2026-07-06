@@ -10,5 +10,20 @@
   },
   "engines": {
     "node": ">=16"
+  },
+  "main": "server.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/egaretto-coder/Logistica-Hogareno.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/egaretto-coder/Logistica-Hogareno/issues"
+  },
+  "homepage": "https://github.com/egaretto-coder/Logistica-Hogareno#readme",
+  "devDependencies": {
+    "serve": "^14.2.6"
   }
 }

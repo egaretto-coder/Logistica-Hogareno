@@ -3,9 +3,6 @@
 //  router de páginas e inicialización.
 // ════════════════════════════════════════════════════════════════════════
 
-// Placeholder de registros de ejemplo embebidos (los datos reales viven en Supabase).
-const BD_RECORDS_REALES = [];
-
 // ===== ROUTER =====
 function showPage(id) {
   // Verificar permisos: si el usuario no puede ver esta página, redirigir a la primera permitida
@@ -38,24 +35,6 @@ function showPage(id) {
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
-}
-
-// ===== DASHBOARD =====
-
-// ===== DEMO / UTILIDAD =====
-function loadDemoData() {
-  AppData.records = BD_RECORDS_REALES.map(r => ({
-    cadete:     r.cadete,
-    tracking:   r.tracking,
-    fecha:      r.fecha,
-    localidad:  r.localidad,
-    zona:       r.zona || r.localidad,
-    zona_precio: r.zona_precio || '',
-    estado:     r.estado,
-    precio_bd:  r.precio_bd || 0
-  }));
-  renderDashboard();
-  showToast('Datos del XLS cargados: ' + AppData.records.length + ' registros');
 }
 
 // ════════════════════════════════════════════════════════════════════════

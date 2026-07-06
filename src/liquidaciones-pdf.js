@@ -5,33 +5,7 @@ function openLiqModal(conductor) {
   liqModalConductor = conductor;
 
   // Calcular con filtro de fechas activo del panel Liquidaciones
-  const recordsFiltrados = filtrarRecordsLiq(AppData.records);
-  const liqBase = {};
-  recordsFiltrados.forEach(r => {
-    const cond = (r.cadete || '').trim(); if (!cond) return;
-    const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
-    const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
-    if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond };
-    if (contabiliza) {
-      const dim = r.tracking ? findDimensionEspecial(r.tracking) : null;
-      let precio, tipo, es_super=false, sin_tarifa=false, es_dim_especial=false, dim_cliente='', dim_condicion='';
-      if (dim) {
-        precio = dim.valor; tipo = 'dim_especial'; es_dim_especial=true;
-        dim_cliente=dim.cliente||''; dim_condicion=dim.condicion||'';
-      } else {
-        const p = getPrecio(cond, zona);
-        precio=p.precio; tipo=p.tipo; es_super=p.es_super; sin_tarifa=p.sin_tarifa;
-      }
-      liqBase[cond].total += precio;
-      liqBase[cond].filas.push({
-        tracking: r.tracking, zona, zona_precio: r.zona_precio||'', fecha: r.fecha, estado: r.estado,
-        tipo, precio, subtotal: precio, es_super, sin_tarifa, es_dim_especial, dim_cliente, dim_condicion
-      });
-    } else {
-      liqBase[cond].filas_excluidas.push({ tracking: r.tracking, zona, fecha: r.fecha, estado: r.estado });
-    }
-  });
+  const liqBase = calcLiquidacionesFiltradas();
 
   liqModalData = liqBase;
   const d = liqBase[conductor];
@@ -131,15 +105,7 @@ function confirmarYDescargarPDF() {
   };
 
   // Rango de fechas del panel Liquidaciones al momento
-  const rango = getLiqFechaRango();
-  const fmtF = date => date.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
-  let rangoFechas = null;
-  if (rango) {
-    rangoFechas = {
-      desde: rango.desde ? fmtF(rango.desde) : '',
-      hasta: rango.hasta ? fmtF(rango.hasta) : ''
-    };
-  }
+  const rangoFechas = getLiqRangoFechasLabel();
 
   try {
     exportPDF(liqModalConductor, {
@@ -189,7 +155,10 @@ function guardarDescuentosEnPanel() {
 
 function exportPDF(conductor, opts) {
   opts = opts || {};
-  const descuentos = opts.descuentos || { combustible: 0, extraviados: 0, adelantos: 0, proveedores: 0, obs: '' };
+  // Si no vienen descuentos explícitos (exportación masiva), usar los cargados
+  // en el panel "Descuento Conductores" para ese conductor.
+  const descuentos = opts.descuentos || findDescuentoConductor(conductor) ||
+    { combustible: 0, extraviados: 0, adelantos: 0, proveedores: 0, obs: '' };
   let rangoFechas = opts.rangoFechas || null; // { desde: 'DD/MM/YYYY', hasta: 'DD/MM/YYYY' } — si no se pasa, se calcula a partir de los registros liquidados
 
   const { jsPDF } = window.jspdf;
@@ -649,10 +618,11 @@ function exportPDF(conductor, opts) {
       bodyStyles: { fontSize: 7.5, cellPadding: 2.5, textColor: [100,100,100] },
       alternateRowStyles: { fillColor: [250, 248, 248] },
       columnStyles: {
+        // Total = 182mm (ancho útil A4 con márgenes de 14mm)
         0: { cellWidth: 34, fontStyle: 'bold' },
         1: { cellWidth: 22 },
         2: { cellWidth: 50 },
-        3: { cellWidth: 80 },
+        3: { cellWidth: 76 },
       },
       didDrawPage: (data) => {
         addPageHeader(data.pageNumber, 99);
@@ -673,10 +643,12 @@ function exportPDF(conductor, opts) {
 }
 
 function exportAllPDFs() {
-  const liq = calcLiquidaciones();
-  const conductores = Object.keys(liq);
-  if (!conductores.length) { alert('Sin datos para exportar.'); return; }
-  conductores.forEach(c => exportPDF(c));
+  // Respeta el período filtrado en el panel Liquidaciones (igual que el modal).
+  const liq = calcLiquidacionesFiltradas();
+  const rangoFechas = getLiqRangoFechasLabel();
+  const conductores = Object.keys(liq).filter(c => liq[c].filas.length);
+  if (!conductores.length) { alert('Sin datos para exportar en el período seleccionado.'); return; }
+  conductores.forEach(c => exportPDF(c, { rangoFechas, liqData: liq }));
 }
 
-// ===== TOAST =====
+
