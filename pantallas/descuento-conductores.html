@@ -72,7 +72,7 @@
           </div>
 
           <div class="alert alert-info" style="margin-bottom:16px">
-            🛣 Cargá acá los kilómetros de desvío que hizo cada conductor al retirar mercadería de un cliente. El costo se calcula automáticamente con el <strong>valor por km</strong> configurado y se suma como <strong>adicional</strong> en la liquidación semanal (incrementa el total a pagar del PDF).
+            🛣 Cargá acá los kilómetros de desvío que hizo cada conductor al retirar mercadería de un cliente, con la <strong>fecha</strong> en que ocurrió. El costo se calcula solo tomando la <strong>tarifa vigente a esa fecha</strong> y se suma como <strong>adicional</strong> en la liquidación de esa semana (incrementa el total del PDF). Solo un <strong>analista</strong> puede cambiar el valor por km; al subir la tarifa, los km ya cargados <strong>no se modifican</strong>.
           </div>
 
           <!-- VALOR POR KM -->
@@ -103,14 +103,15 @@
                 <thead>
                   <tr>
                     <th>Conductor</th>
+                    <th>📅 Fecha</th>
                     <th style="text-align:right">🛣 Km de desvío</th>
+                    <th style="text-align:right">Tarifa aplicada</th>
                     <th style="text-align:right">💵 Monto ($)</th>
-                    <th>Observaciones</th>
                     <th style="width:90px">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="kmdesvio-table-body">
-                  <tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🛣</div><div class="empty-title">Sin registros cargados</div><div class="empty-sub">Agregá un registro manualmente</div></div></td></tr>
+                  <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛣</div><div class="empty-title">Sin registros cargados</div><div class="empty-sub">Agregá un registro con "+ Agregar manual"</div></div></td></tr>
                 </tbody>
               </table>
             </div>

@@ -15,9 +15,13 @@ function loadSavedConfig() {
   if (kmd) {
     try { AppData.kmDesvio = JSON.parse(kmd); } catch(e) {}
   }
+  const kmt = localStorage.getItem('liq_km_tarifas');
+  if (kmt) {
+    try { AppData.kmTarifas = JSON.parse(kmt); } catch(e) {}
+  }
   const cfg = localStorage.getItem('liq_config');
   if (cfg) {
-    try { AppData.config = Object.assign({ km_valor: 0 }, JSON.parse(cfg)); } catch(e) {}
+    try { AppData.config = JSON.parse(cfg) || {}; } catch(e) {}
   }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
@@ -93,18 +97,22 @@ async function hydrateFromSupabase() {
     proveedores: _num(d.proveedores), obs: d.obs || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
-    conductor: d.conductor, km: _num(d.km), monto: _num(d.monto), obs: d.obs || ''
+    conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
+    valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || ''
   }));
+  // Historial de tarifas de km (ascendente por vigencia)
+  AppData.kmTarifas = (data.km_tarifas || [])
+    .map(t => ({ valor: _num(t.valor), vigente_desde: t.vigente_desde, creado_por: t.creado_por || '' }))
+    .sort((a, b) => new Date(a.vigente_desde) - new Date(b.vigente_desde));
   AppData.records = (data.registros || []).map(r => ({
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
     estado: r.estado, precio_bd: _num(r.precio_bd)
   }));
 
-  // Configuración clave/valor (ej: km_valor = $ por km de desvío)
-  (data.config || []).forEach(row => {
-    if (row.clave === 'km_valor') AppData.config.km_valor = _num(row.valor);
-  });
+  // Configuración clave/valor (genérica)
+  AppData.config = {};
+  (data.config || []).forEach(row => { AppData.config[row.clave] = row.valor; });
 
   // Refrescar caché local para uso offline
   try {
@@ -114,6 +122,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_dimensiones_especiales', JSON.stringify(AppData.dimensionesEspeciales));
     localStorage.setItem('liq_descuentos_conductores', JSON.stringify(AppData.descuentosConductores));
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
+    localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
   } catch(e) {}
 
@@ -152,7 +161,8 @@ function dbPush(table) {
       proveedores: _num(d.proveedores), obs: d.obs || ''
     })).filter(d => d.conductor),
     km_desvio: () => AppData.kmDesvio.map(d => ({
-      conductor: d.conductor, km: _num(d.km), monto: _num(d.monto), obs: d.obs || ''
+      conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
+      valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || ''
     })).filter(d => d.conductor),
   };
   const rows = builders[table] ? builders[table]() : [];
@@ -162,14 +172,29 @@ function dbPush(table) {
   });
 }
 
-// Guarda la configuración general (localStorage + nube).
-function saveConfigApp() {
-  try { localStorage.setItem('liq_config', JSON.stringify(AppData.config)); } catch(e) {}
+// Registra una NUEVA tarifa de km en el historial (append), con vigencia desde
+// ahora. No pisa las tarifas anteriores, así los montos ya calculados quedan
+// intactos. La RLS de Supabase exige rol analista para insertar.
+async function agregarTarifaKm(valor) {
+  const nueva = {
+    valor: _num(valor),
+    vigente_desde: new Date().toISOString(),
+    creado_por: (currentUser && currentUser.usuario) || ''
+  };
+  // Optimista en memoria + caché local
+  AppData.kmTarifas.push(nueva);
+  AppData.kmTarifas.sort((a, b) => new Date(a.vigente_desde) - new Date(b.vigente_desde));
+  try { localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas)); } catch(e) {}
+
   if (window.DB && DB.ready) {
-    DB.setConfig('km_valor', AppData.config.km_valor || 0).catch(e => {
-      console.warn('No se pudo sincronizar config:', e);
-      showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
-    });
+    try {
+      await DB.insertRow('km_tarifas', {
+        valor: nueva.valor, vigente_desde: nueva.vigente_desde, creado_por: nueva.creado_por
+      });
+    } catch (e) {
+      console.warn('No se pudo sincronizar la tarifa de km:', e);
+      throw e; // el llamador revierte / avisa (ej. sin permiso analista)
+    }
   }
 }
 

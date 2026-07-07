@@ -178,6 +178,11 @@ function puedeVer(pagina) {
   return ROL_PERMISOS[currentUser.rol].paginas.includes(pagina);
 }
 
+// ¿El usuario actual es analista? (permiso para editar tarifas sensibles, ej. km).
+function esAnalista() {
+  return !!currentUser && currentUser.rol === 'analista';
+}
+
 async function logout() {
   if (!confirm('¿Cerrar sesión?')) return;
   try { if (sb) await sb.auth.signOut(); } catch(e) {}

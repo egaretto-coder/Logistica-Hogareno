@@ -93,14 +93,35 @@ create table if not exists public.descuentos_conductores (
 );
 
 -- ---------- KM DESVÍO ----------
+-- fecha: día del desvío (DD/MM/YYYY). valor_km: tarifa aplicada (snapshot, no se
+-- recalcula si la tarifa cambia después). monto = km × valor_km.
 create table if not exists public.km_desvio (
   id bigint generated always as identity primary key,
   conductor text not null,
   km numeric default 0,
+  fecha text default '',
+  valor_km numeric default 0,
   monto numeric default 0,
   obs text default '',
   updated_at timestamptz not null default now()
 );
+
+-- ---------- KM TARIFAS (historial de precio por km, vigencia por fecha) ----------
+-- Cada cambio de precio queda registrado. La tarifa de un desvío es la última
+-- cuya vigencia empezó en o antes de la fecha del desvío. Solo analista edita.
+create table if not exists public.km_tarifas (
+  id bigint generated always as identity primary key,
+  valor numeric not null default 0,
+  vigente_desde timestamptz not null default now(),
+  creado_por text,
+  created_at timestamptz not null default now()
+);
+
+-- Helper de rol: ¿el usuario actual es analista?
+create or replace function public.es_analista()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.perfiles where id = auth.uid() and rol = 'analista');
+$$;
 
 -- ---------- CONFIG (clave/valor compartida) ----------
 -- 'km_valor': tarifa fija en $ por km de desvío (el monto se calcula km × valor)
@@ -147,4 +168,11 @@ create policy dim_all       on public.dimensiones_especiales for all to authenti
 create policy desc_all      on public.descuentos_conductores for all to authenticated using (true) with check (true);
 create policy km_all        on public.km_desvio              for all to authenticated using (true) with check (true);
 create policy config_all    on public.config                 for all to authenticated using (true) with check (true);
+
+-- km_tarifas: todos leen; solo analista crea/edita/borra tarifas.
+alter table public.km_tarifas enable row level security;
+create policy km_tarifas_select on public.km_tarifas for select to authenticated using (true);
+create policy km_tarifas_insert on public.km_tarifas for insert to authenticated with check (public.es_analista());
+create policy km_tarifas_update on public.km_tarifas for update to authenticated using (public.es_analista()) with check (public.es_analista());
+create policy km_tarifas_delete on public.km_tarifas for delete to authenticated using (public.es_analista());
 create policy registros_all on public.registros              for all to authenticated using (true) with check (true);

@@ -178,51 +178,95 @@ function saveKmDesvio() {
   dbPush('km_desvio');
 }
 
-// Guarda la tarifa fija por km desviado (compartida con todos los usuarios)
-// y recalcula el monto de TODOS los registros cargados con el valor nuevo.
-function guardarKmValor(el) {
-  const valor = parseFloat(el.value) || 0;
-  AppData.config.km_valor = valor;
-  saveConfigApp();
-
-  if (valor > 0 && AppData.kmDesvio.length) {
-    AppData.kmDesvio.forEach(d => { d.monto = Math.round((d.km || 0) * valor); });
-    saveKmDesvio();
+// Cambia la tarifa por km (SOLO analista): registra una nueva tarifa en el
+// historial vigente desde ahora. NO recalcula los montos ya cargados: cada
+// desvío conserva la tarifa con la que se calculó.
+async function guardarKmValor(el) {
+  if (!esAnalista()) {
+    showToast('⛔ Solo un analista puede modificar la tarifa por km');
+    el.value = kmValorActual() || '';
+    return;
   }
-  renderKmDesvio();
-  showToast('💵 Valor por km guardado: ' + fmtPeso(valor) + (AppData.kmDesvio.length ? ' — montos recalculados' : ''));
+  const valor = parseFloat(el.value) || 0;
+  if (valor <= 0) { showToast('Ingresá un valor mayor a 0'); el.value = kmValorActual() || ''; return; }
+  if (valor === kmValorActual()) { renderKmDesvio(); return; } // sin cambios
+
+  el.disabled = true;
+  try {
+    await agregarTarifaKm(valor);
+    renderKmDesvio();
+    showToast('💵 Nueva tarifa ' + fmtPeso(valor) + '/km vigente desde hoy. Los km ya cargados no cambian.');
+  } catch (e) {
+    renderKmDesvio();
+    showToast('⛔ No se pudo guardar la tarifa (revisá tu conexión o permisos).');
+  } finally {
+    el.disabled = false;
+  }
 }
 
-// Autocalcula el monto en el modal a partir de los km y la tarifa configurada.
+// Fecha de hoy en formato ISO (YYYY-MM-DD, hora local) para los <input type=date>.
+function hoyISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function isoToDMY(iso) {
+  if (!iso) return '';
+  const p = String(iso).split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
+}
+function dmyToISO(dmy) {
+  if (!dmy) return '';
+  const p = String(dmy).split('/');
+  return p.length === 3 ? p[2] + '-' + String(p[1]).padStart(2,'0') + '-' + String(p[0]).padStart(2,'0') : '';
+}
+
+// Recalcula el monto del modal según los km y la FECHA (toma la tarifa vigente
+// a esa fecha). Devuelve { valor, monto } para reutilizarlo al guardar.
 function autoCalcKmMonto() {
-  const valor = AppData.config.km_valor || 0;
-  if (valor <= 0) return; // sin tarifa configurada, el monto se carga a mano
   const km = parseFloat(document.getElementById('mkm-km').value) || 0;
-  document.getElementById('mkm-monto').value = Math.round(km * valor);
-  actualizarHintKmMonto();
-}
-
-function actualizarHintKmMonto() {
+  const iso = document.getElementById('mkm-fecha').value;
+  const valor = iso ? tarifaKmEnFecha(new Date(iso + 'T12:00:00')) : kmValorActual();
+  const monto = Math.round(km * valor);
+  const calcEl = document.getElementById('mkm-monto-calc');
+  if (calcEl) calcEl.textContent = fmtPeso(monto);
   const hint = document.getElementById('mkm-monto-hint');
-  if (!hint) return;
-  const valor = AppData.config.km_valor || 0;
-  hint.textContent = valor > 0
-    ? 'Calculado automáticamente: km × ' + fmtPeso(valor) + ' por km (podés ajustarlo)'
-    : 'Configurá el "Valor por km" en el panel para que se calcule solo';
+  if (hint) {
+    hint.textContent = valor > 0
+      ? km + ' km × ' + fmtPeso(valor) + '/km (tarifa vigente al ' + (isoToDMY(iso) || 'día') + ')'
+      : 'No hay tarifa configurada para esa fecha — el monto sería $0';
+  }
+  return { valor, monto };
 }
 
 function renderKmDesvio() {
-  // Reflejar la tarifa configurada
+  const analista = esAnalista();
+  const valorActual = kmValorActual();
+
+  // Campo de tarifa: reflejar valor vigente y habilitar solo para analistas.
   const valorInput = document.getElementById('km-valor-input');
   if (valorInput && document.activeElement !== valorInput) {
-    valorInput.value = AppData.config.km_valor || '';
+    valorInput.value = valorActual || '';
+  }
+  if (valorInput) {
+    valorInput.disabled = !analista;
+    valorInput.title = analista ? '' : 'Solo un analista puede modificar la tarifa por km';
+    valorInput.style.opacity = analista ? '1' : '0.6';
+    valorInput.style.cursor = analista ? '' : 'not-allowed';
   }
   const estadoEl = document.getElementById('km-valor-estado');
   if (estadoEl) {
-    estadoEl.textContent = (AppData.config.km_valor || 0) > 0
-      ? 'Cada km desviado se paga ' + fmtPeso(AppData.config.km_valor) + ' — el monto se calcula solo al cargar los km.'
-      : 'Sin tarifa configurada: el monto se carga a mano en cada registro.';
+    if (valorActual > 0) {
+      estadoEl.textContent = 'Tarifa vigente: ' + fmtPeso(valorActual) + '/km. '
+        + (analista
+            ? 'Si la cambiás, aplica desde hoy — los km ya cargados conservan su valor.'
+            : 'Solo un analista puede modificarla.');
+    } else {
+      estadoEl.textContent = analista
+        ? 'Sin tarifa configurada: cargá el valor por km para calcular los montos.'
+        : 'Sin tarifa configurada. Solo un analista puede definirla.';
+    }
   }
+
   const search = (document.getElementById('kmdesvio-search')?.value || '').toLowerCase();
   const list = AppData.kmDesvio.filter(d => {
     if (!search) return true;
@@ -231,14 +275,14 @@ function renderKmDesvio() {
 
   const countEl = document.getElementById('kmdesvio-count');
   if (countEl) {
-    countEl.textContent = list.length + ' de ' + AppData.kmDesvio.length + ' conductores con km de desvío';
+    countEl.textContent = list.length + ' de ' + AppData.kmDesvio.length + ' registros de km de desvío';
   }
 
   const body = document.getElementById('kmdesvio-table-body');
   if (!body) return;
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🛣</div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
-      (AppData.kmDesvio.length ? 'Ajustá el buscador' : 'Agregá un registro manualmente') +
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛣</div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
+      (AppData.kmDesvio.length ? 'Ajustá el buscador' : 'Agregá un registro con "+ Agregar manual"') +
       '</div></div></td></tr>';
     return;
   }
@@ -247,9 +291,10 @@ function renderKmDesvio() {
     const realIdx = AppData.kmDesvio.indexOf(d);
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(d.conductor) + '">' + initials(d.conductor) + '</div><strong>' + d.conductor + '</strong></div></td>' +
+      '<td class="mono">' + (d.fecha || '—') + '</td>' +
       '<td class="mono" style="text-align:right">' + (d.km || 0) + ' km</td>' +
-      '<td class="mono" style="text-align:right;color:' + ((d.monto||0) > 0 ? '#166534' : '#9ca3af') + '">' + fmtPeso(d.monto||0) + '</td>' +
-      '<td class="muted" style="font-size:11px;max-width:200px">' + (d.obs || '—') + '</td>' +
+      '<td class="mono muted" style="text-align:right">' + (d.valor_km ? fmtPeso(d.valor_km) + '/km' : '—') + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:600;color:' + ((d.monto||0) > 0 ? '#166534' : '#9ca3af') + '">' + fmtPeso(d.monto||0) + '</td>' +
       '<td>' +
         '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-sm" onclick="editKmDesvio(' + realIdx + ')">✎</button>' +
@@ -274,10 +319,9 @@ function openAddKmDesvioModal() {
   document.getElementById('modal-kmdesvio-title').textContent = 'Agregar km de desvío';
   document.getElementById('mkm-conductor').value = '';
   document.getElementById('mkm-km').value = '';
-  document.getElementById('mkm-monto').value = '';
-  document.getElementById('mkm-obs').value = '';
+  document.getElementById('mkm-fecha').value = hoyISO();
   poblarConductoresKmDesvioDatalist();
-  actualizarHintKmMonto();
+  autoCalcKmMonto();
   document.getElementById('modal-kmdesvio-backdrop').style.display = 'flex';
 }
 
@@ -288,10 +332,9 @@ function editKmDesvio(idx) {
   document.getElementById('modal-kmdesvio-title').textContent = 'Editar km de desvío — ' + d.conductor;
   document.getElementById('mkm-conductor').value = d.conductor || '';
   document.getElementById('mkm-km').value = d.km || '';
-  document.getElementById('mkm-monto').value = d.monto || '';
-  document.getElementById('mkm-obs').value = d.obs || '';
+  document.getElementById('mkm-fecha').value = dmyToISO(d.fecha) || hoyISO();
   poblarConductoresKmDesvioDatalist();
-  actualizarHintKmMonto();
+  autoCalcKmMonto();
   document.getElementById('modal-kmdesvio-backdrop').style.display = 'flex';
 }
 
@@ -305,35 +348,35 @@ function guardarKmDesvioModal() {
   try {
     const conductor = document.getElementById('mkm-conductor').value.trim().toUpperCase();
     const km = parseFloat(document.getElementById('mkm-km').value) || 0;
-    const monto = parseFloat(document.getElementById('mkm-monto').value) || 0;
-    const obs = document.getElementById('mkm-obs').value.trim();
+    const iso = document.getElementById('mkm-fecha').value;
 
     if (!conductor) { alert('El conductor es obligatorio.'); return; }
-    if (km === 0 && monto === 0) {
-      if (!confirm('El km y el monto son 0. ¿Guardar de todas formas?')) return;
+    if (!iso) { alert('La fecha del desvío es obligatoria.'); return; }
+    if (km <= 0) { alert('Ingresá los km de desvío (mayor a 0).'); return; }
+
+    const fecha = isoToDMY(iso);
+    // Tarifa vigente A LA FECHA del desvío (no la de hoy): así, si el precio
+    // sube más adelante, este registro conserva la tarifa de su fecha.
+    const valor_km = tarifaKmEnFecha(new Date(iso + 'T12:00:00'));
+    const monto = Math.round(km * valor_km);
+
+    if (valor_km <= 0) {
+      if (!confirm('No hay tarifa de km configurada para el ' + fecha + ', el monto será $0. ¿Guardar igual?')) return;
     }
 
-    const entry = { conductor, km, monto, obs };
+    const entry = { conductor, km, fecha, valor_km, monto, obs: '' };
 
     if (kmEditIdx >= 0) {
       AppData.kmDesvio[kmEditIdx] = entry;
     } else {
-      const dup = AppData.kmDesvio.findIndex(x =>
-        String(x.conductor).toUpperCase().trim() === conductor
-      );
-      if (dup >= 0) {
-        if (!confirm('Ya existe un registro de km de desvío para ' + conductor + '. ¿Reemplazarlo?')) return;
-        AppData.kmDesvio[dup] = entry;
-      } else {
-        AppData.kmDesvio.push(entry);
-      }
+      AppData.kmDesvio.push(entry);
     }
 
     saveKmDesvio();
     kmEditIdx = -1;
     document.getElementById('modal-kmdesvio-backdrop').style.display = 'none';
     renderKmDesvio();
-    showToast('✅ Km de desvío guardado');
+    showToast('✅ Km de desvío guardado: ' + fmtPeso(monto) + ' (' + km + ' km al ' + fecha + ')');
   } catch(err) {
     console.error(err);
     alert('Error al guardar: ' + err.message);

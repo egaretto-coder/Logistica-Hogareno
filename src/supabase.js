@@ -48,20 +48,21 @@ const DB = {
   async loadAll() {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, desc, km, registros, config] = await Promise.all([
+      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
         this.selectAll('dimensiones_especiales'),
         this.selectAll('descuentos_conductores'),
         this.selectAll('km_desvio'),
+        this.selectAll('km_tarifas', 'vigente_desde'),
         this.selectAll('registros', 'id'),
         this.selectAll('config'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
         dimensiones_especiales: dim, descuentos_conductores: desc,
-        km_desvio: km, registros, config,
+        km_desvio: km, km_tarifas: kmTar, registros, config,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);
@@ -91,6 +92,16 @@ const DB = {
     if (!sb) throw new Error('offline');
     const { error } = await sb.from('config').upsert({ clave, valor: String(valor) });
     if (error) throw error;
+  },
+
+  // Inserta una fila (append) sin borrar el resto. Usado por el historial de
+  // tarifas de km, que NO debe reemplazarse (cada cambio queda registrado).
+  // La RLS decide si el usuario tiene permiso (solo analista para km_tarifas).
+  async insertRow(table, row) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.from(table).insert(row).select();
+    if (error) throw error;
+    return data && data[0];
   },
 };
 

@@ -218,12 +218,16 @@ let AppData = {
   descuentosConductores: [],
 
   // Km de desvío: compensación adicional por kilómetros recorridos fuera de ruta.
-  // Formato: { conductor, km, monto, obs }
+  // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
 
+  // Historial de tarifas de km de desvío (ordenado por vigencia).
+  // Formato: { valor, vigente_desde (ISO), creado_por }
+  // Cada cambio de precio queda registrado con su fecha/hora de vigencia.
+  kmTarifas: [],
+
   // Configuración general (compartida en la nube).
-  // km_valor: tarifa fija en $ por km de desvío — el monto se calcula km × valor.
-  config: { km_valor: 0 },
+  config: {},
 };
 
 // Devuelve el registro de km de desvío de un conductor (o null).
@@ -233,6 +237,57 @@ function findKmDesvio(conductor) {
   return AppData.kmDesvio.find(d =>
     String(d.conductor || '').toUpperCase().trim() === key
   ) || null;
+}
+
+// Adicional por km de desvío de un conductor dentro de un período.
+// rango: { desde:'DD/MM/YYYY', hasta:'DD/MM/YYYY' } o null = todos los registros.
+// Suma los km y montos de los desvíos cuya fecha cae dentro del período; así la
+// liquidación semanal contempla solo los km de esa semana. Cada monto ya está
+// congelado a la tarifa vigente cuando se cargó (no se recalcula).
+function kmAdicionalConductor(conductor, rango) {
+  const key = String(conductor || '').toUpperCase().trim();
+  const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
+  let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  let km = 0, monto = 0, n = 0;
+  AppData.kmDesvio.forEach(d => {
+    if (String(d.conductor || '').toUpperCase().trim() !== key) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(d.fecha);
+      if (!f) return; // sin fecha no entra en un período filtrado
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    km += _num(d.km); monto += _num(d.monto); n++;
+  });
+  return { km, monto, n };
+}
+
+// Tarifa de km VIGENTE HOY (la más reciente del historial). 0 si no hay ninguna.
+function kmValorActual() {
+  if (!AppData.kmTarifas.length) return 0;
+  // kmTarifas viene ordenado ascendente por vigente_desde; la última es la actual.
+  return _num(AppData.kmTarifas[AppData.kmTarifas.length - 1].valor);
+}
+
+// Tarifa de km que estaba vigente en una fecha dada (DD/MM/YYYY o Date).
+// Toma la última tarifa cuya vigencia empezó en o antes de esa fecha (fin del día).
+// Así, si la tarifa sube más adelante, los desvíos con fecha anterior conservan
+// la tarifa vieja. Devuelve 0 si no hay tarifa vigente para esa fecha.
+function tarifaKmEnFecha(fechaStr) {
+  if (!AppData.kmTarifas.length) return 0;
+  let ref;
+  if (fechaStr instanceof Date) ref = new Date(fechaStr);
+  else ref = parseFechaReg(fechaStr);
+  if (!ref) ref = new Date();
+  ref.setHours(23, 59, 59, 999); // fin del día del desvío
+  let valor = 0, mejor = null;
+  AppData.kmTarifas.forEach(t => {
+    const vd = new Date(t.vigente_desde);
+    if (vd <= ref && (!mejor || vd >= mejor)) { mejor = vd; valor = _num(t.valor); }
+  });
+  return valor;
 }
 
 // ===== PRICE LOGIC =====

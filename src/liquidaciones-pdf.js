@@ -72,16 +72,15 @@ function recalcLiqModal() {
   const proveedores = parseFloat(document.getElementById('liq-desc-proveedores').value) || 0;
   const totalDesc = combustible + extraviados + adelantos + proveedores;
 
-  // Adicional por km de desvío (suma al neto, igual que en el PDF)
-  const kmDes = findKmDesvio(liqModalConductor);
-  const kmMonto = kmDes ? (parseFloat(kmDes.monto) || 0) : 0;
+  // Adicional por km de desvío del período filtrado (suma al neto, igual que el PDF)
+  const kmAd = kmAdicionalConductor(liqModalConductor, getLiqRangoFechasLabel());
+  const kmMonto = kmAd.monto;
   const kmWrap = document.getElementById('liq-modal-linea-km-wrap');
   if (kmWrap) {
     kmWrap.style.display = kmMonto > 0 ? 'flex' : 'none';
     if (kmMonto > 0) {
-      const kmKms = parseFloat(kmDes.km) || 0;
       document.getElementById('liq-modal-linea-km-label').textContent =
-        'Adicional km de desvío' + (kmKms > 0 ? ' (' + kmKms + ' km)' : '');
+        'Adicional km de desvío' + (kmAd.km > 0 ? ' (' + kmAd.km + ' km)' : '');
       document.getElementById('liq-modal-linea-km').textContent = '+' + fmtPeso(kmMonto);
     }
   }
@@ -497,11 +496,12 @@ function exportPDF(conductor, opts) {
   // ═══════════════════════════════════════════════════════════════════════
   const totalDescuentos = (descuentos.combustible || 0) + (descuentos.extraviados || 0) + (descuentos.adelantos || 0) + (descuentos.proveedores || 0);
 
-  // Adicional por km de desvío: compensación por retiros de mercadería fuera
-  // de ruta. SUMA al total de la liquidación.
-  const kmDes = findKmDesvio(conductor);
-  const kmMonto = kmDes ? (parseFloat(kmDes.monto) || 0) : 0;
-  const kmKms = kmDes ? (parseFloat(kmDes.km) || 0) : 0;
+  // Adicional por km de desvío del período liquidado: compensación por retiros
+  // de mercadería fuera de ruta. SUMA al total. Cada desvío ya tiene su monto
+  // congelado a la tarifa vigente cuando se cargó.
+  const kmAd = kmAdicionalConductor(conductor, rangoFechas);
+  const kmMonto = kmAd.monto;
+  const kmKms = kmAd.km;
   const kmOffset = kmMonto > 0 ? 6 : 0; // renglón extra en la caja si hay adicional
 
   const totalNeto = d.total + kmMonto - totalDescuentos;
