@@ -48,7 +48,7 @@ const DB = {
   async loadAll() {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, desc, km, registros] = await Promise.all([
+      const [tarifas, superSla, panel, dim, desc, km, registros, config] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -56,11 +56,12 @@ const DB = {
         this.selectAll('descuentos_conductores'),
         this.selectAll('km_desvio'),
         this.selectAll('registros', 'id'),
+        this.selectAll('config'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
         dimensiones_especiales: dim, descuentos_conductores: desc,
-        km_desvio: km, registros,
+        km_desvio: km, registros, config,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);
@@ -82,6 +83,14 @@ const DB = {
       if (ins.error) throw ins.error;
       if (onProgress) onProgress(Math.min(i + chunk.length, total), total);
     }
+  },
+
+  // Guarda un valor de configuración (clave/valor). Usa upsert porque la
+  // tabla config tiene PK 'clave' (replaceAll asume PK 'id').
+  async setConfig(clave, valor) {
+    if (!sb) throw new Error('offline');
+    const { error } = await sb.from('config').upsert({ clave, valor: String(valor) });
+    if (error) throw error;
   },
 };
 

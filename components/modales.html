@@ -138,6 +138,10 @@
           <span>Total bruto</span>
           <span id="liq-modal-linea-bruto" style="font-family:monospace">$0</span>
         </div>
+        <div id="liq-modal-linea-km-wrap" style="display:none;justify-content:space-between;font-size:12px;margin-bottom:4px;opacity:0.85">
+          <span id="liq-modal-linea-km-label">Adicional km de desvío</span>
+          <span id="liq-modal-linea-km" style="font-family:monospace;color:#86efac">$0</span>
+        </div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;opacity:0.85">
           <span>Descuentos totales</span>
           <span id="liq-modal-linea-desc" style="font-family:monospace;color:#fca5a5">$0</span>
@@ -218,11 +222,12 @@
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">🛣 Km de desvío</label>
-        <input type="number" id="mkm-km" class="form-input" placeholder="0" min="0" step="0.1" style="width:100%" />
+        <input type="number" id="mkm-km" class="form-input" placeholder="0" min="0" step="0.1" style="width:100%" oninput="autoCalcKmMonto()" />
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">💵 Monto ($)</label>
         <input type="number" id="mkm-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+        <div id="mkm-monto-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Observaciones (opcional)</label>

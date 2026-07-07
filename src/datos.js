@@ -15,6 +15,10 @@ function loadSavedConfig() {
   if (kmd) {
     try { AppData.kmDesvio = JSON.parse(kmd); } catch(e) {}
   }
+  const cfg = localStorage.getItem('liq_config');
+  if (cfg) {
+    try { AppData.config = Object.assign({ km_valor: 0 }, JSON.parse(cfg)); } catch(e) {}
+  }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     const saved = JSON.parse(p);
@@ -97,6 +101,11 @@ async function hydrateFromSupabase() {
     estado: r.estado, precio_bd: _num(r.precio_bd)
   }));
 
+  // Configuración clave/valor (ej: km_valor = $ por km de desvío)
+  (data.config || []).forEach(row => {
+    if (row.clave === 'km_valor') AppData.config.km_valor = _num(row.valor);
+  });
+
   // Refrescar caché local para uso offline
   try {
     localStorage.setItem('liq_tarifas', JSON.stringify(AppData.tarifas));
@@ -105,6 +114,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_dimensiones_especiales', JSON.stringify(AppData.dimensionesEspeciales));
     localStorage.setItem('liq_descuentos_conductores', JSON.stringify(AppData.descuentosConductores));
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
+    localStorage.setItem('liq_config', JSON.stringify(AppData.config));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.
@@ -150,6 +160,17 @@ function dbPush(table) {
     console.warn('Sincronización de "' + table + '" falló:', e);
     showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
   });
+}
+
+// Guarda la configuración general (localStorage + nube).
+function saveConfigApp() {
+  try { localStorage.setItem('liq_config', JSON.stringify(AppData.config)); } catch(e) {}
+  if (window.DB && DB.ready) {
+    DB.setConfig('km_valor', AppData.config.km_valor || 0).catch(e => {
+      console.warn('No se pudo sincronizar config:', e);
+      showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
+    });
+  }
 }
 
 // Guarda los registros importados (entregas) en Supabase.

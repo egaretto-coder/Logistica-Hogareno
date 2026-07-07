@@ -72,7 +72,22 @@
           </div>
 
           <div class="alert alert-info" style="margin-bottom:16px">
-            🛣 Cargá acá los kilómetros de desvío recorridos por cada conductor y el monto de compensación correspondiente. Estos registros son independientes de los descuentos y no afectan el total de la liquidación automática; sirven como referencia adicional para el conductor.
+            🛣 Cargá acá los kilómetros de desvío que hizo cada conductor al retirar mercadería de un cliente. El costo se calcula automáticamente con el <strong>valor por km</strong> configurado y se suma como <strong>adicional</strong> en la liquidación semanal (incrementa el total a pagar del PDF).
+          </div>
+
+          <!-- VALOR POR KM -->
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:600">💵 Valor por km desviado</span>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:13px;color:var(--text-muted)">$</span>
+                <input type="number" id="km-valor-input" min="0" step="1" placeholder="0"
+                  style="width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right;font-family:monospace;font-weight:600"
+                  onchange="guardarKmValor(this)">
+                <span style="font-size:12px;color:var(--text-muted)">por km</span>
+              </div>
+              <span id="km-valor-estado" style="font-size:11px;color:var(--text-muted)"></span>
+            </div>
           </div>
 
           <!-- FILTROS -->

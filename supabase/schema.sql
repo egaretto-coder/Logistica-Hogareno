@@ -102,6 +102,14 @@ create table if not exists public.km_desvio (
   updated_at timestamptz not null default now()
 );
 
+-- ---------- CONFIG (clave/valor compartida) ----------
+-- 'km_valor': tarifa fija en $ por km de desvío (el monto se calcula km × valor)
+create table if not exists public.config (
+  clave text primary key,
+  valor text not null default '',
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- REGISTROS (entregas importadas) ----------
 create table if not exists public.registros (
   id bigint generated always as identity primary key,
@@ -138,4 +146,5 @@ create policy panel_all     on public.panel_conductores      for all to authenti
 create policy dim_all       on public.dimensiones_especiales for all to authenticated using (true) with check (true);
 create policy desc_all      on public.descuentos_conductores for all to authenticated using (true) with check (true);
 create policy km_all        on public.km_desvio              for all to authenticated using (true) with check (true);
+create policy config_all    on public.config                 for all to authenticated using (true) with check (true);
 create policy registros_all on public.registros              for all to authenticated using (true) with check (true);

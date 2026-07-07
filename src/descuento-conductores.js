@@ -178,7 +178,51 @@ function saveKmDesvio() {
   dbPush('km_desvio');
 }
 
+// Guarda la tarifa fija por km desviado (compartida con todos los usuarios)
+// y recalcula el monto de TODOS los registros cargados con el valor nuevo.
+function guardarKmValor(el) {
+  const valor = parseFloat(el.value) || 0;
+  AppData.config.km_valor = valor;
+  saveConfigApp();
+
+  if (valor > 0 && AppData.kmDesvio.length) {
+    AppData.kmDesvio.forEach(d => { d.monto = Math.round((d.km || 0) * valor); });
+    saveKmDesvio();
+  }
+  renderKmDesvio();
+  showToast('💵 Valor por km guardado: ' + fmtPeso(valor) + (AppData.kmDesvio.length ? ' — montos recalculados' : ''));
+}
+
+// Autocalcula el monto en el modal a partir de los km y la tarifa configurada.
+function autoCalcKmMonto() {
+  const valor = AppData.config.km_valor || 0;
+  if (valor <= 0) return; // sin tarifa configurada, el monto se carga a mano
+  const km = parseFloat(document.getElementById('mkm-km').value) || 0;
+  document.getElementById('mkm-monto').value = Math.round(km * valor);
+  actualizarHintKmMonto();
+}
+
+function actualizarHintKmMonto() {
+  const hint = document.getElementById('mkm-monto-hint');
+  if (!hint) return;
+  const valor = AppData.config.km_valor || 0;
+  hint.textContent = valor > 0
+    ? 'Calculado automáticamente: km × ' + fmtPeso(valor) + ' por km (podés ajustarlo)'
+    : 'Configurá el "Valor por km" en el panel para que se calcule solo';
+}
+
 function renderKmDesvio() {
+  // Reflejar la tarifa configurada
+  const valorInput = document.getElementById('km-valor-input');
+  if (valorInput && document.activeElement !== valorInput) {
+    valorInput.value = AppData.config.km_valor || '';
+  }
+  const estadoEl = document.getElementById('km-valor-estado');
+  if (estadoEl) {
+    estadoEl.textContent = (AppData.config.km_valor || 0) > 0
+      ? 'Cada km desviado se paga ' + fmtPeso(AppData.config.km_valor) + ' — el monto se calcula solo al cargar los km.'
+      : 'Sin tarifa configurada: el monto se carga a mano en cada registro.';
+  }
   const search = (document.getElementById('kmdesvio-search')?.value || '').toLowerCase();
   const list = AppData.kmDesvio.filter(d => {
     if (!search) return true;
@@ -233,6 +277,7 @@ function openAddKmDesvioModal() {
   document.getElementById('mkm-monto').value = '';
   document.getElementById('mkm-obs').value = '';
   poblarConductoresKmDesvioDatalist();
+  actualizarHintKmMonto();
   document.getElementById('modal-kmdesvio-backdrop').style.display = 'flex';
 }
 
@@ -246,6 +291,7 @@ function editKmDesvio(idx) {
   document.getElementById('mkm-monto').value = d.monto || '';
   document.getElementById('mkm-obs').value = d.obs || '';
   poblarConductoresKmDesvioDatalist();
+  actualizarHintKmMonto();
   document.getElementById('modal-kmdesvio-backdrop').style.display = 'flex';
 }
 

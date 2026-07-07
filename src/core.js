@@ -220,7 +220,20 @@ let AppData = {
   // Km de desvío: compensación adicional por kilómetros recorridos fuera de ruta.
   // Formato: { conductor, km, monto, obs }
   kmDesvio: [],
+
+  // Configuración general (compartida en la nube).
+  // km_valor: tarifa fija en $ por km de desvío — el monto se calcula km × valor.
+  config: { km_valor: 0 },
 };
+
+// Devuelve el registro de km de desvío de un conductor (o null).
+function findKmDesvio(conductor) {
+  if (!conductor || !AppData.kmDesvio.length) return null;
+  const key = String(conductor).toUpperCase().trim();
+  return AppData.kmDesvio.find(d =>
+    String(d.conductor || '').toUpperCase().trim() === key
+  ) || null;
+}
 
 // ===== PRICE LOGIC =====
 // Devuelve el precio a aplicar para un cadete en una zona puntual.

@@ -71,7 +71,22 @@ function recalcLiqModal() {
   const adelantos = parseFloat(document.getElementById('liq-desc-adelantos').value) || 0;
   const proveedores = parseFloat(document.getElementById('liq-desc-proveedores').value) || 0;
   const totalDesc = combustible + extraviados + adelantos + proveedores;
-  const totalNeto = d.total - totalDesc;
+
+  // Adicional por km de desvío (suma al neto, igual que en el PDF)
+  const kmDes = findKmDesvio(liqModalConductor);
+  const kmMonto = kmDes ? (parseFloat(kmDes.monto) || 0) : 0;
+  const kmWrap = document.getElementById('liq-modal-linea-km-wrap');
+  if (kmWrap) {
+    kmWrap.style.display = kmMonto > 0 ? 'flex' : 'none';
+    if (kmMonto > 0) {
+      const kmKms = parseFloat(kmDes.km) || 0;
+      document.getElementById('liq-modal-linea-km-label').textContent =
+        'Adicional km de desvío' + (kmKms > 0 ? ' (' + kmKms + ' km)' : '');
+      document.getElementById('liq-modal-linea-km').textContent = '+' + fmtPeso(kmMonto);
+    }
+  }
+
+  const totalNeto = d.total + kmMonto - totalDesc;
 
   document.getElementById('liq-modal-linea-bruto').textContent = fmtPeso(d.total);
   document.getElementById('liq-modal-linea-desc').textContent = '-' + fmtPeso(totalDesc);
@@ -481,17 +496,25 @@ function exportPDF(conductor, opts) {
   // ═════════════ BLOQUE DE DESCUENTOS + TOTAL NETO ═══════════════════════
   // ═══════════════════════════════════════════════════════════════════════
   const totalDescuentos = (descuentos.combustible || 0) + (descuentos.extraviados || 0) + (descuentos.adelantos || 0) + (descuentos.proveedores || 0);
-  const totalNeto = d.total - totalDescuentos;
+
+  // Adicional por km de desvío: compensación por retiros de mercadería fuera
+  // de ruta. SUMA al total de la liquidación.
+  const kmDes = findKmDesvio(conductor);
+  const kmMonto = kmDes ? (parseFloat(kmDes.monto) || 0) : 0;
+  const kmKms = kmDes ? (parseFloat(kmDes.km) || 0) : 0;
+  const kmOffset = kmMonto > 0 ? 6 : 0; // renglón extra en la caja si hay adicional
+
+  const totalNeto = d.total + kmMonto - totalDescuentos;
 
   let descY = doc.lastAutoTable.finalY + 8;
   // Si no cabe el bloque en la página actual, saltar de página
-  if (descY > 220) { doc.addPage(); descY = 30; }
+  if (descY > 220 - kmOffset) { doc.addPage(); descY = 30; }
 
   // Título del bloque
   doc.setFontSize(8.5);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(...LH_NAVY);
-  doc.text('DESCUENTOS Y TOTAL NETO A PAGAR', MARGIN, descY + 5);
+  doc.text('ADICIONALES, DESCUENTOS Y TOTAL NETO A PAGAR', MARGIN, descY + 5);
   doc.setDrawColor(...LH_BLUE);
   doc.setLineWidth(0.4);
   doc.line(MARGIN, descY + 6.5, W - MARGIN, descY + 6.5);
@@ -499,7 +522,7 @@ function exportPDF(conductor, opts) {
 
   // Caja con fondo claro (altura dinámica según cantidad de ítems de descuento)
   const descItemsCount = 4;
-  const boxH = 22 + descItemsCount * 6 + 10;
+  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset;
   doc.setFillColor(248, 249, 252);
   doc.roundedRect(MARGIN, descY, W - MARGIN*2, boxH, 2, 2, 'F');
   doc.setDrawColor(220, 226, 240);
@@ -516,10 +539,22 @@ function exportPDF(conductor, opts) {
   doc.setTextColor(...LH_NAVY);
   doc.text(fmtPeso(d.total), W - MARGIN - 6, descY + 8, { align: 'right' });
 
+  // Renglón: Adicional por km de desvío (suma al total)
+  if (kmMonto > 0) {
+    drawDescIcon('K', MARGIN + 6, descY + 15.6, 4.4, LH_GREEN);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...LH_GRAY);
+    doc.text('Adicional km de desvío' + (kmKms > 0 ? ' (' + kmKms + ' km)' : ''), MARGIN + 13, descY + 14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...LH_GREEN);
+    doc.text('+' + fmtPeso(kmMonto), W - MARGIN - 6, descY + 14, { align: 'right' });
+  }
+
   // Separador
   doc.setDrawColor(220, 226, 240);
   doc.setLineWidth(0.2);
-  doc.line(MARGIN + 6, descY + 11, W - MARGIN - 6, descY + 11);
+  doc.line(MARGIN + 6, descY + 11 + kmOffset, W - MARGIN - 6, descY + 11 + kmOffset);
 
   // Descuentos individuales (mismos conceptos que en el detalle previo a descargar)
   const descItems = [
@@ -528,7 +563,7 @@ function exportPDF(conductor, opts) {
     { letter: 'A', color: LH_EMERALD, label: 'Adelantos', val: descuentos.adelantos || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores', val: descuentos.proveedores || 0 },
   ];
-  let dY = descY + 17;
+  let dY = descY + 17 + kmOffset;
   descItems.forEach(item => {
     drawDescIcon(item.letter, MARGIN + 6, dY + 1.6, 4.4, item.color);
     doc.setFontSize(8);
