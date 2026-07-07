@@ -16,6 +16,7 @@ function findDescuentoConductor(conductor) {
 }
 
 function renderDescuentosConductores() {
+  actualizarBotonSuperposiciones('descuentos');
   const search = (document.getElementById('desc-search')?.value || '').toLowerCase();
   const list = AppData.descuentosConductores.filter(d => {
     if (!search) return true;
@@ -510,26 +511,35 @@ function importDescuentosConductores(event) {
 
       if (!nuevos.length) { alert('No se pudo importar ningún descuento válido.'); return; }
 
-      // Fusionar con los existentes (reemplazar por conductor)
+      // Fusionar con los existentes: si el conductor ya tenía descuentos, la
+      // información nueva REEMPLAZA a la anterior (superposición auditable ⚠).
+      const resumenDesc = d =>
+        'Comb ' + fmtPeso(d.combustible || 0) + ' · Extr ' + fmtPeso(d.extraviados || 0) +
+        ' · Adel ' + fmtPeso(d.adelantos || 0) + ' · Prov ' + fmtPeso(d.proveedores || 0);
       const mapExist = {};
       AppData.descuentosConductores.forEach((d, i) => {
         mapExist[String(d.conductor).toUpperCase().trim()] = i;
       });
-      let agregados = 0, actualizados = 0;
+      let agregados = 0;
+      const sup = [];
       nuevos.forEach(n => {
         const key = n.conductor;
         if (mapExist[key] !== undefined) {
+          const v = AppData.descuentosConductores[mapExist[key]];
+          sup.push({ clave: key, antes: resumenDesc(v), despues: resumenDesc(n) });
           AppData.descuentosConductores[mapExist[key]] = n;
-          actualizados++;
         } else {
+          mapExist[key] = AppData.descuentosConductores.length;
           AppData.descuentosConductores.push(n);
           agregados++;
         }
       });
 
+      registrarSuperposiciones('descuentos', isoToDMY(hoyISO()), sup);
       saveDescuentos();
       renderDescuentosConductores();
-      showToast('✅ Importado: ' + agregados + ' nuevos · ' + actualizados + ' actualizados');
+      showToast('✅ Importado: ' + agregados + ' nuevos · ' + sup.length + ' reemplazaron información anterior' +
+        (sup.length ? ' — revisá el botón ⚠' : ''));
     } catch(err) {
       console.error(err);
       alert('Error al importar: ' + err.message);

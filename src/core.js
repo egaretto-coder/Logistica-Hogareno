@@ -448,6 +448,74 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  SUPERPOSICIONES DE IMPORTACIÓN
+//  Cada importación de Excel queda asociada a una fecha de carga. Cuando la
+//  carga pisa información anterior (misma clave: tracking / zona / conductor),
+//  lo nuevo REEMPLAZA a lo viejo y acá se registra qué se superpuso, para
+//  poder auditarlo desde el botón de alerta "⚠ Superposiciones".
+// ════════════════════════════════════════════════════════════════════════
+
+const SUPERPOSICION_LABELS = {
+  registros:   'Importación de recorridos',
+  tarifas:     'Importación de tarifas',
+  dimensiones: 'Importación de dimensiones especiales',
+  descuentos:  'Importación de descuentos',
+};
+
+// { modulo: { fecha_carga:'DD/MM/YYYY', hora:'HH:MM', items:[{clave, antes, despues}] } }
+let superposiciones = {};
+try { superposiciones = JSON.parse(localStorage.getItem('liq_superposiciones') || '{}') || {}; } catch(e) {}
+
+// Registra las superposiciones de la última importación de un módulo y
+// actualiza su botón de alerta. items = [{ clave, antes, despues }].
+function registrarSuperposiciones(modulo, fechaCarga, items) {
+  const ahora = new Date();
+  superposiciones[modulo] = {
+    fecha_carga: fechaCarga || ahora.toLocaleDateString('es-AR'),
+    hora: String(ahora.getHours()).padStart(2,'0') + ':' + String(ahora.getMinutes()).padStart(2,'0'),
+    items: items || []
+  };
+  try { localStorage.setItem('liq_superposiciones', JSON.stringify(superposiciones)); } catch(e) {}
+  actualizarBotonSuperposiciones(modulo);
+}
+
+// Muestra/oculta el botón de alerta del módulo según haya superposiciones.
+function actualizarBotonSuperposiciones(modulo) {
+  const btn = document.getElementById('alerta-sup-' + modulo);
+  if (!btn) return;
+  const s = superposiciones[modulo];
+  const n = s && s.items ? s.items.length : 0;
+  btn.style.display = n > 0 ? '' : 'none';
+  if (n > 0) btn.textContent = n === 1 ? '⚠ 1 superposición' : '⚠ ' + n + ' superposiciones';
+}
+
+// Modal de detalle: qué se pisó, valor anterior → valor nuevo.
+function mostrarSuperposiciones(modulo) {
+  const s = superposiciones[modulo];
+  if (!s || !s.items || !s.items.length) { showToast('Sin superposiciones registradas'); return; }
+  document.getElementById('modal-title').textContent =
+    '⚠ Superposiciones — ' + (SUPERPOSICION_LABELS[modulo] || modulo);
+  const filas = s.items.map(it => `
+    <tr>
+      <td class="mono" style="font-weight:600">${it.clave}</td>
+      <td style="font-size:12px;color:#b91c1c">${it.antes}</td>
+      <td style="font-size:12px;color:#166534;font-weight:600">${it.despues}</td>
+    </tr>`).join('');
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:#fff8e1;border:1px solid #f5d97a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px">
+      📅 Carga del <strong>${s.fecha_carga}</strong> a las ${s.hora} hs — la información nueva
+      <strong>reemplazó</strong> a la anterior en ${s.items.length} caso${s.items.length !== 1 ? 's' : ''}.
+    </div>
+    <div class="table-wrap" style="max-height:50vh;overflow-y:auto">
+      <table>
+        <thead><tr><th>Clave</th><th>Información anterior</th><th>Información nueva</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
 // ===== LOAD SAVED CONFIG =====
 // ═══════════════════════════════════════════════════════════════════════════
 // ═════════════════ MÓDULO DIMENSIONES ESPECIALES ══════════════════════════

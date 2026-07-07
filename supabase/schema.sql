@@ -142,6 +142,7 @@ create table if not exists public.registros (
   zona_precio text default '',
   estado text default '',
   precio_bd numeric default 0,
+  carga_fecha text default '', -- día (DD/MM/YYYY) en que se importó el registro
   created_at timestamptz not null default now()
 );
 

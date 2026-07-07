@@ -8,6 +8,7 @@ function saveDimensiones() {
 }
 
 function renderDimensionesEspeciales() {
+  actualizarBotonSuperposiciones('dimensiones');
   const search = (document.getElementById('dim-search')?.value || '').toLowerCase();
   const list = AppData.dimensionesEspeciales.filter(d => {
     if (!search) return true;
@@ -226,26 +227,34 @@ function importDimensionesEspeciales(event) {
 
       if (!nuevos.length) { alert('No se pudo importar ninguna dimensión válida.'); return; }
 
-      // Fusionar con las existentes (reemplazar por tracking)
+      // Fusionar con las existentes: si el tracking ya tenía una dimensión, la
+      // información nueva REEMPLAZA a la anterior (queda registrada como
+      // superposición para auditar con el botón ⚠).
+      const resumenDim = d => (d.fecha || '—') + ' · ' + (d.condicion || '—') + ' · ' + fmtPeso(d.valor || 0);
       const mapExist = {};
       AppData.dimensionesEspeciales.forEach((d, i) => {
         mapExist[String(d.tracking).toUpperCase()] = i;
       });
-      let agregadas = 0, actualizadas = 0;
+      let agregadas = 0;
+      const sup = [];
       nuevos.forEach(n => {
         const key = String(n.tracking).toUpperCase();
         if (mapExist[key] !== undefined) {
+          const v = AppData.dimensionesEspeciales[mapExist[key]];
+          sup.push({ clave: key, antes: resumenDim(v), despues: resumenDim(n) });
           AppData.dimensionesEspeciales[mapExist[key]] = n;
-          actualizadas++;
         } else {
+          mapExist[key] = AppData.dimensionesEspeciales.length;
           AppData.dimensionesEspeciales.push(n);
           agregadas++;
         }
       });
 
+      registrarSuperposiciones('dimensiones', isoToDMY(hoyISO()), sup);
       saveDimensiones();
       renderDimensionesEspeciales();
-      showToast('✅ Importado: ' + agregadas + ' nuevas · ' + actualizadas + ' actualizadas');
+      showToast('✅ Importado: ' + agregadas + ' nuevas · ' + sup.length + ' reemplazaron información anterior' +
+        (sup.length ? ' — revisá el botón ⚠' : ''));
 
       // Refrescar liquidaciones si están abiertas
       if (typeof renderLiquidaciones === 'function') {

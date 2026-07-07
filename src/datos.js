@@ -107,7 +107,7 @@ async function hydrateFromSupabase() {
   AppData.records = (data.registros || []).map(r => ({
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-    estado: r.estado, precio_bd: _num(r.precio_bd)
+    estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || ''
   }));
 
   // Configuración clave/valor (genérica)
@@ -204,7 +204,7 @@ async function guardarRegistrosEnNube() {
   const rows = AppData.records.map(r => ({
     cadete: r.cadete || '', tracking: r.tracking || '', fecha: r.fecha || '',
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
-    estado: r.estado || '', precio_bd: _num(r.precio_bd)
+    estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || ''
   }));
   try {
     showToast('Guardando ' + rows.length + ' registros en la nube…');

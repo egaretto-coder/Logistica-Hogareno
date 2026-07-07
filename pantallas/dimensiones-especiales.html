@@ -3,6 +3,7 @@
         <div class="section-head" style="margin-bottom:8px">
           <span class="section-title">Dimensiones Especiales</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" id="alerta-sup-dimensiones" style="display:none;border-color:#f5d97a;background:#fff8e1;color:#7a5c00;font-weight:600" onclick="mostrarSuperposiciones('dimensiones')">⚠ Superposiciones</button>
             <label class="btn btn-sm" style="cursor:pointer;margin:0">
               📂 Importar Excel
               <input type="file" id="dim-file-input" accept=".xlsx,.xls,.csv" onchange="importDimensionesEspeciales(event)" style="display:none">

@@ -2,6 +2,10 @@
 
 // Configura drag & drop de la zona de carga. Se llama tras inyectar las pantallas.
 function initImportar() {
+  // Calendario de fecha de carga: por defecto, hoy.
+  const fc = document.getElementById('upload-fecha-carga');
+  if (fc && !fc.value) fc.value = hoyISO();
+
   const dz = document.getElementById('drop-zone');
   if (!dz) return;
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
@@ -137,33 +141,89 @@ function processUpload() {
   }
 
   AppData.mappings = mapping;
-  AppData.records = AppData.rawRows.map(row => {
+
+  // Fecha de carga elegida en el calendario (default: hoy). Cada registro
+  // importado queda marcado con este día para poder visualizarlo después.
+  const fechaCargaISO = document.getElementById('upload-fecha-carga')?.value || '';
+  const fechaCarga = fechaCargaISO ? isoToDMY(fechaCargaISO) : isoToDMY(hoyISO());
+
+  const nuevos = AppData.rawRows.map(row => {
     const rec = {};
     Object.entries(mapping).forEach(([field, colIdx]) => {
       rec[field] = String(row[colIdx] !== undefined ? row[colIdx] : '').trim();
     });
     rec.fecha = normalizaFecha(row[mapping.fecha]);
+    rec.carga_fecha = fechaCarga;
     return rec;
   }).filter(r => r.tracking && r.cadete);
 
+  // FUSIÓN con lo ya cargado: si un tracking ya existía, la información nueva
+  // REEMPLAZA a la anterior — se eliminan TODAS sus filas previas (un tracking
+  // puede aparecer en más de una fila, ej. segundas visitas) y entran las de
+  // esta carga. Cada reemplazo queda registrado para auditar con el botón ⚠.
+  // Los trackings nuevos se agregan; el resto de los datos previos se conserva.
+  const resumenReg = (r, carga) =>
+    (r.fecha || '—') + ' · ' + (r.estado || '—') + ' · ' + (r.cadete || '—') +
+    (carga ? ' — cargado el ' + carga : '');
+  const nuevoPorTracking = {};
+  nuevos.forEach(n => { nuevoPorTracking[String(n.tracking).trim()] = n; });
+
+  const sup = [];
+  const restantes = [];
+  AppData.records.forEach(r => {
+    const k = String(r.tracking || '').trim();
+    const n = k && nuevoPorTracking[k];
+    if (n) {
+      sup.push({
+        clave: k,
+        antes: resumenReg(r, r.carga_fecha),
+        despues: resumenReg(n, fechaCarga)
+      });
+    } else {
+      restantes.push(r);
+    }
+  });
+  const clavesReemplazadas = new Set(sup.map(s => s.clave));
+  const agregados = nuevos.filter(n => !clavesReemplazadas.has(String(n.tracking).trim())).length;
+  AppData.records = restantes.concat(nuevos);
+  registrarSuperposiciones('registros', fechaCarga, sup);
+
   // Detectar si hay fechas fuera del rango lunes-sábado (posible domingo cargado)
-  const diasFueraDeRango = AppData.records.filter(r => {
-    const ds = diaSemana(r.fecha);
-    return ds === 6; // domingo
-  }).length;
+  const diasFueraDeRango = nuevos.filter(r => diaSemana(r.fecha) === 6).length;
 
   document.getElementById('column-mapper').style.display = 'none';
   document.getElementById('upload-preview').style.display = 'block';
 
-  const previewTable = `
+  const verFecha = document.getElementById('upload-ver-fecha');
+  if (verFecha) verFecha.value = fechaCargaISO || hoyISO();
+  renderPreviewRegistros(nuevos, 'Vista previa · carga del ' + fechaCarga);
+
+  const entregados = nuevos.filter(r => esEstadoEntregado(r.estado)).length;
+  const noEntregados = nuevos.length - entregados;
+
+  document.getElementById('upload-success-msg').innerHTML =
+    `✅ Carga del <strong>${fechaCarga}</strong>: ${nuevos.length} registros procesados — ` +
+    `<strong>${agregados} nuevos</strong> y <strong>${sup.length} reemplazaron información anterior</strong>` +
+    (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
+    `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
+    `${diasFueraDeRango ? `<br>⚠️ ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
+    ` La base total queda en <strong>${AppData.records.length}</strong> registros.`;
+
+  renderDashboard();
+}
+
+// Dibuja la tabla de vista previa para una lista de registros.
+function renderPreviewRegistros(lista, titulo) {
+  document.getElementById('preview-title').textContent = titulo;
+  document.getElementById('preview-table-wrap').innerHTML = `
     <table>
       <thead>
         <tr>
-          <th>Tracking</th><th>Fecha</th><th>Zona</th><th>Localidad</th><th>Estado</th><th>Cadete</th>
+          <th>Tracking</th><th>Fecha</th><th>Zona</th><th>Localidad</th><th>Estado</th><th>Cadete</th><th>Cargado el</th>
         </tr>
       </thead>
       <tbody>
-        ${AppData.records.slice(0, 20).map(r => `
+        ${lista.slice(0, 20).map(r => `
           <tr>
             <td class="mono muted">${r.tracking}</td>
             <td class="muted">${r.fecha || '—'}</td>
@@ -171,21 +231,26 @@ function processUpload() {
             <td class="muted">${r.localidad || '—'}</td>
             <td><span class="badge ${esEstadoEntregado(r.estado) ? 'badge-green' : 'badge-gray'}">${r.estado || '—'}</span></td>
             <td><strong>${r.cadete}</strong></td>
+            <td class="muted mono" style="font-size:11px">${r.carga_fecha || '—'}</td>
           </tr>
         `).join('')}
-        ${AppData.records.length > 20 ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">...y ${AppData.records.length - 20} registros más</td></tr>` : ''}
+        ${lista.length > 20 ? `<tr><td colspan="7" class="muted" style="text-align:center;padding:12px">...y ${lista.length - 20} registros más</td></tr>` : ''}
+        ${!lista.length ? `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Sin registros cargados ese día</td></tr>` : ''}
       </tbody>
-    </table>
-  `;
+    </table>`;
+}
 
-  const entregados = AppData.records.filter(r => esEstadoEntregado(r.estado)).length;
-  const noEntregados = AppData.records.length - entregados;
-
-  document.getElementById('preview-title').textContent = `Vista previa · ${AppData.records.length} registros importados`;
-  document.getElementById('upload-success-msg').innerHTML = `✅ ${AppData.records.length} registros procesados. <strong>${entregados} entregados</strong> (se contabilizan en la liquidación) y <strong>${noEntregados} en otros estados</strong> (se muestran pero no suman).${diasFueraDeRango ? `<br>⚠️ Se detectaron ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}`;
-  document.getElementById('preview-table-wrap').innerHTML = previewTable;
-
-  renderDashboard();
+// Calendario "ver información del día": filtra la base por fecha de carga.
+function verRegistrosDelDia() {
+  const iso = document.getElementById('upload-ver-fecha')?.value;
+  document.getElementById('upload-preview').style.display = 'block';
+  if (!iso) {
+    renderPreviewRegistros(AppData.records, 'Vista previa · toda la base (' + AppData.records.length + ' registros)');
+    return;
+  }
+  const dia = isoToDMY(iso);
+  const lista = AppData.records.filter(r => r.carga_fecha === dia);
+  renderPreviewRegistros(lista, 'Información cargada el ' + dia + ' · ' + lista.length + ' registros');
 }
 
 async function clearData() {

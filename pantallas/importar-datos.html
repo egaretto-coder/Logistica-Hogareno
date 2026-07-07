@@ -11,6 +11,14 @@
               </button>
             </div>
             <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)" />
+
+            <!-- FECHA DE CARGA: cada importación queda asociada a este día -->
+            <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px">
+              <span style="font-size:13px;font-weight:600">📅 Fecha de carga</span>
+              <input type="date" id="upload-fecha-carga" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <span style="font-size:11px;color:var(--text-muted)">La importación queda registrada con este día. Si un tracking ya existía, la información nueva <strong>reemplaza</strong> a la anterior.</span>
+            </div>
+
             <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <button class="btn btn-sm" onclick="cargarSeedRegistros()">📥 Cargar registros de ejemplo</button>
               <span style="font-size:11px;color:var(--text-muted)">Carga el set inicial (~5.500 registros) para probar; luego usá “☁️ Guardar en la nube”.</span>
@@ -38,13 +46,20 @@
           <div class="card">
             <div class="card-header">
               <span class="card-title" id="preview-title">Vista previa</span>
-              <div style="display:flex;gap:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-sm" id="alerta-sup-registros" style="display:none;border-color:#f5d97a;background:#fff8e1;color:#7a5c00;font-weight:600" onclick="mostrarSuperposiciones('registros')">⚠ Superposiciones</button>
                 <button class="btn btn-primary btn-sm" onclick="guardarRegistrosEnNube()">☁️ Guardar en la nube</button>
                 <button class="btn btn-sm" onclick="clearData()">🗑 Limpiar datos</button>
               </div>
             </div>
             <div class="card-body">
               <div class="alert alert-success" id="upload-success-msg"></div>
+              <!-- CALENDARIO: ver la información cargada un día puntual -->
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+                <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🔎 Ver información del día</span>
+                <input type="date" id="upload-ver-fecha" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" onchange="verRegistrosDelDia()">
+                <button class="btn btn-sm" onclick="document.getElementById('upload-ver-fecha').value=''; verRegistrosDelDia()">Ver toda la base</button>
+              </div>
             </div>
             <div class="table-wrap" id="preview-table-wrap"></div>
           </div>

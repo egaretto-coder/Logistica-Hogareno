@@ -7,6 +7,7 @@ const TARIFAS_CATEGORIAS = ['Muy cerca', 'Cerca', 'Intermedio', 'Lejos', 'Muy Le
 const PLANTILLA_TARIFAS_HEADERS = ['Zona', 'Categoría', 'S/ Colecta', 'C/ Colecta', 'SLA Cumplido'];
 
 function renderTarifas() {
+  actualizarBotonSuperposiciones('tarifas');
   const cont = document.getElementById('tarifas-rows');
   if (!cont) return;
 
@@ -129,7 +130,11 @@ function importTarifas(event) {
       const mapExist = {};
       AppData.tarifas.forEach((t, i) => { mapExist[String(t.zona).toUpperCase().trim()] = i; });
 
+      const resumenTarifa = t =>
+        (t.categoria || '—') + ' · S/C ' + fmtPeso(t.s_colecta) + ' · C/C ' + fmtPeso(t.c_colecta) + ' · SLA ' + fmtPeso(t.sla);
+
       let actualizados = 0, agregados = 0;
+      const sup = []; // zonas cuyos valores fueron reemplazados por la carga
       for (let i = hIdx + 1; i < rows.length; i++) {
         const r = rows[i];
         const zona = String(r[col.zona] || '').trim().toUpperCase();
@@ -141,10 +146,13 @@ function importTarifas(event) {
 
         if (mapExist[zona] !== undefined) {
           const t = AppData.tarifas[mapExist[zona]];
+          const antes = resumenTarifa(t);
           if (s   != null) t.s_colecta = s;
           if (c   != null) t.c_colecta = c;
           if (sla != null) t.sla = sla;
           if (cat) t.categoria = cat;
+          const despues = resumenTarifa(t);
+          if (antes !== despues) sup.push({ clave: zona, antes, despues });
           actualizados++;
         } else {
           AppData.tarifas.push({
@@ -157,10 +165,12 @@ function importTarifas(event) {
 
       if (!actualizados && !agregados) { alert('No se encontraron zonas válidas para importar.'); return; }
 
+      registrarSuperposiciones('tarifas', isoToDMY(hoyISO()), sup);
       AppData.tarifas.sort((a, b) => String(a.zona).localeCompare(String(b.zona)));
       saveTarifas();
       renderTarifas();
-      showToast('✅ Tarifario actualizado: ' + actualizados + ' zonas · ' + agregados + ' nuevas');
+      showToast('✅ Tarifario actualizado: ' + sup.length + ' zonas cambiaron de valor · ' + agregados + ' nuevas' +
+        (sup.length ? ' — revisá el botón ⚠' : ''));
     } catch (err) {
       console.error(err);
       alert('Error al importar: ' + err.message);
