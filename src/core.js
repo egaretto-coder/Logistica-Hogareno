@@ -228,6 +228,10 @@ let AppData = {
 
   // Configuración general (compartida en la nube).
   config: {},
+
+  // Permisos por pantalla y rol cargados de la nube (null = defaults del código).
+  // { administrativo: { pagina: true/false, ... } }
+  rolPermisos: null,
 };
 
 // Devuelve el registro de km de desvío de un conductor (o null).
@@ -453,6 +457,7 @@ const PAGE_TITLES = {
   'panel-conductores':  ['Panel de conductores', 'Condición, día de pago y categorización'],
   'dimensiones-especiales': ['Dimensiones Especiales', 'Trackings con condición y valor especial que reemplazan la tarifa'],
   'descuento-conductores': ['Descuento Conductores', 'Combustible, extraviados, adelantos y servicio proveedores por conductor'],
+  'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 
 function showToast(msg) {

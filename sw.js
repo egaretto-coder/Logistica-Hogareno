@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v16';
+const CACHE = 'liq-cache-v17';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -29,6 +29,7 @@ const APP_SHELL = [
   './src/panel-conductores.js',
   './src/dimensiones-especiales.js',
   './src/descuento-conductores.js',
+  './src/gestion-permisos.js',
   // Orquestación
   './app/main.js',
   // Componentes (HTML)
@@ -48,6 +49,7 @@ const APP_SHELL = [
   './pantallas/panel-conductores.html',
   './pantallas/dimensiones-especiales.html',
   './pantallas/descuento-conductores.html',
+  './pantallas/gestion-permisos.html',
   // Iconos
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',

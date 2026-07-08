@@ -48,7 +48,7 @@ const DB = {
   async loadAll() {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config] = await Promise.all([
+      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config, rolPerm] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -58,11 +58,13 @@ const DB = {
         this.selectAll('km_tarifas', 'vigente_desde'),
         this.selectAll('registros', 'id'),
         this.selectAll('config'),
+        this.selectAll('rol_permisos'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
         dimensiones_especiales: dim, descuentos_conductores: desc,
         km_desvio: km, km_tarifas: kmTar, registros, config,
+        rol_permisos: rolPerm,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);
@@ -100,6 +102,14 @@ const DB = {
     const { count, error } = await sb.from(table).select('*', { count: 'exact', head: true });
     if (error) throw error;
     return count || 0;
+  },
+
+  // Upsert de una fila puntual (ej: un toggle de rol_permisos).
+  // La RLS decide si el usuario tiene permiso.
+  async upsertRow(table, row) {
+    if (!sb) throw new Error('offline');
+    const { error } = await sb.from(table).upsert(row);
+    if (error) throw error;
   },
 
   // Inserta una fila (append) sin borrar el resto. Usado por el historial de

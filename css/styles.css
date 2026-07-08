@@ -696,3 +696,19 @@
   .filter-tab.active-semitit   { background: #fff8e1; color: #7a5c00; border-color: #ffe082; }
   .filter-tab.active-suplente  { background: #f3e8ff; color: #6b21a8; border-color: #d8b4fe; }
   .filter-tab.active-all       { background: var(--brand); color: white; border-color: var(--brand); }
+
+  /* ===== SWITCH (Gestión de permisos) ===== */
+  .switch { position: relative; display: inline-block; width: 42px; height: 23px; vertical-align: middle; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: #cbd5e1; border-radius: 999px; transition: background 0.18s;
+  }
+  .switch .slider:before {
+    content: ''; position: absolute; width: 17px; height: 17px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform 0.18s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  }
+  .switch input:checked + .slider { background: #10b981; }
+  .switch input:checked + .slider:before { transform: translateX(19px); }
+  .switch input:disabled + .slider { opacity: 0.55; cursor: not-allowed; }

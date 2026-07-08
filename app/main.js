@@ -7,7 +7,7 @@
 function showPage(id) {
   // Verificar permisos: si el usuario no puede ver esta página, redirigir a la primera permitida
   if (currentUser && !puedeVer(id)) {
-    const primera = ROL_PERMISOS[currentUser.rol].paginas[0];
+    const primera = paginasDeRol(currentUser.rol)[0] || 'liquidaciones';
     if (id !== primera) {
       showToast('⛔ Sin acceso a esa sección');
       return showPage(primera);
@@ -35,6 +35,7 @@ function showPage(id) {
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
+  if (id === 'gestion-permisos') renderGestionPermisos();
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -43,7 +44,8 @@ function showPage(id) {
 const PANTALLAS = [
   'dashboard', 'importar-datos', 'liquidaciones', 'conductores',
   'reporte-zona', 'reporte-conductor', 'tarifas', 'super-sla',
-  'panel-conductores', 'dimensiones-especiales', 'descuento-conductores'
+  'panel-conductores', 'dimensiones-especiales', 'descuento-conductores',
+  'gestion-permisos'
 ];
 
 async function fetchText(url) {

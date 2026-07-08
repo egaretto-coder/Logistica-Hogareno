@@ -123,6 +123,16 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from public.perfiles where id = auth.uid() and rol = 'analista');
 $$;
 
+-- ---------- ROL PERMISOS (panel "Gestión de permisos") ----------
+-- Qué pantallas ve cada rol (el analista siempre ve todo, no se persiste).
+create table if not exists public.rol_permisos (
+  rol text not null,
+  pagina text not null,
+  permitido boolean not null default true,
+  updated_at timestamptz not null default now(),
+  primary key (rol, pagina)
+);
+
 -- ---------- CONFIG (clave/valor compartida) ----------
 -- 'km_valor': tarifa fija en $ por km de desvío (el monto se calcula km × valor)
 create table if not exists public.config (
@@ -170,6 +180,13 @@ create policy dim_all       on public.dimensiones_especiales for all to authenti
 create policy desc_all      on public.descuentos_conductores for all to authenticated using (true) with check (true);
 create policy km_all        on public.km_desvio              for all to authenticated using (true) with check (true);
 create policy config_all    on public.config                 for all to authenticated using (true) with check (true);
+
+-- rol_permisos: todos leen; solo analista modifica.
+alter table public.rol_permisos enable row level security;
+create policy rol_permisos_select on public.rol_permisos for select to authenticated using (true);
+create policy rol_permisos_insert on public.rol_permisos for insert to authenticated with check (public.es_analista());
+create policy rol_permisos_update on public.rol_permisos for update to authenticated using (public.es_analista()) with check (public.es_analista());
+create policy rol_permisos_delete on public.rol_permisos for delete to authenticated using (public.es_analista());
 
 -- km_tarifas: todos leen; solo analista crea/edita/borra tarifas.
 alter table public.km_tarifas enable row level security;

@@ -23,6 +23,10 @@ function loadSavedConfig() {
   if (cfg) {
     try { AppData.config = JSON.parse(cfg) || {}; } catch(e) {}
   }
+  const rp = localStorage.getItem('liq_rol_permisos');
+  if (rp) {
+    try { const v = JSON.parse(rp); if (v) AppData.rolPermisos = v; } catch(e) {}
+  }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     const saved = JSON.parse(p);
@@ -119,6 +123,18 @@ async function hydrateFromSupabase() {
   AppData.config = {};
   (data.config || []).forEach(row => { AppData.config[row.clave] = row.valor; });
 
+  // Permisos por pantalla y rol (panel "Gestión de permisos").
+  // { administrativo: { pagina: true/false, ... }, ... } — analista no se persiste (ve todo).
+  if ((data.rol_permisos || []).length) {
+    AppData.rolPermisos = {};
+    data.rol_permisos.forEach(p => {
+      if (!AppData.rolPermisos[p.rol]) AppData.rolPermisos[p.rol] = {};
+      AppData.rolPermisos[p.rol][p.pagina] = !!p.permitido;
+    });
+  }
+  // Re-aplicar permisos con los datos frescos (sidebar puede cambiar)
+  if (typeof aplicarPermisos === 'function' && currentUser) aplicarPermisos();
+
   // Refrescar caché local para uso offline
   try {
     localStorage.setItem('liq_tarifas', JSON.stringify(AppData.tarifas));
@@ -129,6 +145,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
+    localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.

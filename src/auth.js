@@ -2,25 +2,11 @@
 // ═════════════ SISTEMA DE AUTENTICACIÓN Y ROLES ═════════════════════
 // ════════════════════════════════════════════════════════════════════════
 
-// Definición de usuarios y roles
-const USERS = [
-  {
-    usuario: 'e.garetto@logisticahogar.com',
-    password: 'logistica1',
-    rol: 'analista',
-    nombre: 'E. Garetto',
-    icono: '👑'
-  },
-  {
-    usuario: 'rodri',
-    password: 'rodri1',
-    rol: 'administrativo',
-    nombre: 'Rodri',
-    icono: '👤'
-  }
-];
-
-// Permisos por rol: qué páginas puede ver cada uno
+// Permisos por rol: qué páginas puede ver cada uno.
+// El ANALISTA siempre ve todo (esta lista define además el universo de
+// pantallas configurables). Los demás roles usan estos valores como DEFAULT,
+// pero si hay permisos guardados en la nube (panel "Gestión de permisos" →
+// tabla rol_permisos), mandan los de la nube. Ver paginasDeRol().
 const ROL_PERMISOS = {
   analista: {
     label: 'Analista — acceso total',
@@ -29,7 +15,8 @@ const ROL_PERMISOS = {
       'dashboard', 'upload', 'liquidaciones', 'conductores',
       'reporte-zona', 'reporte-conductor',
       'panel-conductores', 'config-tarifas', 'config-supersla',
-      'dimensiones-especiales', 'descuento-conductores'
+      'dimensiones-especiales', 'descuento-conductores',
+      'gestion-permisos'
     ]
   },
   administrativo: {
@@ -42,6 +29,22 @@ const ROL_PERMISOS = {
     ]
   }
 };
+
+// Pantallas configurables desde "Gestión de permisos" (todas menos el propio panel,
+// que es exclusivo del analista para no auto-bloquearse).
+function paginasConfigurables() {
+  return ROL_PERMISOS.analista.paginas.filter(p => p !== 'gestion-permisos');
+}
+
+// Páginas visibles para un rol, con los permisos dinámicos de la nube.
+function paginasDeRol(rol) {
+  const base = ROL_PERMISOS[rol];
+  if (!base) return [];
+  if (rol === 'analista') return base.paginas; // acceso total siempre
+  const dyn = AppData.rolPermisos && AppData.rolPermisos[rol];
+  if (!dyn) return base.paginas; // sin datos en la nube: defaults del código
+  return paginasConfigurables().filter(p => dyn[p] === true);
+}
 
 let currentUser = null;
 
@@ -137,13 +140,13 @@ function showApp() {
   aplicarPermisos();
 
   // Redirigir a la primera página permitida
-  const primeraPagina = perms.paginas[0];
+  const primeraPagina = paginasDeRol(currentUser.rol)[0] || 'liquidaciones';
   showPage(primeraPagina);
 }
 
 function aplicarPermisos() {
   if (!currentUser) return;
-  const permitidas = ROL_PERMISOS[currentUser.rol].paginas;
+  const permitidas = paginasDeRol(currentUser.rol);
 
   // Ocultar/mostrar items del sidebar
   document.querySelectorAll('.nav-item').forEach(btn => {
@@ -175,7 +178,7 @@ function aplicarPermisos() {
 
 function puedeVer(pagina) {
   if (!currentUser) return false;
-  return ROL_PERMISOS[currentUser.rol].paginas.includes(pagina);
+  return paginasDeRol(currentUser.rol).includes(pagina);
 }
 
 // ¿El usuario actual es analista? (permiso para editar tarifas sensibles, ej. km).

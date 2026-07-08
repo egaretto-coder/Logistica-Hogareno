@@ -1,0 +1,30 @@
+      <div id="page-gestion-permisos" class="page">
+
+        <div class="section-head">
+          <span class="section-title">🛡️ Gestión de permisos</span>
+          <span id="gp-estado" style="font-size:11px;color:var(--text-muted)"></span>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          🛡️ Prendé/apagá qué pantallas ve cada rol — <strong>se aplica al instante</strong> para todos los usuarios de ese rol.
+          El rol <strong>Analista ve todo siempre</strong> (no se puede recortar, para que nadie quede sin acceso al panel).
+          Solo un analista puede modificar estos permisos.
+        </div>
+
+        <!-- MATRIZ: PERMISOS POR PANTALLA -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <span class="card-title">Permisos por pantalla</span>
+            <span style="font-size:11px;color:var(--text-muted)">qué ve cada rol</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <div id="gp-matriz"></div>
+          </div>
+        </div>
+
+        <!-- GRUPOS POR ROL: usuarios asignados -->
+        <div id="gp-grupos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px"></div>
+
+      </div>
+
+      <!-- FIN GESTIÓN DE PERMISOS -->
