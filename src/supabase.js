@@ -48,7 +48,7 @@ const DB = {
   async loadAll() {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config, rolPerm] = await Promise.all([
+      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config, rolPerm, roles] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -59,12 +59,13 @@ const DB = {
         this.selectAll('registros', 'id'),
         this.selectAll('config'),
         this.selectAll('rol_permisos'),
+        this.selectAll('roles', 'created_at'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
         dimensiones_especiales: dim, descuentos_conductores: desc,
         km_desvio: km, km_tarifas: kmTar, registros, config,
-        rol_permisos: rolPerm,
+        rol_permisos: rolPerm, roles,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);
@@ -109,6 +110,20 @@ const DB = {
   async upsertRow(table, row) {
     if (!sb) throw new Error('offline');
     const { error } = await sb.from(table).upsert(row);
+    if (error) throw error;
+  },
+
+  // Borra las filas que matchean col = val. La RLS decide permisos.
+  async deleteWhere(table, col, val) {
+    if (!sb) throw new Error('offline');
+    const { error } = await sb.from(table).delete().eq(col, val);
+    if (error) throw error;
+  },
+
+  // Actualiza campos de una fila puntual por igualdad. La RLS decide permisos.
+  async updateWhere(table, col, val, campos) {
+    if (!sb) throw new Error('offline');
+    const { error } = await sb.from(table).update(campos).eq(col, val);
     if (error) throw error;
   },
 

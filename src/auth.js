@@ -37,13 +37,29 @@ function paginasConfigurables() {
 }
 
 // Páginas visibles para un rol, con los permisos dinámicos de la nube.
+// Funciona también para roles creados desde el panel (sin default en el código).
 function paginasDeRol(rol) {
-  const base = ROL_PERMISOS[rol];
-  if (!base) return [];
-  if (rol === 'analista') return base.paginas; // acceso total siempre
+  if (rol === 'analista') return ROL_PERMISOS.analista.paginas; // acceso total siempre
   const dyn = AppData.rolPermisos && AppData.rolPermisos[rol];
-  if (!dyn) return base.paginas; // sin datos en la nube: defaults del código
-  return paginasConfigurables().filter(p => dyn[p] === true);
+  if (dyn) return paginasConfigurables().filter(p => dyn[p] === true);
+  const base = ROL_PERMISOS[rol];
+  return base ? base.paginas : []; // rol nuevo sin permisos aún: nada visible
+}
+
+// Datos visuales de un rol (label/color/emoji): primero los de la nube
+// (roles creados desde el panel), después los defaults del código.
+function rolInfo(rol) {
+  const dyn = (AppData.roles || []).find(r => r.rol === rol);
+  if (dyn) {
+    return {
+      label: dyn.label + (rol === 'analista' ? ' — acceso total' : ''),
+      color: dyn.color || '#6366f1',
+      emoji: dyn.emoji || '👥'
+    };
+  }
+  const base = ROL_PERMISOS[rol];
+  if (base) return { label: base.label, color: base.color, emoji: '👥' };
+  return { label: rol, color: '#6366f1', emoji: '👥' };
 }
 
 let currentUser = null;
@@ -126,7 +142,7 @@ function showApp() {
   const roleTxt = document.getElementById('user-role-txt');
   const iconEl = document.getElementById('user-icon');
   const logoutBtn = document.getElementById('logout-btn');
-  const perms = ROL_PERMISOS[currentUser.rol];
+  const perms = rolInfo(currentUser.rol);
 
   if (badge) badge.style.display = 'block';
   if (logoutBtn) logoutBtn.style.display = 'block';

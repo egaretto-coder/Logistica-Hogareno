@@ -27,6 +27,10 @@ function loadSavedConfig() {
   if (rp) {
     try { const v = JSON.parse(rp); if (v) AppData.rolPermisos = v; } catch(e) {}
   }
+  const rl = localStorage.getItem('liq_roles');
+  if (rl) {
+    try { const v = JSON.parse(rl); if (v) AppData.roles = v; } catch(e) {}
+  }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     const saved = JSON.parse(p);
@@ -132,6 +136,14 @@ async function hydrateFromSupabase() {
       AppData.rolPermisos[p.rol][p.pagina] = !!p.permitido;
     });
   }
+
+  // Roles del sistema + creados desde el panel
+  if ((data.roles || []).length) {
+    AppData.roles = data.roles.map(r => ({
+      rol: r.rol, label: r.label || r.rol, emoji: r.emoji || '👥',
+      color: r.color || '#6366f1', es_sistema: !!r.es_sistema
+    }));
+  }
   // Re-aplicar permisos con los datos frescos (sidebar puede cambiar)
   if (typeof aplicarPermisos === 'function' && currentUser) aplicarPermisos();
 
@@ -146,6 +158,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
     localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));
+    localStorage.setItem('liq_roles', JSON.stringify(AppData.roles || null));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.

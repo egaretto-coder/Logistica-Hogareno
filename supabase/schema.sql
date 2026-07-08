@@ -123,6 +123,18 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from public.perfiles where id = auth.uid() and rol = 'analista');
 $$;
 
+-- ---------- ROLES (dinámicos, creados desde el panel) ----------
+-- 'analista' y 'administrativo' son de sistema (es_sistema=true, no borrables).
+-- perfiles.rol referencia esta tabla por FK. Solo analista crea/edita/borra.
+create table if not exists public.roles (
+  rol text primary key,
+  label text not null default '',
+  emoji text default '👥',
+  color text default '#6366f1',
+  es_sistema boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 -- ---------- ROL PERMISOS (panel "Gestión de permisos") ----------
 -- Qué pantallas ve cada rol (el analista siempre ve todo, no se persiste).
 create table if not exists public.rol_permisos (
@@ -171,7 +183,9 @@ alter table public.km_desvio               enable row level security;
 alter table public.registros               enable row level security;
 
 create policy perfiles_select on public.perfiles for select to authenticated using (true);
-create policy perfiles_update_own on public.perfiles for update to authenticated using (auth.uid() = id) with check (auth.uid() = id);
+-- OJO: no crear una policy de "editar el propio perfil": permitiría que un
+-- usuario se cambie su propio rol (escalada de privilegios). Los perfiles
+-- solo los modifica un analista (perfiles_update_analista, más abajo).
 
 create policy tarifas_all   on public.tarifas                for all to authenticated using (true) with check (true);
 create policy super_sla_all on public.super_sla              for all to authenticated using (true) with check (true);
@@ -180,6 +194,16 @@ create policy dim_all       on public.dimensiones_especiales for all to authenti
 create policy desc_all      on public.descuentos_conductores for all to authenticated using (true) with check (true);
 create policy km_all        on public.km_desvio              for all to authenticated using (true) with check (true);
 create policy config_all    on public.config                 for all to authenticated using (true) with check (true);
+
+-- roles: todos leen; solo analista modifica (los de sistema no se borran).
+alter table public.roles enable row level security;
+create policy roles_select on public.roles for select to authenticated using (true);
+create policy roles_insert on public.roles for insert to authenticated with check (public.es_analista());
+create policy roles_update on public.roles for update to authenticated using (public.es_analista()) with check (public.es_analista());
+create policy roles_delete on public.roles for delete to authenticated using (public.es_analista() and es_sistema = false);
+
+-- perfiles: un analista puede actualizar cualquier perfil (asignar roles desde el panel)
+create policy perfiles_update_analista on public.perfiles for update to authenticated using (public.es_analista()) with check (public.es_analista());
 
 -- rol_permisos: todos leen; solo analista modifica.
 alter table public.rol_permisos enable row level security;

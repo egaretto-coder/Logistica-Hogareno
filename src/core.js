@@ -232,6 +232,10 @@ let AppData = {
   // Permisos por pantalla y rol cargados de la nube (null = defaults del código).
   // { administrativo: { pagina: true/false, ... } }
   rolPermisos: null,
+
+  // Roles disponibles (de sistema + creados desde el panel). null = defaults.
+  // [{ rol, label, emoji, color, es_sistema }]
+  roles: null,
 };
 
 // Devuelve el registro de km de desvío de un conductor (o null).
