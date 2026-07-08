@@ -70,6 +70,8 @@ function calcLiquidacionesFiltradas() {
         const p = getPrecio(cond, zona);
         precio=p.precio; tipo=p.tipo; es_super=p.es_super; sin_tarifa=p.sin_tarifa;
       }
+      // Corrección manual del operador (pantalla Conductores): pisa todo cálculo.
+      if (precioManualDe(r) !== null) { precio = precioManualDe(r); tipo = 'manual'; sin_tarifa = false; }
       liqBase[cond].total += precio;
       liqBase[cond].filas.push({
         tracking: r.tracking, zona, zona_precio: r.zona_precio||'', fecha: r.fecha, estado: r.estado,
@@ -106,8 +108,9 @@ function renderLiquidaciones() {
     if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond };
     if (contabiliza) {
       const p = getPrecio(cond, zona);
-      liqBase[cond].total += p.precio;
-      liqBase[cond].filas.push({ zona, precio: p.precio, subtotal: p.precio, tipo: p.tipo, es_super: p.es_super });
+      const precio = precioManualDe(r) !== null ? precioManualDe(r) : p.precio;
+      liqBase[cond].total += precio;
+      liqBase[cond].filas.push({ zona, precio, subtotal: precio, tipo: p.tipo, es_super: p.es_super });
     } else {
       liqBase[cond].filas_excluidas.push({ zona, estado: r.estado });
     }

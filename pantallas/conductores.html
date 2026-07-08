@@ -1,15 +1,40 @@
       <div id="page-conductores" class="page">
         <div class="section-head">
-          <span class="section-title">Detalle de conductor</span>
-          <select id="cond-select" onchange="renderConductorDetail()" style="width:200px;">
-            <option value="">Seleccionar conductor...</option>
-          </select>
+          <span class="section-title">Control y edición de conductor</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span id="cond-edit-estado" style="font-size:11px;color:var(--text-muted)"></span>
+            <button class="btn btn-sm btn-primary" id="cond-guardar-btn" onclick="guardarEdicionConductores()" style="display:none">💾 Guardar en la nube</button>
+          </div>
         </div>
+
+        <div class="alert alert-info" style="margin-bottom:12px">
+          ✏️ Acá podés <strong>corregir a mano</strong> los recorridos antes de descargar la liquidación: tracking, zona, precio y si <strong>contabiliza o no</strong> (entregado / no entregado). Las correcciones se guardan en la nube y se reflejan en la liquidación y el PDF.
+        </div>
+
+        <!-- FILTROS: conductor + rango de fechas -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🚗 Conductor</span>
+              <select id="cond-select" onchange="renderConductorDetail()" style="width:220px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <option value="">Seleccionar conductor...</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 Desde</span>
+              <input type="date" id="cond-fecha-desde" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Hasta</span>
+              <input type="date" id="cond-fecha-hasta" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+              <button class="btn btn-sm" onclick="document.getElementById('cond-fecha-desde').value='';document.getElementById('cond-fecha-hasta').value='';renderConductorDetail()">Todas las fechas</button>
+            </div>
+          </div>
+        </div>
+
         <div id="conductor-detail-wrap">
           <div class="empty-state">
             <div class="empty-icon">🚗</div>
             <div class="empty-title">Seleccioná un conductor</div>
-            <div class="empty-sub">Verás el detalle completo de sus recorridos y liquidación</div>
+            <div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div>
           </div>
         </div>
       </div>

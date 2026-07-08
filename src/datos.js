@@ -107,8 +107,13 @@ async function hydrateFromSupabase() {
   AppData.records = (data.registros || []).map(r => ({
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-    estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || ''
+    estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+    // null = sin corrección; número = precio corregido a mano por el operador
+    precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
   }));
+  // Cuántos registros tenía la nube cuando nos sincronizamos por última vez.
+  // Se usa como guarda anti-pisadas al guardar (ver guardarRegistrosEnNube).
+  AppData._registrosNubeCount = AppData.records.length;
 
   // Configuración clave/valor (genérica)
   AppData.config = {};
@@ -199,20 +204,41 @@ async function agregarTarifaKm(valor) {
 }
 
 // Guarda los registros importados (entregas) en Supabase.
+// Devuelve true si se sincronizó, false si falló (offline o error).
 async function guardarRegistrosEnNube() {
-  if (!window.DB || !DB.ready) { showToast('Sin conexión: registros guardados solo localmente'); return; }
+  if (!window.DB || !DB.ready) { showToast('Sin conexión: registros guardados solo localmente'); return false; }
   const rows = AppData.records.map(r => ({
     cadete: r.cadete || '', tracking: r.tracking || '', fecha: r.fecha || '',
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
-    estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || ''
+    estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+    precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : _num(r.precio_manual)
   }));
   try {
+    // GUARDA ANTI-PISADAS: si otro usuario/pestaña cargó datos en la nube desde
+    // nuestra última sincronización, NO reemplazamos (borraría lo del otro).
+    // En su lugar rehidratamos y pedimos rehacer el cambio sobre la base fresca.
+    if (AppData._registrosNubeCount !== undefined) {
+      const enNube = await DB.count('registros');
+      if (enNube !== AppData._registrosNubeCount) {
+        showToast('⚠️ La base cambió en la nube (otra carga en paralelo). Actualizando…');
+        await hydrateFromSupabase();
+        if (typeof renderConductorDetail === 'function' &&
+            document.getElementById('page-conductores')?.classList.contains('active')) {
+          renderConductorDetail();
+        }
+        showToast('⚠️ Base actualizada. Revisá y volvé a aplicar tu cambio.');
+        return false;
+      }
+    }
     showToast('Guardando ' + rows.length + ' registros en la nube…');
     await DB.replaceAll('registros', rows);
+    AppData._registrosNubeCount = rows.length;
     showToast('✅ ' + rows.length + ' registros guardados en la nube');
+    return true;
   } catch(e) {
     console.warn('guardarRegistrosEnNube:', e);
     showToast('⚠️ No se pudieron guardar los registros en la nube: ' + (e.message || e));
+    return false;
   }
 }
 

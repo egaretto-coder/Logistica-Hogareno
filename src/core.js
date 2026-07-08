@@ -372,6 +372,13 @@ function calcLiquidaciones() {
         sin_tarifa = p.sin_tarifa;
       }
 
+      // Corrección manual del operador (pantalla Conductores): pisa todo cálculo.
+      if (precioManualDe(r) !== null) {
+        precio = precioManualDe(r);
+        tipo = 'manual';
+        sin_tarifa = false;
+      }
+
       const subtotal = precio;
 
       byDriver[cond].filas.push({
@@ -397,11 +404,19 @@ function findDimensionEspecial(tracking) {
   ) || null;
 }
 
+// Devuelve el precio corregido a mano de un registro, o null si no tiene.
+function precioManualDe(r) {
+  if (!r || r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') return null;
+  const n = parseFloat(r.precio_manual);
+  return isNaN(n) ? null : n;
+}
+
 function tipoLabel(t) {
   if (t === 'c_colecta') return 'C/ Colecta';
   if (t === 's_colecta') return 'S/ Colecta';
   if (t === 'sla') return 'SLA Cumplido';
   if (t === 'dim_especial') return 'Dimensión Especial';
+  if (t === 'manual') return 'Corregido manual';
   return t || '—';
 }
 

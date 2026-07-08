@@ -324,8 +324,9 @@ function renderDashboard() {
     if (!liqFecha[cond]) liqFecha[cond] = { total: 0, filas: [], filas_excluidas: [] };
     if (contabiliza) {
       const p = getPrecio(cond, zona);
-      liqFecha[cond].total += p.precio;
-      liqFecha[cond].filas.push({ zona, precio: p.precio });
+      const precio = precioManualDe(r) !== null ? precioManualDe(r) : p.precio;
+      liqFecha[cond].total += precio;
+      liqFecha[cond].filas.push({ zona, precio });
     } else {
       liqFecha[cond].filas_excluidas.push({ zona, estado: r.estado });
     }

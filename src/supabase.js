@@ -94,6 +94,14 @@ const DB = {
     if (error) throw error;
   },
 
+  // Cantidad de filas de una tabla (sin traer datos).
+  async count(table) {
+    if (!sb) throw new Error('offline');
+    const { count, error } = await sb.from(table).select('*', { count: 'exact', head: true });
+    if (error) throw error;
+    return count || 0;
+  },
+
   // Inserta una fila (append) sin borrar el resto. Usado por el historial de
   // tarifas de km, que NO debe reemplazarse (cada cambio queda registrado).
   // La RLS decide si el usuario tiene permiso (solo analista para km_tarifas).

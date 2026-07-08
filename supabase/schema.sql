@@ -143,6 +143,7 @@ create table if not exists public.registros (
   estado text default '',
   precio_bd numeric default 0,
   carga_fecha text default '', -- día (DD/MM/YYYY) en que se importó el registro
+  precio_manual numeric,       -- corrección manual del operador; pisa el precio calculado
   created_at timestamptz not null default now()
 );
 
