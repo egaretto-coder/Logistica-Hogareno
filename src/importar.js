@@ -207,9 +207,13 @@ function processUpload() {
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
     `${diasFueraDeRango ? `<br>⚠️ ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
-    ` La base total queda en <strong>${AppData.records.length}</strong> registros.`;
+    ` La base total queda en <strong>${AppData.records.length}</strong> registros. ☁️ Guardando en la nube…`;
 
   renderDashboard();
+
+  // Guardado automático: la base fusionada se sincroniza sola con la nube.
+  // Si falla (sin conexión), el botón "☁️ Guardar en la nube" sirve de reintento.
+  guardarRegistrosEnNube();
 }
 
 // Dibuja la tabla de vista previa para una lista de registros.

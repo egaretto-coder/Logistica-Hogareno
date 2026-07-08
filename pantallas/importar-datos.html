@@ -16,7 +16,7 @@
             <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px">
               <span style="font-size:13px;font-weight:600">📅 Fecha de carga</span>
               <input type="date" id="upload-fecha-carga" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
-              <span style="font-size:11px;color:var(--text-muted)">La importación queda registrada con este día. Si un tracking ya existía, la información nueva <strong>reemplaza</strong> a la anterior.</span>
+              <span style="font-size:11px;color:var(--text-muted)">La importación queda registrada con este día. Si un tracking ya existía, la información nueva <strong>reemplaza</strong> a la anterior. Al procesar, la base se <strong>guarda sola en la nube</strong>.</span>
             </div>
 
             <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -48,7 +48,7 @@
               <span class="card-title" id="preview-title">Vista previa</span>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button class="btn btn-sm" id="alerta-sup-registros" style="display:none;border-color:#f5d97a;background:#fff8e1;color:#7a5c00;font-weight:600" onclick="mostrarSuperposiciones('registros')">⚠ Superposiciones</button>
-                <button class="btn btn-primary btn-sm" onclick="guardarRegistrosEnNube()">☁️ Guardar en la nube</button>
+                <button class="btn btn-primary btn-sm" onclick="guardarRegistrosEnNube()" title="El guardado es automático al importar; usá este botón solo si falló la sincronización">☁️ Reintentar guardado en la nube</button>
                 <button class="btn btn-sm" onclick="clearData()">🗑 Limpiar datos</button>
               </div>
             </div>
