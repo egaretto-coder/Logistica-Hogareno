@@ -236,6 +236,10 @@ let AppData = {
   // Roles disponibles (de sistema + creados desde el panel). null = defaults.
   // [{ rol, label, emoji, color, es_sistema }]
   roles: null,
+
+  // true cuando se trajo TODO el historial de registros (por defecto la app
+  // carga solo la ventana reciente — ver VENTANA_DIAS_REGISTROS en datos.js).
+  historialCompleto: false,
 };
 
 // Devuelve el registro de km de desvío de un conductor (o null).

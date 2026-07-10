@@ -139,6 +139,9 @@ function renderConductorDetail() {
     </div>`;
 }
 
+// Ids (de nube) de los registros editados y aún no sincronizados.
+const condEditIdsSucios = new Set();
+
 // Aplica una edición a un registro y programa el guardado automático.
 function editarRegistroConductor(idx, campo, valor) {
   const r = AppData.records[idx];
@@ -150,10 +153,12 @@ function editarRegistroConductor(idx, campo, valor) {
     const v = String(valor).trim();
     r.precio_manual = v === '' ? null : (parseFloat(v) || 0);
   }
+  if (r.id) condEditIdsSucios.add(r.id);
+  else console.warn('Registro sin id de nube (no se podrá sincronizar):', r.tracking);
   condEditPendientes = true;
   actualizarEstadoEdicion('Cambios sin guardar…');
   renderConductorDetail();
-  // Autoguardado con espera corta: agrupa varias ediciones en un solo push.
+  // Autoguardado con espera corta: agrupa varias ediciones en un solo guardado.
   clearTimeout(condEditTimer);
   condEditTimer = setTimeout(guardarEdicionConductores, 2500);
 }
@@ -165,17 +170,35 @@ function actualizarEstadoEdicion(txt) {
   if (btn) btn.style.display = condEditPendientes ? '' : 'none';
 }
 
+// Sincroniza SOLO las filas editadas (update por id) — no reescribe la base.
 async function guardarEdicionConductores() {
-  if (!condEditPendientes) return;
+  if (!condEditPendientes || !condEditIdsSucios.size) return;
   clearTimeout(condEditTimer);
+  if (!window.DB || !DB.ready) { actualizarEstadoEdicion('⚠️ Sin conexión — reintentá con el botón'); return; }
   actualizarEstadoEdicion('☁️ Guardando…');
-  const ok = await guardarRegistrosEnNube();
-  if (ok) {
+  const ids = Array.from(condEditIdsSucios);
+  let fallos = 0;
+  for (const id of ids) {
+    const r = AppData.records.find(x => x.id === id);
+    if (!r) { condEditIdsSucios.delete(id); continue; }
+    try {
+      await DB.updateWhere('registros', 'id', id, {
+        tracking: r.tracking || '', zona: r.zona || '', estado: r.estado || '',
+        fecha_date: fechaISOde(r.fecha),
+        precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : parseFloat(r.precio_manual)
+      });
+      condEditIdsSucios.delete(id);
+    } catch (e) {
+      console.warn('No se pudo guardar la fila ' + id + ':', e);
+      fallos++;
+    }
+  }
+  if (!fallos) {
     condEditPendientes = false;
     const h = new Date();
     actualizarEstadoEdicion('✓ Guardado ' + String(h.getHours()).padStart(2,'0') + ':' + String(h.getMinutes()).padStart(2,'0'));
   } else {
-    actualizarEstadoEdicion('⚠️ No se pudo guardar — reintentá con el botón');
+    actualizarEstadoEdicion('⚠️ ' + fallos + ' cambio(s) sin guardar — reintentá con el botón');
   }
 }
 

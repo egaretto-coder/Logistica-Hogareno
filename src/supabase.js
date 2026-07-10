@@ -43,9 +43,28 @@ const DB = {
     return out;
   },
 
-  // Trae TODAS las tablas de configuración + registros en paralelo.
+  // Registros dentro de una ventana de días (server-side, por fecha_date).
+  // Incluye los sin fecha parseable (fecha_date null) por seguridad.
+  // desdeISO null = traer todo el historial.
+  async selectRegistrosVentana(desdeISO) {
+    const PAGE = 1000;
+    let from = 0, out = [];
+    for (;;) {
+      let q = sb.from('registros').select('*').order('id').range(from, from + PAGE - 1);
+      if (desdeISO) q = q.or('fecha_date.gte.' + desdeISO + ',fecha_date.is.null');
+      const { data, error } = await q;
+      if (error) throw error;
+      out = out.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return out;
+  },
+
+  // Trae TODAS las tablas de configuración + los registros de la ventana.
   // Devuelve null si no hay conexión (para que la app use el caché local).
-  async loadAll() {
+  // desdeISO: límite inferior de fecha para registros (null = todo).
+  async loadAll(desdeISO) {
     if (!sb) return null;
     try {
       const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config, rolPerm, roles] = await Promise.all([
@@ -56,7 +75,7 @@ const DB = {
         this.selectAll('descuentos_conductores'),
         this.selectAll('km_desvio'),
         this.selectAll('km_tarifas', 'vigente_desde'),
-        this.selectAll('registros', 'id'),
+        this.selectRegistrosVentana(desdeISO),
         this.selectAll('config'),
         this.selectAll('rol_permisos'),
         this.selectAll('roles', 'created_at'),
@@ -118,6 +137,28 @@ const DB = {
     if (!sb) throw new Error('offline');
     const { error } = await sb.from(table).delete().eq(col, val);
     if (error) throw error;
+  },
+
+  // Borra las filas cuyo col esté en la lista (en lotes de 200 para no
+  // exceder el largo de URL de PostgREST).
+  async deleteIn(table, col, valores) {
+    if (!sb) throw new Error('offline');
+    for (let i = 0; i < valores.length; i += 200) {
+      const { error } = await sb.from(table).delete().in(col, valores.slice(i, i + 200));
+      if (error) throw error;
+    }
+  },
+
+  // Inserta filas en lotes y devuelve los ids generados (en el mismo orden).
+  async insertRows(table, rows) {
+    if (!sb) throw new Error('offline');
+    const ids = [];
+    for (let i = 0; i < rows.length; i += 500) {
+      const { data, error } = await sb.from(table).insert(rows.slice(i, i + 500)).select('id');
+      if (error) throw error;
+      (data || []).forEach(d => ids.push(d.id));
+    }
+    return ids;
   },
 
   // Actualiza campos de una fila puntual por igualdad. La RLS decide permisos.

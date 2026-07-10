@@ -366,7 +366,9 @@ function renderDashboard() {
   document.getElementById('metric-promedio-sub').textContent = conductores.length + ' conductores en el período';
   document.getElementById('metric-panel-total').textContent = AppData.panelConductores.length;
   document.getElementById('sidebar-conductor-count').textContent = conductores.length + ' conductores';
-  document.getElementById('sidebar-record-count').textContent = AppData.records.length ? (AppData.records.length + ' registros') : 'Sin datos cargados';
+  document.getElementById('sidebar-record-count').textContent = AppData.records.length
+    ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
+    : 'Sin datos cargados';
   document.getElementById('no-data-alert').style.display = AppData.records.length ? 'none' : 'flex';
 
   // Panel conductores por condición (pasa liqFecha para usar el período)

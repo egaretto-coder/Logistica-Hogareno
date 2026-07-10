@@ -166,8 +166,10 @@ create table if not exists public.registros (
   precio_bd numeric default 0,
   carga_fecha text default '', -- día (DD/MM/YYYY) en que se importó el registro
   precio_manual numeric,       -- corrección manual del operador; pisa el precio calculado
+  fecha_date date,             -- fecha real (la calcula la app desde 'fecha'); permite cargar por ventana en el servidor
   created_at timestamptz not null default now()
 );
+create index if not exists idx_registros_fecha_date on public.registros (fecha_date);
 
 -- ============================================================
 -- RLS: acceso completo para usuarios autenticados.

@@ -140,6 +140,13 @@ function processUpload() {
     return;
   }
 
+  // No fusionar contra una base a medio cargar: se detectarían mal las
+  // superposiciones. (La nube igual queda protegida por el guardado quirúrgico.)
+  if (AppData._hidratando) {
+    alert('La base todavía se está cargando desde la nube. Esperá unos segundos y volvé a presionar "Procesar datos".');
+    return;
+  }
+
   AppData.mappings = mapping;
 
   // Fecha de carga elegida en el calendario (default: hoy). Cada registro
@@ -211,10 +218,10 @@ function processUpload() {
 
   renderDashboard();
 
-  // Guardado automático: la base fusionada se sincroniza sola con la nube.
-  // Al terminar se actualiza el banner (antes quedaba "Guardando…" para siempre).
-  // Si falla, el botón "☁️ Reintentar guardado en la nube" sirve de reintento.
-  guardarRegistrosEnNube().then(ok => {
+  // Guardado automático QUIRÚRGICO: solo se borran/insertan en la nube los
+  // trackings de ESTA carga (no se reescribe la base entera — con ~2.000
+  // registros diarios eso no escala). El banner refleja el resultado.
+  guardarImportacionEnNube(nuevos).then(ok => {
     const est = document.getElementById('upload-nube-estado');
     if (est) est.innerHTML = ok
       ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
@@ -268,6 +275,8 @@ async function clearData() {
   AppData.records = [];
   AppData.rawHeaders = [];
   AppData.rawRows = [];
+  AppData.historialCompleto = false;
+  importPendiente = null;
   document.getElementById('upload-preview').style.display = 'none';
   document.getElementById('file-input').value = '';
   if (window.DB && DB.ready) {
