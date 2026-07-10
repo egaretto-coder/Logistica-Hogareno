@@ -207,13 +207,19 @@ function processUpload() {
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
     `${diasFueraDeRango ? `<br>⚠️ ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
-    ` La base total queda en <strong>${AppData.records.length}</strong> registros. ☁️ Guardando en la nube…`;
+    ` La base total queda en <strong>${AppData.records.length}</strong> registros. <span id="upload-nube-estado">☁️ Guardando en la nube…</span>`;
 
   renderDashboard();
 
   // Guardado automático: la base fusionada se sincroniza sola con la nube.
-  // Si falla (sin conexión), el botón "☁️ Guardar en la nube" sirve de reintento.
-  guardarRegistrosEnNube();
+  // Al terminar se actualiza el banner (antes quedaba "Guardando…" para siempre).
+  // Si falla, el botón "☁️ Reintentar guardado en la nube" sirve de reintento.
+  guardarRegistrosEnNube().then(ok => {
+    const est = document.getElementById('upload-nube-estado');
+    if (est) est.innerHTML = ok
+      ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
+      : '<strong style="color:#b91c1c">⚠️ No se pudo guardar en la nube — usá el botón "Reintentar".</strong>';
+  });
 }
 
 // Dibuja la tabla de vista previa para una lista de registros.

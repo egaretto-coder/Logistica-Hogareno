@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v18';
+const CACHE = 'liq-cache-v19';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -68,10 +68,14 @@ self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(APP_SHELL);
-    // Los CDN pueden fallar por CORS; no bloqueamos la instalación por eso.
-    await Promise.allSettled(
-      CDN_ASSETS.map((url) => cache.add(new Request(url, { mode: 'no-cors' })))
-    );
+    // CDNs (librerías versionadas, varios MB): si ya están en un caché anterior,
+    // se copian en lugar de re-descargarse — instala en segundos, no en minutos.
+    // Pueden fallar por CORS; no bloqueamos la instalación por eso.
+    await Promise.allSettled(CDN_ASSETS.map(async (url) => {
+      const previa = await caches.match(url);
+      if (previa) { await cache.put(url, previa); return; }
+      await cache.add(new Request(url, { mode: 'no-cors' }));
+    }));
     self.skipWaiting();
   })());
 });
@@ -81,13 +85,9 @@ self.addEventListener('activate', (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
-    // Rescatar pestañas abiertas: recargarlas para que tomen la versión nueva
-    // (network-first). Así una actualización nunca queda "pegada" a la versión
-    // vieja cacheada, sin que el usuario tenga que limpiar nada a mano.
-    const windows = await self.clients.matchAll({ type: 'window' });
-    for (const c of windows) {
-      try { await c.navigate(c.url); } catch (e) { /* algunos navegadores lo restringen */ }
-    }
+    // NO recargamos pestañas a la fuerza: con network-first el código propio ya
+    // llega fresco en la próxima navegación. La recarga forzada (clients.navigate)
+    // provocaba cargas dobles/triples y la sensación de "siempre cargando".
   })());
 });
 
