@@ -36,6 +36,7 @@ function showPage(id) {
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
   if (id === 'gestion-permisos') renderGestionPermisos();
+  if (id === 'upload') renderArchivoPanel();
 }
 
 // ════════════════════════════════════════════════════════════════════════

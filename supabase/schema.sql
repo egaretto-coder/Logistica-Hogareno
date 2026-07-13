@@ -171,6 +171,46 @@ create table if not exists public.registros (
 );
 create index if not exists idx_registros_fecha_date on public.registros (fecha_date);
 
+-- ---------- REGISTROS_HISTORICO (archivo de registros ya liquidados) ----------
+-- Mantiene liviana la tabla principal. Los mueve la función archivar_registros
+-- (transaccional, solo analistas). La app los lee como solo lectura.
+create table if not exists public.registros_historico (
+  id bigint generated always as identity primary key,
+  id_original bigint,
+  cadete text default '',
+  tracking text default '',
+  fecha text default '',
+  localidad text default '',
+  zona text default '',
+  zona_precio text default '',
+  estado text default '',
+  precio_bd numeric default 0,
+  carga_fecha text default '',
+  fecha_date date,
+  precio_manual numeric,
+  created_at timestamptz,
+  archivado_en timestamptz not null default now()
+);
+create index if not exists idx_reg_hist_fecha_date on public.registros_historico (fecha_date);
+create index if not exists idx_reg_hist_tracking on public.registros_historico (tracking);
+
+-- Mueve a histórico los registros con fecha anterior al corte (delete+insert
+-- en una sola transacción). Solo analistas. Devuelve la cantidad movida.
+create or replace function public.archivar_registros(antes_de date)
+returns integer language plpgsql security definer set search_path = public as $$
+declare movidos integer;
+begin
+  if not public.es_analista() then raise exception 'Solo un analista puede archivar registros'; end if;
+  with mov as (
+    delete from public.registros r where r.fecha_date is not null and r.fecha_date < antes_de returning r.*
+  )
+  insert into public.registros_historico
+    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, created_at)
+  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, created_at from mov;
+  get diagnostics movidos = row_count;
+  return movidos;
+end $$;
+
 -- ============================================================
 -- RLS: acceso completo para usuarios autenticados.
 -- (El control por rol analista/administrativo se aplica en la UI.)
@@ -221,3 +261,7 @@ create policy km_tarifas_insert on public.km_tarifas for insert to authenticated
 create policy km_tarifas_update on public.km_tarifas for update to authenticated using (public.es_analista()) with check (public.es_analista());
 create policy km_tarifas_delete on public.km_tarifas for delete to authenticated using (public.es_analista());
 create policy registros_all on public.registros              for all to authenticated using (true) with check (true);
+
+-- registros_historico: solo lectura desde la app (lo escribe archivar_registros).
+alter table public.registros_historico enable row level security;
+create policy reg_hist_select on public.registros_historico for select to authenticated using (true);

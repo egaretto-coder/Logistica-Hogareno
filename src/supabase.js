@@ -61,6 +61,31 @@ const DB = {
     return out;
   },
 
+  // Trae todos los registros archivados (tabla registros_historico).
+  async selectHistorico() {
+    const PAGE = 1000;
+    let from = 0, out = [];
+    for (;;) {
+      const { data, error } = await sb.from('registros_historico')
+        .select('*').order('id').range(from, from + PAGE - 1);
+      if (error) throw error;
+      out = out.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return out;
+  },
+
+  // Mueve a histórico los registros con fecha anterior a antesDeISO.
+  // Es transaccional en el servidor (función archivar_registros). Solo analista.
+  // Devuelve la cantidad de registros archivados.
+  async archivarRegistros(antesDeISO) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.rpc('archivar_registros', { antes_de: antesDeISO });
+    if (error) throw error;
+    return data || 0;
+  },
+
   // Trae TODAS las tablas de configuración + los registros de la ventana.
   // Devuelve null si no hay conexión (para que la app use el caché local).
   // desdeISO: límite inferior de fecha para registros (null = todo).

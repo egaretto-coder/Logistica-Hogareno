@@ -26,6 +26,35 @@
           </div>
         </div>
 
+        <!-- ARCHIVO HISTÓRICO (solo analista) -->
+        <div class="card" id="archivo-panel" style="margin-bottom:16px;display:none">
+          <div class="card-header"><span class="card-title">🗄️ Archivo histórico</span></div>
+          <div class="card-body">
+            <div class="alert alert-info" style="margin-bottom:12px">
+              Mové los registros ya liquidados y antiguos a un <strong>archivo histórico</strong> para mantener la app rápida.
+              Los archivados <strong>no</strong> se cargan en el día a día, pero siguen disponibles con el botón
+              “📥 Cargar historial completo” del Dashboard (como solo lectura). Es una operación segura y transaccional.
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 16px">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">Registros activos</div>
+                <div id="arch-count-activos" style="font-size:20px;font-weight:700">—</div>
+              </div>
+              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 16px">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">Archivados</div>
+                <div id="arch-count-historico" style="font-size:20px;font-weight:700;color:#6b7280">—</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:600">Archivar registros anteriores a</span>
+              <input type="date" id="arch-fecha" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <button class="btn btn-sm btn-primary" onclick="ejecutarArchivado()">🗄️ Archivar</button>
+              <span id="arch-estado" style="font-size:11px;color:var(--text-muted)"></span>
+            </div>
+            <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Sugerencia: archivá lo anterior a hace 6–12 meses. Los registros de esa fecha en adelante quedan intactos.</div>
+          </div>
+        </div>
+
         <div id="column-mapper" style="display:none">
           <div class="card">
             <div class="card-header">

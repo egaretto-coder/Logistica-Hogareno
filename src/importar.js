@@ -18,6 +18,46 @@ function initImportar() {
   });
 }
 
+// Muestra/actualiza el panel de archivo histórico (solo para analistas).
+async function renderArchivoPanel() {
+  const panel = document.getElementById('archivo-panel');
+  if (!panel) return;
+  if (!esAnalista()) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  // Fecha por defecto: hace 6 meses (si el campo está vacío)
+  const fInput = document.getElementById('arch-fecha');
+  if (fInput && !fInput.value) {
+    const d = new Date(); d.setMonth(d.getMonth() - 6);
+    fInput.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  if (window.DB && DB.ready) {
+    try {
+      const [activos, hist] = await Promise.all([
+        DB.count('registros'), DB.count('registros_historico')
+      ]);
+      const a = document.getElementById('arch-count-activos');
+      const h = document.getElementById('arch-count-historico');
+      if (a) a.textContent = activos.toLocaleString('es-AR');
+      if (h) h.textContent = hist.toLocaleString('es-AR');
+    } catch (e) { console.warn('renderArchivoPanel:', e); }
+  }
+}
+
+// Ejecuta el archivado de registros anteriores a la fecha elegida.
+async function ejecutarArchivado() {
+  if (!esAnalista()) { showToast('⛔ Solo un analista puede archivar'); return; }
+  const iso = document.getElementById('arch-fecha')?.value;
+  if (!iso) { showToast('Elegí una fecha de corte'); return; }
+  const est = document.getElementById('arch-estado');
+  if (!confirm('¿Archivar todos los registros ANTERIORES al ' + iso + '?\n\nSe mueven a la tabla histórica (no se borran) y dejan de cargarse en el día a día.')) return;
+  if (est) est.textContent = '⏳ Archivando…';
+  const movidos = await archivarRegistrosAntesDe(iso);
+  if (est) est.textContent = movidos > 0 ? ('✓ ' + movidos + ' archivados') : (movidos === 0 ? 'Sin registros anteriores a esa fecha' : '⚠️ Error');
+  renderArchivoPanel();
+}
+
 function handleFileUpload(e) {
   const file = e.target.files[0];
   if (file) processFile(file);

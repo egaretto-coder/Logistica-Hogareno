@@ -146,6 +146,11 @@ const condEditIdsSucios = new Set();
 function editarRegistroConductor(idx, campo, valor) {
   const r = AppData.records[idx];
   if (!r) return;
+  if (r._historico) {
+    showToast('🗄️ Registro archivado (solo lectura): no se puede editar');
+    renderConductorDetail();
+    return;
+  }
   if (campo === 'tracking') r.tracking = String(valor).trim();
   if (campo === 'zona') r.zona = String(valor).trim().toUpperCase();
   if (campo === 'estado') r.estado = valor;

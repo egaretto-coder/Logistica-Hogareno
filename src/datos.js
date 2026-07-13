@@ -307,29 +307,65 @@ async function reintentarGuardadoNube() {
     : '<strong style="color:#b91c1c">⚠️ Sigue sin poder guardarse — revisá la conexión.</strong>';
 }
 
-// Trae TODO el historial de registros (más allá de la ventana inicial).
-// Para reportes históricos; con el tiempo puede ser una descarga grande.
+// Trae TODO el historial de registros (más allá de la ventana inicial): la
+// tabla viva completa + los archivados en registros_historico. Los archivados
+// se cargan como SOLO LECTURA (id=null, _historico=true): no se pueden editar
+// ni re-sincronizar, porque ya no están en la tabla principal.
 async function cargarHistorialCompleto(btn) {
   if (AppData.historialCompleto) { showToast('El historial completo ya está cargado'); return; }
   if (!window.DB || !DB.ready) { showToast('Sin conexión'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Cargando historial…'; }
   try {
-    const todos = await DB.selectRegistrosVentana(null);
-    AppData.records = todos.map(r => ({
+    const [vivos, historico] = await Promise.all([
+      DB.selectRegistrosVentana(null),
+      DB.selectHistorico()
+    ]);
+    const mapVivo = r => ({
       id: r.id,
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
-    }));
+    });
+    const mapHist = r => ({
+      id: null, _historico: true,
+      cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
+      zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
+      estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+      precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
+    });
+    AppData.records = historico.map(mapHist).concat(vivos.map(mapVivo));
     AppData.historialCompleto = true;
-    showToast('✅ Historial completo: ' + AppData.records.length + ' registros');
+    showToast('✅ Historial completo: ' + AppData.records.length + ' registros (' + historico.length + ' archivados)');
     if (typeof renderDashboard === 'function') renderDashboard();
   } catch (e) {
     console.warn('cargarHistorialCompleto:', e);
     showToast('⚠️ No se pudo cargar el historial completo');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📥 Cargar historial completo'; }
+  }
+}
+
+// Archiva (mueve a registros_historico) los registros anteriores a antesDeISO.
+// Transaccional en el servidor; solo analistas. Refresca la app al terminar.
+async function archivarRegistrosAntesDe(antesDeISO) {
+  if (!esAnalista()) { showToast('⛔ Solo un analista puede archivar registros'); return; }
+  if (!window.DB || !DB.ready) { showToast('Sin conexión'); return; }
+  try {
+    const movidos = await DB.archivarRegistros(antesDeISO);
+    if (movidos > 0) {
+      showToast('✅ ' + movidos + ' registros archivados');
+      AppData.historialCompleto = false; // la ventana se recarga sin los archivados
+      await hydrateFromSupabase();
+      if (typeof renderDashboard === 'function') renderDashboard();
+    } else {
+      showToast('No había registros anteriores a esa fecha');
+    }
+    return movidos;
+  } catch (e) {
+    console.warn('archivarRegistrosAntesDe:', e);
+    showToast('⛔ No se pudo archivar: ' + (e.message || e));
+    return -1;
   }
 }
 
