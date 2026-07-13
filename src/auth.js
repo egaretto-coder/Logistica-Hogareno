@@ -188,8 +188,6 @@ function aplicarPermisos() {
   // Ocultar botón "Exportar PDFs" del topbar si no tiene acceso a liquidaciones
   const btnExport = document.querySelector('.topbar-actions button[onclick*="exportAllPDFs"]');
   if (btnExport) btnExport.style.display = permitidas.includes('liquidaciones') ? '' : 'none';
-  const btnImport = document.querySelector('.topbar-actions button[onclick*="upload"]');
-  if (btnImport) btnImport.style.display = permitidas.includes('upload') ? '' : 'none';
 }
 
 function puedeVer(pagina) {
