@@ -185,9 +185,8 @@ function aplicarPermisos() {
     sec.style.display = algunoVisible ? '' : 'none';
   });
 
-  // Ocultar botón "Exportar PDFs" del topbar si no tiene acceso a liquidaciones
-  const btnExport = document.querySelector('.topbar-actions button[onclick*="exportAllPDFs"]');
-  if (btnExport) btnExport.style.display = permitidas.includes('liquidaciones') ? '' : 'none';
+  // (La descarga de PDFs vive dentro del panel "Liquidaciones", que ya está
+  //  protegido por permisos; no hay botón global que ocultar en el topbar.)
 }
 
 function puedeVer(pagina) {
