@@ -189,7 +189,7 @@ async function guardarEdicionConductores() {
     try {
       await DB.updateWhere('registros', 'id', id, {
         tracking: r.tracking || '', zona: r.zona || '', estado: r.estado || '',
-        fecha_date: fechaISOde(r.fecha),
+        fecha_date: fechaISOde(r.fecha), clave: claveRegistro(r),
         precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : parseFloat(r.precio_manual)
       });
       condEditIdsSucios.delete(id);

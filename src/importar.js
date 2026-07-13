@@ -102,6 +102,8 @@ function colLetterToIndex(letter) {
 // y palabras clave para intentar un automatch por nombre de encabezado.
 const BD_FIELDS = [
   { key: 'tracking', label: 'N° Tracking', expectedCol: 'B', required: true, keywords: ['tracking', 'n° tracking', 'numero tracking', 'nro tracking'] },
+  { key: 'destinatario', label: 'Destinatario (nombre)', expectedCol: 'M', required: false, keywords: ['destinatario', 'nombre destinatario', 'comprador', 'cliente'] },
+  { key: 'direccion', label: 'Dirección (distingue envíos con tracking inválido)', expectedCol: 'R', required: false, keywords: ['direccion', 'dirección', 'domicilio', 'direccion de entrega'] },
   { key: 'fecha', label: 'Fecha', expectedCol: 'G', required: true, keywords: ['fecha'] },
   { key: 'localidad', label: 'Localidad (respaldo si Zona está vacía)', expectedCol: 'T', required: false, keywords: ['localidad'] },
   { key: 'estado', label: 'Estado', expectedCol: 'X', required: true, keywords: ['estado'] },
@@ -194,44 +196,50 @@ function processUpload() {
   const fechaCargaISO = document.getElementById('upload-fecha-carga')?.value || '';
   const fechaCarga = fechaCargaISO ? isoToDMY(fechaCargaISO) : isoToDMY(hoyISO());
 
-  const nuevos = AppData.rawRows.map(row => {
+  const parsed = AppData.rawRows.map(row => {
     const rec = {};
     Object.entries(mapping).forEach(([field, colIdx]) => {
       rec[field] = String(row[colIdx] !== undefined ? row[colIdx] : '').trim();
     });
     rec.fecha = normalizaFecha(row[mapping.fecha]);
     rec.carga_fecha = fechaCarga;
+    rec.clave = claveRegistro(rec);
     return rec;
-  }).filter(r => r.tracking && r.cadete);
+  }).filter(r => r.cadete && (r.tracking || r.direccion));
 
-  // FUSIÓN con lo ya cargado: si un tracking ya existía, la información nueva
-  // REEMPLAZA a la anterior — se eliminan TODAS sus filas previas (un tracking
-  // puede aparecer en más de una fila, ej. segundas visitas) y entran las de
-  // esta carga. Cada reemplazo queda registrado para auditar con el botón ⚠.
-  // Los trackings nuevos se agregan; el resto de los datos previos se conserva.
+  // Deduplicación DENTRO del archivo por clave: si dos filas comparten clave
+  // (ej. 1ra y 2da visita del mismo envío en la misma carga), gana la última.
+  const nuevoPorClave = {};
+  parsed.forEach(n => { nuevoPorClave[n.clave] = n; });
+  const nuevos = Object.values(nuevoPorClave);
+  const enArchivoColapsadas = parsed.length - nuevos.length;
+
+  // FUSIÓN con lo ya cargado, por CLAVE (no por tracking a secas):
+  //   - Tracking real -> reemplaza por tracking.
+  //   - Tracking basura -> reemplaza solo si coincide dirección+destinatario
+  //     (misma entrega, ej. 1ra/2da visita); direcciones distintas = envíos
+  //     distintos, se conservan los dos.
+  // Cada reemplazo queda registrado para auditar con el botón ⚠.
   const resumenReg = (r, carga) =>
     (r.fecha || '—') + ' · ' + (r.estado || '—') + ' · ' + (r.cadete || '—') +
+    (r.direccion ? ' · ' + r.direccion : '') +
     (carga ? ' — cargado el ' + carga : '');
-  const nuevoPorTracking = {};
-  nuevos.forEach(n => { nuevoPorTracking[String(n.tracking).trim()] = n; });
+  const tipoClave = c => c.startsWith('T:') ? 'tracking real' : c.startsWith('D:') ? 'dirección' : 'huella';
+  const clavesExist = new Set(AppData.records.map(claveRegistro));
 
   const sup = [];
-  const restantes = [];
-  AppData.records.forEach(r => {
-    const k = String(r.tracking || '').trim();
-    const n = k && nuevoPorTracking[k];
-    if (n) {
-      sup.push({
-        clave: k,
-        antes: resumenReg(r, r.carga_fecha),
-        despues: resumenReg(n, fechaCarga)
-      });
-    } else {
-      restantes.push(r);
-    }
+  const restantes = AppData.records.filter(r => {
+    const ck = claveRegistro(r);
+    const n = nuevoPorClave[ck];
+    if (!n) return true;                 // no lo toca esta carga: se conserva
+    sup.push({
+      clave: (r.tracking || '(sin tracking)') + ' · por ' + tipoClave(ck),
+      antes: resumenReg(r, r.carga_fecha),
+      despues: resumenReg(n, fechaCarga)
+    });
+    return false;                        // se reemplaza
   });
-  const clavesReemplazadas = new Set(sup.map(s => s.clave));
-  const agregados = nuevos.filter(n => !clavesReemplazadas.has(String(n.tracking).trim())).length;
+  const agregados = nuevos.filter(n => !clavesExist.has(n.clave)).length;
   AppData.records = restantes.concat(nuevos);
   registrarSuperposiciones('registros', fechaCarga, sup);
 
@@ -252,6 +260,7 @@ function processUpload() {
     `✅ Carga del <strong>${fechaCarga}</strong>: ${nuevos.length} registros procesados — ` +
     `<strong>${agregados} nuevos</strong> y <strong>${sup.length} reemplazaron información anterior</strong>` +
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
+    (enArchivoColapsadas ? `<br>ℹ️ ${enArchivoColapsadas} fila(s) del archivo eran el mismo envío repetido (mismo tracking o misma dirección) y se unificaron. ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
     `${diasFueraDeRango ? `<br>⚠️ ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
     ` La base total queda en <strong>${AppData.records.length}</strong> registros. <span id="upload-nube-estado">☁️ Guardando en la nube…</span>`;

@@ -167,9 +167,13 @@ create table if not exists public.registros (
   carga_fecha text default '', -- día (DD/MM/YYYY) en que se importó el registro
   precio_manual numeric,       -- corrección manual del operador; pisa el precio calculado
   fecha_date date,             -- fecha real (la calcula la app desde 'fecha'); permite cargar por ventana en el servidor
+  direccion text default '',   -- dirección de entrega (col R del Excel)
+  destinatario text default '',-- nombre del destinatario (col M del Excel)
+  clave text,                  -- clave de deduplicación (la calcula la app): T:tracking real, D:dirección+destinatario (tracking basura), F:huella
   created_at timestamptz not null default now()
 );
 create index if not exists idx_registros_fecha_date on public.registros (fecha_date);
+create index if not exists idx_registros_clave on public.registros (clave);
 
 -- ---------- REGISTROS_HISTORICO (archivo de registros ya liquidados) ----------
 -- Mantiene liviana la tabla principal. Los mueve la función archivar_registros

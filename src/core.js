@@ -423,6 +423,38 @@ function precioManualDe(r) {
   return isNaN(n) ? null : n;
 }
 
+// Normaliza texto para comparar (minúsculas, sin acentos ni puntuación, espacios colapsados).
+function _normTxt(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// ¿El tracking "parece real"? (numérico de 8+ dígitos, ej. Mercado Libre).
+function trackingValido(t) {
+  return /^[0-9]{8,}$/.test(String(t || '').trim());
+}
+
+// Clave de deduplicación de un registro. Determina cuándo una carga REEMPLAZA
+// a un registro anterior (superposición) y cuándo son envíos DISTINTOS:
+//   - Tracking real  -> por tracking (dos envíos nunca comparten un tracking real).
+//   - Tracking basura -> por dirección + destinatario (la 1ra y 2da visita de un
+//     mismo envío comparten dirección => se fusionan; direcciones distintas => son
+//     envíos distintos y se pagan por separado). La fecha NO entra: 1ra y 2da
+//     visita son días distintos y deben reconocerse como el mismo envío.
+//   - Basura sin dirección -> huella por campos, para que re-importar el mismo
+//     archivo no duplique (caso muy marginal).
+function claveRegistro(r) {
+  const t = String(r.tracking || '').trim();
+  if (trackingValido(t)) return 'T:' + t;
+  const dir = _normTxt(r.direccion);
+  const dest = _normTxt(r.destinatario);
+  if (dir) return 'D:' + dir + '|' + dest;
+  return 'F:' + _normTxt([r.cadete, r.fecha, r.zona, r.localidad, dest].join('|'));
+}
+
 function tipoLabel(t) {
   if (t === 'c_colecta') return 'C/ Colecta';
   if (t === 's_colecta') return 'S/ Colecta';

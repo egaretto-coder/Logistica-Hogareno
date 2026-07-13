@@ -141,6 +141,7 @@ async function hydrateFromSupabase() {
     id: r.id, // id de la fila en la nube: permite ediciones puntuales sin reescribir la base
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
+    direccion: r.direccion || '', destinatario: r.destinatario || '',
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
@@ -262,7 +263,9 @@ function filaRegistroNube(r) {
     cadete: r.cadete || '', tracking: r.tracking || '', fecha: r.fecha || '',
     fecha_date: fechaISOde(r.fecha),
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
+    direccion: r.direccion || '', destinatario: r.destinatario || '',
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+    clave: claveRegistro(r),
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : _num(r.precio_manual)
   };
 }
@@ -279,10 +282,11 @@ async function guardarImportacionEnNube(nuevos) {
   if (!window.DB || !DB.ready) { showToast('Sin conexión: la carga quedó solo local'); importPendiente = nuevos; return false; }
   try {
     showToast('Guardando ' + nuevos.length + ' registros en la nube…');
-    const trackings = Array.from(new Set(nuevos.map(n => String(n.tracking || '').trim()).filter(Boolean)));
-    // 1) Eliminar TODAS las filas previas de esos trackings (también las más
-    //    viejas que la ventana cargada): la información nueva reemplaza.
-    await DB.deleteIn('registros', 'tracking', trackings);
+    const claves = Array.from(new Set(nuevos.map(n => n.clave || claveRegistro(n)).filter(Boolean)));
+    // 1) Eliminar en el servidor las filas previas con la MISMA CLAVE de las de
+    //    esta carga (por tracking real, o por dirección si el tracking es basura).
+    //    Las claves nuevas no matchean nada -> los envíos distintos se conservan.
+    await DB.deleteIn('registros', 'clave', claves);
     // 2) Insertar las filas de esta carga y quedarnos con sus ids.
     const ids = await DB.insertRows('registros', nuevos.map(filaRegistroNube));
     nuevos.forEach((n, i) => { n.id = ids[i]; });
@@ -324,6 +328,7 @@ async function cargarHistorialCompleto(btn) {
       id: r.id,
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
+      direccion: r.direccion || '', destinatario: r.destinatario || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
@@ -331,6 +336,7 @@ async function cargarHistorialCompleto(btn) {
       id: null, _historico: true,
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
+      direccion: r.direccion || '', destinatario: r.destinatario || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
