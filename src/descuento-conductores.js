@@ -163,12 +163,15 @@ function limpiarDescuentos() {
 
 // ===== SOLAPAS: DESCUENTOS / KM DE DESVÍO =====
 function switchDescTab(tab) {
-  const isDesc = tab === 'descuentos';
-  document.getElementById('desc-tab-descuentos').style.display = isDesc ? '' : 'none';
-  document.getElementById('desc-tab-kmdesvio').style.display = isDesc ? 'none' : '';
-  document.getElementById('tab-btn-descuentos').classList.toggle('active', isDesc);
-  document.getElementById('tab-btn-kmdesvio').classList.toggle('active', !isDesc);
-  if (!isDesc) renderKmDesvio();
+  const tabs = ['descuentos', 'kmdesvio', 'adelantos'];
+  tabs.forEach(t => {
+    const panel = document.getElementById('desc-tab-' + t);
+    const btn = document.getElementById('tab-btn-' + t);
+    if (panel) panel.style.display = (t === tab) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'kmdesvio') renderKmDesvio();
+  if (tab === 'adelantos' && typeof renderAdelantos === 'function') renderAdelantos();
 }
 
 // ===== KM DE DESVÍO =====

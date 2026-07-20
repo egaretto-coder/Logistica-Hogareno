@@ -221,6 +221,12 @@ let AppData = {
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
 
+  // Adelantos (préstamos a conductores devueltos en cuotas).
+  // adelantos:      [{ id, conductor, monto_total, cuotas_total, monto_cuota, fecha, obs }]
+  // adelantoCuotas: [{ id, adelanto_id, nro, monto, fecha }] — cuotas ya descontadas
+  adelantos: [],
+  adelantoCuotas: [],
+
   // Historial de tarifas de km de desvío (ordenado por vigencia).
   // Formato: { valor, vigente_desde (ISO), creado_por }
   // Cada cambio de precio queda registrado con su fecha/hora de vigencia.
@@ -274,6 +280,54 @@ function kmAdicionalConductor(conductor, rango) {
     km += _num(d.km); monto += _num(d.monto); n++;
   });
   return { km, monto, n };
+}
+
+// ── Adelantos (préstamos en cuotas) ─────────────────────────────────────────
+function cuotasDeAdelanto(adelantoId) {
+  return AppData.adelantoCuotas.filter(c => c.adelanto_id === adelantoId);
+}
+function cuotasPagadasDe(adelantoId) { return cuotasDeAdelanto(adelantoId).length; }
+function saldoAdelanto(a) {
+  const pagado = cuotasDeAdelanto(a.id).reduce((s, c) => s + _num(c.monto), 0);
+  return Math.max(0, _num(a.monto_total) - pagado);
+}
+function adelantoSaldado(a) { return cuotasPagadasDe(a.id) >= _num(a.cuotas_total); }
+
+// Adelanto ACTIVO (con cuotas pendientes) de un conductor. Si hay varios, el más viejo.
+function adelantoActivoDe(conductor) {
+  const key = String(conductor || '').toUpperCase().trim();
+  return AppData.adelantos
+    .filter(a => String(a.conductor || '').toUpperCase().trim() === key && !adelantoSaldado(a))
+    .sort((x, y) => x.id - y.id)[0] || null;
+}
+
+// Descuento por cuotas de adelanto de un conductor dentro de un período.
+// Suma las cuotas cuya fecha cae en el rango (o todas si no hay filtro).
+// Devuelve { monto, detalle: [{ nro, total, monto }] }.
+function adelantoDescuentoConductor(conductor, rango) {
+  const key = String(conductor || '').toUpperCase().trim();
+  const setIds = new Set(AppData.adelantos
+    .filter(a => String(a.conductor || '').toUpperCase().trim() === key).map(a => a.id));
+  if (!setIds.size) return { monto: 0, detalle: [] };
+  const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
+  let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  let monto = 0; const detalle = [];
+  AppData.adelantoCuotas.forEach(c => {
+    if (!setIds.has(c.adelanto_id)) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(c.fecha);
+      if (!f) return;
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    const a = AppData.adelantos.find(x => x.id === c.adelanto_id);
+    monto += _num(c.monto);
+    detalle.push({ nro: c.nro, total: a ? _num(a.cuotas_total) : 0, monto: _num(c.monto) });
+  });
+  detalle.sort((x, y) => x.nro - y.nro);
+  return { monto, detalle };
 }
 
 // Tarifa de km VIGENTE HOY (la más reciente del historial). 0 si no hay ninguna.

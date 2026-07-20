@@ -7,6 +7,7 @@
         <div class="tabs" id="desc-tabs">
           <button class="tab active" id="tab-btn-descuentos" onclick="switchDescTab('descuentos')">🎫 Descuentos</button>
           <button class="tab" id="tab-btn-kmdesvio" onclick="switchDescTab('kmdesvio')">🛣 Km de desvío</button>
+          <button class="tab" id="tab-btn-adelantos" onclick="switchDescTab('adelantos')">💳 Adelantos</button>
         </div>
 
         <!-- PANEL: DESCUENTOS -->
@@ -119,5 +120,50 @@
           </div>
 
         </div><!-- /desc-tab-kmdesvio -->
+
+        <!-- PANEL: ADELANTOS -->
+        <div id="desc-tab-adelantos" style="display:none">
+
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 Semana</span>
+              <input type="date" id="adelantos-fecha" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" title="Semana a la que se imputan las cuotas que descuentes">
+              <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos en la semana elegida">⏬ Descontar cuota semanal (todos)</button>
+              <button class="btn btn-sm btn-primary" onclick="openAddAdelantoModal()">+ Nuevo adelanto</button>
+            </div>
+          </div>
+
+          <div class="alert alert-info" style="margin-bottom:16px">
+            💳 Registrá un préstamo/adelanto (monto total y cantidad de cuotas) y la app calcula la cuota. Cada vez que <strong>descontás una cuota</strong> (por conductor con "− Cuota", o a todos con "Descontar cuota semanal"), esa cuota se imputa a la <strong>semana elegida</strong> y aparece automáticamente como deducción en la <strong>liquidación de esa semana</strong> (baja el neto del PDF). Elegí primero la semana arriba.
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="adelantos-search" placeholder="🔍 Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderAdelantos()">
+            <span id="adelantos-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conductor</th>
+                    <th>📅 Fecha</th>
+                    <th style="text-align:right">Monto total</th>
+                    <th style="text-align:right">Cuota</th>
+                    <th>Progreso</th>
+                    <th style="text-align:right">Saldo</th>
+                    <th style="width:130px">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="adelantos-rows">
+                  <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin adelantos</div><div class="empty-sub">Registrá uno con "+ Nuevo adelanto"</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /desc-tab-adelantos -->
 
       </div>

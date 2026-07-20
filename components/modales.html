@@ -142,6 +142,10 @@
           <span id="liq-modal-linea-km-label">Adicional km de desvío</span>
           <span id="liq-modal-linea-km" style="font-family:monospace;color:#86efac">$0</span>
         </div>
+        <div id="liq-modal-linea-adelanto-wrap" style="display:none;justify-content:space-between;font-size:12px;margin-bottom:4px;opacity:0.85">
+          <span id="liq-modal-linea-adelanto-label">Cuota de adelanto</span>
+          <span id="liq-modal-linea-adelanto" style="font-family:monospace;color:#fca5a5">$0</span>
+        </div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;opacity:0.85">
           <span>Descuentos totales</span>
           <span id="liq-modal-linea-desc" style="font-family:monospace;color:#fca5a5">$0</span>
@@ -240,6 +244,46 @@
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
         <button class="btn" onclick="closeKmDesvioModal()">Cancelar</button>
         <button class="btn btn-primary" onclick="guardarKmDesvioModal()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO ADELANTO -->
+<div class="modal-backdrop" id="modal-adelanto-backdrop" onclick="closeAdelantoModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:460px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">💳 Nuevo adelanto</span>
+      <button class="modal-close" onclick="closeAdelantoModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Conductor</label>
+        <input type="text" id="madv-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" list="madv-conductores-list" />
+        <datalist id="madv-conductores-list"></datalist>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">💵 Monto total ($)</label>
+          <input type="number" id="madv-monto" class="form-input" placeholder="1000000" min="0" step="1" style="width:100%" oninput="actualizarPreviewCuota()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:110px">
+          <label class="form-label">Cantidad de cuotas</label>
+          <input type="number" id="madv-cuotas" class="form-input" placeholder="10" min="1" step="1" style="width:100%" oninput="actualizarPreviewCuota()" />
+        </div>
+      </div>
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:600;color:#166534" id="madv-preview">Cada cuota: —</div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">📅 Fecha del adelanto</label>
+        <input type="date" id="madv-fecha" class="form-input" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones (opcional)</label>
+        <textarea id="madv-obs" class="form-input" rows="2" placeholder="Motivo, acuerdo, etc." style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeAdelantoModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarAdelantoModal()">Registrar adelanto</button>
       </div>
     </div>
   </div>

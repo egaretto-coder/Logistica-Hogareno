@@ -31,6 +31,10 @@ function loadSavedConfig() {
   if (rl) {
     try { const v = JSON.parse(rl); if (v) AppData.roles = v; } catch(e) {}
   }
+  const adv = localStorage.getItem('liq_adelantos');
+  if (adv) { try { AppData.adelantos = JSON.parse(adv) || []; } catch(e) {} }
+  const advc = localStorage.getItem('liq_adelanto_cuotas');
+  if (advc) { try { AppData.adelantoCuotas = JSON.parse(advc) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     const saved = JSON.parse(p);
@@ -168,6 +172,17 @@ async function hydrateFromSupabase() {
       color: r.color || '#6366f1', es_sistema: !!r.es_sistema
     }));
   }
+  // Adelantos (préstamos en cuotas) y sus cuotas descontadas
+  AppData.adelantos = (data.adelantos || []).map(a => ({
+    id: a.id, conductor: a.conductor, monto_total: _num(a.monto_total),
+    cuotas_total: _num(a.cuotas_total), monto_cuota: _num(a.monto_cuota),
+    fecha: a.fecha || '', obs: a.obs || ''
+  }));
+  AppData.adelantoCuotas = (data.adelanto_cuotas || []).map(c => ({
+    id: c.id, adelanto_id: c.adelanto_id, nro: _num(c.nro),
+    monto: _num(c.monto), fecha: c.fecha || ''
+  }));
+
   // Re-aplicar permisos con los datos frescos (sidebar puede cambiar)
   if (typeof aplicarPermisos === 'function' && currentUser) aplicarPermisos();
 
@@ -183,6 +198,8 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
     localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));
     localStorage.setItem('liq_roles', JSON.stringify(AppData.roles || null));
+    localStorage.setItem('liq_adelantos', JSON.stringify(AppData.adelantos));
+    localStorage.setItem('liq_adelanto_cuotas', JSON.stringify(AppData.adelantoCuotas));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.

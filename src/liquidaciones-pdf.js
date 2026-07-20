@@ -85,7 +85,21 @@ function recalcLiqModal() {
     }
   }
 
-  const totalNeto = d.total + kmMonto - totalDesc;
+  // Cuota(s) de adelanto imputadas al período (deducción, igual que el PDF)
+  const advAd = adelantoDescuentoConductor(liqModalConductor, getLiqRangoFechasLabel());
+  const advMonto = advAd.monto;
+  const advWrap = document.getElementById('liq-modal-linea-adelanto-wrap');
+  if (advWrap) {
+    advWrap.style.display = advMonto > 0 ? 'flex' : 'none';
+    if (advMonto > 0) {
+      const cuotasTxt = advAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
+      document.getElementById('liq-modal-linea-adelanto-label').textContent =
+        'Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : '');
+      document.getElementById('liq-modal-linea-adelanto').textContent = '-' + fmtPeso(advMonto);
+    }
+  }
+
+  const totalNeto = d.total + kmMonto - totalDesc - advMonto;
 
   document.getElementById('liq-modal-linea-bruto').textContent = fmtPeso(d.total);
   document.getElementById('liq-modal-linea-desc').textContent = '-' + fmtPeso(totalDesc);
@@ -504,11 +518,18 @@ function exportPDF(conductor, opts) {
   const kmKms = kmAd.km;
   const kmOffset = kmMonto > 0 ? 6 : 0; // renglón extra en la caja si hay adicional
 
-  const totalNeto = d.total + kmMonto - totalDescuentos;
+  // Cuota(s) de adelanto imputadas al período liquidado: préstamo que el conductor
+  // devuelve en cuotas. RESTA al total. Cada cuota fue registrada explícitamente en
+  // el panel Adelantos con su fecha de imputación (misma lógica que el modal en pantalla).
+  const advAd = adelantoDescuentoConductor(conductor, rangoFechas);
+  const advMonto = advAd.monto;
+  const advOffset = advMonto > 0 ? 6 : 0; // renglón extra en la caja si hay cuota
+
+  const totalNeto = d.total + kmMonto - totalDescuentos - advMonto;
 
   let descY = doc.lastAutoTable.finalY + 8;
   // Si no cabe el bloque en la página actual, saltar de página
-  if (descY > 220 - kmOffset) { doc.addPage(); descY = 30; }
+  if (descY > 220 - kmOffset - advOffset) { doc.addPage(); descY = 30; }
 
   // Título del bloque
   doc.setFontSize(8.5);
@@ -522,7 +543,7 @@ function exportPDF(conductor, opts) {
 
   // Caja con fondo claro (altura dinámica según cantidad de ítems de descuento)
   const descItemsCount = 4;
-  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset;
+  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + advOffset;
   doc.setFillColor(248, 249, 252);
   doc.roundedRect(MARGIN, descY, W - MARGIN*2, boxH, 2, 2, 'F');
   doc.setDrawColor(220, 226, 240);
@@ -551,10 +572,23 @@ function exportPDF(conductor, opts) {
     doc.text('+' + fmtPeso(kmMonto), W - MARGIN - 6, descY + 14, { align: 'right' });
   }
 
+  // Renglón: Cuota(s) de adelanto (resta al total) — misma lógica que el modal
+  if (advMonto > 0) {
+    drawDescIcon('A', MARGIN + 6, descY + 15.6 + kmOffset, 4.4, LH_BLUE);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...LH_GRAY);
+    const cuotasTxt = advAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
+    doc.text('Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...LH_RED);
+    doc.text('-' + fmtPeso(advMonto), W - MARGIN - 6, descY + 14 + kmOffset, { align: 'right' });
+  }
+
   // Separador
   doc.setDrawColor(220, 226, 240);
   doc.setLineWidth(0.2);
-  doc.line(MARGIN + 6, descY + 11 + kmOffset, W - MARGIN - 6, descY + 11 + kmOffset);
+  doc.line(MARGIN + 6, descY + 11 + kmOffset + advOffset, W - MARGIN - 6, descY + 11 + kmOffset + advOffset);
 
   // Descuentos individuales (mismos conceptos que en el detalle previo a descargar)
   const descItems = [
@@ -563,7 +597,7 @@ function exportPDF(conductor, opts) {
     { letter: 'A', color: LH_EMERALD, label: 'Adelantos', val: descuentos.adelantos || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores', val: descuentos.proveedores || 0 },
   ];
-  let dY = descY + 17 + kmOffset;
+  let dY = descY + 17 + kmOffset + advOffset;
   descItems.forEach(item => {
     drawDescIcon(item.letter, MARGIN + 6, dY + 1.6, 4.4, item.color);
     doc.setFontSize(8);

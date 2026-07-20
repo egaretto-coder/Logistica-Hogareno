@@ -117,6 +117,38 @@ create table if not exists public.km_tarifas (
   created_at timestamptz not null default now()
 );
 
+-- ---------- ADELANTOS (préstamos a conductores, devueltos en cuotas) ----------
+-- monto_cuota = monto_total / cuotas_total (sin interés). Cada cuota efectivamente
+-- descontada se registra en adelanto_cuotas con su fecha de imputación: esa cuota
+-- aparece como deducción en la liquidación de la semana correspondiente.
+create table if not exists public.adelantos (
+  id bigint generated always as identity primary key,
+  conductor text not null,
+  monto_total numeric not null default 0,
+  cuotas_total int not null default 1,
+  monto_cuota numeric not null default 0,
+  fecha text default '',           -- fecha del adelanto (DD/MM/YYYY)
+  obs text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_adelantos_conductor on public.adelantos (conductor);
+
+-- ---------- ADELANTO CUOTAS (cuotas ya descontadas de un adelanto) ----------
+-- fecha: semana a la que se imputa la cuota (DD/MM/YYYY). fecha_date: misma fecha
+-- normalizada, para filtrar por período. Se borran en cascada con el adelanto.
+create table if not exists public.adelanto_cuotas (
+  id bigint generated always as identity primary key,
+  adelanto_id bigint not null references public.adelantos(id) on delete cascade,
+  nro int not null,
+  monto numeric not null default 0,
+  fecha text default '',
+  fecha_date date,
+  created_at timestamptz not null default now(),
+  unique (adelanto_id, nro)
+);
+create index if not exists idx_adelanto_cuotas_adelanto on public.adelanto_cuotas (adelanto_id);
+create index if not exists idx_adelanto_cuotas_fecha on public.adelanto_cuotas (fecha_date);
+
 -- Helper de rol: ¿el usuario actual es analista?
 create or replace function public.es_analista()
 returns boolean language sql stable security definer set search_path = public as $$
@@ -269,3 +301,10 @@ create policy registros_all on public.registros              for all to authenti
 -- registros_historico: solo lectura desde la app (lo escribe archivar_registros).
 alter table public.registros_historico enable row level security;
 create policy reg_hist_select on public.registros_historico for select to authenticated using (true);
+
+-- adelantos / adelanto_cuotas: acceso completo para autenticados (igual que los
+-- demás descuentos; el control por rol se aplica en la UI).
+alter table public.adelantos       enable row level security;
+alter table public.adelanto_cuotas enable row level security;
+create policy adelantos_all      on public.adelantos       for all to authenticated using (true) with check (true);
+create policy adelanto_cuotas_all on public.adelanto_cuotas for all to authenticated using (true) with check (true);

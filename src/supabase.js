@@ -92,7 +92,7 @@ const DB = {
   async loadAll(desdeISO) {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config, rolPerm, roles] = await Promise.all([
+      const [tarifas, superSla, panel, dim, desc, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -104,12 +104,14 @@ const DB = {
         this.selectAll('config'),
         this.selectAll('rol_permisos'),
         this.selectAll('roles', 'created_at'),
+        this.selectAll('adelantos', 'id'),
+        this.selectAll('adelanto_cuotas', 'id'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
         dimensiones_especiales: dim, descuentos_conductores: desc,
         km_desvio: km, km_tarifas: kmTar, registros, config,
-        rol_permisos: rolPerm, roles,
+        rol_permisos: rolPerm, roles, adelantos, adelanto_cuotas: adelantoCuotas,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);
