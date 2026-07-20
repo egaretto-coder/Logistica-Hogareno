@@ -1,0 +1,44 @@
+name: Keep Supabase awake
+
+# ─────────────────────────────────────────────────────────────────────────────
+# El plan FREE de Supabase PAUSA el proyecto tras ~7 dias sin actividad, y eso
+# tira abajo la app (no puede leer/escribir datos hasta reactivarla a mano desde
+# el panel de Supabase). Este workflow hace un ping liviano a la base todos los
+# dias para que el reloj de inactividad nunca llegue a ese limite.
+#
+# Corre en la infraestructura de GitHub (no depende de que ninguna PC este
+# prendida). La clave usada es la "publishable key": es PUBLICA por diseno — la
+# misma que ya viaja en el cliente web (src/supabase.js) — asi que ponerla aca
+# no expone ningun secreto. La seguridad real la aplican RLS + Auth.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # todos los dias 06:00 UTC (~03:00 Argentina)
+  workflow_dispatch: {}   # permite dispararlo a mano desde la pestana "Actions"
+
+# Evita que se solapen dos corridas.
+concurrency:
+  group: keepalive-supabase
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping a Supabase REST (cuenta como actividad de la base)
+        env:
+          SUPABASE_URL: https://rsglddbierwejiusrpvd.supabase.co
+          SUPABASE_KEY: sb_publishable_2ppAH-q0CiJR23WseNjbfA_PvIBfoQf
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${SUPABASE_URL}/rest/v1/config?select=clave&limit=1" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}")
+          echo "Respuesta de Supabase: HTTP ${code}"
+          if [ "${code}" != "200" ]; then
+            echo "::error::El ping fallo (HTTP ${code}). La base puede estar pausada o inaccesible; revisa el panel de Supabase."
+            exit 1
+          fi
+          echo "OK: la base respondio, el reloj de inactividad se reinicio."
