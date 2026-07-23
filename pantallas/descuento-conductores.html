@@ -5,70 +5,164 @@
         </div>
 
         <div class="tabs" id="desc-tabs">
-          <button class="tab active" id="tab-btn-descuentos" onclick="switchDescTab('descuentos')">🎫 Descuentos</button>
-          <button class="tab" id="tab-btn-kmdesvio" onclick="switchDescTab('kmdesvio')">🛣 Km de desvío</button>
+          <button class="tab active" id="tab-btn-combustible" onclick="switchDescTab('combustible')">⛽ Combustible</button>
+          <button class="tab" id="tab-btn-extraviados" onclick="switchDescTab('extraviados')">📦 Extraviados / Rotos</button>
+          <button class="tab" id="tab-btn-proveedores" onclick="switchDescTab('proveedores')">🧾 Servicio Proveedores</button>
           <button class="tab" id="tab-btn-adelantos" onclick="switchDescTab('adelantos')">💳 Adelantos</button>
+          <button class="tab" id="tab-btn-kmdesvio" onclick="switchDescTab('kmdesvio')">🛣 Km de desvío</button>
         </div>
 
-        <!-- PANEL: DESCUENTOS -->
-        <div id="desc-tab-descuentos">
-
-        <div class="section-head" style="margin-bottom:8px">
-          <span></span>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-sm" id="alerta-sup-descuentos" style="display:none;border-color:#f5d97a;background:#fff8e1;color:#7a5c00;font-weight:600" onclick="mostrarSuperposiciones('descuentos')">⚠ Superposiciones</button>
-            <label class="btn btn-sm" style="cursor:pointer;margin:0">
-              📂 Importar Excel
-              <input type="file" id="desc-file-input" accept=".xlsx,.xls,.csv" onchange="importDescuentosConductores(event)" style="display:none">
-            </label>
-            <button class="btn btn-sm" onclick="openAddDescuentoModal()">+ Agregar manual</button>
-            <button class="btn btn-sm" onclick="descargarPlantillaDescuentos()">⬇ Plantilla Excel</button>
-            <button class="btn btn-sm" onclick="limpiarDescuentos()" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+        <!-- ══════════ PANEL: COMBUSTIBLE ══════════ -->
+        <div id="desc-tab-combustible">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0">📂 Importar Excel
+                <input type="file" id="descitem-combustible-file" accept=".xlsx,.xls,.csv" onchange="importDescItems('combustible', event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="openAddDescItemModal('combustible')">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaDescItems('combustible')">⬇ Plantilla Excel</button>
+              <button class="btn btn-sm" onclick="limpiarDescItems('combustible')" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+            </div>
           </div>
-        </div>
-
-        <div class="alert alert-info" style="margin-bottom:16px">
-          🎫 Los descuentos cargados acá se <strong>sincronizan automáticamente</strong> con el modal de generación de liquidación. Al abrir "📄 Generar" para un conductor, los montos aparecerán pre-cargados y podrás modificarlos si es necesario antes de descargar el PDF.<br><span style="font-size:11px;color:#6b7280;margin-top:4px;display:inline-block">📥 La plantilla Excel descargable tiene una estructura fija. <strong>No modifiques ni reordenes los encabezados.</strong> Completá los datos y volvé a subirla.</span>
-        </div>
-
-        <!-- FILTROS -->
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-          <input type="search" id="desc-search" placeholder="Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescuentosConductores()">
-          <span id="desc-count" style="font-size:12px;color:var(--text-muted)"></span>
-        </div>
-
-        <!-- TABLA DESCUENTOS -->
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Conductor</th>
-                  <th style="text-align:right">⛽ Combustible</th>
-                  <th style="text-align:right">📦 Extraviados/Rotos</th>
-                  <th style="text-align:right">💵 Adelantos</th>
-                  <th style="text-align:right">🧾 Serv. Proveedores</th>
-                  <th style="text-align:right">Total</th>
-                  <th>Observaciones</th>
-                  <th style="width:90px">Acciones</th>
-                </tr>
-              </thead>
-              <tbody id="desc-table-body">
-                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-title">Sin descuentos cargados</div><div class="empty-sub">Importá un Excel o agregá manualmente</div></div></td></tr>
-              </tbody>
-            </table>
+          <div class="alert alert-info" style="margin-bottom:16px">
+            ⛽ Registrá cada gasto de <strong>combustible</strong> con su <strong>fecha</strong>. Cada registro se imputa automáticamente como descuento en la <strong>liquidación de esa semana</strong> (podés ajustarlo o excluirlo al generar el PDF).
           </div>
-        </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="descitem-combustible-search" placeholder="🔍 Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescItems('combustible')">
+            <span id="descitem-combustible-count" style="font-size:12px;color:var(--text-muted)"></span>
+            <input type="date" id="descitem-combustible-fecha-nuevo" style="display:none">
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th>📅 Fecha</th><th style="text-align:right">💵 Monto</th><th>Detalle</th><th style="width:90px">Acciones</th>
+            </tr></thead>
+            <tbody id="descitem-combustible-rows">
+              <tr><td colspan="5"><div class="empty-state"><div class="empty-icon">⛽</div><div class="empty-title">Sin registros</div><div class="empty-sub">Agregá uno manual o importá un Excel</div></div></td></tr>
+            </tbody>
+          </table></div></div>
+        </div><!-- /combustible -->
 
-        </div><!-- /desc-tab-descuentos -->
+        <!-- ══════════ PANEL: EXTRAVIADOS / ROTOS ══════════ -->
+        <div id="desc-tab-extraviados" style="display:none">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0">📂 Importar Excel
+                <input type="file" id="descitem-extraviados-file" accept=".xlsx,.xls,.csv" onchange="importDescItems('extraviados', event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="openAddDescItemModal('extraviados')">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaDescItems('extraviados')">⬇ Plantilla Excel</button>
+              <button class="btn btn-sm" onclick="limpiarDescItems('extraviados')" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+            </div>
+          </div>
+          <div class="alert alert-info" style="margin-bottom:16px">
+            📦 Registrá cada <strong>envío extraviado o roto</strong> con su <strong>fecha</strong> y, si corresponde, el <strong>tracking/envío</strong>. Cada registro se imputa como descuento en la <strong>liquidación de esa semana</strong>.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="descitem-extraviados-search" placeholder="🔍 Buscar conductor o tracking..." style="width:300px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescItems('extraviados')">
+            <span id="descitem-extraviados-count" style="font-size:12px;color:var(--text-muted)"></span>
+            <input type="date" id="descitem-extraviados-fecha-nuevo" style="display:none">
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th>📅 Fecha</th><th style="text-align:right">💵 Monto</th><th>📦 Tracking / Envío</th><th>Detalle</th><th style="width:90px">Acciones</th>
+            </tr></thead>
+            <tbody id="descitem-extraviados-rows">
+              <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin registros</div><div class="empty-sub">Agregá uno manual o importá un Excel</div></div></td></tr>
+            </tbody>
+          </table></div></div>
+        </div><!-- /extraviados -->
 
-        <!-- PANEL: KM DE DESVÍO -->
+        <!-- ══════════ PANEL: SERVICIO PROVEEDORES ══════════ -->
+        <div id="desc-tab-proveedores" style="display:none">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0">📂 Importar Excel
+                <input type="file" id="descitem-proveedores-file" accept=".xlsx,.xls,.csv" onchange="importDescItems('proveedores', event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="openAddDescItemModal('proveedores')">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaDescItems('proveedores')">⬇ Plantilla Excel</button>
+              <button class="btn btn-sm" onclick="limpiarDescItems('proveedores')" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+            </div>
+          </div>
+          <div class="alert alert-info" style="margin-bottom:16px">
+            🧾 Registrá cada <strong>servicio de proveedor</strong> (gomería, taller, etc.) con su <strong>fecha</strong> y el <strong>proveedor</strong>. Cada registro se imputa como descuento en la <strong>liquidación de esa semana</strong>.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="descitem-proveedores-search" placeholder="🔍 Buscar conductor o proveedor..." style="width:300px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescItems('proveedores')">
+            <span id="descitem-proveedores-count" style="font-size:12px;color:var(--text-muted)"></span>
+            <input type="date" id="descitem-proveedores-fecha-nuevo" style="display:none">
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th>📅 Fecha</th><th style="text-align:right">💵 Monto</th><th>🏢 Proveedor</th><th>Detalle</th><th style="width:90px">Acciones</th>
+            </tr></thead>
+            <tbody id="descitem-proveedores-rows">
+              <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-title">Sin registros</div><div class="empty-sub">Agregá uno manual o importá un Excel</div></div></td></tr>
+            </tbody>
+          </table></div></div>
+        </div><!-- /proveedores -->
+
+        <!-- ══════════ PANEL: ADELANTOS ══════════ -->
+        <div id="desc-tab-adelantos" style="display:none">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 Semana</span>
+              <input type="date" id="adelantos-fecha" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" title="Semana a la que se imputan las cuotas que descuentes">
+              <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos en la semana elegida">⏬ Descontar cuota semanal (todos)</button>
+              <label class="btn btn-sm" style="cursor:pointer;margin:0">📂 Importar Excel
+                <input type="file" id="adelantos-file-input" accept=".xlsx,.xls,.csv" onchange="importAdelantos(event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="descargarPlantillaAdelantos()">⬇ Plantilla Excel</button>
+              <button class="btn btn-sm btn-primary" onclick="openAddAdelantoModal()">+ Nuevo adelanto</button>
+            </div>
+          </div>
+
+          <div class="alert alert-info" style="margin-bottom:16px">
+            💳 Registrá un préstamo/adelanto (monto total y cantidad de cuotas) y la app calcula la cuota. Cada vez que <strong>descontás una cuota</strong> (por conductor con "− Cuota", o a todos con "Descontar cuota semanal"), esa cuota se imputa a la <strong>semana elegida</strong> y aparece automáticamente como deducción en la <strong>liquidación de esa semana</strong> (baja el neto del PDF). Elegí primero la semana arriba.
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="adelantos-search" placeholder="🔍 Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderAdelantos()">
+            <span id="adelantos-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conductor</th>
+                    <th>📅 Fecha</th>
+                    <th style="text-align:right">Monto total</th>
+                    <th style="text-align:right">Cuota</th>
+                    <th>Progreso</th>
+                    <th style="text-align:right">Saldo</th>
+                    <th style="width:130px">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="adelantos-rows">
+                  <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin adelantos</div><div class="empty-sub">Registrá uno con "+ Nuevo adelanto"</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /adelantos -->
+
+        <!-- ══════════ PANEL: KM DE DESVÍO ══════════ -->
         <div id="desc-tab-kmdesvio" style="display:none">
 
           <div class="section-head" style="margin-bottom:8px">
             <span></span>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0">📂 Importar Excel
+                <input type="file" id="km-file-input" accept=".xlsx,.xls,.csv" onchange="importKmDesvio(event)" style="display:none">
+              </label>
               <button class="btn btn-sm" onclick="openAddKmDesvioModal()">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaKm()">⬇ Plantilla Excel</button>
               <button class="btn btn-sm" onclick="limpiarKmDesvio()" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
             </div>
           </div>
@@ -119,51 +213,6 @@
             </div>
           </div>
 
-        </div><!-- /desc-tab-kmdesvio -->
-
-        <!-- PANEL: ADELANTOS -->
-        <div id="desc-tab-adelantos" style="display:none">
-
-          <div class="section-head" style="margin-bottom:8px">
-            <span></span>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 Semana</span>
-              <input type="date" id="adelantos-fecha" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" title="Semana a la que se imputan las cuotas que descuentes">
-              <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos en la semana elegida">⏬ Descontar cuota semanal (todos)</button>
-              <button class="btn btn-sm btn-primary" onclick="openAddAdelantoModal()">+ Nuevo adelanto</button>
-            </div>
-          </div>
-
-          <div class="alert alert-info" style="margin-bottom:16px">
-            💳 Registrá un préstamo/adelanto (monto total y cantidad de cuotas) y la app calcula la cuota. Cada vez que <strong>descontás una cuota</strong> (por conductor con "− Cuota", o a todos con "Descontar cuota semanal"), esa cuota se imputa a la <strong>semana elegida</strong> y aparece automáticamente como deducción en la <strong>liquidación de esa semana</strong> (baja el neto del PDF). Elegí primero la semana arriba.
-          </div>
-
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-            <input type="search" id="adelantos-search" placeholder="🔍 Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderAdelantos()">
-            <span id="adelantos-count" style="font-size:12px;color:var(--text-muted)"></span>
-          </div>
-
-          <div class="card">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Conductor</th>
-                    <th>📅 Fecha</th>
-                    <th style="text-align:right">Monto total</th>
-                    <th style="text-align:right">Cuota</th>
-                    <th>Progreso</th>
-                    <th style="text-align:right">Saldo</th>
-                    <th style="width:130px">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="adelantos-rows">
-                  <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin adelantos</div><div class="empty-sub">Registrá uno con "+ Nuevo adelanto"</div></div></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div><!-- /desc-tab-adelantos -->
+        </div><!-- /kmdesvio -->
 
       </div>

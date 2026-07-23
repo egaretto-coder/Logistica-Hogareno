@@ -38,24 +38,24 @@ function openLiqModal(conductor) {
     d.filas.length + ' entregados · ' + d.filas_excluidas.length + ' en otros estados';
   document.getElementById('liq-modal-total-bruto').textContent = fmtPeso(d.total);
 
-  // Pre-cargar descuentos del panel "Descuento Conductores" si existen
-  const descPre = findDescuentoConductor(conductor);
+  // Pre-cargar los 3 ítems de descuento del PERÍODO (imputación automática por
+  // fecha, editable). Cada uno suma los registros de su solapa que caen en el rango.
+  const rangoImp = getLiqRangoFechasLabel();
+  const setItemPre = (tipo, campo) => {
+    const r = descItemDescuentoConductor(tipo, conductor, rangoImp);
+    document.getElementById('liq-desc-' + campo).value = r.monto ? r.monto : '';
+    const info = document.getElementById('liq-desc-' + campo + '-info');
+    if (info) info.textContent = r.detalle.length
+      ? (r.detalle.length + (r.detalle.length === 1 ? ' registro imputado' : ' registros imputados'))
+      : 'Sin registros en el período';
+    return r.monto;
+  };
+  const totalItemsPre = setItemPre('combustible', 'combustible')
+    + setItemPre('extraviados', 'extraviados')
+    + setItemPre('proveedores', 'proveedores');
+  document.getElementById('liq-desc-obs').value = '';
   const origenEl = document.getElementById('liq-desc-origen');
-  if (descPre) {
-    document.getElementById('liq-desc-combustible').value = descPre.combustible || '';
-    document.getElementById('liq-desc-extraviados').value = descPre.extraviados || '';
-    document.getElementById('liq-desc-adelantos').value = descPre.adelantos || '';
-    document.getElementById('liq-desc-proveedores').value = descPre.proveedores || '';
-    document.getElementById('liq-desc-obs').value = descPre.obs || '';
-    if (origenEl) origenEl.textContent = 'Pre-cargado desde panel';
-  } else {
-    document.getElementById('liq-desc-combustible').value = '';
-    document.getElementById('liq-desc-extraviados').value = '';
-    document.getElementById('liq-desc-adelantos').value = '';
-    document.getElementById('liq-desc-proveedores').value = '';
-    document.getElementById('liq-desc-obs').value = '';
-    if (origenEl) origenEl.textContent = '';
-  }
+  if (origenEl) origenEl.textContent = totalItemsPre > 0 ? 'Imputado por fecha del período' : '';
 
   recalcLiqModal();
   document.getElementById('modal-liq-backdrop').style.display = 'flex';
@@ -68,9 +68,8 @@ function recalcLiqModal() {
 
   const combustible = parseFloat(document.getElementById('liq-desc-combustible').value) || 0;
   const extraviados = parseFloat(document.getElementById('liq-desc-extraviados').value) || 0;
-  const adelantos = parseFloat(document.getElementById('liq-desc-adelantos').value) || 0;
   const proveedores = parseFloat(document.getElementById('liq-desc-proveedores').value) || 0;
-  const totalDesc = combustible + extraviados + adelantos + proveedores;
+  const totalDesc = combustible + extraviados + proveedores;
 
   // Adicional por km de desvío del período filtrado (suma al neto, igual que el PDF)
   const kmAd = kmAdicionalConductor(liqModalConductor, getLiqRangoFechasLabel());
@@ -127,7 +126,6 @@ function confirmarYDescargarPDF() {
   const descuentos = {
     combustible: parseFloat(document.getElementById('liq-desc-combustible').value) || 0,
     extraviados: parseFloat(document.getElementById('liq-desc-extraviados').value) || 0,
-    adelantos:   parseFloat(document.getElementById('liq-desc-adelantos').value) || 0,
     proveedores: parseFloat(document.getElementById('liq-desc-proveedores').value) || 0,
     obs:         document.getElementById('liq-desc-obs').value || ''
   };
@@ -151,42 +149,12 @@ function confirmarYDescargarPDF() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 
-function guardarDescuentosEnPanel() {
-  if (!liqModalConductor) return;
-
-  const combustible = parseFloat(document.getElementById('liq-desc-combustible').value) || 0;
-  const extraviados = parseFloat(document.getElementById('liq-desc-extraviados').value) || 0;
-  const adelantos = parseFloat(document.getElementById('liq-desc-adelantos').value) || 0;
-  const proveedores = parseFloat(document.getElementById('liq-desc-proveedores').value) || 0;
-  const obs = document.getElementById('liq-desc-obs').value.trim();
-
-  const entry = {
-    conductor: liqModalConductor.toUpperCase().trim(),
-    combustible, extraviados, adelantos, proveedores, obs
-  };
-
-  // Buscar existente y actualizar/agregar
-  const idx = AppData.descuentosConductores.findIndex(d =>
-    String(d.conductor).toUpperCase().trim() === entry.conductor
-  );
-  if (idx >= 0) {
-    AppData.descuentosConductores[idx] = entry;
-  } else {
-    AppData.descuentosConductores.push(entry);
-  }
-
-  saveDescuentos();
-  const origenEl = document.getElementById('liq-desc-origen');
-  if (origenEl) origenEl.textContent = 'Guardado en panel ✓';
-  showToast('✅ Descuentos guardados en el panel Descuento Conductores');
-}
-
 function exportPDF(conductor, opts) {
   opts = opts || {};
-  // Si no vienen descuentos explícitos (exportación masiva), usar los cargados
-  // en el panel "Descuento Conductores" para ese conductor.
-  const descuentos = opts.descuentos || findDescuentoConductor(conductor) ||
-    { combustible: 0, extraviados: 0, adelantos: 0, proveedores: 0, obs: '' };
+  // Descuentos: si el operador editó en el modal, vienen en opts.descuentos.
+  // En exportación masiva (sin modal) se calculan solos por fecha del período,
+  // más abajo, una vez determinado el rango.
+  let descuentos = opts.descuentos || null;
   let rangoFechas = opts.rangoFechas || null; // { desde: 'DD/MM/YYYY', hasta: 'DD/MM/YYYY' } — si no se pasa, se calcula a partir de los registros liquidados
 
   const { jsPDF } = window.jspdf;
@@ -213,6 +181,16 @@ function exportPDF(conductor, opts) {
       const fmtF = fd => String(fd.getDate()).padStart(2,'0') + '/' + String(fd.getMonth()+1).padStart(2,'0') + '/' + fd.getFullYear();
       rangoFechas = { desde: fmtF(fechaMin), hasta: fmtF(fechaMax) };
     }
+  }
+
+  // Fallback (exportación masiva sin modal): imputar los 3 ítems por fecha del período.
+  if (!descuentos) {
+    descuentos = {
+      combustible: descItemDescuentoConductor('combustible', conductor, rangoFechas).monto,
+      extraviados: descItemDescuentoConductor('extraviados', conductor, rangoFechas).monto,
+      proveedores: descItemDescuentoConductor('proveedores', conductor, rangoFechas).monto,
+      obs: ''
+    };
   }
 
   const panelCond = AppData.panelConductores.find(x => x.nombre.toUpperCase() === conductor.toUpperCase());
@@ -508,7 +486,7 @@ function exportPDF(conductor, opts) {
   // ═══════════════════════════════════════════════════════════════════════
   // ═════════════ BLOQUE DE DESCUENTOS + TOTAL NETO ═══════════════════════
   // ═══════════════════════════════════════════════════════════════════════
-  const totalDescuentos = (descuentos.combustible || 0) + (descuentos.extraviados || 0) + (descuentos.adelantos || 0) + (descuentos.proveedores || 0);
+  const totalDescuentos = (descuentos.combustible || 0) + (descuentos.extraviados || 0) + (descuentos.proveedores || 0);
 
   // Adicional por km de desvío del período liquidado: compensación por retiros
   // de mercadería fuera de ruta. SUMA al total. Cada desvío ya tiene su monto
@@ -542,7 +520,7 @@ function exportPDF(conductor, opts) {
   descY += 11;
 
   // Caja con fondo claro (altura dinámica según cantidad de ítems de descuento)
-  const descItemsCount = 4;
+  const descItemsCount = 3;
   const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + advOffset;
   doc.setFillColor(248, 249, 252);
   doc.roundedRect(MARGIN, descY, W - MARGIN*2, boxH, 2, 2, 'F');
@@ -594,7 +572,6 @@ function exportPDF(conductor, opts) {
   const descItems = [
     { letter: 'C', color: LH_ORANGE,  label: 'Combustible', val: descuentos.combustible || 0 },
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
-    { letter: 'A', color: LH_EMERALD, label: 'Adelantos', val: descuentos.adelantos || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores', val: descuentos.proveedores || 0 },
   ];
   let dY = descY + 17 + kmOffset + advOffset;

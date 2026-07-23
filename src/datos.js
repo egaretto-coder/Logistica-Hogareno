@@ -7,9 +7,9 @@ function loadSavedConfig() {
   if (dim) {
     try { AppData.dimensionesEspeciales = JSON.parse(dim); } catch(e) {}
   }
-  const desc = localStorage.getItem('liq_descuentos_conductores');
-  if (desc) {
-    try { AppData.descuentosConductores = JSON.parse(desc); } catch(e) {}
+  const dItems = localStorage.getItem('liq_desc_items');
+  if (dItems) {
+    try { AppData.descItems = JSON.parse(dItems) || []; } catch(e) {}
   }
   const kmd = localStorage.getItem('liq_km_desvio');
   if (kmd) {
@@ -128,10 +128,11 @@ async function hydrateFromSupabase() {
     fecha: d.fecha || '', tracking: d.tracking || '', cliente: d.cliente || '',
     zona: d.zona || '', valor: _num(d.valor), condicion: d.condicion || ''
   }));
-  AppData.descuentosConductores = (data.descuentos_conductores || []).map(d => ({
-    conductor: d.conductor, combustible: _num(d.combustible),
-    extraviados: _num(d.extraviados), adelantos: _num(d.adelantos),
-    proveedores: _num(d.proveedores), obs: d.obs || ''
+  // Descuentos por ítem con fecha (combustible / extraviados / proveedores).
+  // Reemplaza el modelo viejo descuentosConductores (deprecado, ya no se carga).
+  AppData.descItems = (data.descuentos_items || []).map(x => ({
+    id: x.id, tipo: x.tipo, conductor: x.conductor, fecha: x.fecha || '',
+    monto: _num(x.monto), referencia: x.referencia || '', detalle: x.detalle || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
     conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
@@ -192,7 +193,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_supersla', JSON.stringify(AppData.superSLA));
     localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
     localStorage.setItem('liq_dimensiones_especiales', JSON.stringify(AppData.dimensionesEspeciales));
-    localStorage.setItem('liq_descuentos_conductores', JSON.stringify(AppData.descuentosConductores));
+    localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems));
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
@@ -231,11 +232,6 @@ function dbPush(table) {
       fecha: d.fecha || '', tracking: d.tracking || '', cliente: d.cliente || '',
       zona: d.zona || '', valor: _num(d.valor), condicion: d.condicion || ''
     })),
-    descuentos_conductores: () => AppData.descuentosConductores.map(d => ({
-      conductor: d.conductor, combustible: _num(d.combustible),
-      extraviados: _num(d.extraviados), adelantos: _num(d.adelantos),
-      proveedores: _num(d.proveedores), obs: d.obs || ''
-    })).filter(d => d.conductor),
     km_desvio: () => AppData.kmDesvio.map(d => ({
       conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
       valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || ''

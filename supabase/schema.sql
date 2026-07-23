@@ -80,7 +80,11 @@ create table if not exists public.dimensiones_especiales (
   updated_at timestamptz not null default now()
 );
 
--- ---------- DESCUENTOS CONDUCTORES ----------
+-- ---------- DESCUENTOS CONDUCTORES (DEPRECADA) ----------
+-- Modelo viejo: una fila-resumen por conductor con 4 montos sueltos, sin fecha
+-- ni historial. Reemplazada por descuentos_items (registros con fecha, imputados
+-- por período) + el sistema de adelantos y km_desvio. Se deja por compatibilidad
+-- pero la app ya no la usa.
 create table if not exists public.descuentos_conductores (
   id bigint generated always as identity primary key,
   conductor text not null unique,
@@ -91,6 +95,25 @@ create table if not exists public.descuentos_conductores (
   obs text default '',
   updated_at timestamptz not null default now()
 );
+
+-- ---------- DESCUENTOS ITEMS (registros por fecha: combustible / extraviados / proveedores) ----------
+-- Cada renglón es un descuento con fecha, que se imputa a la liquidación del
+-- período en que cae (igual que km_desvio / adelanto_cuotas). Una sola tabla con
+-- discriminador 'tipo'; la UI muestra una solapa por tipo. 'referencia' guarda el
+-- tracking (extraviados) o el proveedor (proveedores); vacío en combustible.
+create table if not exists public.descuentos_items (
+  id bigint generated always as identity primary key,
+  tipo text not null check (tipo in ('combustible','extraviados','proveedores')),
+  conductor text not null,
+  fecha text default '',
+  fecha_date date,
+  monto numeric not null default 0,
+  referencia text default '',
+  detalle text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_desc_items_tipo_cond on public.descuentos_items (tipo, conductor);
+create index if not exists idx_desc_items_fecha on public.descuentos_items (fecha_date);
 
 -- ---------- KM DESVÍO ----------
 -- fecha: día del desvío (DD/MM/YYYY). valor_km: tarifa aplicada (snapshot, no se
@@ -308,3 +331,7 @@ alter table public.adelantos       enable row level security;
 alter table public.adelanto_cuotas enable row level security;
 create policy adelantos_all      on public.adelantos       for all to authenticated using (true) with check (true);
 create policy adelanto_cuotas_all on public.adelanto_cuotas for all to authenticated using (true) with check (true);
+
+-- descuentos_items: acceso completo para autenticados (igual que los demás descuentos).
+alter table public.descuentos_items enable row level security;
+create policy desc_items_all on public.descuentos_items for all to authenticated using (true) with check (true);

@@ -196,3 +196,97 @@ function verHistorialAdelanto(adelantoId) {
     (cuotasPagadasDe(adelantoId) ? '<div style="margin-top:10px;text-align:right"><button class="btn btn-sm" style="color:#b91c1c;border-color:#fca5a5" onclick="deshacerUltimaCuota(' + adelantoId + ')">↩ Deshacer última cuota</button></div>' : '');
   document.getElementById('modal-backdrop').classList.add('open');
 }
+
+// ── Plantilla + importación de Excel (crea adelantos; las cuotas se descuentan aparte) ──
+function descargarPlantillaAdelantos() {
+  const aoa = [
+    ['⚠ NO MODIFIQUES NI REORDENES LOS ENCABEZADOS DE LA FILA 2. Completá desde la fila 3 (una fila por adelanto). La cuota se calcula sola = Monto total / Cuotas. Las cuotas se descuentan después con "− Cuota".'],
+    ['Conductor', 'Monto total', 'Cuotas', 'Fecha', 'Observación'],
+    ['ALEJO BRIEND', 1000000, 10, '15/07/2026', 'Adelanto acordado'],
+    ['FEDERICO LABIGNAN', 500000, 5, '16/07/2026', 'Anticipo quincenal'],
+    ['NOMBRE APELLIDO', '', '', '', ''],
+    ['NOMBRE APELLIDO', '', '', '', ''],
+    ['NOMBRE APELLIDO', '', '', '', ''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 30 }];
+  ws['!rows'] = [{ hpx: 34 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+  ws['!freeze'] = { xSplit: 0, ySplit: 2 };
+  ws['!sheetPr'] = { pane: { ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft', state: 'frozen' } };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Adelantos');
+  XLSX.writeFile(wb, 'Plantilla_Adelantos.xlsx');
+  showToast('📥 Plantilla descargada — completá y volvé a subirla sin tocar los encabezados');
+}
+
+function importAdelantos(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if (rows.length < 2) { alert('El archivo está vacío o no tiene datos suficientes.'); return; }
+
+      let headerRowIdx = -1;
+      for (let r = 0; r < Math.min(rows.length, 5); r++) {
+        const cells = rows[r].map(h => String(h).toLowerCase().replace(/[^a-z]/g, ''));
+        if (cells.includes('conductor') || cells.includes('cadete') || cells.includes('nombre')) { headerRowIdx = r; break; }
+      }
+      if (headerRowIdx < 0) { alert('No se encontró una fila de encabezados válida (falta la columna "Conductor").\nDescargá la plantilla oficial.'); return; }
+
+      const header = rows[headerRowIdx].map(h => String(h).toLowerCase().trim());
+      const idx = {
+        conductor: header.findIndex(h => h.includes('conductor') || h.includes('cadete') || h.includes('nombre')),
+        monto:     header.findIndex(h => h.includes('monto') || h.includes('total') || h.includes('importe')),
+        cuotas:    header.findIndex(h => h.includes('cuota')),
+        fecha:     header.findIndex(h => h.includes('fecha')),
+        obs:       header.findIndex(h => h.includes('observ') || h.includes('nota') || h.includes('detalle') || h.includes('comentar')),
+      };
+      if (idx.conductor < 0) { alert('No se encontró la columna "Conductor".'); return; }
+
+      const parseNum = v => {
+        if (v === '' || v == null) return 0;
+        if (typeof v === 'number') return v;
+        const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+        return isNaN(n) ? 0 : n;
+      };
+
+      const nuevos = [];
+      for (let i = headerRowIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const conductor = String(r[idx.conductor] || '').trim().toUpperCase();
+        if (!conductor || conductor === 'NOMBRE APELLIDO') continue;
+        const monto_total = idx.monto >= 0 ? parseNum(r[idx.monto]) : 0;
+        const cuotas_total = idx.cuotas >= 0 ? Math.round(parseNum(r[idx.cuotas])) : 0;
+        if (monto_total <= 0 || cuotas_total < 1) continue;
+        const fecha = idx.fecha >= 0 ? fechaCeldaExcel(r[idx.fecha]) : '';
+        const obs = idx.obs >= 0 ? String(r[idx.obs] || '').trim() : '';
+        nuevos.push({ conductor, monto_total, cuotas_total, monto_cuota: Math.round(monto_total / cuotas_total), fecha, obs });
+      }
+
+      if (!nuevos.length) { alert('No se importó ningún adelanto válido (revisá Conductor, Monto total y Cuotas).'); return; }
+
+      let ok = 0;
+      for (const a of nuevos) {
+        try {
+          const row = await DB.insertRow('adelantos', a);
+          AppData.adelantos.push({ id: row.id, ...a });
+          ok++;
+        } catch (err) { console.warn('importAdelantos fila', a.conductor, err); }
+      }
+      renderAdelantos();
+      showToast('✅ Importados ' + ok + ' adelantos');
+    } catch (err) {
+      console.error(err);
+      alert('Error al importar: ' + err.message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}

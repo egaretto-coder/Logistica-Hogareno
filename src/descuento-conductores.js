@@ -1,169 +1,10 @@
-let descEditIdx = -1;
+// ════════════════════════════════════════════════════════════════════════
+//  DESCUENTO CONDUCTORES — solapas: combustible / extraviados / proveedores
+//  (módulo descuentos-items.js) + adelantos (adelantos.js) + km de desvío (acá).
+// ════════════════════════════════════════════════════════════════════════
 
-function saveDescuentos() {
-  try {
-    localStorage.setItem('liq_descuentos_conductores', JSON.stringify(AppData.descuentosConductores));
-  } catch(e) { console.warn('No se pudo guardar descuentos:', e); }
-  dbPush('descuentos_conductores');
-}
-
-function findDescuentoConductor(conductor) {
-  if (!conductor || !AppData.descuentosConductores.length) return null;
-  const key = conductor.toUpperCase().trim();
-  return AppData.descuentosConductores.find(d =>
-    String(d.conductor || '').toUpperCase().trim() === key
-  ) || null;
-}
-
-function renderDescuentosConductores() {
-  actualizarBotonSuperposiciones('descuentos');
-  const search = (document.getElementById('desc-search')?.value || '').toLowerCase();
-  const list = AppData.descuentosConductores.filter(d => {
-    if (!search) return true;
-    return String(d.conductor||'').toLowerCase().includes(search);
-  });
-
-  const countEl = document.getElementById('desc-count');
-  if (countEl) {
-    countEl.textContent = list.length + ' de ' + AppData.descuentosConductores.length + ' conductores con descuento';
-  }
-
-  const body = document.getElementById('desc-table-body');
-  if (!list.length) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
-      (AppData.descuentosConductores.length ? 'Ajustá el buscador' : 'Importá un Excel o agregá manualmente') +
-      '</div></div></td></tr>';
-    return;
-  }
-
-  body.innerHTML = list.map(d => {
-    const realIdx = AppData.descuentosConductores.indexOf(d);
-    const total = (d.combustible||0) + (d.extraviados||0) + (d.adelantos||0) + (d.proveedores||0);
-    return '<tr>' +
-      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(d.conductor) + '">' + initials(d.conductor) + '</div><strong>' + d.conductor + '</strong></div></td>' +
-      '<td class="mono" style="text-align:right;color:' + ((d.combustible||0) > 0 ? '#b91c1c' : '#9ca3af') + '">' + fmtPeso(d.combustible||0) + '</td>' +
-      '<td class="mono" style="text-align:right;color:' + ((d.extraviados||0) > 0 ? '#b91c1c' : '#9ca3af') + '">' + fmtPeso(d.extraviados||0) + '</td>' +
-      '<td class="mono" style="text-align:right;color:' + ((d.adelantos||0) > 0 ? '#b91c1c' : '#9ca3af') + '">' + fmtPeso(d.adelantos||0) + '</td>' +
-      '<td class="mono" style="text-align:right;color:' + ((d.proveedores||0) > 0 ? '#b91c1c' : '#9ca3af') + '">' + fmtPeso(d.proveedores||0) + '</td>' +
-      '<td class="mono" style="text-align:right"><strong>' + fmtPeso(total) + '</strong></td>' +
-      '<td class="muted" style="font-size:11px;max-width:200px">' + (d.obs || '—') + '</td>' +
-      '<td>' +
-        '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-sm" onclick="editDescuento(' + realIdx + ')">✎</button>' +
-          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescuento(' + realIdx + ')">🗑</button>' +
-        '</div>' +
-      '</td>' +
-      '</tr>';
-  }).join('');
-}
-
-function poblarConductoresDatalist() {
-  const dl = document.getElementById('mdesc-conductores-list');
-  if (!dl) return;
-  const nombres = AppData.panelConductores.map(c => c.nombre)
-    .concat(Object.keys(calcLiquidaciones()));
-  const uniques = Array.from(new Set(nombres)).sort();
-  dl.innerHTML = uniques.map(n => '<option value="' + n + '">').join('');
-}
-
-function openAddDescuentoModal() {
-  descEditIdx = -1;
-  document.getElementById('modal-desc-title').textContent = 'Agregar descuento';
-  document.getElementById('mdesc-conductor').value = '';
-  document.getElementById('mdesc-combustible').value = '';
-  document.getElementById('mdesc-extraviados').value = '';
-  document.getElementById('mdesc-adelantos').value = '';
-  document.getElementById('mdesc-proveedores').value = '';
-  document.getElementById('mdesc-obs').value = '';
-  poblarConductoresDatalist();
-  document.getElementById('modal-desc-backdrop').style.display = 'flex';
-}
-
-function editDescuento(idx) {
-  const d = AppData.descuentosConductores[idx];
-  if (!d) return;
-  descEditIdx = idx;
-  document.getElementById('modal-desc-title').textContent = 'Editar descuento — ' + d.conductor;
-  document.getElementById('mdesc-conductor').value = d.conductor || '';
-  document.getElementById('mdesc-combustible').value = d.combustible || '';
-  document.getElementById('mdesc-extraviados').value = d.extraviados || '';
-  document.getElementById('mdesc-adelantos').value = d.adelantos || '';
-  document.getElementById('mdesc-proveedores').value = d.proveedores || '';
-  document.getElementById('mdesc-obs').value = d.obs || '';
-  poblarConductoresDatalist();
-  document.getElementById('modal-desc-backdrop').style.display = 'flex';
-}
-
-function closeDescModal(e) {
-  if (!e || e.target.id === 'modal-desc-backdrop') {
-    document.getElementById('modal-desc-backdrop').style.display = 'none';
-  }
-}
-
-function guardarDescuentoModal() {
-  try {
-    const conductor = document.getElementById('mdesc-conductor').value.trim().toUpperCase();
-    const combustible = parseFloat(document.getElementById('mdesc-combustible').value) || 0;
-    const extraviados = parseFloat(document.getElementById('mdesc-extraviados').value) || 0;
-    const adelantos = parseFloat(document.getElementById('mdesc-adelantos').value) || 0;
-    const proveedores = parseFloat(document.getElementById('mdesc-proveedores').value) || 0;
-    const obs = document.getElementById('mdesc-obs').value.trim();
-
-    if (!conductor) { alert('El conductor es obligatorio.'); return; }
-    if (combustible === 0 && extraviados === 0 && adelantos === 0 && proveedores === 0) {
-      if (!confirm('Todos los montos son 0. ¿Guardar de todas formas?')) return;
-    }
-
-    const entry = { conductor, combustible, extraviados, adelantos, proveedores, obs };
-
-    if (descEditIdx >= 0) {
-      AppData.descuentosConductores[descEditIdx] = entry;
-    } else {
-      // Buscar duplicado por conductor
-      const dup = AppData.descuentosConductores.findIndex(x =>
-        String(x.conductor).toUpperCase().trim() === conductor
-      );
-      if (dup >= 0) {
-        if (!confirm('Ya existe descuento para ' + conductor + '. ¿Reemplazarlo?')) return;
-        AppData.descuentosConductores[dup] = entry;
-      } else {
-        AppData.descuentosConductores.push(entry);
-      }
-    }
-
-    saveDescuentos();
-    descEditIdx = -1;
-    document.getElementById('modal-desc-backdrop').style.display = 'none';
-    renderDescuentosConductores();
-    showToast('✅ Descuento guardado');
-  } catch(err) {
-    console.error(err);
-    alert('Error al guardar: ' + err.message);
-  }
-}
-
-function eliminarDescuento(idx) {
-  const d = AppData.descuentosConductores[idx];
-  if (!d) return;
-  if (!confirm('¿Eliminar el descuento de ' + d.conductor + '?')) return;
-  AppData.descuentosConductores.splice(idx, 1);
-  saveDescuentos();
-  renderDescuentosConductores();
-  showToast('🗑 Descuento eliminado');
-}
-
-function limpiarDescuentos() {
-  if (!AppData.descuentosConductores.length) { showToast('No hay descuentos para limpiar'); return; }
-  if (!confirm('¿Eliminar TODOS los descuentos cargados? (' + AppData.descuentosConductores.length + ' registros)')) return;
-  AppData.descuentosConductores = [];
-  saveDescuentos();
-  renderDescuentosConductores();
-  showToast('🗑 Todos los descuentos eliminados');
-}
-
-// ===== SOLAPAS: DESCUENTOS / KM DE DESVÍO =====
 function switchDescTab(tab) {
-  const tabs = ['descuentos', 'kmdesvio', 'adelantos'];
+  const tabs = ['combustible', 'extraviados', 'proveedores', 'adelantos', 'kmdesvio'];
   tabs.forEach(t => {
     const panel = document.getElementById('desc-tab-' + t);
     const btn = document.getElementById('tab-btn-' + t);
@@ -171,7 +12,8 @@ function switchDescTab(tab) {
     if (btn) btn.classList.toggle('active', t === tab);
   });
   if (tab === 'kmdesvio') renderKmDesvio();
-  if (tab === 'adelantos' && typeof renderAdelantos === 'function') renderAdelantos();
+  else if (tab === 'adelantos') { if (typeof renderAdelantos === 'function') renderAdelantos(); }
+  else if (typeof renderDescItems === 'function') renderDescItems(tab); // combustible / extraviados / proveedores
 }
 
 // ===== KM DE DESVÍO =====
@@ -406,44 +248,45 @@ function limpiarKmDesvio() {
   showToast('🗑 Todos los registros eliminados');
 }
 
-// Encabezados canónicos de la plantilla. El orden y los nombres definen la
-// estructura oficial: no cambiarlos evita que la importación falle o
-// tome datos de la columna equivocada.
-const PLANTILLA_DESC_HEADERS = ['Conductor', 'Combustible', 'Extraviados / Rotos', 'Adelantos', 'Servicio Proveedores', 'Observaciones'];
-const PLANTILLA_DESC_PLACEHOLDER = 'NOMBRE APELLIDO';
+// Convierte una celda de fecha de Excel (Date de xlsx, o texto DD/MM/AAAA) a DD/MM/YYYY.
+function fechaCeldaExcel(v) {
+  if (v instanceof Date) {
+    return String(v.getDate()).padStart(2, '0') + '/' + String(v.getMonth() + 1).padStart(2, '0') + '/' + v.getFullYear();
+  }
+  const s = String(v || '').trim();
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') + '/' + y; }
+  return '';
+}
 
-function descargarPlantillaDescuentos() {
+// ── Km de desvío: plantilla + importación de Excel ──────────────────────────
+function descargarPlantillaKm() {
   const aoa = [
-    ['⚠ NO MODIFIQUES NI REORDENES LOS ENCABEZADOS DE LA FILA 2. Completá los datos a partir de la fila 3 (una fila por conductor). No dejes filas ni columnas vacías entre datos.'],
-    PLANTILLA_DESC_HEADERS,
-    ['ALEJO BRIEND', 15000, 0, 20000, 0, 'Descuento por combustible y adelanto'],
-    ['EMILIANO VENTURA', 8000, 4500, 0, 0, 'Envío roto en zona LA PLATA'],
-    ['FEDERICO LABIGNAN', 0, 0, 30000, 0, 'Adelanto quincenal'],
-    ['SERGIO MOLINA', 0, 0, 0, 12000, 'Servicio de gomería contratado a proveedor externo'],
-    [PLANTILLA_DESC_PLACEHOLDER, '', '', '', '', ''],
-    [PLANTILLA_DESC_PLACEHOLDER, '', '', '', '', ''],
-    [PLANTILLA_DESC_PLACEHOLDER, '', '', '', '', ''],
-    [PLANTILLA_DESC_PLACEHOLDER, '', '', '', '', ''],
-    [PLANTILLA_DESC_PLACEHOLDER, '', '', '', '', ''],
+    ['⚠ NO MODIFIQUES NI REORDENES LOS ENCABEZADOS DE LA FILA 2. Completá desde la fila 3 (una fila por desvío). Fecha DD/MM/AAAA — la tarifa por km se aplica según esa fecha; el monto se calcula solo.'],
+    ['Conductor', 'Fecha', 'Km de desvío'],
+    ['ALEJO BRIEND', '15/07/2026', 12],
+    ['EMILIANO VENTURA', '16/07/2026', 8],
+    ['NOMBRE APELLIDO', '', ''],
+    ['NOMBRE APELLIDO', '', ''],
+    ['NOMBRE APELLIDO', '', ''],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:26},{wch:14},{wch:18},{wch:14},{wch:20},{wch:38}];
+  ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }];
   ws['!rows'] = [{ hpx: 34 }];
-  ws['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:5} }];
-  // Fijamos la fila del encabezado en pantalla para que no se pierda de vista al completar.
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
   ws['!freeze'] = { xSplit: 0, ySplit: 2 };
   ws['!sheetPr'] = { pane: { ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft', state: 'frozen' } };
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Descuentos');
-  XLSX.writeFile(wb, 'Plantilla_Descuento_Conductores.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'Km de desvio');
+  XLSX.writeFile(wb, 'Plantilla_Km_Desvio.xlsx');
   showToast('📥 Plantilla descargada — completá y volvé a subirla sin tocar los encabezados');
 }
 
-function importDescuentosConductores(event) {
+function importKmDesvio(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = function (e) {
     try {
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, { type: 'array' });
@@ -451,99 +294,51 @@ function importDescuentosConductores(event) {
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       if (rows.length < 2) { alert('El archivo está vacío o no tiene datos suficientes.'); return; }
 
-      // La plantilla oficial tiene:
-      //   fila 0 → instrucciones (puede estar o no)
-      //   fila 1 → encabezados canónicos
-      //   fila 2+ → datos
-      // Pero el usuario podría también subir un Excel sin la fila de instrucciones
-      // (encabezados en fila 0).  Intentamos detectar dónde están los headers.
-
-      // La celda debe SER exactamente "Conductor" (o "Cadete"/"Nombre"): la fila
-      // de instrucciones menciona la palabra "conductor", así que buscar por
-      // "incluye" la confundía con el encabezado real. Exigimos igualdad exacta.
       let headerRowIdx = -1;
       for (let r = 0; r < Math.min(rows.length, 5); r++) {
         const cells = rows[r].map(h => String(h).toLowerCase().replace(/[^a-z]/g, ''));
-        if (cells.includes('conductor') || cells.includes('cadete') || cells.includes('nombre')) {
-          headerRowIdx = r;
-          break;
-        }
+        if (cells.includes('conductor') || cells.includes('cadete') || cells.includes('nombre')) { headerRowIdx = r; break; }
       }
-
-      if (headerRowIdx < 0) {
-        alert('No se encontró una fila de encabezados válida.\n\nLa estructura del Excel debe contener al menos la columna "Conductor".\n\nDescargá la plantilla oficial para asegurarte de usar la estructura correcta.');
-        return;
-      }
+      if (headerRowIdx < 0) { alert('No se encontró una fila de encabezados válida (falta la columna "Conductor").\nDescargá la plantilla oficial.'); return; }
 
       const header = rows[headerRowIdx].map(h => String(h).toLowerCase().trim());
       const idx = {
-        conductor:   header.findIndex(h => h.includes('conductor') || h.includes('cadete') || h.includes('nombre')),
-        combustible: header.findIndex(h => h.includes('combustible') || h.includes('nafta') || h.includes('gasolina')),
-        extraviados: header.findIndex(h => h.includes('extravi') || h.includes('roto') || h.includes('perdid')),
-        adelantos:   header.findIndex(h => h.includes('adelanto') || h.includes('anticipo')),
-        proveedores: header.findIndex(h => h.includes('proveedor') || h.includes('servicio prov')),
-        obs:         header.findIndex(h => h.includes('observ') || h.includes('nota') || h.includes('comentar')),
+        conductor: header.findIndex(h => h.includes('conductor') || h.includes('cadete') || h.includes('nombre')),
+        fecha:     header.findIndex(h => h.includes('fecha')),
+        km:        header.findIndex(h => h.includes('km') || h.includes('kilomet') || h.includes('kilómet')),
       };
-
-      if (idx.conductor < 0) {
-        alert('No se encontró la columna "Conductor" en los encabezados.\n\nAsegurate de no haber cambiado la estructura de la plantilla.');
-        return;
-      }
+      if (idx.conductor < 0) { alert('No se encontró la columna "Conductor".'); return; }
 
       const parseNum = v => {
-        if (v === '' || v === null || v === undefined) return 0;
+        if (v === '' || v == null) return 0;
         if (typeof v === 'number') return v;
         const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
         return isNaN(n) ? 0 : n;
       };
+      const yaExisten = new Set(AppData.kmDesvio.map(d => [String(d.conductor).toUpperCase(), d.fecha, _num(d.km)].join('|')));
 
-      const nuevos = [];
+      let agregados = 0, salteados = 0;
       for (let i = headerRowIdx + 1; i < rows.length; i++) {
         const r = rows[i];
         const conductor = String(r[idx.conductor] || '').trim().toUpperCase();
-        if (!conductor || conductor === PLANTILLA_DESC_PLACEHOLDER) continue;
-        nuevos.push({
-          conductor,
-          combustible: idx.combustible >= 0 ? parseNum(r[idx.combustible]) : 0,
-          extraviados: idx.extraviados >= 0 ? parseNum(r[idx.extraviados]) : 0,
-          adelantos:   idx.adelantos   >= 0 ? parseNum(r[idx.adelantos])   : 0,
-          proveedores: idx.proveedores >= 0 ? parseNum(r[idx.proveedores]) : 0,
-          obs:         idx.obs         >= 0 ? String(r[idx.obs] || '').trim() : ''
-        });
+        if (!conductor || conductor === 'NOMBRE APELLIDO') continue;
+        const km = idx.km >= 0 ? parseNum(r[idx.km]) : 0;
+        if (km <= 0) continue;
+        const fecha = idx.fecha >= 0 ? fechaCeldaExcel(r[idx.fecha]) : '';
+        const clave = [conductor, fecha, km].join('|');
+        if (yaExisten.has(clave)) { salteados++; continue; }
+        yaExisten.add(clave);
+        const valor_km = fecha ? tarifaKmEnFecha(new Date(dmyToISO(fecha) + 'T12:00:00')) : kmValorActual();
+        const monto = Math.round(km * valor_km);
+        AppData.kmDesvio.push({ conductor, km, fecha, valor_km, monto, obs: '' });
+        agregados++;
       }
 
-      if (!nuevos.length) { alert('No se pudo importar ningún descuento válido.'); return; }
-
-      // Fusionar con los existentes: si el conductor ya tenía descuentos, la
-      // información nueva REEMPLAZA a la anterior (superposición auditable ⚠).
-      const resumenDesc = d =>
-        'Comb ' + fmtPeso(d.combustible || 0) + ' · Extr ' + fmtPeso(d.extraviados || 0) +
-        ' · Adel ' + fmtPeso(d.adelantos || 0) + ' · Prov ' + fmtPeso(d.proveedores || 0);
-      const mapExist = {};
-      AppData.descuentosConductores.forEach((d, i) => {
-        mapExist[String(d.conductor).toUpperCase().trim()] = i;
-      });
-      let agregados = 0;
-      const sup = [];
-      nuevos.forEach(n => {
-        const key = n.conductor;
-        if (mapExist[key] !== undefined) {
-          const v = AppData.descuentosConductores[mapExist[key]];
-          sup.push({ clave: key, antes: resumenDesc(v), despues: resumenDesc(n) });
-          AppData.descuentosConductores[mapExist[key]] = n;
-        } else {
-          mapExist[key] = AppData.descuentosConductores.length;
-          AppData.descuentosConductores.push(n);
-          agregados++;
-        }
-      });
-
-      registrarSuperposiciones('descuentos', isoToDMY(hoyISO()), sup);
-      saveDescuentos();
-      renderDescuentosConductores();
-      showToast('✅ Importado: ' + agregados + ' nuevos · ' + sup.length + ' reemplazaron información anterior' +
-        (sup.length ? ' — revisá el botón ⚠' : ''));
-    } catch(err) {
+      if (!agregados) { alert('No se importó ningún registro nuevo' + (salteados ? ' (' + salteados + ' duplicados salteados).' : ' válido.')); return; }
+      saveKmDesvio();
+      renderKmDesvio();
+      showToast('✅ Importados ' + agregados + ' km de desvío' + (salteados ? ' · ' + salteados + ' duplicados salteados' : ''));
+    } catch (err) {
       console.error(err);
       alert('Error al importar: ' + err.message);
     } finally {
@@ -552,6 +347,3 @@ function importDescuentosConductores(event) {
   };
   reader.readAsArrayBuffer(file);
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-

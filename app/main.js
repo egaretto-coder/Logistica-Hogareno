@@ -28,7 +28,7 @@ function showPage(id) {
   if (id === 'dashboard') renderDashboard();
   if (id === 'liquidaciones') renderLiquidaciones();
   if (id === 'dimensiones-especiales') renderDimensionesEspeciales();
-  if (id === 'descuento-conductores') renderDescuentosConductores();
+  if (id === 'descuento-conductores') switchDescTab('combustible');
   if (id === 'conductores') renderConductorSelect();
   if (id === 'reporte-zona') renderZonaReport();
   if (id === 'reporte-conductor') renderConductorReport();

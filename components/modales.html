@@ -102,25 +102,31 @@
 
       <!-- Descuentos -->
       <div>
-        <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:6px">
-          <span>🎫 Descuentos aplicables</span>
+        <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <span>🎫 Descuentos del período (imputados por fecha)</span>
           <span id="liq-desc-origen" style="font-size:10px;font-weight:500;color:#059669;text-transform:none;letter-spacing:normal"></span>
         </div>
+        <div style="font-size:10px;color:#9ca3af;margin-bottom:10px">Se cargan solos desde los registros de cada solapa que caen en el período. Podés ajustarlos o ponerlos en 0 antes de generar el PDF. Adelantos y km de desvío se aplican automáticamente abajo.</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
-            <label style="font-size:13px;display:flex;align-items:center;gap:6px">⛽ Combustible</label>
+            <div>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px">⛽ Combustible</label>
+              <span id="liq-desc-combustible-info" style="font-size:10px;color:#6b7280"></span>
+            </div>
             <input type="number" id="liq-desc-combustible" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
-            <label style="font-size:13px;display:flex;align-items:center;gap:6px">📦 Envíos extraviados / rotos</label>
+            <div>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px">📦 Envíos extraviados / rotos</label>
+              <span id="liq-desc-extraviados-info" style="font-size:10px;color:#6b7280"></span>
+            </div>
             <input type="number" id="liq-desc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
-            <label style="font-size:13px;display:flex;align-items:center;gap:6px">💵 Adelantos</label>
-            <input type="number" id="liq-desc-adelantos" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
-            <label style="font-size:13px;display:flex;align-items:center;gap:6px">🧾 Servicio proveedores</label>
+            <div>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px">🧾 Servicio proveedores</label>
+              <span id="liq-desc-proveedores-info" style="font-size:10px;color:#6b7280"></span>
+            </div>
             <input type="number" id="liq-desc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
         </div>
@@ -161,7 +167,6 @@
       <!-- Acciones -->
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
         <button class="btn" onclick="closeLiqModal()">Cancelar</button>
-        <button class="btn" onclick="guardarDescuentosEnPanel()" title="Guarda los descuentos ingresados en el panel Descuento Conductores">💾 Guardar en panel</button>
         <button class="btn" onclick="verDetalleDesdeModal()">Ver detalle</button>
         <button class="btn btn-primary" onclick="confirmarYDescargarPDF()">⬇ Confirmar y descargar PDF</button>
       </div>
@@ -170,42 +175,41 @@
   </div>
 </div>
 
-<!-- MODAL DESCUENTO CONDUCTOR -->
-<div class="modal-backdrop" id="modal-desc-backdrop" onclick="closeDescModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+<!-- MODAL DESCUENTO POR ÍTEM (combustible / extraviados / proveedores) -->
+<div class="modal-backdrop" id="modal-descitem-backdrop" onclick="closeDescItemModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <span class="modal-title" id="modal-desc-title">Agregar descuento</span>
-      <button class="modal-close" onclick="closeDescModal()">✕</button>
+      <span class="modal-title"><span id="mditem-tipo-emoji">⛽</span> <span id="modal-descitem-title">Agregar descuento</span></span>
+      <button class="modal-close" onclick="closeDescItemModal()">✕</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="margin:0">
         <label class="form-label">Conductor</label>
-        <input type="text" id="mdesc-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" list="mdesc-conductores-list" />
-        <datalist id="mdesc-conductores-list"></datalist>
+        <input type="text" id="mditem-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" list="mditem-conductores-list" />
+        <datalist id="mditem-conductores-list"></datalist>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">📅 Fecha</label>
+          <input type="date" id="mditem-fecha" class="form-input" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px">
+          <label class="form-label">💵 Monto ($)</label>
+          <input type="number" id="mditem-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+        </div>
+      </div>
+      <div class="form-group" id="mditem-ref-wrap" style="margin:0">
+        <label class="form-label" id="mditem-ref-label">Referencia</label>
+        <input type="text" id="mditem-ref" class="form-input" placeholder="" style="width:100%" />
       </div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">⛽ Combustible ($)</label>
-        <input type="number" id="mdesc-combustible" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+        <label class="form-label">Detalle / Observación (opcional)</label>
+        <textarea id="mditem-detalle" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
       </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">📦 Envíos extraviados / rotos ($)</label>
-        <input type="number" id="mdesc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">💵 Adelantos ($)</label>
-        <input type="number" id="mdesc-adelantos" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">🧾 Servicio proveedores ($)</label>
-        <input type="number" id="mdesc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Observaciones (opcional)</label>
-        <textarea id="mdesc-obs" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
-      </div>
+      <div style="font-size:11px;color:var(--text-muted)">📌 La <strong>fecha</strong> define a qué liquidación semanal se imputa este descuento.</div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button class="btn" onclick="closeDescModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarDescuentoModal()">Guardar</button>
+        <button class="btn" onclick="closeDescItemModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarDescItemModal()">Guardar</button>
       </div>
     </div>
   </div>

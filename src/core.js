@@ -212,10 +212,14 @@ let AppData = {
   // Formato: { fecha, tracking, cliente, zona, valor, condicion }
   dimensionesEspeciales: [],
 
-  // Descuentos por conductor: se aplican en la liquidación individual.
-  // Formato: { conductor, combustible, extraviados, adelantos, obs }
-  // La clave lógica es 'conductor' (nombre normalizado en mayúsculas).
+  // Descuentos por conductor (MODELO VIEJO, deprecado — reemplazado por descItems).
+  // Se conserva la propiedad para no romper referencias residuales; ya no se usa.
   descuentosConductores: [],
+
+  // Descuentos por registro con fecha (combustible / extraviados / proveedores).
+  // Cada renglón se imputa a la liquidación del período en que cae su fecha.
+  // Formato: { id, tipo, conductor, fecha, monto, referencia, detalle }
+  descItems: [],
 
   // Km de desvío: compensación adicional por kilómetros recorridos fuera de ruta.
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
@@ -327,6 +331,39 @@ function adelantoDescuentoConductor(conductor, rango) {
     detalle.push({ nro: c.nro, total: a ? _num(a.cuotas_total) : 0, monto: _num(c.monto) });
   });
   detalle.sort((x, y) => x.nro - y.nro);
+  return { monto, detalle };
+}
+
+// ── Descuentos por ítem con fecha (combustible / extraviados / proveedores) ──
+// Registros de un tipo para un conductor (sin filtrar por fecha).
+function descItemsDe(tipo, conductor) {
+  const key = String(conductor || '').toUpperCase().trim();
+  return AppData.descItems.filter(x =>
+    x.tipo === tipo && String(x.conductor || '').toUpperCase().trim() === key);
+}
+
+// Descuento de un tipo para un conductor dentro de un período (suma las cuotas
+// cuya fecha cae en el rango, o todas si no hay filtro). Espeja adelantoDescuentoConductor.
+// Devuelve { monto, detalle: [{ fecha, monto, referencia }] }.
+function descItemDescuentoConductor(tipo, conductor, rango) {
+  const key = String(conductor || '').toUpperCase().trim();
+  const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
+  let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  let monto = 0; const detalle = [];
+  AppData.descItems.forEach(x => {
+    if (x.tipo !== tipo) return;
+    if (String(x.conductor || '').toUpperCase().trim() !== key) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(x.fecha);
+      if (!f) return;
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    monto += _num(x.monto);
+    detalle.push({ fecha: x.fecha, monto: _num(x.monto), referencia: x.referencia || '' });
+  });
   return { monto, detalle };
 }
 
