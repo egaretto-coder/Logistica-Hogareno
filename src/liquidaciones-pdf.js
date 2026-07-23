@@ -98,7 +98,21 @@ function recalcLiqModal() {
     }
   }
 
-  const totalNeto = d.total + kmMonto - totalDesc - advMonto;
+  // Cuota(s) de extravío cuoteado imputadas al período (deducción, igual que el PDF)
+  const extAd = extravioCuotaDescuento(liqModalConductor, getLiqRangoFechasLabel());
+  const extMonto = extAd.monto;
+  const extWrap = document.getElementById('liq-modal-linea-extravio-wrap');
+  if (extWrap) {
+    extWrap.style.display = extMonto > 0 ? 'flex' : 'none';
+    if (extMonto > 0) {
+      const cuotasTxt = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
+      document.getElementById('liq-modal-linea-extravio-label').textContent =
+        'Cuota de extravío' + (cuotasTxt ? ' (' + cuotasTxt + ')' : '');
+      document.getElementById('liq-modal-linea-extravio').textContent = '-' + fmtPeso(extMonto);
+    }
+  }
+
+  const totalNeto = d.total + kmMonto - totalDesc - advMonto - extMonto;
 
   document.getElementById('liq-modal-linea-bruto').textContent = fmtPeso(d.total);
   document.getElementById('liq-modal-linea-desc').textContent = '-' + fmtPeso(totalDesc);
@@ -503,11 +517,17 @@ function exportPDF(conductor, opts) {
   const advMonto = advAd.monto;
   const advOffset = advMonto > 0 ? 6 : 0; // renglón extra en la caja si hay cuota
 
-  const totalNeto = d.total + kmMonto - totalDescuentos - advMonto;
+  // Cuota(s) de extravío cuoteado imputadas al período. RESTA al total (igual que
+  // la cuota de adelanto). Cada cuota se registró en la solapa Extravíos con su fecha.
+  const extAd = extravioCuotaDescuento(conductor, rangoFechas);
+  const extMonto = extAd.monto;
+  const extOffset = extMonto > 0 ? 6 : 0;
+
+  const totalNeto = d.total + kmMonto - totalDescuentos - advMonto - extMonto;
 
   let descY = doc.lastAutoTable.finalY + 8;
   // Si no cabe el bloque en la página actual, saltar de página
-  if (descY > 220 - kmOffset - advOffset) { doc.addPage(); descY = 30; }
+  if (descY > 220 - kmOffset - advOffset - extOffset) { doc.addPage(); descY = 30; }
 
   // Título del bloque
   doc.setFontSize(8.5);
@@ -521,7 +541,7 @@ function exportPDF(conductor, opts) {
 
   // Caja con fondo claro (altura dinámica según cantidad de ítems de descuento)
   const descItemsCount = 3;
-  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + advOffset;
+  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + advOffset + extOffset;
   doc.setFillColor(248, 249, 252);
   doc.roundedRect(MARGIN, descY, W - MARGIN*2, boxH, 2, 2, 'F');
   doc.setDrawColor(220, 226, 240);
@@ -563,10 +583,23 @@ function exportPDF(conductor, opts) {
     doc.text('-' + fmtPeso(advMonto), W - MARGIN - 6, descY + 14 + kmOffset, { align: 'right' });
   }
 
+  // Renglón: Cuota(s) de extravío cuoteado (resta al total)
+  if (extMonto > 0) {
+    drawDescIcon('E', MARGIN + 6, descY + 15.6 + kmOffset + advOffset, 4.4, LH_RED);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...LH_GRAY);
+    const cuotasTxtE = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
+    doc.text('Cuota de extravío' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + advOffset);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...LH_RED);
+    doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + advOffset, { align: 'right' });
+  }
+
   // Separador
   doc.setDrawColor(220, 226, 240);
   doc.setLineWidth(0.2);
-  doc.line(MARGIN + 6, descY + 11 + kmOffset + advOffset, W - MARGIN - 6, descY + 11 + kmOffset + advOffset);
+  doc.line(MARGIN + 6, descY + 11 + kmOffset + advOffset + extOffset, W - MARGIN - 6, descY + 11 + kmOffset + advOffset + extOffset);
 
   // Descuentos individuales (mismos conceptos que en el detalle previo a descargar)
   const descItems = [
@@ -574,7 +607,7 @@ function exportPDF(conductor, opts) {
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores', val: descuentos.proveedores || 0 },
   ];
-  let dY = descY + 17 + kmOffset + advOffset;
+  let dY = descY + 17 + kmOffset + advOffset + extOffset;
   descItems.forEach(item => {
     drawDescIcon(item.letter, MARGIN + 6, dY + 1.6, 4.4, item.color);
     doc.setFontSize(8);

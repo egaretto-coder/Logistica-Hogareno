@@ -11,6 +11,10 @@ function loadSavedConfig() {
   if (dItems) {
     try { AppData.descItems = JSON.parse(dItems) || []; } catch(e) {}
   }
+  const dCuotas = localStorage.getItem('liq_desc_cuotas');
+  if (dCuotas) {
+    try { AppData.descItemCuotas = JSON.parse(dCuotas) || []; } catch(e) {}
+  }
   const kmd = localStorage.getItem('liq_km_desvio');
   if (kmd) {
     try { AppData.kmDesvio = JSON.parse(kmd); } catch(e) {}
@@ -132,7 +136,12 @@ async function hydrateFromSupabase() {
   // Reemplaza el modelo viejo descuentosConductores (deprecado, ya no se carga).
   AppData.descItems = (data.descuentos_items || []).map(x => ({
     id: x.id, tipo: x.tipo, conductor: x.conductor, fecha: x.fecha || '',
-    monto: _num(x.monto), referencia: x.referencia || '', detalle: x.detalle || ''
+    monto: _num(x.monto), referencia: x.referencia || '', detalle: x.detalle || '',
+    cuotas_total: _num(x.cuotas_total) || 1, monto_cuota: _num(x.monto_cuota)
+  }));
+  // Cuotas de extravíos cuoteados (descuento_cuotas)
+  AppData.descItemCuotas = (data.descuento_cuotas || []).map(c => ({
+    id: c.id, item_id: c.item_id, nro: _num(c.nro), monto: _num(c.monto), fecha: c.fecha || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
     conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
@@ -194,6 +203,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
     localStorage.setItem('liq_dimensiones_especiales', JSON.stringify(AppData.dimensionesEspeciales));
     localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems));
+    localStorage.setItem('liq_desc_cuotas', JSON.stringify(AppData.descItemCuotas));
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));

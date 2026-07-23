@@ -152,6 +152,10 @@
           <span id="liq-modal-linea-adelanto-label">Cuota de adelanto</span>
           <span id="liq-modal-linea-adelanto" style="font-family:monospace;color:#fca5a5">$0</span>
         </div>
+        <div id="liq-modal-linea-extravio-wrap" style="display:none;justify-content:space-between;font-size:12px;margin-bottom:4px;opacity:0.85">
+          <span id="liq-modal-linea-extravio-label">Cuota de extravío</span>
+          <span id="liq-modal-linea-extravio" style="font-family:monospace;color:#fca5a5">$0</span>
+        </div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;opacity:0.85">
           <span>Descuentos totales</span>
           <span id="liq-modal-linea-desc" style="font-family:monospace;color:#fca5a5">$0</span>
@@ -182,20 +186,30 @@
       <span class="modal-title"><span id="mditem-tipo-emoji">⛽</span> <span id="modal-descitem-title">Agregar descuento</span></span>
       <button class="modal-close" onclick="closeDescItemModal()">✕</button>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow:auto">
       <div class="form-group" style="margin:0">
         <label class="form-label">Conductor</label>
-        <input type="text" id="mditem-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" list="mditem-conductores-list" />
+        <input type="text" id="mditem-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase(); if(descItemModalTipo==='extraviados') buscarTrackingsExtravio();" list="mditem-conductores-list" />
         <datalist id="mditem-conductores-list"></datalist>
       </div>
+
+      <!-- EXTRAVÍOS: cliente + autocompletado de tracking (solo extraviados) -->
+      <div id="mditem-extravio-extra" style="display:none;flex-direction:column;gap:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;background:var(--surface-0)">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">🧑 Cliente (destinatario) — opcional, para filtrar</label>
+          <input type="text" id="mditem-cliente" class="form-input" placeholder="Nombre del destinatario" style="width:100%" oninput="buscarTrackingsExtravio()" />
+        </div>
+        <div id="mditem-sugerencias" style="max-height:150px;overflow:auto"></div>
+      </div>
+
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:140px">
           <label class="form-label">📅 Fecha</label>
-          <input type="date" id="mditem-fecha" class="form-input" style="width:100%" />
+          <input type="date" id="mditem-fecha" class="form-input" style="width:100%" onchange="if(descItemModalTipo==='extraviados') buscarTrackingsExtravio();" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:120px">
           <label class="form-label">💵 Monto ($)</label>
-          <input type="number" id="mditem-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+          <input type="number" id="mditem-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" oninput="if(descItemModalTipo==='extraviados') actualizarPreviewCuotaExtravio();" />
         </div>
       </div>
       <div class="form-group" id="mditem-ref-wrap" style="margin:0">
@@ -206,7 +220,21 @@
         <label class="form-label">Detalle / Observación (opcional)</label>
         <textarea id="mditem-detalle" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
       </div>
-      <div style="font-size:11px;color:var(--text-muted)">📌 La <strong>fecha</strong> define a qué liquidación semanal se imputa este descuento.</div>
+
+      <!-- EXTRAVÍOS: cuotear (solo extraviados) -->
+      <div id="mditem-cuotear-block" style="display:none;padding:10px;border:1px solid var(--border);border-radius:8px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="mditem-cuotear" onchange="toggleCuotearExtravio()" style="width:16px;height:16px"> 💳 Cuotear este extravío (pagarlo en cuotas)
+        </label>
+        <div id="mditem-cuotas-wrap" style="display:none;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <label class="form-label" style="margin:0">Cantidad de cuotas</label>
+          <input type="number" id="mditem-cuotas" class="form-input" min="2" step="1" placeholder="Ej. 3" style="width:100px" oninput="actualizarPreviewCuotaExtravio()">
+          <span id="mditem-cuota-preview" style="font-size:12px;color:var(--text-secondary);font-weight:600"></span>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Las cuotas se descuentan después, semana a semana, con el botón "− Cuota" en la solapa Extravíos.</div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-muted)">📌 La <strong>fecha</strong> define a qué liquidación se imputa (o, si cuoteás, la de cada cuota que descuentes).</div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
         <button class="btn" onclick="closeDescItemModal()">Cancelar</button>
         <button class="btn btn-primary" onclick="guardarDescItemModal()">Guardar</button>

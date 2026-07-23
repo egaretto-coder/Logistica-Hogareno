@@ -110,10 +110,28 @@ create table if not exists public.descuentos_items (
   monto numeric not null default 0,
   referencia text default '',
   detalle text default '',
+  cuotas_total int not null default 1,   -- 1 = pago único; >1 = extravío cuoteado (monto = total)
+  monto_cuota numeric not null default 0,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_desc_items_tipo_cond on public.descuentos_items (tipo, conductor);
 create index if not exists idx_desc_items_fecha on public.descuentos_items (fecha_date);
+
+-- ---------- DESCUENTO CUOTAS (cuotas de un extravío cuoteado) ----------
+-- Solo para descuentos_items con cuotas_total>1 (por ahora, extravíos caros). Cada
+-- cuota se imputa a la liquidación del período de su fecha. Cascade con el item.
+create table if not exists public.descuento_cuotas (
+  id bigint generated always as identity primary key,
+  item_id bigint not null references public.descuentos_items(id) on delete cascade,
+  nro int not null,
+  monto numeric not null default 0,
+  fecha text default '',
+  fecha_date date,
+  created_at timestamptz not null default now(),
+  unique (item_id, nro)
+);
+create index if not exists idx_descuento_cuotas_item on public.descuento_cuotas (item_id);
+create index if not exists idx_descuento_cuotas_fecha on public.descuento_cuotas (fecha_date);
 
 -- ---------- KM DESVÍO ----------
 -- fecha: día del desvío (DD/MM/YYYY). valor_km: tarifa aplicada (snapshot, no se
@@ -335,3 +353,7 @@ create policy adelanto_cuotas_all on public.adelanto_cuotas for all to authentic
 -- descuentos_items: acceso completo para autenticados (igual que los demás descuentos).
 alter table public.descuentos_items enable row level security;
 create policy desc_items_all on public.descuentos_items for all to authenticated using (true) with check (true);
+
+-- descuento_cuotas: acceso completo para autenticados.
+alter table public.descuento_cuotas enable row level security;
+create policy descuento_cuotas_all on public.descuento_cuotas for all to authenticated using (true) with check (true);

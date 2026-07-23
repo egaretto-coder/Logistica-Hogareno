@@ -218,8 +218,13 @@ let AppData = {
 
   // Descuentos por registro con fecha (combustible / extraviados / proveedores).
   // Cada renglón se imputa a la liquidación del período en que cae su fecha.
-  // Formato: { id, tipo, conductor, fecha, monto, referencia, detalle }
+  // Formato: { id, tipo, conductor, fecha, monto, referencia, detalle, cuotas_total, monto_cuota }
+  // cuotas_total>1 = extravío cuoteado (monto=total; se imputa por cuotas, no de una).
   descItems: [],
+
+  // Cuotas de un extravío cuoteado (descuento_cuotas). Cada una se imputa a la
+  // liquidación de su semana. Formato: { id, item_id, nro, monto, fecha }
+  descItemCuotas: [],
 
   // Km de desvío: compensación adicional por kilómetros recorridos fuera de ruta.
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
@@ -354,6 +359,7 @@ function descItemDescuentoConductor(tipo, conductor, rango) {
   let monto = 0; const detalle = [];
   AppData.descItems.forEach(x => {
     if (x.tipo !== tipo) return;
+    if (_num(x.cuotas_total) > 1) return; // cuoteado: no se imputa el total de una, va por cuotas
     if (String(x.conductor || '').toUpperCase().trim() !== key) return;
     if (desde || hasta) {
       const f = parseFechaReg(x.fecha);
@@ -364,6 +370,50 @@ function descItemDescuentoConductor(tipo, conductor, rango) {
     monto += _num(x.monto);
     detalle.push({ fecha: x.fecha, monto: _num(x.monto), referencia: x.referencia || '' });
   });
+  return { monto, detalle };
+}
+
+// ── Cuotas de extravíos cuoteados (descuento_cuotas) ─────────────────────────
+function descItemCuotasDe(itemId) {
+  return AppData.descItemCuotas.filter(c => c.item_id === itemId);
+}
+function descItemCuotasPagadas(itemId) { return descItemCuotasDe(itemId).length; }
+function descItemSaldo(item) {
+  const pagado = descItemCuotasDe(item.id).reduce((s, c) => s + _num(c.monto), 0);
+  return Math.max(0, _num(item.monto) - pagado);
+}
+function descItemSaldado(item) { return descItemCuotasPagadas(item.id) >= _num(item.cuotas_total); }
+
+// Cuota(s) de extravío imputadas a un conductor dentro de un período.
+// Suma las descuento_cuotas (de items tipo 'extraviados' cuoteados) cuya fecha
+// cae en el rango. Espeja adelantoDescuentoConductor.
+// Devuelve { monto, detalle: [{ nro, total, monto }] }.
+function extravioCuotaDescuento(conductor, rango) {
+  const key = String(conductor || '').toUpperCase().trim();
+  const itemsTotal = {}; // item_id → cuotas_total (solo extravíos cuoteados del conductor)
+  AppData.descItems.forEach(x => {
+    if (x.tipo === 'extraviados' && _num(x.cuotas_total) > 1 &&
+        String(x.conductor || '').toUpperCase().trim() === key) itemsTotal[x.id] = _num(x.cuotas_total);
+  });
+  const setIds = new Set(Object.keys(itemsTotal).map(Number));
+  if (!setIds.size) return { monto: 0, detalle: [] };
+  const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
+  let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  let monto = 0; const detalle = [];
+  AppData.descItemCuotas.forEach(c => {
+    if (!setIds.has(c.item_id)) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(c.fecha);
+      if (!f) return;
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    monto += _num(c.monto);
+    detalle.push({ nro: c.nro, total: itemsTotal[c.item_id] || 0, monto: _num(c.monto) });
+  });
+  detalle.sort((x, y) => x.nro - y.nro);
   return { monto, detalle };
 }
 
