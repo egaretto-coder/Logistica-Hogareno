@@ -25,6 +25,20 @@ function precioAutoDe(r) {
   return { precio: p.precio, etiqueta: tipoLabel(p.tipo) + (p.es_super ? ' ⭐' : '') + (p.sin_tarifa ? ' (sin tarifa)' : '') };
 }
 
+// Filtro "solo envíos incompletos": los que tienen zona vacía o precio efectivo 0.
+// Esos envíos NO contabilizan hasta que el operador los complete a mano.
+let condSoloIncompletos = false;
+function envioIncompleto(r) {
+  const sinZona = !String(r.zona || '').trim();
+  const manual = precioManualDe(r);
+  const precioEf = manual !== null ? manual : precioAutoDe(r).precio;
+  return sinZona || !(precioEf > 0);
+}
+function toggleFiltroIncompletos() {
+  condSoloIncompletos = !condSoloIncompletos;
+  renderConductorDetail();
+}
+
 // Índices (en AppData.records) de los registros del conductor dentro del rango.
 function indicesConductorFiltrados(cond) {
   const key = cond.toUpperCase().trim();
@@ -52,6 +66,7 @@ function renderConductorDetail() {
   if (!cond) {
     wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🚗</div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div></div>`;
     const cEl = document.getElementById('cond-filtro-count'); if (cEl) cEl.textContent = '';
+    const bEl = document.getElementById('cond-incompletos-count'); if (bEl) bEl.textContent = '';
     return;
   }
 
@@ -74,9 +89,24 @@ function renderConductorDetail() {
   const fCli = (document.getElementById('cond-filtro-cliente')?.value || '').toLowerCase().trim();
   const fTrk = (document.getElementById('cond-filtro-tracking')?.value || '').toLowerCase().trim();
   const fZona = (document.getElementById('cond-filtro-zona')?.value || '').toLowerCase().trim();
-  const hayFiltro = !!(fCli || fTrk || fZona);
+  const hayFiltro = !!(fCli || fTrk || fZona || condSoloIncompletos);
+
+  // Contar envíos incompletos (sin zona o sin precio) del período, para el badge del botón.
+  let incompletosCount = 0;
+  idxs.forEach(i => { if (envioIncompleto(AppData.records[i])) incompletosCount++; });
+  const btnInc = document.getElementById('cond-filtro-incompletos');
+  if (btnInc) {
+    btnInc.style.borderColor = condSoloIncompletos ? '#f59e0b' : '';
+    btnInc.style.background = condSoloIncompletos ? '#fffbeb' : '';
+    btnInc.style.color = condSoloIncompletos ? '#92400e' : (incompletosCount ? '#b45309' : '');
+    btnInc.style.fontWeight = condSoloIncompletos ? '700' : '';
+    const badge = document.getElementById('cond-incompletos-count');
+    if (badge) badge.textContent = incompletosCount ? (' · ' + incompletosCount) : '';
+  }
+
   const idxsVista = !hayFiltro ? idxs : idxs.filter(i => {
     const r = AppData.records[i];
+    if (condSoloIncompletos && !envioIncompleto(r)) return false;
     if (fTrk && !String(r.tracking || '').toLowerCase().includes(fTrk)) return false;
     if (fZona && !String(r.zona || r.localidad || '').toLowerCase().includes(fZona)) return false;
     if (fCli && !String(r.destinatario || '').toLowerCase().includes(fCli)) return false;
@@ -145,7 +175,7 @@ function renderConductorDetail() {
             </tr>
           </thead>
           <tbody>
-            ${filas || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">${hayFiltro ? '🔎 Ningún envío coincide con el filtro (revisá cliente / tracking / zona, o tocá Limpiar)' : 'Sin recorridos del conductor en el período elegido'}</td></tr>`}
+            ${filas || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">${(condSoloIncompletos && !fCli && !fTrk && !fZona) ? '✅ No hay envíos sin zona ni precio en este período' : hayFiltro ? '🔎 Ningún envío coincide con el filtro (revisá cliente / tracking / zona, o tocá Limpiar)' : 'Sin recorridos del conductor en el período elegido'}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -161,6 +191,7 @@ function limpiarFiltrosConductor() {
   ['cond-filtro-cliente', 'cond-filtro-tracking', 'cond-filtro-zona'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  condSoloIncompletos = false;
   renderConductorDetail();
 }
 
