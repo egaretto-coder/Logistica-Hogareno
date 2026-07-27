@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v28';
+const CACHE = 'liq-cache-v29';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -78,8 +78,15 @@ self.addEventListener('install', (event) => {
       if (previa) { await cache.put(url, previa); return; }
       await cache.add(new Request(url, { mode: 'no-cors' }));
     }));
-    self.skipWaiting();
+    // OJO: NO llamamos self.skipWaiting() acá. Queremos que la versión nueva
+    // quede EN ESPERA hasta que el operador toque "Actualizar" (banner en la app).
+    // Al tocarlo, la app manda el mensaje SKIP_WAITING (ver más abajo).
   })());
+});
+
+// La app pide activar la versión nueva cuando el operador toca "Actualizar".
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -87,9 +94,8 @@ self.addEventListener('activate', (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
-    // NO recargamos pestañas a la fuerza: con network-first el código propio ya
-    // llega fresco en la próxima navegación. La recarga forzada (clients.navigate)
-    // provocaba cargas dobles/triples y la sensación de "siempre cargando".
+    // La recarga la dispara la app (evento controllerchange) tras aceptar la
+    // actualización, así no interrumpimos al operador a mitad de una edición.
   })());
 });
 
