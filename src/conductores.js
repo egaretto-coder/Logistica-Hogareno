@@ -51,6 +51,7 @@ function renderConductorDetail() {
   const wrap = document.getElementById('conductor-detail-wrap');
   if (!cond) {
     wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🚗</div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div></div>`;
+    const cEl = document.getElementById('cond-filtro-count'); if (cEl) cEl.textContent = '';
     return;
   }
 
@@ -69,7 +70,22 @@ function renderConductorDetail() {
     else noEntregados++;
   });
 
-  const filas = idxs.map(i => {
+  // Buscador: filtra SOLO la tabla (no cambia los totales del período de arriba).
+  const fCli = (document.getElementById('cond-filtro-cliente')?.value || '').toLowerCase().trim();
+  const fTrk = (document.getElementById('cond-filtro-tracking')?.value || '').toLowerCase().trim();
+  const fZona = (document.getElementById('cond-filtro-zona')?.value || '').toLowerCase().trim();
+  const hayFiltro = !!(fCli || fTrk || fZona);
+  const idxsVista = !hayFiltro ? idxs : idxs.filter(i => {
+    const r = AppData.records[i];
+    if (fTrk && !String(r.tracking || '').toLowerCase().includes(fTrk)) return false;
+    if (fZona && !String(r.zona || r.localidad || '').toLowerCase().includes(fZona)) return false;
+    if (fCli && !String(r.destinatario || '').toLowerCase().includes(fCli)) return false;
+    return true;
+  });
+  const cntEl = document.getElementById('cond-filtro-count');
+  if (cntEl) cntEl.textContent = hayFiltro ? ('Mostrando ' + idxsVista.length + ' de ' + idxs.length + ' recorridos') : '';
+
+  const filas = idxsVista.map(i => {
     const r = AppData.records[i];
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
@@ -79,7 +95,7 @@ function renderConductorDetail() {
     return `
       <tr style="${contabiliza ? '' : 'background:#fdf6f6;'}${manual !== null ? 'box-shadow:inset 3px 0 0 #f59e0b;' : ''}">
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
-          class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px"></td>
+          class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '">🧑 ' + r.destinatario + '</div>' : ''}</td>
         <td class="muted mono" style="font-size:12px">${r.fecha || '—'}</td>
         <td><input type="text" value="${(r.zona || '').replace(/"/g,'&quot;')}" onchange="editarRegistroConductor(${i},'zona',this.value)"
           style="width:150px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-transform:uppercase"></td>
@@ -129,7 +145,7 @@ function renderConductorDetail() {
             </tr>
           </thead>
           <tbody>
-            ${filas || '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">Sin recorridos del conductor en el período elegido</td></tr>'}
+            ${filas || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">${hayFiltro ? '🔎 Ningún envío coincide con el filtro (revisá cliente / tracking / zona, o tocá Limpiar)' : 'Sin recorridos del conductor en el período elegido'}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -137,6 +153,15 @@ function renderConductorDetail() {
         💡 Dejá el precio <strong>vacío</strong> para volver al cálculo automático. Las filas con borde naranja tienen precio corregido a mano.
       </div>
     </div>`;
+}
+
+// Limpia los filtros del buscador (cliente / tracking / zona) y re-renderiza.
+// También se usa al cambiar de conductor, para no arrastrar un filtro viejo.
+function limpiarFiltrosConductor() {
+  ['cond-filtro-cliente', 'cond-filtro-tracking', 'cond-filtro-zona'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  renderConductorDetail();
 }
 
 // Ids (de nube) de los registros editados y aún no sincronizados.

@@ -16,7 +16,7 @@
           <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             <div style="display:flex;align-items:center;gap:6px">
               <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🚗 Conductor</span>
-              <select id="cond-select" onchange="renderConductorDetail()" style="width:220px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <select id="cond-select" onchange="limpiarFiltrosConductor()" style="width:220px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                 <option value="">Seleccionar conductor...</option>
               </select>
             </div>
@@ -27,6 +27,15 @@
               <input type="date" id="cond-fecha-hasta" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
               <button class="btn btn-sm" onclick="document.getElementById('cond-fecha-desde').value='';document.getElementById('cond-fecha-hasta').value='';renderConductorDetail()">Todas las fechas</button>
             </div>
+          </div>
+          <!-- BUSCADOR: filtra la tabla por cliente / tracking / zona (combinables) -->
+          <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:12px">
+            <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🔎 Buscar envío</span>
+            <input type="search" id="cond-filtro-cliente" placeholder="🧑 Cliente / destinatario" oninput="renderConductorDetail()" style="width:190px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+            <input type="search" id="cond-filtro-tracking" placeholder="📦 Tracking" oninput="renderConductorDetail()" style="width:170px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace">
+            <input type="search" id="cond-filtro-zona" placeholder="📍 Zona" oninput="renderConductorDetail()" style="width:150px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;text-transform:uppercase">
+            <button class="btn btn-sm" onclick="limpiarFiltrosConductor()">✕ Limpiar</button>
+            <span id="cond-filtro-count" style="font-size:11px;color:var(--text-muted)"></span>
           </div>
         </div>
 
