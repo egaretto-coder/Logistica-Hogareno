@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v30';
+const CACHE = 'liq-cache-v31';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -56,6 +56,8 @@ const APP_SHELL = [
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/icon-maskable-512.png',
+  // Tipografía (Inter auto-hospedada)
+  './assets/fonts/inter-var.woff2',
 ];
 
 // Librerías externas (CDN) que la app necesita para funcionar offline.

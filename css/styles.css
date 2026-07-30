@@ -1,3 +1,12 @@
+  /* Inter auto-hospedada (variable, subset latin) — funciona offline vía SW. */
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('../assets/fonts/inter-var.woff2') format('woff2');
+  }
+
   :root {
     --brand: #1a1a2e;
     --accent: #e94560;
@@ -23,12 +32,15 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--surface-0);
     color: var(--text-primary);
     font-size: 14px;
     line-height: 1.5;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv11', 'ss01';
   }
 
   /* SIDEBAR */
@@ -97,8 +109,33 @@
   }
 
   .nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
-  .nav-item.active { background: var(--accent); color: white; font-weight: 500; }
-  .nav-item .nav-icon { font-size: 16px; flex-shrink: 0; }
+  .nav-item:hover .nav-icon { color: rgba(255,255,255,0.9); }
+
+  /* Estado activo: tinte coral suave + marca de color a la izquierda + ícono coral */
+  .nav-item.active {
+    background: rgba(233,69,96,0.16);
+    color: #fff;
+    font-weight: 600;
+    position: relative;
+  }
+  .nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: -8px; top: 6px; bottom: 6px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+  }
+  .nav-item.active .nav-icon { color: var(--accent); }
+
+  /* Íconos SVG de línea (heredan color por currentColor) */
+  .nav-item .nav-icon {
+    width: 18px; height: 18px; flex-shrink: 0;
+    stroke: currentColor; fill: none;
+    stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+    color: rgba(255,255,255,0.55);
+    transition: color 0.15s;
+  }
 
   .sidebar-footer {
     padding: 16px;
