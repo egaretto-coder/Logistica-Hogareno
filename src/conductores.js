@@ -64,7 +64,7 @@ function renderConductorDetail() {
   const cond = document.getElementById('cond-select').value;
   const wrap = document.getElementById('conductor-detail-wrap');
   if (!cond) {
-    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🚗</div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div></div>`;
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon"><i class="ic ic-truck"></i></div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div></div>`;
     const cEl = document.getElementById('cond-filtro-count'); if (cEl) cEl.textContent = '';
     const bEl = document.getElementById('cond-incompletos-count'); if (bEl) bEl.textContent = '';
     return;
@@ -125,7 +125,7 @@ function renderConductorDetail() {
     return `
       <tr style="${contabiliza ? '' : 'background:#fdf6f6;'}${manual !== null ? 'box-shadow:inset 3px 0 0 #f59e0b;' : ''}">
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
-          class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '">🧑 ' + r.destinatario + '</div>' : ''}</td>
+          class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '"><i class="ic ic-user"></i> ' + r.destinatario + '</div>' : ''}</td>
         <td class="muted mono" style="font-size:12px">${r.fecha || '—'}</td>
         <td><input type="text" value="${(r.zona || '').replace(/"/g,'&quot;')}" onchange="editarRegistroConductor(${i},'zona',this.value)"
           style="width:150px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-transform:uppercase"></td>
@@ -133,8 +133,8 @@ function renderConductorDetail() {
           <select onchange="editarRegistroConductor(${i},'estado',this.value)"
             style="padding:5px 8px;border:1px solid ${contabiliza ? '#86efac' : '#fca5a5'};border-radius:6px;font-size:12px;background:${contabiliza ? '#f0fdf4' : '#fef2f2'};color:${contabiliza ? '#166534' : '#b91c1c'};font-weight:600">
             ${!esCanonico ? `<option value="${(r.estado || '').replace(/"/g,'&quot;')}" selected>${r.estado || '—'}</option>` : ''}
-            <option value="Entregado" ${estadoNorm === 'ENTREGADO' ? 'selected' : ''}>✓ Entregado (contabiliza)</option>
-            <option value="No entregado" ${estadoNorm === 'NO ENTREGADO' ? 'selected' : ''}>✗ No entregado (no suma)</option>
+            <option value="Entregado" ${estadoNorm === 'ENTREGADO' ? 'selected' : ''}><i class="ic ic-check"></i> Entregado (contabiliza)</option>
+            <option value="No entregado" ${estadoNorm === 'NO ENTREGADO' ? 'selected' : ''}><i class="ic ic-x"></i> No entregado (no suma)</option>
           </select>
         </td>
         <td>
@@ -148,7 +148,7 @@ function renderConductorDetail() {
         </td>
         <td style="font-size:11px;color:var(--text-muted)">
           ${manual !== null
-            ? '<span class="tag" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a">✏️ Corregido (auto: ' + fmtPeso(auto.precio) + ')</span>'
+            ? '<span class="tag" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a"><i class="ic ic-edit"></i> Corregido (auto: ' + fmtPeso(auto.precio) + ')</span>'
             : auto.etiqueta}
         </td>
       </tr>`;
@@ -284,7 +284,7 @@ function buildConductorDetail(cond) {
           <div class="conductor-meta">${cat ? 'Categoría: ' + tipoLabel(cat.categoria === 'super_sla' ? 'sla' : cat.categoria) : 'Sin categorizar'} · ${d.filas.length} entregados liquidados · ${d.filas_excluidas.length} en otros estados</div>
         </div>
         <div style="margin-left:auto">
-          <button class="btn" style="color:white;border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.1)" onclick="exportPDF('${cond}')">⬇ Exportar PDF</button>
+          <button class="btn" style="color:white;border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.1)" onclick="exportPDF('${cond}')"><i class="ic ic-download"></i> Exportar PDF</button>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border)">
@@ -314,11 +314,11 @@ function buildConductorDetail(cond) {
               // Estilo especial para dimensiones
               const bgDim = f.es_dim_especial ? 'background:#fef9c3' : '';
               const tipoBadge = f.es_dim_especial
-                ? '<span class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a">📦 Dimensión Especial</span>'
+                ? '<span class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a"><i class="ic ic-box"></i> Dimensión Especial</span>'
                 : '<span class="badge ' + (f.tipo === 's_colecta' ? 'badge-blue' : f.tipo === 'c_colecta' ? 'badge-green' : 'badge-gray') + '">' + tipoLabel(f.tipo) + '</span>';
               const notas = f.es_dim_especial
                 ? '<div style="font-size:11px;line-height:1.35"><strong>' + (f.dim_condicion || '—') + '</strong>' + (f.dim_cliente ? '<br><span class="muted">Cliente: ' + f.dim_cliente + '</span>' : '') + '</div>'
-                : (f.es_super ? '<span class="tag super-sla">⭐ Super SLA</span>' : f.sin_tarifa ? '<span class="tag" style="color:var(--accent)">Sin tarifa</span>' : '');
+                : (f.es_super ? '<span class="tag super-sla"><i class="ic ic-star"></i> Super SLA</span>' : f.sin_tarifa ? '<span class="tag" style="color:var(--accent)">Sin tarifa</span>' : '');
               return '<tr style="' + bgDim + '">' +
                 '<td class="mono muted" style="font-size:11px">' + f.tracking + '</td>' +
                 '<td class="muted">' + (f.fecha || '—') + '</td>' +

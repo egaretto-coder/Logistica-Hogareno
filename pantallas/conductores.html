@@ -3,25 +3,25 @@
           <span class="section-title">Control y edición de conductor</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span id="cond-edit-estado" style="font-size:11px;color:var(--text-muted)"></span>
-            <button class="btn btn-sm btn-primary" id="cond-guardar-btn" onclick="guardarEdicionConductores()" style="display:none">💾 Guardar en la nube</button>
+            <button class="btn btn-sm btn-primary" id="cond-guardar-btn" onclick="guardarEdicionConductores()" style="display:none"><i class="ic ic-save"></i> Guardar en la nube</button>
           </div>
         </div>
 
         <div class="alert alert-info" style="margin-bottom:12px">
-          ✏️ Acá podés <strong>corregir a mano</strong> los recorridos antes de descargar la liquidación: tracking, zona, precio y si <strong>contabiliza o no</strong> (entregado / no entregado). Las correcciones se guardan en la nube y se reflejan en la liquidación y el PDF.
+          <i class="ic ic-edit"></i> Acá podés <strong>corregir a mano</strong> los recorridos antes de descargar la liquidación: tracking, zona, precio y si <strong>contabiliza o no</strong> (entregado / no entregado). Las correcciones se guardan en la nube y se reflejan en la liquidación y el PDF.
         </div>
 
         <!-- FILTROS: conductor + rango de fechas -->
         <div class="card" style="margin-bottom:12px">
           <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🚗 Conductor</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-truck"></i> Conductor</span>
               <select id="cond-select" onchange="limpiarFiltrosConductor()" style="width:220px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                 <option value="">Seleccionar conductor...</option>
               </select>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 Desde</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Desde</span>
               <input type="date" id="cond-fecha-desde" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
               <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Hasta</span>
               <input type="date" id="cond-fecha-hasta" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
@@ -30,19 +30,19 @@
           </div>
           <!-- BUSCADOR: filtra la tabla por cliente / tracking / zona (combinables) -->
           <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:12px">
-            <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🔎 Buscar envío</span>
+            <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-search"></i> Buscar envío</span>
             <input type="search" id="cond-filtro-cliente" placeholder="🧑 Cliente / destinatario" oninput="renderConductorDetail()" style="width:190px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
             <input type="search" id="cond-filtro-tracking" placeholder="📦 Tracking" oninput="renderConductorDetail()" style="width:170px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace">
             <input type="search" id="cond-filtro-zona" placeholder="📍 Zona" oninput="renderConductorDetail()" style="width:150px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;text-transform:uppercase">
-            <button class="btn btn-sm" id="cond-filtro-incompletos" onclick="toggleFiltroIncompletos()" title="Mostrar solo los envíos sin zona o sin precio (no contabilizan hasta cargarlos a mano)">⚠ Sin zona/precio<span id="cond-incompletos-count"></span></button>
-            <button class="btn btn-sm" onclick="limpiarFiltrosConductor()">✕ Limpiar</button>
+            <button class="btn btn-sm" id="cond-filtro-incompletos" onclick="toggleFiltroIncompletos()" title="Mostrar solo los envíos sin zona o sin precio (no contabilizan hasta cargarlos a mano)"><i class="ic ic-alert"></i> Sin zona/precio<span id="cond-incompletos-count"></span></button>
+            <button class="btn btn-sm" onclick="limpiarFiltrosConductor()"><i class="ic ic-x"></i> Limpiar</button>
             <span id="cond-filtro-count" style="font-size:11px;color:var(--text-muted)"></span>
           </div>
         </div>
 
         <div id="conductor-detail-wrap">
           <div class="empty-state">
-            <div class="empty-icon">🚗</div>
+            <div class="empty-icon"><i class="ic ic-truck"></i></div>
             <div class="empty-title">Seleccioná un conductor</div>
             <div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div>
           </div>

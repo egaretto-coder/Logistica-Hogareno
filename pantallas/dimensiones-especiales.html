@@ -3,19 +3,19 @@
         <div class="section-head" style="margin-bottom:8px">
           <span class="section-title">Dimensiones Especiales</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-sm" id="alerta-sup-dimensiones" style="display:none;border-color:#f5d97a;background:#fff8e1;color:#7a5c00;font-weight:600" onclick="mostrarSuperposiciones('dimensiones')">⚠ Superposiciones</button>
+            <button class="btn btn-sm" id="alerta-sup-dimensiones" style="display:none;border-color:#f5d97a;background:#fff8e1;color:#7a5c00;font-weight:600" onclick="mostrarSuperposiciones('dimensiones')"><i class="ic ic-alert"></i> Superposiciones</button>
             <label class="btn btn-sm" style="cursor:pointer;margin:0">
-              📂 Importar Excel
+              <i class="ic ic-folder"></i> Importar Excel
               <input type="file" id="dim-file-input" accept=".xlsx,.xls,.csv" onchange="importDimensionesEspeciales(event)" style="display:none">
             </label>
             <button class="btn btn-sm" onclick="openAddDimensionModal()">+ Agregar manual</button>
-            <button class="btn btn-sm" onclick="descargarPlantillaDimensiones()">⬇ Plantilla Excel</button>
-            <button class="btn btn-sm" onclick="limpiarDimensiones()" style="border-color:#fca5a5;color:#b91c1c">🗑 Limpiar todo</button>
+            <button class="btn btn-sm" onclick="descargarPlantillaDimensiones()"><i class="ic ic-download"></i> Plantilla Excel</button>
+            <button class="btn btn-sm" onclick="limpiarDimensiones()" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Limpiar todo</button>
           </div>
         </div>
 
         <div class="alert alert-info" style="margin-bottom:16px">
-          📦 Los trackings cargados acá <strong>reemplazan</strong> el valor tradicional cuando aparecen en la liquidación de un conductor. Se identifican como "Dimensión especial" y muestran el cliente y el motivo de la condición. El valor no se suma, se sustituye.
+          <i class="ic ic-box"></i> Los trackings cargados acá <strong>reemplazan</strong> el valor tradicional cuando aparecen en la liquidación de un conductor. Se identifican como "Dimensión especial" y muestran el cliente y el motivo de la condición. El valor no se suma, se sustituye.
         </div>
 
         <!-- FILTROS -->
@@ -40,7 +40,7 @@
                 </tr>
               </thead>
               <tbody id="dim-table-body">
-                <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin dimensiones especiales cargadas</div><div class="empty-sub">Importá un Excel o agregá manualmente</div></div></td></tr>
+                <tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-box"></i></div><div class="empty-title">Sin dimensiones especiales cargadas</div><div class="empty-sub">Importá un Excel o agregá manualmente</div></div></td></tr>
               </tbody>
             </table>
           </div>

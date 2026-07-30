@@ -146,7 +146,7 @@ function renderLiquidaciones() {
 
   const body = document.getElementById('liq-table-body');
   if (!conductores.length) {
-    body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
     return;
   }
 
@@ -170,12 +170,12 @@ function renderLiquidaciones() {
       <td class="mono">${sSin.length} — ${fmtPeso(sSin.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sCon.length} — ${fmtPeso(sCon.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sSLA.length} — ${fmtPeso(sSLA.reduce((s,f) => s+f.subtotal,0))}</td>
-      <td class="mono">${sSuper.length ? `<span class="tag super-sla">⭐ ${sSuper.length} recorridos</span>` : '<span class="muted">—</span>'}</td>
+      <td class="mono">${sSuper.length ? `<span class="tag super-sla"><i class="ic ic-star"></i> ${sSuper.length} recorridos</span>` : '<span class="muted">—</span>'}</td>
       <td class="mono"><strong>${fmtPeso(d.total)}</strong></td>
       <td>
         <div style="display:flex;gap:4px">
           <button class="btn btn-sm" onclick="showConductorModal('${c}')">Ver detalle</button>
-          <button class="btn btn-sm btn-primary" onclick="openLiqModal('${c}')">📄 Generar</button>
+          <button class="btn btn-sm btn-primary" onclick="openLiqModal('${c}')"><i class="ic ic-file"></i> Generar</button>
         </div>
       </td>
     </tr>`;

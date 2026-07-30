@@ -33,7 +33,7 @@ function openLiqModal(conductor) {
   document.getElementById('liq-modal-info').innerHTML =
     '<strong>' + conductor + '</strong> · ID: <span style="font-family:monospace">' + idLabel + '</span> · ' +
     condLabel +
-    '<br><span style="color:#6b7280">📅 Período: ' + rangoTxt + '</span>';
+    '<br><span style="color:#6b7280"><i class="ic ic-calendar"></i> Período: ' + rangoTxt + '</span>';
   document.getElementById('liq-modal-recorridos-info').textContent =
     d.filas.length + ' entregados · ' + d.filas_excluidas.length + ' en otros estados';
   document.getElementById('liq-modal-total-bruto').textContent = fmtPeso(d.total);

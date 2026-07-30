@@ -705,7 +705,7 @@ function mostrarSuperposiciones(modulo) {
     </tr>`).join('');
   document.getElementById('modal-body').innerHTML = `
     <div style="background:#fff8e1;border:1px solid #f5d97a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px">
-      📅 Carga del <strong>${s.fecha_carga}</strong> a las ${s.hora} hs — la información nueva
+      <i class="ic ic-calendar"></i> Carga del <strong>${s.fecha_carga}</strong> a las ${s.hora} hs — la información nueva
       <strong>reemplazó</strong> a la anterior en ${s.items.length} caso${s.items.length !== 1 ? 's' : ''}.
     </div>
     <div class="table-wrap" style="max-height:50vh;overflow-y:auto">

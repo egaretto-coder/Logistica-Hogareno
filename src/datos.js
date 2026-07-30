@@ -331,7 +331,7 @@ async function reintentarGuardadoNube() {
   const est = document.getElementById('upload-nube-estado');
   if (est) est.innerHTML = ok
     ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
-    : '<strong style="color:#b91c1c">⚠️ Sigue sin poder guardarse — revisá la conexión.</strong>';
+    : '<strong style="color:#b91c1c"><i class="ic ic-alert"></i> Sigue sin poder guardarse — revisá la conexión.</strong>';
 }
 
 // Trae TODO el historial de registros (más allá de la ventana inicial): la

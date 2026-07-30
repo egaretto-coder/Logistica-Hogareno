@@ -127,7 +127,7 @@ function renderKmDesvio() {
   const body = document.getElementById('kmdesvio-table-body');
   if (!body) return;
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛣</div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon"><i class="ic ic-route"></i></div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
       (AppData.kmDesvio.length ? 'Ajustá el buscador' : 'Agregá un registro con "+ Agregar manual"') +
       '</div></div></td></tr>';
     return;
@@ -143,8 +143,8 @@ function renderKmDesvio() {
       '<td class="mono" style="text-align:right;font-weight:600;color:' + ((d.monto||0) > 0 ? '#166534' : '#9ca3af') + '">' + fmtPeso(d.monto||0) + '</td>' +
       '<td>' +
         '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-sm" onclick="editKmDesvio(' + realIdx + ')">✎</button>' +
-          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarKmDesvio(' + realIdx + ')">🗑</button>' +
+          '<button class="btn btn-sm" onclick="editKmDesvio(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
+          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarKmDesvio(' + realIdx + ')"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</td>' +
       '</tr>';

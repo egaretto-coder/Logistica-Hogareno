@@ -219,7 +219,7 @@ async function renderGpGrupos() {
     gpPerfilesCache = data || [];
   } catch (e) {
     console.warn('renderGpGrupos:', e);
-    cont.innerHTML = '<div class="alert alert-info">⚠️ No se pudieron cargar los usuarios (sin conexión).</div>';
+    cont.innerHTML = '<div class="alert alert-info"><i class="ic ic-alert"></i> No se pudieron cargar los usuarios (sin conexión).</div>';
     return;
   }
 
@@ -251,7 +251,7 @@ async function renderGpGrupos() {
       : '<div class="muted" style="padding:18px;text-align:center;font-size:12px">Nadie en esta sección.</div>';
 
     const btnEliminar = (analista && !info.es_sistema && !usuarios.length)
-      ? `<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;font-size:10.5px;padding:3px 8px" onclick="eliminarRol('${info.rol}')">🗑 Eliminar rol</button>`
+      ? `<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;font-size:10.5px;padding:3px 8px" onclick="eliminarRol('${info.rol}')"><i class="ic ic-trash"></i> Eliminar rol</button>`
       : '';
 
     return `

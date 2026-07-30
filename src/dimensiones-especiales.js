@@ -27,7 +27,7 @@ function renderDimensionesEspeciales() {
 
   const body = document.getElementById('dim-table-body');
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-box"></i></div><div class="empty-title">Sin resultados</div><div class="empty-sub">' +
       (AppData.dimensionesEspeciales.length ? 'Ajustá el buscador' : 'Importá un Excel o agregá manualmente') +
       '</div></div></td></tr>';
     return;
@@ -40,12 +40,12 @@ function renderDimensionesEspeciales() {
       '<td class="mono"><strong>' + (d.tracking || '—') + '</strong></td>' +
       '<td>' + (d.cliente || '—') + '</td>' +
       '<td>' + (d.zona || '—') + '</td>' +
-      '<td><span class="tag" style="background:#fef3c7;color:#92400e">📦 ' + (d.condicion || '—') + '</span></td>' +
+      '<td><span class="tag" style="background:#fef3c7;color:#92400e"><i class="ic ic-box"></i> ' + (d.condicion || '—') + '</span></td>' +
       '<td class="mono" style="text-align:right"><strong>' + fmtPeso(d.valor || 0) + '</strong></td>' +
       '<td>' +
         '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-sm" onclick="editDimension(' + realIdx + ')">✎</button>' +
-          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDimension(' + realIdx + ')">🗑</button>' +
+          '<button class="btn btn-sm" onclick="editDimension(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
+          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDimension(' + realIdx + ')"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</td>' +
       '</tr>';

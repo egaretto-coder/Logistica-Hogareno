@@ -74,8 +74,8 @@ function renderPanelConductores() {
           <span class="cat-badge ${catinfo.clase}">${catinfo.label}</span>
         </div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="editarConductorPanel(${realIdx})">✏️</button>
-          <button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:var(--text-muted)" onclick="eliminarConductorPanel(${realIdx})">✕</button>
+          <button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="editarConductorPanel(${realIdx})"><i class="ic ic-edit"></i></button>
+          <button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:var(--text-muted)" onclick="eliminarConductorPanel(${realIdx})"><i class="ic ic-x"></i></button>
         </div>
       </div>`;
     }).join('');
@@ -96,7 +96,7 @@ function renderPanelConductores() {
         <div style="padding:10px 16px">
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Pago los ${info.dia} · ${grupo.length} conductor${grupo.length !== 1 ? 'es' : ''}</div>
           <button class="btn btn-sm" style="width:100%;justify-content:center;font-size:11px" onclick="exportPDFsporCondicion('${cond}')">
-            ⬇ Exportar PDFs de ${cond}s
+            <i class="ic ic-download"></i> Exportar PDFs de ${cond}s
           </button>
         </div>
       </div>`;

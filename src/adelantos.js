@@ -29,7 +29,7 @@ function renderAdelantos() {
   if (countEl) countEl.textContent = AppData.adelantos.length + ' adelantos · ' + activos + ' activos';
 
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin adelantos</div><div class="empty-sub">Registrá uno con "+ Nuevo adelanto"</div></div></td></tr>';
+    cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-card"></i></div><div class="empty-title">Sin adelantos</div><div class="empty-sub">Registrá uno con "+ Nuevo adelanto"</div></div></td></tr>';
     return;
   }
 
@@ -50,8 +50,8 @@ function renderAdelantos() {
       '<td class="mono" style="text-align:right;font-weight:700;color:' + (saldo > 0 ? '#b45309' : '#166534') + '">' + (saldo > 0 ? fmtPeso(saldo) : '✓ Saldado') + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
         (saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuota(' + a.id + ')" title="Registrar la próxima cuota en la fecha elegida arriba">− Cuota</button>') +
-        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialAdelanto(' + a.id + ')" title="Ver cuotas">📋</button>' +
-        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarAdelanto(' + a.id + ')">🗑</button>' +
+        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialAdelanto(' + a.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>' +
+        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarAdelanto(' + a.id + ')"><i class="ic ic-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -180,7 +180,7 @@ function verHistorialAdelanto(adelantoId) {
     filas.push('<tr>' +
       '<td class="mono">' + i + '/' + a.cuotas_total + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(c ? c.monto : a.monto_cuota) + '</td>' +
-      '<td>' + (c ? '<span class="badge badge-green">✓ Descontada</span>' : '<span class="badge badge-gray">Pendiente</span>') + '</td>' +
+      '<td>' + (c ? '<span class="badge badge-green"><i class="ic ic-check"></i> Descontada</span>' : '<span class="badge badge-gray">Pendiente</span>') + '</td>' +
       '<td class="mono muted">' + (c ? c.fecha : '—') + '</td>' +
     '</tr>');
   }
@@ -193,7 +193,7 @@ function verHistorialAdelanto(adelantoId) {
     '</div>' +
     (a.obs ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">📝 ' + a.obs + '</div>' : '') +
     '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr><th>Cuota</th><th style="text-align:right">Monto</th><th>Estado</th><th>Semana</th></tr></thead><tbody>' + filas.join('') + '</tbody></table></div>' +
-    (cuotasPagadasDe(adelantoId) ? '<div style="margin-top:10px;text-align:right"><button class="btn btn-sm" style="color:#b91c1c;border-color:#fca5a5" onclick="deshacerUltimaCuota(' + adelantoId + ')">↩ Deshacer última cuota</button></div>' : '');
+    (cuotasPagadasDe(adelantoId) ? '<div style="margin-top:10px;text-align:right"><button class="btn btn-sm" style="color:#b91c1c;border-color:#fca5a5" onclick="deshacerUltimaCuota(' + adelantoId + ')"><i class="ic ic-undo"></i> Deshacer última cuota</button></div>' : '');
   document.getElementById('modal-backdrop').classList.add('open');
 }
 

@@ -7,7 +7,7 @@ function renderSuperSLA() {
     if (countEl) countEl.textContent = '';
     wrap.innerHTML = `
       <div class="empty-state" style="padding:60px 20px">
-        <div class="empty-icon">⭐</div>
+        <div class="empty-icon"><i class="ic ic-star"></i></div>
         <div class="empty-title">No hay conductores con categoría Super SLA</div>
         <div class="empty-sub">Asigná la categoría "Super SLA" a un conductor en el <strong>Panel de conductores</strong> para configurar sus zonas especiales acá.</div>
         <div style="margin-top:16px">
@@ -30,7 +30,7 @@ function renderSuperSLA() {
   if (!conductoresSuperSLA.length) {
     wrap.innerHTML = `
       <div class="empty-state" style="padding:40px 20px">
-        <div class="empty-icon">🔍</div>
+        <div class="empty-icon"><i class="ic ic-search"></i></div>
         <div class="empty-title">Sin resultados</div>
         <div class="empty-sub">Ningún conductor Super SLA coincide con “${q}”.</div>
       </div>`;
@@ -63,7 +63,7 @@ function renderSuperSLA() {
             </div>
             <div style="border-left:1px solid var(--border);display:flex;align-items:center;justify-content:center">
               <button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%"
-                onclick="deleteSuperSLA(${realIdx})" title="Eliminar zona">✕</button>
+                onclick="deleteSuperSLA(${realIdx})" title="Eliminar zona"><i class="ic ic-x"></i></button>
             </div>
           </div>`;
         }).join('')
@@ -84,7 +84,7 @@ function renderSuperSLA() {
           <div style="font-size:14px;font-weight:600">${nombre}</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${cond.id ? `<span style="font-family:monospace;background:var(--surface-0);padding:1px 6px;border-radius:3px;border:1px solid var(--border)">${cond.id}</span>` : ''}
-            <span class="tag super-sla">⭐ Super SLA</span>
+            <span class="tag super-sla"><i class="ic ic-star"></i> Super SLA</span>
             <span>${totalZonas} zona${totalZonas !== 1 ? 's' : ''} especial${totalZonas !== 1 ? 'es' : ''} configurada${totalZonas !== 1 ? 's' : ''}</span>
           </div>
         </div>

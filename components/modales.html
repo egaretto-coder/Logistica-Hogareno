@@ -2,7 +2,7 @@
   <div class="modal" style="max-width:460px" onclick="event.stopPropagation()">
     <div class="modal-header">
       <span class="modal-title" id="modal-conductor-title">Agregar conductor</span>
-      <button class="modal-close" onclick="closeConductorModal()">✕</button>
+      <button class="modal-close" onclick="closeConductorModal()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="form-group" style="margin:0">
@@ -48,7 +48,7 @@
   <div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
     <div class="modal-header">
       <span class="modal-title">Agregar conductor a Super SLA</span>
-      <button class="modal-close" onclick="closeAgregarConductorSuperSLA()">✕</button>
+      <button class="modal-close" onclick="closeAgregarConductorSuperSLA()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="form-group" style="margin:0">
@@ -56,7 +56,7 @@
         <select id="supersla-nuevo-conductor" class="form-input" style="width:100%"></select>
       </div>
       <div style="background:var(--surface-0);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);line-height:1.6">
-        El conductor pasará a categoría <strong>⭐ Super SLA</strong> y aparecerá acá para configurarle zonas con precio especial.
+        El conductor pasará a categoría <strong><i class="ic ic-star"></i> Super SLA</strong> y aparecerá acá para configurarle zonas con precio especial.
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
         <button class="btn" onclick="closeAgregarConductorSuperSLA()">Cancelar</button>
@@ -70,7 +70,7 @@
   <div class="modal" id="modal-content">
     <div class="modal-header">
       <span class="modal-title" id="modal-title">Detalle</span>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <button class="modal-close" onclick="closeModal()"><i class="ic ic-x"></i></button>
     </div>
     <div id="modal-body"></div>
   </div>
@@ -81,7 +81,7 @@
   <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
     <div class="modal-header" style="background:linear-gradient(135deg,#1a2744,#2d4fa1);color:white;padding:16px 20px;border-radius:8px 8px 0 0">
       <span class="modal-title" id="modal-liq-title" style="color:white;font-size:16px;font-weight:600">Generar liquidación</span>
-      <button class="modal-close" onclick="closeLiqModal()" style="color:white;background:transparent;border:0;font-size:20px;cursor:pointer">✕</button>
+      <button class="modal-close" onclick="closeLiqModal()" style="color:white;background:transparent;border:0;font-size:20px;cursor:pointer"><i class="ic ic-x"></i></button>
     </div>
 
     <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
@@ -103,28 +103,28 @@
       <!-- Descuentos -->
       <div>
         <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px">
-          <span>🎫 Descuentos del período (imputados por fecha)</span>
+          <span><i class="ic ic-ticket"></i> Descuentos del período (imputados por fecha)</span>
           <span id="liq-desc-origen" style="font-size:10px;font-weight:500;color:#059669;text-transform:none;letter-spacing:normal"></span>
         </div>
         <div style="font-size:10px;color:#9ca3af;margin-bottom:10px">Se cargan solos desde los registros de cada solapa que caen en el período. Podés ajustarlos o ponerlos en 0 antes de generar el PDF. Adelantos y km de desvío se aplican automáticamente abajo.</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
             <div>
-              <label style="font-size:13px;display:flex;align-items:center;gap:6px">⛽ Combustible</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-fuel"></i> Combustible</label>
               <span id="liq-desc-combustible-info" style="font-size:10px;color:#6b7280"></span>
             </div>
             <input type="number" id="liq-desc-combustible" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
             <div>
-              <label style="font-size:13px;display:flex;align-items:center;gap:6px">📦 Envíos extraviados / rotos</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-box"></i> Envíos extraviados / rotos</label>
               <span id="liq-desc-extraviados-info" style="font-size:10px;color:#6b7280"></span>
             </div>
             <input type="number" id="liq-desc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
             <div>
-              <label style="font-size:13px;display:flex;align-items:center;gap:6px">🧾 Servicio proveedores</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-receipt"></i> Servicio proveedores</label>
               <span id="liq-desc-proveedores-info" style="font-size:10px;color:#6b7280"></span>
             </div>
             <input type="number" id="liq-desc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
@@ -172,7 +172,7 @@
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
         <button class="btn" onclick="closeLiqModal()">Cancelar</button>
         <button class="btn" onclick="verDetalleDesdeModal()">Ver detalle</button>
-        <button class="btn btn-primary" onclick="confirmarYDescargarPDF()">⬇ Confirmar y descargar PDF</button>
+        <button class="btn btn-primary" onclick="confirmarYDescargarPDF()"><i class="ic ic-download"></i> Confirmar y descargar PDF</button>
       </div>
 
     </div>
@@ -183,8 +183,8 @@
 <div class="modal-backdrop" id="modal-descitem-backdrop" onclick="closeDescItemModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <span class="modal-title"><span id="mditem-tipo-emoji">⛽</span> <span id="modal-descitem-title">Agregar descuento</span></span>
-      <button class="modal-close" onclick="closeDescItemModal()">✕</button>
+      <span class="modal-title"><span id="mditem-tipo-emoji"><i class="ic ic-fuel"></i></span> <span id="modal-descitem-title">Agregar descuento</span></span>
+      <button class="modal-close" onclick="closeDescItemModal()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow:auto">
       <div class="form-group" style="margin:0">
@@ -196,7 +196,7 @@
       <!-- EXTRAVÍOS: cliente + autocompletado de tracking (solo extraviados) -->
       <div id="mditem-extravio-extra" style="display:none;flex-direction:column;gap:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;background:var(--surface-0)">
         <div class="form-group" style="margin:0">
-          <label class="form-label">🧑 Cliente (destinatario) — opcional, para filtrar</label>
+          <label class="form-label"><i class="ic ic-user"></i> Cliente (destinatario) — opcional, para filtrar</label>
           <input type="text" id="mditem-cliente" class="form-input" placeholder="Nombre del destinatario" style="width:100%" oninput="buscarTrackingsExtravio()" />
         </div>
         <div id="mditem-sugerencias" style="max-height:150px;overflow:auto"></div>
@@ -204,11 +204,11 @@
 
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:140px">
-          <label class="form-label">📅 Fecha</label>
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha</label>
           <input type="date" id="mditem-fecha" class="form-input" style="width:100%" onchange="if(descItemModalTipo==='extraviados') buscarTrackingsExtravio();" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:120px">
-          <label class="form-label">💵 Monto ($)</label>
+          <label class="form-label"><i class="ic ic-dollar"></i> Monto ($)</label>
           <input type="number" id="mditem-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" oninput="if(descItemModalTipo==='extraviados') actualizarPreviewCuotaExtravio();" />
         </div>
       </div>
@@ -224,7 +224,7 @@
       <!-- EXTRAVÍOS: cuotear (solo extraviados) -->
       <div id="mditem-cuotear-block" style="display:none;padding:10px;border:1px solid var(--border);border-radius:8px">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:600">
-          <input type="checkbox" id="mditem-cuotear" onchange="toggleCuotearExtravio()" style="width:16px;height:16px"> 💳 Cuotear este extravío (pagarlo en cuotas)
+          <input type="checkbox" id="mditem-cuotear" onchange="toggleCuotearExtravio()" style="width:16px;height:16px"> <i class="ic ic-card"></i> Cuotear este extravío (pagarlo en cuotas)
         </label>
         <div id="mditem-cuotas-wrap" style="display:none;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
           <label class="form-label" style="margin:0">Cantidad de cuotas</label>
@@ -234,7 +234,7 @@
         <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Las cuotas se descuentan después, semana a semana, con el botón "− Cuota" en la solapa Extravíos.</div>
       </div>
 
-      <div style="font-size:11px;color:var(--text-muted)">📌 La <strong>fecha</strong> define a qué liquidación se imputa (o, si cuoteás, la de cada cuota que descuentes).</div>
+      <div style="font-size:11px;color:var(--text-muted)"><i class="ic ic-clip"></i> La <strong>fecha</strong> define a qué liquidación se imputa (o, si cuoteás, la de cada cuota que descuentes).</div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
         <button class="btn" onclick="closeDescItemModal()">Cancelar</button>
         <button class="btn btn-primary" onclick="guardarDescItemModal()">Guardar</button>
@@ -248,7 +248,7 @@
   <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
     <div class="modal-header">
       <span class="modal-title" id="modal-kmdesvio-title">Agregar km de desvío</span>
-      <button class="modal-close" onclick="closeKmDesvioModal()">✕</button>
+      <button class="modal-close" onclick="closeKmDesvioModal()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="margin:0">
@@ -258,11 +258,11 @@
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:120px">
-          <label class="form-label">🛣 Km de desvío</label>
+          <label class="form-label"><i class="ic ic-route"></i> Km de desvío</label>
           <input type="number" id="mkm-km" class="form-input" placeholder="0" min="0" step="0.1" style="width:100%" oninput="autoCalcKmMonto()" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:140px">
-          <label class="form-label">📅 Fecha del desvío</label>
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha del desvío</label>
           <input type="date" id="mkm-fecha" class="form-input" style="width:100%" onchange="autoCalcKmMonto()" />
         </div>
       </div>
@@ -285,8 +285,8 @@
 <div class="modal-backdrop" id="modal-adelanto-backdrop" onclick="closeAdelantoModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:460px" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <span class="modal-title">💳 Nuevo adelanto</span>
-      <button class="modal-close" onclick="closeAdelantoModal()">✕</button>
+      <span class="modal-title"><i class="ic ic-card"></i> Nuevo adelanto</span>
+      <button class="modal-close" onclick="closeAdelantoModal()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="margin:0">
@@ -296,7 +296,7 @@
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:140px">
-          <label class="form-label">💵 Monto total ($)</label>
+          <label class="form-label"><i class="ic ic-dollar"></i> Monto total ($)</label>
           <input type="number" id="madv-monto" class="form-input" placeholder="1000000" min="0" step="1" style="width:100%" oninput="actualizarPreviewCuota()" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:110px">
@@ -306,7 +306,7 @@
       </div>
       <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:600;color:#166534" id="madv-preview">Cada cuota: —</div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">📅 Fecha del adelanto</label>
+        <label class="form-label"><i class="ic ic-calendar"></i> Fecha del adelanto</label>
         <input type="date" id="madv-fecha" class="form-input" style="width:100%" />
       </div>
       <div class="form-group" style="margin:0">
@@ -326,7 +326,7 @@
   <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
     <div class="modal-header">
       <span class="modal-title" id="modal-dim-title">Agregar dimensión especial</span>
-      <button class="modal-close" onclick="closeDimModal()">✕</button>
+      <button class="modal-close" onclick="closeDimModal()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="margin:0">

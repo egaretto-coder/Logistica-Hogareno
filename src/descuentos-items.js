@@ -102,11 +102,11 @@ function renderDescItems(tipo) {
     if (cuoteado) {
       const saldado = descItemSaldado(x);
       acciones += saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuotaExtravio(' + x.id + ')" title="Registrar la próxima cuota en la semana elegida arriba">− Cuota</button>';
-      acciones += '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialExtravio(' + x.id + ')" title="Ver cuotas">📋</button>';
+      acciones += '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialExtravio(' + x.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>';
     } else {
-      acciones += '<button class="btn btn-sm" onclick="editDescItem(\'' + tipo + '\',' + x.id + ')">✎</button>';
+      acciones += '<button class="btn btn-sm" onclick="editDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-edit"></i></button>';
     }
-    acciones += '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')">🗑</button>';
+    acciones += '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-trash"></i></button>';
 
     return '<tr' + (cuoteado && descItemSaldado(x) ? ' style="opacity:0.6"' : '') + '>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.conductor) + ';width:28px;height:28px;font-size:10px">' + initials(x.conductor) + '</div><strong>' + x.conductor + '</strong></div></td>' +
@@ -378,7 +378,7 @@ function verHistorialExtravio(itemId) {
     const c = cuotas.find(x => x.nro === i);
     filas.push('<tr><td class="mono">' + i + '/' + it.cuotas_total + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(c ? c.monto : it.monto_cuota) + '</td>' +
-      '<td>' + (c ? '<span class="badge badge-green">✓ Descontada</span>' : '<span class="badge badge-gray">Pendiente</span>') + '</td>' +
+      '<td>' + (c ? '<span class="badge badge-green"><i class="ic ic-check"></i> Descontada</span>' : '<span class="badge badge-gray">Pendiente</span>') + '</td>' +
       '<td class="mono muted">' + (c ? c.fecha : '—') + '</td></tr>');
   }
   document.getElementById('modal-body').innerHTML =
@@ -391,7 +391,7 @@ function verHistorialExtravio(itemId) {
     '</div>' +
     (it.detalle ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">📝 ' + it.detalle + '</div>' : '') +
     '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr><th>Cuota</th><th style="text-align:right">Monto</th><th>Estado</th><th>Semana</th></tr></thead><tbody>' + filas.join('') + '</tbody></table></div>' +
-    (descItemCuotasPagadas(itemId) ? '<div style="margin-top:10px;text-align:right"><button class="btn btn-sm" style="color:#b91c1c;border-color:#fca5a5" onclick="deshacerUltimaCuotaExtravio(' + itemId + ')">↩ Deshacer última cuota</button></div>' : '');
+    (descItemCuotasPagadas(itemId) ? '<div style="margin-top:10px;text-align:right"><button class="btn btn-sm" style="color:#b91c1c;border-color:#fca5a5" onclick="deshacerUltimaCuotaExtravio(' + itemId + ')"><i class="ic ic-undo"></i> Deshacer última cuota</button></div>' : '');
   document.getElementById('modal-backdrop').classList.add('open');
 }
 

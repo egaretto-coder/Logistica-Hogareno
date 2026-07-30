@@ -192,7 +192,7 @@ function renderDashConductoresPanel(liqParam) {
           </svg>
           <div style="text-align:center;line-height:1.3">
             <div style="font-size:15px;font-weight:700">${fmtPeso(montoGrupo)}</div>
-            <div style="font-size:10px;color:var(--text-muted)">💰 Facturación</div>
+            <div style="font-size:10px;color:var(--text-muted)"><i class="ic ic-dollar"></i> Facturación</div>
             <div style="font-size:10px;color:var(--text-muted)">del total general</div>
           </div>
         </div>

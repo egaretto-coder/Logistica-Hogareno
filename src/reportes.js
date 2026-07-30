@@ -52,7 +52,7 @@ function renderConductorReport() {
       <td class="muted" style="font-size:12px">${zonas.slice(0,3).join(', ')}${zonas.length > 3 ? ` +${zonas.length-3}` : ''}</td>
       <td class="mono">${d.filas.length}</td>
       <td class="mono"><strong>${fmtPeso(d.total)}</strong></td>
-      <td>${tieneSuper ? '<span class="tag super-sla">⭐ Sí</span>' : '—'}</td>
+      <td>${tieneSuper ? '<span class="tag super-sla"><i class="ic ic-star"></i> Sí</span>' : '—'}</td>
       <td><button class="btn btn-sm btn-primary" onclick="exportPDF('${c}')">PDF</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>`;

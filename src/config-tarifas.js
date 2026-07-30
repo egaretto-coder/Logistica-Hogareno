@@ -32,7 +32,7 @@ function renderTarifas() {
     </div>`).join('');
 
   cont.innerHTML = filas || (q
-    ? '<div style="padding:28px;text-align:center;color:var(--text-muted)">🔍 Ninguna zona coincide con “' + q + '”.</div>'
+    ? '<div style="padding:28px;text-align:center;color:var(--text-muted)"><i class="ic ic-search"></i> Ninguna zona coincide con “' + q + '”.</div>'
     : '<div style="padding:28px;text-align:center;color:var(--text-muted)">Sin tarifas cargadas. Descargá la plantilla, completala y subila.</div>');
 }
 

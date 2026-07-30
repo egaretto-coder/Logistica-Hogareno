@@ -262,7 +262,7 @@ function processUpload() {
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
     (enArchivoColapsadas ? `<br>ℹ️ ${enArchivoColapsadas} fila(s) del archivo eran el mismo envío repetido (mismo tracking o misma dirección) y se unificaron. ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
-    `${diasFueraDeRango ? `<br>⚠️ ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
+    `${diasFueraDeRango ? `<br><i class="ic ic-alert"></i> ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
     ` La base total queda en <strong>${AppData.records.length}</strong> registros. <span id="upload-nube-estado">☁️ Guardando en la nube…</span>`;
 
   renderDashboard();
@@ -274,7 +274,7 @@ function processUpload() {
     const est = document.getElementById('upload-nube-estado');
     if (est) est.innerHTML = ok
       ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
-      : '<strong style="color:#b91c1c">⚠️ No se pudo guardar en la nube — usá el botón "Reintentar".</strong>';
+      : '<strong style="color:#b91c1c"><i class="ic ic-alert"></i> No se pudo guardar en la nube — usá el botón "Reintentar".</strong>';
   });
 }
 
