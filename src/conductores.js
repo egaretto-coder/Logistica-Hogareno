@@ -269,12 +269,33 @@ async function guardarEdicionConductores() {
 //  'Entregado' (contabilizan) y la fecha los imputa a la liquidación de esa
 //  semana. Inserta en la nube (append, sin borrar por clave: son agregados).
 // ════════════════════════════════════════════════════════════════════════
+// Opciones de zona del <select>, sincronizadas con el panel Tarifas + el Super
+// SLA del conductor (así no se puede tipear mal la zona). Se recalcula por
+// conductor al abrir el modal. Cada opción muestra el precio que le corresponde.
+let _aeZonaOpts = '';
+function zonaOptionsHTML(conductor) {
+  const key = String(conductor || '').toUpperCase().trim();
+  const zonas = new Set();
+  AppData.tarifas.forEach(t => { const z = String(t.zona || '').toUpperCase().trim(); if (z) zonas.add(z); });
+  AppData.superSLA.forEach(s => {
+    if (String(s.conductor || '').toUpperCase().trim() === key) { const z = String(s.zona || '').toUpperCase().trim(); if (z) zonas.add(z); }
+  });
+  let html = '<option value="">— Elegir zona —</option>';
+  Array.from(zonas).sort().forEach(z => {
+    const p = getPrecio(conductor, z);
+    const precioTxt = p.precio > 0 ? fmtPeso(p.precio) : 's/tarifa';
+    const marca = p.es_super ? ' · Super SLA' : '';
+    html += '<option value="' + z.replace(/"/g, '&quot;') + '">' + z + ' · ' + precioTxt + marca + '</option>';
+  });
+  return html;
+}
+
 function envioRowHTML(fechaISO) {
   return '<div class="addenvio-row" style="display:grid;grid-template-columns:130px 1fr 1fr 110px 34px;gap:8px;align-items:center">' +
     '<input type="date" class="ae-fecha" value="' + (fechaISO || '') + '" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px">' +
     '<input type="text" class="ae-tracking" placeholder="Nº tracking" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:monospace">' +
-    '<input type="text" class="ae-zona" placeholder="Ej: SAN ISIDRO" oninput="this.value=this.value.toUpperCase()" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-transform:uppercase">' +
-    '<input type="number" class="ae-precio" placeholder="auto" min="0" step="1" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-align:right;font-family:monospace">' +
+    '<select class="ae-zona" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeZonaOpts + '</select>' +
+    '<input type="number" class="ae-precio" placeholder="auto" min="0" step="1" title="Vacío = precio automático de la zona elegida" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-align:right;font-family:monospace">' +
     '<button class="btn btn-sm" onclick="removeEnvioRow(this)" title="Quitar fila" style="padding:5px 8px"><i class="ic ic-x"></i></button>' +
   '</div>';
 }
@@ -283,6 +304,8 @@ function openAddEnvioModal() {
   const conductor = document.getElementById('cond-select').value;
   if (!conductor) { alert('Primero seleccioná un conductor arriba.'); return; }
   document.getElementById('addenvio-conductor').textContent = conductor;
+  // Opciones de zona sincronizadas con Tarifas + Super SLA de ESTE conductor.
+  _aeZonaOpts = zonaOptionsHTML(conductor);
   // Fecha por defecto: el "Desde" del período que se está liquidando (o hoy).
   const desde = document.getElementById('cond-fecha-desde')?.value || hoyISO();
   const cont = document.getElementById('addenvio-rows');
