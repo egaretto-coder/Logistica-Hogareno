@@ -360,3 +360,37 @@
     </div>
   </div>
 </div>
+
+<!-- MODAL AGREGAR ENVÍOS (masivo) — desde el editor de Conductores -->
+<div class="modal-backdrop" id="modal-addenvio-backdrop" onclick="closeAddEnvioModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:720px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-plus"></i> Agregar envíos · <span id="addenvio-conductor"></span></span>
+      <button class="modal-close" onclick="closeAddEnvioModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0;font-size:12px">
+        <i class="ic ic-calendar"></i> Cargá los envíos que hizo el conductor y no figuran. Se agregan como <strong>Entregado</strong> (contabilizan) y la <strong>fecha</strong> los mete en la liquidación de esa semana. Dejá el <strong>precio</strong> vacío para usar la tarifa automática de la zona.
+      </div>
+
+      <div style="display:grid;grid-template-columns:130px 1fr 1fr 110px 34px;gap:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);padding:0 2px">
+        <span><i class="ic ic-calendar"></i> Fecha</span>
+        <span><i class="ic ic-box"></i> Tracking (opcional)</span>
+        <span><i class="ic ic-pin"></i> Zona</span>
+        <span style="text-align:right"><i class="ic ic-dollar"></i> Precio</span>
+        <span></span>
+      </div>
+      <div id="addenvio-rows" style="display:flex;flex-direction:column;gap:8px"></div>
+
+      <div>
+        <button class="btn btn-sm" onclick="addEnvioRow()"><i class="ic ic-plus"></i> Agregar otra fila</button>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:4px;border-top:1px solid var(--border);padding-top:12px">
+        <span id="addenvio-estado" style="font-size:11px;color:var(--text-muted);margin-right:auto"></span>
+        <button class="btn" onclick="closeAddEnvioModal()">Cancelar</button>
+        <button class="btn btn-primary" id="addenvio-guardar" onclick="guardarEnviosModal()"><i class="ic ic-save"></i> Guardar envíos</button>
+      </div>
+    </div>
+  </div>
+</div>

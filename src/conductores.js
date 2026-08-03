@@ -263,6 +263,105 @@ async function guardarEdicionConductores() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  AGREGAR ENVÍOS A MANO (masivo) — para sumar recorridos que no figuran
+//  en la importación pero el conductor hizo. Se guardan como registros
+//  'Entregado' (contabilizan) y la fecha los imputa a la liquidación de esa
+//  semana. Inserta en la nube (append, sin borrar por clave: son agregados).
+// ════════════════════════════════════════════════════════════════════════
+function envioRowHTML(fechaISO) {
+  return '<div class="addenvio-row" style="display:grid;grid-template-columns:130px 1fr 1fr 110px 34px;gap:8px;align-items:center">' +
+    '<input type="date" class="ae-fecha" value="' + (fechaISO || '') + '" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px">' +
+    '<input type="text" class="ae-tracking" placeholder="Nº tracking" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:monospace">' +
+    '<input type="text" class="ae-zona" placeholder="Ej: SAN ISIDRO" oninput="this.value=this.value.toUpperCase()" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-transform:uppercase">' +
+    '<input type="number" class="ae-precio" placeholder="auto" min="0" step="1" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-align:right;font-family:monospace">' +
+    '<button class="btn btn-sm" onclick="removeEnvioRow(this)" title="Quitar fila" style="padding:5px 8px"><i class="ic ic-x"></i></button>' +
+  '</div>';
+}
+
+function openAddEnvioModal() {
+  const conductor = document.getElementById('cond-select').value;
+  if (!conductor) { alert('Primero seleccioná un conductor arriba.'); return; }
+  document.getElementById('addenvio-conductor').textContent = conductor;
+  // Fecha por defecto: el "Desde" del período que se está liquidando (o hoy).
+  const desde = document.getElementById('cond-fecha-desde')?.value || hoyISO();
+  const cont = document.getElementById('addenvio-rows');
+  cont.innerHTML = envioRowHTML(desde) + envioRowHTML(desde) + envioRowHTML(desde);
+  const est = document.getElementById('addenvio-estado'); if (est) est.textContent = '';
+  document.getElementById('modal-addenvio-backdrop').style.display = 'flex';
+}
+
+function addEnvioRow() {
+  const desde = document.getElementById('cond-fecha-desde')?.value || hoyISO();
+  document.getElementById('addenvio-rows').insertAdjacentHTML('beforeend', envioRowHTML(desde));
+}
+
+function removeEnvioRow(btn) {
+  const row = btn.closest('.addenvio-row');
+  const cont = document.getElementById('addenvio-rows');
+  if (cont && cont.querySelectorAll('.addenvio-row').length > 1) row.remove();
+  else { // no dejar 0 filas: limpiar la última
+    row.querySelectorAll('input').forEach(i => { if (i.type !== 'date') i.value = ''; });
+  }
+}
+
+function closeAddEnvioModal(e) {
+  if (!e || e.target.id === 'modal-addenvio-backdrop') {
+    document.getElementById('modal-addenvio-backdrop').style.display = 'none';
+  }
+}
+
+async function guardarEnviosModal() {
+  const conductor = document.getElementById('cond-select').value;
+  if (!conductor) { alert('Seleccioná un conductor.'); return; }
+  if (!window.DB || !DB.ready) { alert('Sin conexión con la nube: no se pueden agregar envíos ahora (se perderían al recargar). Reintentá con conexión.'); return; }
+
+  const filas = Array.from(document.querySelectorAll('#addenvio-rows .addenvio-row'));
+  const recs = [];
+  let faltaFecha = 0;
+  filas.forEach(row => {
+    const iso = row.querySelector('.ae-fecha').value;
+    const tracking = row.querySelector('.ae-tracking').value.trim();
+    const zona = row.querySelector('.ae-zona').value.trim().toUpperCase();
+    const precioV = row.querySelector('.ae-precio').value.trim();
+    row.querySelector('.ae-fecha').style.borderColor = 'var(--border)';
+    // Fila sin datos reales (solo la fecha por defecto) → se ignora.
+    const tieneContenido = tracking || zona || precioV !== '';
+    if (!tieneContenido) return;
+    if (!iso) { faltaFecha++; row.querySelector('.ae-fecha').style.borderColor = '#e11d48'; return; }
+    recs.push({
+      cadete: conductor, tracking, fecha: isoToDMY(iso),
+      localidad: zona, zona: zona, zona_precio: '',
+      direccion: '', destinatario: '',
+      estado: 'Entregado', precio_bd: 0,
+      carga_fecha: isoToDMY(hoyISO()),
+      precio_manual: precioV === '' ? null : (parseFloat(precioV) || 0)
+    });
+  });
+
+  if (faltaFecha) { showToast('Completá la fecha en las filas marcadas en rojo'); return; }
+  if (!recs.length) { showToast('No cargaste ningún envío'); return; }
+
+  const btn = document.getElementById('addenvio-guardar');
+  const est = document.getElementById('addenvio-estado');
+  btn.disabled = true;
+  if (est) est.textContent = 'Guardando ' + recs.length + ' envío(s)…';
+  try {
+    const ids = await DB.insertRows('registros', recs.map(filaRegistroNube));
+    recs.forEach((r, i) => { r.id = ids[i]; });
+    AppData.records.push(...recs);
+    document.getElementById('modal-addenvio-backdrop').style.display = 'none';
+    renderConductorDetail();
+    showToast('✅ ' + recs.length + ' envío(s) agregados a la liquidación de ' + conductor);
+  } catch (e) {
+    console.warn('guardarEnviosModal:', e);
+    if (est) est.textContent = '';
+    alert('No se pudieron guardar los envíos: ' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function buildConductorDetail(cond) {
   const liq = calcLiquidaciones();
   const d = liq[cond];
