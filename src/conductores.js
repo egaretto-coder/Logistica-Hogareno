@@ -115,6 +115,7 @@ function renderConductorDetail() {
   const cntEl = document.getElementById('cond-filtro-count');
   if (cntEl) cntEl.textContent = hayFiltro ? ('Mostrando ' + idxsVista.length + ' de ' + idxs.length + ' recorridos') : '';
 
+  const zonaCat = zonaCatalogoDe(cond); // catálogo de zonas válidas (una vez por render)
   const filas = idxsVista.map(i => {
     const r = AppData.records[i];
     const estadoNorm = (r.estado || '').toUpperCase().trim();
@@ -127,8 +128,7 @@ function renderConductorDetail() {
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
           class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '"><i class="ic ic-user"></i> ' + r.destinatario + '</div>' : ''}</td>
         <td class="muted mono" style="font-size:12px">${r.fecha || '—'}</td>
-        <td><input type="text" value="${(r.zona || '').replace(/"/g,'&quot;')}" onchange="editarRegistroConductor(${i},'zona',this.value)"
-          style="width:150px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-transform:uppercase"></td>
+        <td>${zonaSelectHTML(zonaCat, i, r.zona)}</td>
         <td>
           <select onchange="editarRegistroConductor(${i},'estado',this.value)"
             style="padding:5px 8px;border:1px solid ${contabiliza ? '#86efac' : '#fca5a5'};border-radius:6px;font-size:12px;background:${contabiliza ? '#f0fdf4' : '#fef2f2'};color:${contabiliza ? '#166534' : '#b91c1c'};font-weight:600">
@@ -269,25 +269,44 @@ async function guardarEdicionConductores() {
 //  'Entregado' (contabilizan) y la fecha los imputa a la liquidación de esa
 //  semana. Inserta en la nube (append, sin borrar por clave: son agregados).
 // ════════════════════════════════════════════════════════════════════════
-// Opciones de zona del <select>, sincronizadas con el panel Tarifas + el Super
-// SLA del conductor (así no se puede tipear mal la zona). Se recalcula por
-// conductor al abrir el modal. Cada opción muestra el precio que le corresponde.
-let _aeZonaOpts = '';
-function zonaOptionsHTML(conductor) {
+// Catálogo de zonas válidas para un conductor = zonas del panel Tarifas + las de
+// su Super SLA. Devuelve [{ val, label }] (label con el precio que le corresponde).
+// Se computa UNA vez por render y se reutiliza (getPrecio solo se llama por zona).
+function zonaCatalogoDe(conductor) {
   const key = String(conductor || '').toUpperCase().trim();
   const zonas = new Set();
   AppData.tarifas.forEach(t => { const z = String(t.zona || '').toUpperCase().trim(); if (z) zonas.add(z); });
   AppData.superSLA.forEach(s => {
     if (String(s.conductor || '').toUpperCase().trim() === key) { const z = String(s.zona || '').toUpperCase().trim(); if (z) zonas.add(z); }
   });
-  let html = '<option value="">— Elegir zona —</option>';
-  Array.from(zonas).sort().forEach(z => {
+  return Array.from(zonas).sort().map(z => {
     const p = getPrecio(conductor, z);
-    const precioTxt = p.precio > 0 ? fmtPeso(p.precio) : 's/tarifa';
-    const marca = p.es_super ? ' · Super SLA' : '';
-    html += '<option value="' + z.replace(/"/g, '&quot;') + '">' + z + ' · ' + precioTxt + marca + '</option>';
+    return { val: z, label: z + ' · ' + (p.precio > 0 ? fmtPeso(p.precio) : 's/tarifa') + (p.es_super ? ' · Super SLA' : '') };
   });
+}
+
+// Opciones (<option>) para el modal "Agregar envío". Sincronizadas con el tarifario.
+let _aeZonaOpts = '';
+function zonaOptionsHTML(conductor) {
+  let html = '<option value="">— Elegir zona —</option>';
+  zonaCatalogoDe(conductor).forEach(o => { html += '<option value="' + o.val.replace(/"/g, '&quot;') + '">' + o.label + '</option>'; });
   return html;
+}
+
+// <select> de zona para una fila de la tabla de edición del conductor. Solo deja
+// elegir zonas del tarifario (validación de datos). Si la zona actual está fuera
+// del tarifario (o vacía), la marca en ámbar y la muestra como "sin tarifa" para
+// que el operador la reemplace por una válida.
+function zonaSelectHTML(catalogo, idx, current) {
+  const cur = String(current || '').toUpperCase().trim();
+  const enLista = catalogo.some(o => o.val === cur);
+  const alerta = !cur || !enLista;
+  let opts = '<option value=""' + (cur === '' ? ' selected' : '') + '>— Elegir zona —</option>';
+  if (cur && !enLista) opts += '<option value="' + cur.replace(/"/g, '&quot;') + '" selected>' + cur + ' · sin tarifa</option>';
+  catalogo.forEach(o => { opts += '<option value="' + o.val.replace(/"/g, '&quot;') + '"' + (o.val === cur ? ' selected' : '') + '>' + o.label + '</option>'; });
+  return '<select onchange="editarRegistroConductor(' + idx + ',\'zona\',this.value)" ' +
+    'style="width:100%;max-width:210px;padding:5px 8px;border:1px solid ' + (alerta ? '#f59e0b' : 'var(--border)') + ';border-radius:6px;font-size:12px;' +
+    (alerta ? 'background:#fffbeb;' : 'background:var(--surface-1);') + '">' + opts + '</select>';
 }
 
 function envioRowHTML(fechaISO) {
