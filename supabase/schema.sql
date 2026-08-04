@@ -243,6 +243,7 @@ create table if not exists public.registros (
   direccion text default '',   -- dirección de entrega (col R del Excel)
   destinatario text default '',-- nombre del destinatario (col M del Excel)
   clave text,                  -- clave de deduplicación (la calcula la app): T:tracking real, D:dirección+destinatario (tracking basura), F:huella
+  manual boolean not null default false, -- true = envío cargado a mano desde el editor de Conductores (chip "Manual")
   created_at timestamptz not null default now()
 );
 create index if not exists idx_registros_fecha_date on public.registros (fecha_date);

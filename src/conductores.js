@@ -147,7 +147,7 @@ function renderConductorDetail() {
           </div>
         </td>
         <td style="font-size:11px;color:var(--text-muted)">
-          ${manual !== null
+          ${r.manual ? '<span class="tag" title="Envío cargado a mano desde este panel" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;margin-right:4px"><i class="ic ic-plus"></i> Manual</span>' : ''}${manual !== null
             ? '<span class="tag" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a"><i class="ic ic-edit"></i> Corregido (auto: ' + fmtPeso(auto.precio) + ')</span>'
             : auto.etiqueta}
         </td>
@@ -377,6 +377,7 @@ async function guardarEnviosModal() {
       direccion: '', destinatario: '',
       estado: 'Entregado', precio_bd: 0,
       carga_fecha: isoToDMY(hoyISO()),
+      manual: true, // cargado a mano → chip "Manual" en la tabla
       precio_manual: precioV === '' ? null : (parseFloat(precioV) || 0)
     });
   });

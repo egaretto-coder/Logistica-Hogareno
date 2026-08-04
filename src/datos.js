@@ -157,6 +157,7 @@ async function hydrateFromSupabase() {
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '',
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+    manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
   }));
@@ -289,6 +290,7 @@ function filaRegistroNube(r) {
     direccion: r.direccion || '', destinatario: r.destinatario || '',
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     clave: claveRegistro(r),
+    manual: !!r.manual,
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : _num(r.precio_manual)
   };
 }
