@@ -16,8 +16,15 @@ function renderZonaReport() {
   });
 
   const rows = Object.values(zonaData).sort((a,b) => b.total - a.total);
+
+  // Buscador por nombre de zona.
+  const q = (document.getElementById('zona-report-search')?.value || '').toLowerCase().trim();
+  const rowsView = q ? rows.filter(z => String(z.zona).toLowerCase().includes(q)) : rows;
+  const cnt = document.getElementById('zona-report-count');
+  if (cnt) cnt.textContent = q ? ('Mostrando ' + rowsView.length + ' de ' + rows.length + ' zonas') : (rows.length + ' zona' + (rows.length !== 1 ? 's' : ''));
+
   const body = document.getElementById('zona-table-body');
-  body.innerHTML = rows.length ? rows.map(z => {
+  body.innerHTML = rowsView.length ? rowsView.map(z => {
     const tarifa = AppData.tarifas.find(t => t.zona.toUpperCase() === z.zona.toUpperCase());
     const avgPerRec = z.count ? z.total / z.count : 0;
     return `<tr>
@@ -28,15 +35,22 @@ function renderZonaReport() {
       <td class="mono"><strong>${fmtPeso(z.total)}</strong></td>
       <td class="mono">${fmtPeso(avgPerRec)}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-sub">${q ? 'Ninguna zona coincide con “' + q + '”' : 'Sin datos'}</div></div></td></tr>`;
 }
 
 // ===== REPORTE CONDUCTOR =====
 function renderConductorReport() {
   const liq = calcLiquidaciones();
   const conductores = Object.keys(liq).sort((a,b) => liq[b].total - liq[a].total);
+
+  // Buscador por nombre de conductor.
+  const q = (document.getElementById('cond-report-search')?.value || '').toLowerCase().trim();
+  const lista = q ? conductores.filter(c => String(c).toLowerCase().includes(q)) : conductores;
+  const cnt = document.getElementById('cond-report-count');
+  if (cnt) cnt.textContent = q ? ('Mostrando ' + lista.length + ' de ' + conductores.length + ' conductores') : (conductores.length + ' conductor' + (conductores.length !== 1 ? 'es' : ''));
+
   const body = document.getElementById('rep-cond-body');
-  body.innerHTML = conductores.length ? conductores.map(c => {
+  body.innerHTML = lista.length ? lista.map(c => {
     const d = liq[c];
     const cat = AppData.panelConductores.find(x => x.nombre.toUpperCase() === c.toUpperCase());
     const zonas = [...new Set(d.filas.map(f => f.zona))];
@@ -55,7 +69,7 @@ function renderConductorReport() {
       <td>${tieneSuper ? '<span class="tag super-sla"><i class="ic ic-star"></i> Sí</span>' : '—'}</td>
       <td><button class="btn btn-sm btn-primary" onclick="exportPDF('${c}')">PDF</button></td>
     </tr>`;
-  }).join('') : `<tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>`;
+  }).join('') : `<tr><td colspan="7"><div class="empty-state"><div class="empty-sub">${q ? 'Ningún conductor coincide con “' + q + '”' : 'Sin datos'}</div></div></td></tr>`;
 }
 
 // ===== FILE UPLOAD =====
