@@ -14,6 +14,54 @@ const CATEGORIA_INFO = {
 let panelFiltroActivo = 'all';
 let conductorEditIdx = -1;
 
+// ── Aviso de conductores nuevos reconocidos ─────────────────────────────────
+// Conductores que aparecen en los recorridos importados pero todavía NO están
+// cargados en el panel (comparación por nombre normalizado). El operador los ve
+// en un aviso arriba del panel y los agrega uno por uno.
+let _nuevosReconocidos = [];
+function conductoresNuevosReconocidos() {
+  const enPanel = new Set(AppData.panelConductores.map(c => String(c.nombre || '').toUpperCase().trim()));
+  const vistos = new Set();
+  const nuevos = [];
+  AppData.records.forEach(r => {
+    const nombre = String(r.cadete || '').trim();
+    if (!nombre) return;
+    const key = nombre.toUpperCase();
+    if (enPanel.has(key) || vistos.has(key)) return;
+    vistos.add(key);
+    nuevos.push(nombre);
+  });
+  return nuevos.sort((a, b) => a.localeCompare(b));
+}
+
+function renderNuevosReconocidos() {
+  const cont = document.getElementById('panel-nuevos-aviso');
+  if (!cont) return;
+  _nuevosReconocidos = conductoresNuevosReconocidos();
+  if (!_nuevosReconocidos.length) { cont.innerHTML = ''; return; }
+  const n = _nuevosReconocidos.length;
+  const plural = n !== 1;
+  const chips = _nuevosReconocidos.map((nombre, i) =>
+    '<span style="display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px">' +
+      '<span style="display:inline-flex;align-items:center;gap:6px"><span class="conductor-avatar" style="background:' + avatarColor(nombre) + ';width:22px;height:22px;font-size:9px">' + initials(nombre) + '</span>' + nombre + '</span>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" onclick="agregarConductorReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
+    '</span>').join('');
+  cont.innerHTML =
+    '<div class="alert" style="background:#fff8e1;border:1px solid #f5d97a;color:#7a5c00;margin-bottom:16px;padding:12px 16px">' +
+      '<div style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px"><i class="ic ic-alert"></i> ' + n + ' conductor' + (plural ? 'es' : '') + ' reconocido' + (plural ? 's' : '') + ' en los recorridos ' + (plural ? 'no están' : 'no está') + ' en el panel</div>' +
+      '<div style="font-size:12px;margin-bottom:10px;color:#8a6d00">Aparecen en los recorridos importados pero no los cargaste acá. Agregalos para asignarles condición (día de pago) y categorización.</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:180px;overflow-y:auto">' + chips + '</div>' +
+    '</div>';
+}
+
+// Abre el modal de alta con el nombre ya cargado (el operador elige condición/categoría).
+function agregarConductorReconocido(i) {
+  const nombre = _nuevosReconocidos[i];
+  if (!nombre) return;
+  openAddConductorModal();
+  document.getElementById('mc-nombre').value = String(nombre).toUpperCase();
+}
+
 function setPanelFiltro(filtro) {
   panelFiltroActivo = filtro;
   // Actualizar botones de filtro
@@ -101,6 +149,9 @@ function renderPanelConductores() {
         </div>
       </div>`;
   }).join('');
+
+  // Aviso de conductores reconocidos en los recorridos que faltan en el panel.
+  renderNuevosReconocidos();
 }
 
 function autoGenerarId() {
