@@ -29,6 +29,51 @@
     --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
   }
 
+  /* ── MODO OSCURO ── Se activa con data-theme="dark" en <html> (botón del
+     sidebar, persistido en localStorage). Mantiene la identidad (navy + coral)
+     y solo redefine superficies, texto, bordes y sombras. */
+  :root[data-theme="dark"] {
+    --accent-light: #3a1e26;
+    --accent-border: #5c2c39;
+    --surface-0: #12141a;
+    --surface-1: #1c1f27;
+    --surface-2: #262a33;
+    --text-primary: #e9eaee;
+    --text-secondary: #a7adba;
+    --text-muted: #767d89;
+    --border: rgba(255,255,255,0.10);
+    --border-strong: rgba(255,255,255,0.20);
+    --success: #4ade80;
+    --success-bg: #13311f;
+    --warning: #e6b34d;
+    --warning-bg: #302608;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-md: 0 6px 16px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.4);
+  }
+  :root[data-theme="dark"] body { color-scheme: dark; }
+
+  /* Chips/alerts con pastel hardcodeado → versión oscura (tinte + texto claro). */
+  :root[data-theme="dark"] .alert-info    { background:#16233a; color:#a9c7f2; border-color:#274063; }
+  :root[data-theme="dark"] .alert-success { border-color:#1f5a38; }
+  :root[data-theme="dark"] .badge-red     { background:#3a1a1c; color:#f0a0a0; }
+  :root[data-theme="dark"] .badge-blue    { background:#17233a; color:#8fb6ef; }
+  :root[data-theme="dark"] .badge-gray    { background:#2b2f38; color:#b6bcc7; }
+  :root[data-theme="dark"] .tag.super-sla { background:#322808; color:#e6c65a; border-color:#4d3e12; }
+  :root[data-theme="dark"] .cond-titular  { background:#17233a; color:#8fb6ef; border-color:#274063; }
+  :root[data-theme="dark"] .cond-semitit  { background:#322808; color:#e6c65a; border-color:#4d3e12; }
+  :root[data-theme="dark"] .cond-suplente { background:#2a1a3d; color:#cba3f0; border-color:#452a63; }
+  :root[data-theme="dark"] .cat-scolecta  { background:#123324; color:#6fd39e; }
+  :root[data-theme="dark"] .cat-ccolecta  { background:#17233a; color:#8fb6ef; }
+  :root[data-theme="dark"] .cat-sla       { background:#2b2f38; color:#b6bcc7; }
+  :root[data-theme="dark"] .cat-supersla  { background:#322808; color:#e6c65a; }
+
+  /* Botón de tema: muestra "Modo oscuro" (luna) en claro y "Modo claro" (sol) en oscuro. */
+  .theme-toggle .t-light, .theme-toggle .t-dark { align-items: center; gap: 6px; }
+  .theme-toggle .t-light { display: inline-flex; }
+  .theme-toggle .t-dark { display: none; }
+  :root[data-theme="dark"] .theme-toggle .t-light { display: none; }
+  :root[data-theme="dark"] .theme-toggle .t-dark { display: inline-flex; }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {

@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Liquidaciones — Panel de Control</title>
 
+<!-- Tema (claro/oscuro): se aplica ANTES de pintar para evitar el flash. -->
+<script>(function(){try{if(localStorage.getItem('liq_tema')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
 <meta name="theme-color" content="#1a1a2e" />

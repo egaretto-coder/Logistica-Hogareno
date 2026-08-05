@@ -95,6 +95,14 @@ async function bootstrap() {
 
 document.addEventListener('DOMContentLoaded', bootstrap);
 
+// Alterna el tema claro/oscuro y lo persiste. El tema inicial se aplica antes de
+// pintar (script inline en index.html) para evitar el flash.
+function toggleTema() {
+  const nuevo = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', nuevo);
+  try { localStorage.setItem('liq_tema', nuevo); } catch (e) {}
+}
+
 // 3) Service Worker (PWA) — sólo por http(s)
 // Detecta cuando hay una versión nueva desplegada y le muestra al operador un
 // banner "Actualizar". Al tocarlo, activa la versión nueva y recarga.
