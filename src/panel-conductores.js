@@ -122,8 +122,8 @@ function renderPanelConductores() {
           <span class="cat-badge ${catinfo.clase}">${catinfo.label}</span>
         </div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="editarConductorPanel(${realIdx})"><i class="ic ic-edit"></i></button>
-          <button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:var(--text-muted)" onclick="eliminarConductorPanel(${realIdx})"><i class="ic ic-x"></i></button>
+          <button class="btn btn-sm" title="Editar conductor" style="padding:4px 8px;font-size:11px" onclick="editarConductorPanel(${realIdx})"><i class="ic ic-edit"></i></button>
+          <button class="btn btn-sm" title="Eliminar conductor" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5;background:#fef2f2" onclick="eliminarConductorPanel(${realIdx})"><i class="ic ic-trash"></i></button>
         </div>
       </div>`;
     }).join('');
@@ -248,7 +248,7 @@ function guardarConductorModal() {
 
 function eliminarConductorPanel(idx) {
   const nombre = AppData.panelConductores[idx].nombre;
-  if (!confirm(`¿Eliminar a ${nombre} del panel?`)) return;
+  if (!confirm(`¿Eliminar a ${nombre} del panel de conductores?\n\nSe borra su condición (día de pago) y categorización. Sus recorridos y liquidaciones NO se tocan; si vuelve a aparecer en los recorridos, podés recargarlo desde el aviso de "conductores reconocidos".`)) return;
   AppData.panelConductores.splice(idx, 1);
   localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
   dbPush('panel_conductores');
