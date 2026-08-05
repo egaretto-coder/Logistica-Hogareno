@@ -195,7 +195,12 @@ function updateMcInfoCondicion() {
   }
 }
 
-document.getElementById('mc-condicion').addEventListener('change', updateMcInfoCondicion);
+// El modal (#mc-condicion) se inyecta en runtime desde bootstrap(), así que este
+// script —que corre al parsear— todavía no lo ve. Delegamos el evento en document
+// (que siempre existe) para no depender del orden de carga.
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'mc-condicion') updateMcInfoCondicion();
+});
 
 function guardarConductorModal() {
   try {
