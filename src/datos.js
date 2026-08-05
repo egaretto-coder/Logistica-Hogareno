@@ -54,7 +54,8 @@ function loadSavedConfig() {
             id: base.id || guardado.id || '',
             nombre: base.nombre,
             condicion: guardado.condicion || base.condicion || '',
-            categoria: guardado.categoria || base.categoria || ''
+            categoria: guardado.categoria || base.categoria || '',
+            alias: guardado.alias || base.alias || ''
           };
         }
         return base;
@@ -124,7 +125,8 @@ async function hydrateFromSupabase() {
 
   if ((data.panel_conductores || []).length) {
     AppData.panelConductores = data.panel_conductores.map(c => ({
-      id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla'
+      id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
+      alias: c.alias || ''
     }));
   } else { faltaSeed.push('panel_conductores'); }
 
@@ -237,7 +239,8 @@ function dbPush(table) {
       conductor: r.conductor, zona: r.zona, precio: _num(r.precio != null ? r.precio : r.sla)
     })).filter(r => r.conductor && r.zona),
     panel_conductores: () => AppData.panelConductores.map(c => ({
-      id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla'
+      id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
+      alias: c.alias || ''
     })).filter(c => c.id),
     dimensiones_especiales: () => AppData.dimensionesEspeciales.map(d => ({
       fecha: d.fecha || '', tracking: d.tracking || '', cliente: d.cliente || '',

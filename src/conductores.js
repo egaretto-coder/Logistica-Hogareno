@@ -410,7 +410,7 @@ function buildConductorDetail(cond) {
   const d = liq[cond];
   if (!d) return '<div class="empty-state"><div class="empty-sub">Sin datos</div></div>';
 
-  const cat = AppData.panelConductores.find(x => x.nombre.toUpperCase() === cond.toUpperCase());
+  const cat = panelConductorDe(cond);
   const color = avatarColor(cond);
 
   const sinCol = d.filas.filter(f => f.tipo === 's_colecta');

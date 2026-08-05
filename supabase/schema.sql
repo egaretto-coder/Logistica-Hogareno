@@ -65,6 +65,10 @@ create table if not exists public.panel_conductores (
   nombre text not null,
   condicion text default '',
   categoria text default 'super_sla',
+  -- Nombres tal como aparecen en los recorridos (cadete), separados por ";".
+  -- Vinculan al conductor cuando en la base figura con otro nombre (apodo, typo,
+  -- 2° nombre). Ver getPrecio()/panelConductorDe() en src/core.js.
+  alias text not null default '',
   updated_at timestamptz not null default now()
 );
 

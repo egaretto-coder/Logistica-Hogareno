@@ -52,7 +52,7 @@ function renderConductorReport() {
   const body = document.getElementById('rep-cond-body');
   body.innerHTML = lista.length ? lista.map(c => {
     const d = liq[c];
-    const cat = AppData.panelConductores.find(x => x.nombre.toUpperCase() === c.toUpperCase());
+    const cat = panelConductorDe(c);
     const zonas = [...new Set(d.filas.map(f => f.zona))];
     const tieneSuper = d.filas.some(f => f.es_super);
     return `<tr>

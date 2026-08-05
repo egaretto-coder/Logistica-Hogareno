@@ -443,6 +443,42 @@ function tarifaKmEnFecha(fechaStr) {
   return valor;
 }
 
+// ===== VÍNCULO RECORRIDO ↔ PANEL DE CONDUCTORES =====
+// Los recorridos identifican al conductor sólo por el texto "cadete", que puede
+// no coincidir con el nombre cargado en el panel (apodos: "Fer" vs "Fernando",
+// 2° nombre, typos, doble espacio). Normalizamos (mayúsculas, sin acentos, un
+// solo espacio) y además permitimos "alias": nombres tal como aparecen en los
+// recorridos, cargados en el panel para vincularlos a mano. Así la categoría del
+// panel se aplica aunque el nombre difiera.
+function normNombre(s) {
+  return String(s || '')
+    .toUpperCase()
+    // Saca acentos y ñ con un translit explícito (evita marcas combinantes).
+    .replace(/[ÁÀÄÂÃ]/g, 'A')
+    .replace(/[ÉÈËÊ]/g, 'E')
+    .replace(/[ÍÌÏÎ]/g, 'I')
+    .replace(/[ÓÒÖÔÕ]/g, 'O')
+    .replace(/[ÚÙÜÛ]/g, 'U')
+    .replace(/Ñ/g, 'N')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Lista de alias normalizados de un conductor del panel (separados por ";").
+function panelAliasNorm(c) {
+  return String(c && c.alias || '').split(';').map(normNombre).filter(Boolean);
+}
+
+// Busca en el panel el conductor que corresponde a un nombre de recorrido,
+// matcheando por nombre normalizado O por cualquiera de sus alias.
+function panelConductorDe(nombre) {
+  const n = normNombre(nombre);
+  if (!n) return undefined;
+  return AppData.panelConductores.find(c =>
+    normNombre(c.nombre) === n || panelAliasNorm(c).includes(n)
+  );
+}
+
 // ===== PRICE LOGIC =====
 // Devuelve el precio a aplicar para un cadete en una zona puntual.
 // 1) Super SLA: si el cadete tiene regla especial para ESA zona, se respeta.
@@ -459,8 +495,8 @@ function getPrecio(conductor, zona) {
   );
 
   const tarifa = AppData.tarifas.find(t => t.zona.toUpperCase().trim() === zNorm);
-  // Leer categoría directo desde el panel de conductores
-  const panelCond = AppData.panelConductores.find(c => c.nombre.toUpperCase().trim() === cNorm);
+  // Leer categoría directo desde el panel de conductores (por nombre o alias).
+  const panelCond = panelConductorDe(conductor);
   const tipoFijo = panelCond?.categoria === 'super_sla' ? 'sla' : (panelCond?.categoria || 's_colecta');
   const tieneSuperSLAEnOtraZona = AppData.superSLA.some(r => r.conductor.toUpperCase().trim() === cNorm);
 

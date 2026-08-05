@@ -136,7 +136,7 @@ function renderLiquidaciones() {
   // Filtrar por condición del panel de conductores
   if (filterCondicion) {
     conductores = conductores.filter(c => {
-      const panelEntry = AppData.panelConductores.find(x => x.nombre.toUpperCase() === c.toUpperCase());
+      const panelEntry = panelConductorDe(c);
       if (filterCondicion === 'sin_asignar') {
         return !panelEntry || !panelEntry.condicion;
       }
@@ -157,7 +157,7 @@ function renderLiquidaciones() {
     const sCon = d.filas.filter(f => f.tipo === 'c_colecta');
     const sSLA = d.filas.filter(f => f.tipo === 'sla');
     const sSuper = d.filas.filter(f => f.es_super);
-    const cat = AppData.panelConductores.find(x => x.nombre.toUpperCase() === c.toUpperCase());
+    const cat = panelConductorDe(c);
     return `<tr>
       <td>
         <div class="conductor-cell">

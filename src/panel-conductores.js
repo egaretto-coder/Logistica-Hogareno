@@ -20,15 +20,16 @@ let conductorEditIdx = -1;
 // en un aviso arriba del panel y los agrega uno por uno.
 let _nuevosReconocidos = [];
 function conductoresNuevosReconocidos() {
-  const enPanel = new Set(AppData.panelConductores.map(c => String(c.nombre || '').toUpperCase().trim()));
   const vistos = new Set();
   const nuevos = [];
   AppData.records.forEach(r => {
     const nombre = String(r.cadete || '').trim();
     if (!nombre) return;
-    const key = nombre.toUpperCase();
-    if (enPanel.has(key) || vistos.has(key)) return;
+    const key = normNombre(nombre);
+    if (!key || vistos.has(key)) return;
     vistos.add(key);
+    // Ya está en el panel (por nombre O por alias) → no es "nuevo".
+    if (panelConductorDe(nombre)) return;
     nuevos.push(nombre);
   });
   return nuevos.sort((a, b) => a.localeCompare(b));
@@ -42,14 +43,15 @@ function renderNuevosReconocidos() {
   const n = _nuevosReconocidos.length;
   const plural = n !== 1;
   const chips = _nuevosReconocidos.map((nombre, i) =>
-    '<span style="display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px">' +
+    '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px">' +
       '<span style="display:inline-flex;align-items:center;gap:6px"><span class="conductor-avatar" style="background:' + avatarColor(nombre) + ';width:22px;height:22px;font-size:9px">' + initials(nombre) + '</span>' + nombre + '</span>' +
-      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" onclick="agregarConductorReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Vincular a un conductor que ya está en el panel con otro nombre" onclick="vincularReconocido(' + i + ')"><i class="ic ic-clip"></i> Vincular</button>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Cargar como conductor nuevo" onclick="agregarConductorReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
     '</span>').join('');
   cont.innerHTML =
     '<div class="alert" style="background:#fff8e1;border:1px solid #f5d97a;color:#7a5c00;margin-bottom:16px;padding:12px 16px">' +
       '<div style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px"><i class="ic ic-alert"></i> ' + n + ' conductor' + (plural ? 'es' : '') + ' reconocido' + (plural ? 's' : '') + ' en los recorridos ' + (plural ? 'no están' : 'no está') + ' en el panel</div>' +
-      '<div style="font-size:12px;margin-bottom:10px;color:#8a6d00">Aparecen en los recorridos importados pero no los cargaste acá. Agregalos para asignarles condición (día de pago) y categorización.</div>' +
+      '<div style="font-size:12px;margin-bottom:10px;color:#8a6d00"><strong>Vincular</strong>: si ya está cargado con otro nombre (apodo, typo). <strong>Agregar</strong>: si es un conductor nuevo. Así se le aplica la condición (día de pago) y la categorización de precios.</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:180px;overflow-y:auto">' + chips + '</div>' +
     '</div>';
 }
@@ -60,6 +62,53 @@ function agregarConductorReconocido(i) {
   if (!nombre) return;
   openAddConductorModal();
   document.getElementById('mc-nombre').value = String(nombre).toUpperCase();
+}
+
+// ── Vincular un nombre de recorrido a un conductor YA cargado en el panel ────
+// Guarda el nombre del recorrido como "alias" del conductor elegido, así se le
+// aplica su categoría/condición aunque en los recorridos figure con otro nombre.
+let _vincPendiente = '';
+
+function vincularReconocido(i) {
+  const nombre = _nuevosReconocidos[i];
+  if (!nombre) return;
+  _vincPendiente = nombre;
+  document.getElementById('vinc-cadete').textContent = nombre;
+  const sel = document.getElementById('vinc-select');
+  const opts = AppData.panelConductores
+    .slice()
+    .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || '')))
+    .map(c => '<option value="' + c.id + '">' + c.nombre +
+              ' — ' + (CATEGORIA_INFO[c.categoria]?.label || c.categoria || 'sin categoría') + '</option>')
+    .join('');
+  sel.innerHTML = '<option value="">Elegí un conductor…</option>' + opts;
+  sel.value = '';
+  document.getElementById('modal-vincular-backdrop').style.display = 'flex';
+}
+
+function confirmarVincular() {
+  const id = document.getElementById('vinc-select').value;
+  if (!id) { alert('Elegí a qué conductor del panel vincularlo.'); return; }
+  const c = AppData.panelConductores.find(x => String(x.id) === String(id));
+  if (!c) { alert('No se encontró el conductor.'); return; }
+  const nombre = _vincPendiente;
+  const aliasActuales = String(c.alias || '').split(';').map(a => a.trim()).filter(Boolean);
+  const yaEsta = normNombre(c.nombre) === normNombre(nombre) ||
+                 aliasActuales.some(a => normNombre(a) === normNombre(nombre));
+  if (!yaEsta) aliasActuales.push(nombre);
+  c.alias = aliasActuales.join(';');
+  localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
+  dbPush('panel_conductores');
+  document.getElementById('modal-vincular-backdrop').style.display = 'none';
+  _vincPendiente = '';
+  renderPanelConductores();
+  showToast('🔗 "' + nombre + '" vinculado a ' + c.nombre);
+}
+
+function closeVincularModal(e) {
+  if (!e || e.target.id === 'modal-vincular-backdrop') {
+    document.getElementById('modal-vincular-backdrop').style.display = 'none';
+  }
 }
 
 function setPanelFiltro(filtro) {
@@ -168,6 +217,7 @@ function openAddConductorModal() {
   document.getElementById('mc-nombre').value = '';
   document.getElementById('mc-condicion').value = '';
   document.getElementById('mc-categoria').value = '';
+  document.getElementById('mc-alias').value = '';
   document.getElementById('mc-info-condicion').textContent = '';
   document.getElementById('modal-conductor-backdrop').style.display = 'flex';
 }
@@ -180,6 +230,7 @@ function editarConductorPanel(idx) {
   document.getElementById('mc-nombre').value = c.nombre;
   document.getElementById('mc-condicion').value = c.condicion;
   document.getElementById('mc-categoria').value = c.categoria;
+  document.getElementById('mc-alias').value = (c.alias || '').split(';').filter(Boolean).join('\n');
   updateMcInfoCondicion();
   document.getElementById('modal-conductor-backdrop').style.display = 'flex';
 }
@@ -208,6 +259,9 @@ function guardarConductorModal() {
     const nombre = document.getElementById('mc-nombre').value.trim().toUpperCase();
     const condicion = document.getElementById('mc-condicion').value;
     const categoria = document.getElementById('mc-categoria').value;
+    // Alias: nombres tal como figuran en los recorridos (uno por línea o ";").
+    const alias = (document.getElementById('mc-alias')?.value || '')
+      .split(/[;\n]/).map(a => a.trim()).filter(Boolean).join(';');
 
     if (!id) { alert('El ID es requerido (ej: LH00001).'); return; }
     if (!nombre) { alert('Ingresá el nombre del conductor.'); return; }
@@ -220,7 +274,7 @@ function guardarConductorModal() {
       alert('El ID "' + id + '" ya está en uso. Verificá o editá el número.'); return;
     }
 
-    const entrada = { id, nombre, condicion, categoria };
+    const entrada = { id, nombre, condicion, categoria, alias };
 
     if (esEdicion) {
       AppData.panelConductores[conductorEditIdx] = entrada;

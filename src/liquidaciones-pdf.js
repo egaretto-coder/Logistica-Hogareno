@@ -14,7 +14,7 @@ function openLiqModal(conductor) {
     return;
   }
 
-  const panelCond = AppData.panelConductores.find(x => x.nombre.toUpperCase() === conductor.toUpperCase());
+  const panelCond = panelConductorDe(conductor);
   const idLabel = panelCond?.id || '—';
   const condLabel = panelCond?.condicion || 'Sin asignar';
 
@@ -207,7 +207,7 @@ function exportPDF(conductor, opts) {
     };
   }
 
-  const panelCond = AppData.panelConductores.find(x => x.nombre.toUpperCase() === conductor.toUpperCase());
+  const panelCond = panelConductorDe(conductor);
 
   // ===== COLORES LOGÍSTICA HOGAREÑO =====
   const LH_NAVY  = [26, 39, 68];    // Azul marino oscuro
