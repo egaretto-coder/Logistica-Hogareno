@@ -34,9 +34,38 @@ function openLiqModal(conductor) {
     '<strong>' + conductor + '</strong> · ID: <span style="font-family:monospace">' + idLabel + '</span> · ' +
     condLabel +
     '<br><span style="color:#6b7280"><i class="ic ic-calendar"></i> Período: ' + rangoTxt + '</span>';
+  const corregidas = d.filas.filter(f => f.corregido);
   document.getElementById('liq-modal-recorridos-info').textContent =
-    d.filas.length + ' entregados · ' + d.filas_excluidas.length + ' en otros estados';
+    d.filas.length + ' entregados · ' + d.filas_excluidas.length + ' en otros estados' +
+    (corregidas.length ? ' · ✏️ ' + corregidas.length + ' corregido' + (corregidas.length > 1 ? 's' : '') + ' a mano' : '');
   document.getElementById('liq-modal-total-bruto').textContent = fmtPeso(d.total);
+
+  // Lista colapsable de envíos corregidos a mano, para ubicarlos dentro de esta
+  // liquidación (zona definida a mano, precio pisado o cargados a mano).
+  const corrWrap = document.getElementById('liq-modal-corregidos');
+  if (corrWrap) {
+    if (!corregidas.length) { corrWrap.style.display = 'none'; corrWrap.innerHTML = ''; }
+    else {
+      const filasHtml = corregidas.map(f => {
+        const tags = [];
+        if (f.zona_manual) tags.push('<span style="color:#4338ca">📍 zona</span>');
+        if (f.precio_corregido) tags.push('<span style="color:#92400e">✏️ precio</span>');
+        if (f.manual) tags.push('<span style="color:#6d28d9">➕ manual</span>');
+        return '<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid #eee;font-size:11px">' +
+          '<span style="font-family:monospace">' + (f.tracking || '—') + '</span>' +
+          '<span style="color:#6b7280;flex:1;min-width:80px">' + (f.zona || '—') + '</span>' +
+          '<span style="white-space:nowrap">' + tags.join(' · ') + '</span>' +
+          '<span style="font-weight:600">' + fmtPeso(f.precio) + '</span></div>';
+      }).join('');
+      corrWrap.style.display = '';
+      corrWrap.innerHTML =
+        '<details style="background:#f8f9ff;border:1px solid #e0e4f5;border-radius:6px;padding:8px 12px">' +
+          '<summary style="cursor:pointer;font-size:12px;font-weight:600;color:#4338ca"><i class="ic ic-edit"></i> ' +
+            corregidas.length + ' envío' + (corregidas.length > 1 ? 's' : '') + ' corregido' + (corregidas.length > 1 ? 's' : '') + ' a mano</summary>' +
+          '<div style="margin-top:6px">' + filasHtml + '</div>' +
+        '</details>';
+    }
+  }
 
   // Pre-cargar los 3 ítems de descuento del PERÍODO (imputación automática por
   // fecha, editable). Cada uno suma los registros de su solapa que caen en el rango.

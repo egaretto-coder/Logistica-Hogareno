@@ -39,6 +39,14 @@ function toggleFiltroIncompletos() {
   renderConductorDetail();
 }
 
+// Filtro "solo corregidos a mano": envíos con zona definida a mano, precio pisado
+// o cargados a mano. Sirve para revisar rápido lo que se tocó.
+let condSoloCorregidos = false;
+function toggleFiltroCorregidos() {
+  condSoloCorregidos = !condSoloCorregidos;
+  renderConductorDetail();
+}
+
 // Índices (en AppData.records) de los registros del conductor dentro del rango.
 function indicesConductorFiltrados(cond) {
   const key = cond.toUpperCase().trim();
@@ -80,7 +88,7 @@ function renderConductorDetail() {
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
     const manual = precioManualDe(r);
-    if (manual !== null) corregidos++;
+    if (esCorregidoRegistro(r)) corregidos++;
     if (contabiliza) { entregados++; total += manual !== null ? manual : precioAutoDe(r).precio; }
     else noEntregados++;
   });
@@ -89,7 +97,7 @@ function renderConductorDetail() {
   const fCli = (document.getElementById('cond-filtro-cliente')?.value || '').toLowerCase().trim();
   const fTrk = (document.getElementById('cond-filtro-tracking')?.value || '').toLowerCase().trim();
   const fZona = (document.getElementById('cond-filtro-zona')?.value || '').toLowerCase().trim();
-  const hayFiltro = !!(fCli || fTrk || fZona || condSoloIncompletos);
+  const hayFiltro = !!(fCli || fTrk || fZona || condSoloIncompletos || condSoloCorregidos);
 
   // Contar envíos incompletos (sin zona o sin precio) del período, para el badge del botón.
   let incompletosCount = 0;
@@ -104,9 +112,23 @@ function renderConductorDetail() {
     if (badge) badge.textContent = incompletosCount ? (' · ' + incompletosCount) : '';
   }
 
+  // Contar envíos corregidos a mano del período, para el badge del botón.
+  let corregidosCount = 0;
+  idxs.forEach(i => { if (esCorregidoRegistro(AppData.records[i])) corregidosCount++; });
+  const btnCor = document.getElementById('cond-filtro-corregidos');
+  if (btnCor) {
+    btnCor.style.borderColor = condSoloCorregidos ? '#6366f1' : '';
+    btnCor.style.background = condSoloCorregidos ? '#eef2ff' : '';
+    btnCor.style.color = condSoloCorregidos ? '#4338ca' : (corregidosCount ? '#4f46e5' : '');
+    btnCor.style.fontWeight = condSoloCorregidos ? '700' : '';
+    const badgeC = document.getElementById('cond-corregidos-count');
+    if (badgeC) badgeC.textContent = corregidosCount ? (' · ' + corregidosCount) : '';
+  }
+
   const idxsVista = !hayFiltro ? idxs : idxs.filter(i => {
     const r = AppData.records[i];
     if (condSoloIncompletos && !envioIncompleto(r)) return false;
+    if (condSoloCorregidos && !esCorregidoRegistro(r)) return false;
     if (fTrk && !String(r.tracking || '').toLowerCase().includes(fTrk)) return false;
     if (fZona && !String(r.zona || r.localidad || '').toLowerCase().includes(fZona)) return false;
     if (fCli && !String(r.destinatario || '').toLowerCase().includes(fCli)) return false;
@@ -128,7 +150,7 @@ function renderConductorDetail() {
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
           class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '"><i class="ic ic-user"></i> ' + r.destinatario + '</div>' : ''}</td>
         <td class="muted mono" style="font-size:12px">${r.fecha || '—'}</td>
-        <td>${zonaSelectHTML(zonaCat, i, r.zona)}</td>
+        <td>${zonaSelectHTML(zonaCat, i, r.zona, cond)}</td>
         <td>
           <select onchange="editarRegistroConductor(${i},'estado',this.value)"
             style="padding:5px 8px;border:1px solid ${contabiliza ? '#86efac' : '#fca5a5'};border-radius:6px;font-size:12px;background:${contabiliza ? '#f0fdf4' : '#fef2f2'};color:${contabiliza ? '#166534' : '#b91c1c'};font-weight:600">
@@ -147,7 +169,7 @@ function renderConductorDetail() {
           </div>
         </td>
         <td style="font-size:11px;color:var(--text-muted)">
-          ${r.manual ? '<span class="tag" title="Envío cargado a mano desde este panel" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;margin-right:4px"><i class="ic ic-plus"></i> Manual</span>' : ''}${manual !== null
+          ${r.manual ? '<span class="tag" title="Envío cargado a mano desde este panel" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;margin-right:4px"><i class="ic ic-plus"></i> Manual</span>' : ''}${r.zona_manual ? '<span class="tag" title="La zona fue definida/corregida a mano" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;margin-right:4px"><i class="ic ic-pin"></i> Zona a mano</span>' : ''}${manual !== null
             ? '<span class="tag" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a"><i class="ic ic-edit"></i> Corregido (auto: ' + fmtPeso(auto.precio) + ')</span>'
             : auto.etiqueta}
         </td>
@@ -192,6 +214,7 @@ function limpiarFiltrosConductor() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   condSoloIncompletos = false;
+  condSoloCorregidos = false;
   renderConductorDetail();
 }
 
@@ -224,6 +247,37 @@ function editarRegistroConductor(idx, campo, valor) {
   condEditTimer = setTimeout(guardarEdicionConductores, 2500);
 }
 
+// ── Confirmación de zona en 2 pasos ─────────────────────────────────────────
+// Elegir una zona NO la aplica: queda "pendiente" (con vista previa del precio)
+// hasta que el operador toca Confirmar. Así evitamos que un tipeo/selección
+// errónea entre a la liquidación sin querer. Keyed por índice global del record.
+let _zonaPendiente = {};
+
+function stageZonaConductor(idx, value) {
+  const r = AppData.records[idx];
+  if (!r) return;
+  if (r._historico) { showToast('🗄️ Registro archivado (solo lectura): no se puede editar'); renderConductorDetail(); return; }
+  const actual = String(r.zona || '').toUpperCase().trim();
+  const nuevo = String(value || '').toUpperCase().trim();
+  if (nuevo === actual) delete _zonaPendiente[idx];   // volvió a la original → sin cambio
+  else _zonaPendiente[idx] = nuevo;
+  renderConductorDetail();
+}
+
+function confirmarZonaConductor(idx) {
+  const z = _zonaPendiente[idx];
+  if (z === undefined) return;
+  delete _zonaPendiente[idx];
+  const r = AppData.records[idx];
+  if (r) r.zona_manual = z !== '';   // marca la zona como definida a mano (o desmarca si se vació)
+  editarRegistroConductor(idx, 'zona', z);   // aplica + guarda + re-render
+}
+
+function cancelarZonaConductor(idx) {
+  delete _zonaPendiente[idx];
+  renderConductorDetail();
+}
+
 function actualizarEstadoEdicion(txt) {
   const el = document.getElementById('cond-edit-estado');
   if (el) el.textContent = txt || '';
@@ -246,6 +300,7 @@ async function guardarEdicionConductores() {
       await DB.updateWhere('registros', 'id', id, {
         tracking: r.tracking || '', zona: r.zona || '', estado: r.estado || '',
         fecha_date: fechaISOde(r.fecha), clave: claveRegistro(r),
+        zona_manual: !!r.zona_manual,
         precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : parseFloat(r.precio_manual)
       });
       condEditIdsSucios.delete(id);
@@ -297,16 +352,41 @@ function zonaOptionsHTML(conductor) {
 // elegir zonas del tarifario (validación de datos). Si la zona actual está fuera
 // del tarifario (o vacía), la marca en ámbar y la muestra como "sin tarifa" para
 // que el operador la reemplace por una válida.
-function zonaSelectHTML(catalogo, idx, current) {
+function zonaSelectHTML(catalogo, idx, current, cond) {
+  const pend = _zonaPendiente[idx];               // zona elegida pero aún NO confirmada
+  const tienePend = pend !== undefined;
   const cur = String(current || '').toUpperCase().trim();
-  const enLista = catalogo.some(o => o.val === cur);
-  const alerta = !cur || !enLista;
-  let opts = '<option value=""' + (cur === '' ? ' selected' : '') + '>— Elegir zona —</option>';
-  if (cur && !enLista) opts += '<option value="' + cur.replace(/"/g, '&quot;') + '" selected>' + cur + ' · sin tarifa</option>';
-  catalogo.forEach(o => { opts += '<option value="' + o.val.replace(/"/g, '&quot;') + '"' + (o.val === cur ? ' selected' : '') + '>' + o.label + '</option>'; });
-  return '<select onchange="editarRegistroConductor(' + idx + ',\'zona\',this.value)" ' +
-    'style="width:100%;max-width:210px;padding:5px 8px;border:1px solid ' + (alerta ? '#f59e0b' : 'var(--border)') + ';border-radius:6px;font-size:12px;' +
-    (alerta ? 'background:#fffbeb;' : 'background:var(--surface-1);') + '">' + opts + '</select>';
+  const shown = tienePend ? pend : cur;           // el select refleja lo pendiente
+  const enLista = catalogo.some(o => o.val === shown);
+  const alerta = !shown || !enLista;
+  let opts = '<option value=""' + (shown === '' ? ' selected' : '') + '>— Elegir zona —</option>';
+  if (shown && !enLista) opts += '<option value="' + shown.replace(/"/g, '&quot;') + '" selected>' + shown + ' · sin tarifa</option>';
+  catalogo.forEach(o => { opts += '<option value="' + o.val.replace(/"/g, '&quot;') + '"' + (o.val === shown ? ' selected' : '') + '>' + o.label + '</option>'; });
+  const borde = tienePend ? '#6366f1' : (alerta ? '#f59e0b' : 'var(--border)');
+  const fondo = tienePend ? '#eef2ff' : (alerta ? '#fffbeb' : 'var(--surface-1)');
+  let html = '<select onchange="stageZonaConductor(' + idx + ',this.value)" ' +
+    'style="width:100%;max-width:210px;padding:5px 8px;border:1px solid ' + borde + ';border-radius:6px;font-size:12px;background:' + fondo + ';">' + opts + '</select>';
+  // Paso 2: mientras hay una zona pendiente, mostramos el precio que tomaría y
+  // pedimos confirmación explícita. Recién al confirmar entra a la liquidación.
+  if (tienePend) {
+    let preview;
+    if (!pend) {
+      preview = '<span style="color:#b91c1c;font-weight:600">Zona vacía (no suma)</span>';
+    } else {
+      const p = getPrecio(cond, pend);
+      preview = p.sin_tarifa
+        ? '<span style="color:#b91c1c;font-weight:600">' + pend + ' · sin tarifa · ' + fmtPeso(p.precio) + '</span>'
+        : '<span style="color:#15803d;font-weight:600">' + pend + ' · ' + fmtPeso(p.precio) + '</span>';
+    }
+    html += '<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px">' +
+      '<span style="color:var(--text-muted)">→</span>' + preview +
+      '<button class="btn btn-sm" title="Confirmar esta zona" onclick="confirmarZonaConductor(' + idx + ')" ' +
+        'style="padding:2px 8px;font-size:11px;background:#16a34a;color:#fff;border-color:#16a34a"><i class="ic ic-check"></i> Confirmar</button>' +
+      '<button class="btn btn-sm" title="Cancelar" onclick="cancelarZonaConductor(' + idx + ')" ' +
+        'style="padding:2px 6px;font-size:11px"><i class="ic ic-x"></i></button>' +
+    '</div>';
+  }
+  return html;
 }
 
 function envioRowHTML(fechaISO) {

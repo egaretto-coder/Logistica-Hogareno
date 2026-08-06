@@ -573,7 +573,9 @@ function calcLiquidaciones() {
       byDriver[cond].filas.push({
         tracking, zona, zona_precio, fecha, estado: r.estado,
         tipo, precio, subtotal, es_super, sin_tarifa,
-        es_dim_especial, dim_cliente, dim_condicion
+        es_dim_especial, dim_cliente, dim_condicion,
+        manual: !!r.manual, zona_manual: !!r.zona_manual,
+        precio_corregido: precioManualDe(r) !== null, corregido: esCorregidoRegistro(r)
       });
       byDriver[cond].total += subtotal;
     } else {
@@ -598,6 +600,22 @@ function precioManualDe(r) {
   if (!r || r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') return null;
   const n = parseFloat(r.precio_manual);
   return isNaN(n) ? null : n;
+}
+
+// ¿El operador tocó este envío a mano? = cargado a mano, zona definida a mano,
+// o precio pisado. Sirve para localizar correcciones en Conductores y en la
+// liquidación.
+function esCorregidoRegistro(r) {
+  return !!(r && (r.manual || r.zona_manual)) || precioManualDe(r) !== null;
+}
+
+// Lista de correcciones aplicadas ('manual' | 'zona' | 'precio'), para chips.
+function correccionesDe(r) {
+  const out = [];
+  if (r && r.manual) out.push('manual');
+  if (r && r.zona_manual) out.push('zona');
+  if (precioManualDe(r) !== null) out.push('precio');
+  return out;
 }
 
 // Normaliza texto para comparar (minúsculas, sin acentos ni puntuación, espacios colapsados).

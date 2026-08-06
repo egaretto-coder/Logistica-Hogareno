@@ -248,6 +248,7 @@ create table if not exists public.registros (
   destinatario text default '',-- nombre del destinatario (col M del Excel)
   clave text,                  -- clave de deduplicación (la calcula la app): T:tracking real, D:dirección+destinatario (tracking basura), F:huella
   manual boolean not null default false, -- true = envío cargado a mano desde el editor de Conductores (chip "Manual")
+  zona_manual boolean not null default false, -- true = la zona fue definida/corregida a mano (para localizar correcciones)
   created_at timestamptz not null default now()
 );
 create index if not exists idx_registros_fecha_date on public.registros (fecha_date);
@@ -270,6 +271,7 @@ create table if not exists public.registros_historico (
   carga_fecha text default '',
   fecha_date date,
   precio_manual numeric,
+  zona_manual boolean not null default false,
   created_at timestamptz,
   archivado_en timestamptz not null default now()
 );
@@ -287,8 +289,8 @@ begin
     delete from public.registros r where r.fecha_date is not null and r.fecha_date < antes_de returning r.*
   )
   insert into public.registros_historico
-    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, created_at)
-  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, created_at from mov;
+    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, created_at)
+  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, created_at from mov;
   get diagnostics movidos = row_count;
   return movidos;
 end $$;

@@ -160,6 +160,7 @@ async function hydrateFromSupabase() {
     direccion: r.direccion || '', destinatario: r.destinatario || '',
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
+    zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
   }));
@@ -294,6 +295,7 @@ function filaRegistroNube(r) {
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     clave: claveRegistro(r),
     manual: !!r.manual,
+    zona_manual: !!r.zona_manual,
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : _num(r.precio_manual)
   };
 }
@@ -358,6 +360,7 @@ async function cargarHistorialCompleto(btn) {
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+      manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
     const mapHist = r => ({
@@ -366,6 +369,7 @@ async function cargarHistorialCompleto(btn) {
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+      manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
     AppData.records = historico.map(mapHist).concat(vivos.map(mapVivo));

@@ -75,7 +75,9 @@ function calcLiquidacionesFiltradas() {
       liqBase[cond].total += precio;
       liqBase[cond].filas.push({
         tracking: r.tracking, zona, zona_precio: r.zona_precio||'', fecha: r.fecha, estado: r.estado,
-        tipo, precio, subtotal: precio, es_super, sin_tarifa, es_dim_especial, dim_cliente, dim_condicion
+        tipo, precio, subtotal: precio, es_super, sin_tarifa, es_dim_especial, dim_cliente, dim_condicion,
+        manual: !!r.manual, zona_manual: !!r.zona_manual,
+        precio_corregido: precioManualDe(r) !== null, corregido: esCorregidoRegistro(r)
       });
     } else {
       liqBase[cond].filas_excluidas.push({ tracking: r.tracking, zona, fecha: r.fecha, estado: r.estado });
@@ -105,7 +107,8 @@ function renderLiquidaciones() {
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
-    if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond };
+    if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond, corregidos: 0 };
+    if (esCorregidoRegistro(r)) liqBase[cond].corregidos++;
     if (contabiliza) {
       const p = getPrecio(cond, zona);
       const precio = precioManualDe(r) !== null ? precioManualDe(r) : p.precio;
@@ -162,7 +165,10 @@ function renderLiquidaciones() {
       <td>
         <div class="conductor-cell">
           <div class="conductor-avatar" style="background:${avatarColor(c)}">${initials(c)}</div>
-          <strong>${c}</strong>
+          <div>
+            <strong>${c}</strong>
+            ${d.corregidos ? `<div style="margin-top:2px"><span class="tag" title="Envíos corregidos a mano (zona, precio o cargados a mano). Vé al detalle para ubicarlos." style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:10px"><i class="ic ic-edit"></i> ${d.corregidos} corregido${d.corregidos > 1 ? 's' : ''} a mano</span></div>` : ''}
+          </div>
         </div>
       </td>
       <td><span class="badge ${cat ? 'badge-blue' : 'badge-gray'}">${cat ? tipoLabel(cat.categoria === 'super_sla' ? 'sla' : cat.categoria) : 'Sin categorizar'}</span></td>

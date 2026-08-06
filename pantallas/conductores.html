@@ -36,6 +36,7 @@
             <input type="search" id="cond-filtro-tracking" placeholder="📦 Tracking" oninput="renderConductorDetail()" style="width:170px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace">
             <input type="search" id="cond-filtro-zona" placeholder="📍 Zona" oninput="renderConductorDetail()" style="width:150px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;text-transform:uppercase">
             <button class="btn btn-sm" id="cond-filtro-incompletos" onclick="toggleFiltroIncompletos()" title="Mostrar solo los envíos sin zona o sin precio (no contabilizan hasta cargarlos a mano)"><i class="ic ic-alert"></i> Sin zona/precio<span id="cond-incompletos-count"></span></button>
+            <button class="btn btn-sm" id="cond-filtro-corregidos" onclick="toggleFiltroCorregidos()" title="Mostrar solo los envíos corregidos a mano (zona definida, precio pisado o cargados a mano)"><i class="ic ic-edit"></i> Solo corregidos<span id="cond-corregidos-count"></span></button>
             <button class="btn btn-sm" onclick="limpiarFiltrosConductor()"><i class="ic ic-x"></i> Limpiar</button>
             <span id="cond-filtro-count" style="font-size:11px;color:var(--text-muted)"></span>
           </div>
