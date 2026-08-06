@@ -6,7 +6,7 @@ function renderZonaReport() {
     if (!z) return;
     if (!zonaData[z]) zonaData[z] = { zona: z, count: 0, conductores: new Set(), total: 0 };
     zonaData[z].count++;
-    zonaData[z].conductores.add(r.cadete);
+    zonaData[z].conductores.add(conductorCanonico(r.cadete));
   });
 
   Object.keys(liq).forEach(c => {

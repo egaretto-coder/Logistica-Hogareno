@@ -65,6 +65,7 @@ function loadSavedConfig() {
     } else {
       AppData.panelConductores = saved;
     }
+    invalidarIndicePanel();   // se cargó el panel desde localStorage
   }
 }
 
@@ -129,6 +130,7 @@ async function hydrateFromSupabase() {
       alias: c.alias || ''
     }));
   } else { faltaSeed.push('panel_conductores'); }
+  invalidarIndicePanel();   // se rehidrató el panel desde la nube → índice viejo
 
   AppData.dimensionesEspeciales = (data.dimensiones_especiales || []).map(d => ({
     fecha: d.fecha || '', tracking: d.tracking || '', cliente: d.cliente || '',

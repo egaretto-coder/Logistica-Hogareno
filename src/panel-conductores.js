@@ -97,6 +97,7 @@ function confirmarVincular() {
                  aliasActuales.some(a => normNombre(a) === normNombre(nombre));
   if (!yaEsta) aliasActuales.push(nombre);
   c.alias = aliasActuales.join(';');
+  invalidarIndicePanel();   // cambió un alias → el índice nombre→panel quedó viejo
   localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
   dbPush('panel_conductores');
   document.getElementById('modal-vincular-backdrop').style.display = 'none';
@@ -284,6 +285,7 @@ function guardarConductorModal() {
       }
       AppData.panelConductores.push(entrada);
     }
+    invalidarIndicePanel();   // cambió nombre/alias/set → reconstruir el índice
 
     // Guardar automáticamente en localStorage + nube
     try {
@@ -309,6 +311,7 @@ function eliminarConductorPanel(idx) {
   const nombre = AppData.panelConductores[idx].nombre;
   if (!confirm(`¿Eliminar a ${nombre} del panel de conductores?\n\nSe borra su condición (día de pago) y categorización. Sus recorridos y liquidaciones NO se tocan; si vuelve a aparecer en los recorridos, podés recargarlo desde el aviso de "conductores reconocidos".`)) return;
   AppData.panelConductores.splice(idx, 1);
+  invalidarIndicePanel();   // se eliminó un conductor → reconstruir el índice
   localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
   dbPush('panel_conductores');
   renderPanelConductores();

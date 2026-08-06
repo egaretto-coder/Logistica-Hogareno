@@ -55,7 +55,7 @@ function filtrarRecordsLiq(records) {
 function calcLiquidacionesFiltradas() {
   const liqBase = {};
   filtrarRecordsLiq(AppData.records).forEach(r => {
-    const cond = (r.cadete || '').trim(); if (!cond) return;
+    const cond = conductorCanonico(r.cadete); if (!cond) return;
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
@@ -103,7 +103,7 @@ function renderLiquidaciones() {
   const recordsFiltrados = filtrarRecordsLiq(AppData.records);
   const liqBase = {};
   recordsFiltrados.forEach(r => {
-    const cond = (r.cadete || '').trim(); if (!cond) return;
+    const cond = conductorCanonico(r.cadete); if (!cond) return;
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);

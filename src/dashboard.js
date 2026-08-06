@@ -316,7 +316,7 @@ function renderDashboard() {
   // Formato compatible con calcLiquidaciones(): { conductor: { total, filas, ... } }
   const liqFecha = {};
   recordsFiltrados.forEach(r => {
-    const cond = (r.cadete || '').trim();
+    const cond = conductorCanonico(r.cadete);
     if (!cond) return;
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();

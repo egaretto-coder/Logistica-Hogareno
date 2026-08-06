@@ -49,14 +49,16 @@ function toggleFiltroCorregidos() {
 
 // Índices (en AppData.records) de los registros del conductor dentro del rango.
 function indicesConductorFiltrados(cond) {
-  const key = cond.toUpperCase().trim();
+  const key = normNombre(cond);
   const dISO = document.getElementById('cond-fecha-desde')?.value || '';
   const hISO = document.getElementById('cond-fecha-hasta')?.value || '';
   const desde = dISO ? new Date(dISO + 'T00:00:00') : null;
   const hasta = hISO ? new Date(hISO + 'T23:59:59') : null;
   const out = [];
   AppData.records.forEach((r, i) => {
-    if ((r.cadete || '').toUpperCase().trim() !== key) return;
+    // Unifica por identidad canónica: incluye los recorridos con cualquier alias
+    // del conductor, no solo los que coinciden exacto por nombre.
+    if (normNombre(conductorCanonico(r.cadete)) !== key) return;
     if (desde || hasta) {
       const f = parseFechaReg(r.fecha);
       if (!f) return;

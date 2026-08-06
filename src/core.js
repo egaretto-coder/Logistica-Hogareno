@@ -469,14 +469,41 @@ function panelAliasNorm(c) {
   return String(c && c.alias || '').split(';').map(normNombre).filter(Boolean);
 }
 
+// Índice normalizado (nombre + alias) → conductor del panel. Cacheado para que el
+// matching sea O(1): se usa una vez por recorrido en varios cálculos (miles de
+// filas). Se reconstruye cuando cambia el set de conductores o sus nombres/alias
+// (ver invalidarIndicePanel). Un cambio de categoría NO requiere invalidar: el
+// Map guarda la referencia al objeto, que se muta in-place.
+let _indicePanelCache = null;
+function invalidarIndicePanel() { _indicePanelCache = null; }
+function _indicePanel() {
+  if (_indicePanelCache) return _indicePanelCache;
+  const m = new Map();
+  (AppData.panelConductores || []).forEach(c => {
+    const kn = normNombre(c.nombre);
+    if (kn && !m.has(kn)) m.set(kn, c);                    // el nombre tiene prioridad
+    panelAliasNorm(c).forEach(a => { if (!m.has(a)) m.set(a, c); });
+  });
+  _indicePanelCache = m;
+  return m;
+}
+
 // Busca en el panel el conductor que corresponde a un nombre de recorrido,
 // matcheando por nombre normalizado O por cualquiera de sus alias.
 function panelConductorDe(nombre) {
   const n = normNombre(nombre);
   if (!n) return undefined;
-  return AppData.panelConductores.find(c =>
-    normNombre(c.nombre) === n || panelAliasNorm(c).includes(n)
-  );
+  return _indicePanel().get(n);
+}
+
+// Nombre canónico de un conductor: si el nombre del recorrido está vinculado a un
+// conductor del panel (por nombre o alias), devuelve el nombre del panel; si no,
+// el nombre tal cual. Es la CLAVE de identidad: unifica todas las grafías/alias de
+// una misma persona en un solo conductor para liquidaciones, detalle, super SLA y
+// condición (día de pago).
+function conductorCanonico(nombre) {
+  const p = panelConductorDe(nombre);
+  return p ? p.nombre : String(nombre || '').trim();
 }
 
 // ===== PRICE LOGIC =====
@@ -487,18 +514,21 @@ function panelConductorDe(nombre) {
 // 3) Si el cadete no tiene ninguna relación con Super SLA, se usa el tipo fijo
 //    asignado en "Categorización de Conductores" (s_colecta | c_colecta | sla).
 function getPrecio(conductor, zona) {
-  const cNorm = (conductor || '').toUpperCase().trim();
   const zNorm = (zona || '').toUpperCase().trim();
 
+  // Categoría y nombre canónico desde el panel (resuelve alias). El super SLA se
+  // guarda con el nombre del panel, así que hay que matchearlo por el canónico
+  // para que aplique aunque el recorrido use otra grafía/alias.
+  const panelCond = panelConductorDe(conductor);
+  const cNorm = normNombre(panelCond ? panelCond.nombre : conductor);
+
   const superRule = AppData.superSLA.find(
-    r => r.conductor.toUpperCase().trim() === cNorm && r.zona.toUpperCase().trim() === zNorm
+    r => normNombre(r.conductor) === cNorm && r.zona.toUpperCase().trim() === zNorm
   );
 
   const tarifa = AppData.tarifas.find(t => t.zona.toUpperCase().trim() === zNorm);
-  // Leer categoría directo desde el panel de conductores (por nombre o alias).
-  const panelCond = panelConductorDe(conductor);
   const tipoFijo = panelCond?.categoria === 'super_sla' ? 'sla' : (panelCond?.categoria || 's_colecta');
-  const tieneSuperSLAEnOtraZona = AppData.superSLA.some(r => r.conductor.toUpperCase().trim() === cNorm);
+  const tieneSuperSLAEnOtraZona = AppData.superSLA.some(r => normNombre(r.conductor) === cNorm);
 
   if (superRule) {
     return { precio: superRule.precio ?? superRule.sla ?? 0, tipo: 'sla', es_super: true, sin_tarifa: false };
@@ -522,7 +552,9 @@ const ESTADOS_CONTABILIZAN = new Set(['ENTREGADO', 'ENTREGADO 2DA VISITA']);
 function calcLiquidaciones() {
   const byDriver = {};
   AppData.records.forEach(r => {
-    const cond = (r.cadete || '').trim();
+    // Identidad canónica: unifica alias/grafías de una misma persona en un solo
+    // conductor (una sola liquidación), en vez de duplicarlo por cada nombre.
+    const cond = conductorCanonico(r.cadete);
     if (!cond) return;
 
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
