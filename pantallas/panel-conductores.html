@@ -16,24 +16,12 @@
         <div id="panel-nuevos-aviso"></div>
 
         <!-- FILTROS POR CONDICIÓN -->
-        <div class="filter-tabs" id="panel-filter-tabs">
+        <div class="filter-tabs" id="panel-filter-tabs" style="margin-bottom:16px">
           <button class="filter-tab active-all" onclick="setPanelFiltro('all')">Todos</button>
           <button class="filter-tab" onclick="setPanelFiltro('Titular')">🔵 Titular — pago viernes</button>
           <button class="filter-tab" onclick="setPanelFiltro('Semi Titular')">🟡 Semi Titular — pago lunes</button>
           <button class="filter-tab" onclick="setPanelFiltro('Suplente')">🟣 Suplente — pago martes</button>
-        </div>
-
-        <!-- BOTONES DE EXPORTACIÓN POR CONDICIÓN -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
-          <button class="btn btn-sm" onclick="exportPDFsporCondicion('Titular')" style="border-color:#c5d6fc;color:#1a4fa3">
-            <i class="ic ic-download"></i> PDFs Titulares (viernes)
-          </button>
-          <button class="btn btn-sm" onclick="exportPDFsporCondicion('Semi Titular')" style="border-color:#ffe082;color:#7a5c00">
-            <i class="ic ic-download"></i> PDFs Semi Titulares (lunes)
-          </button>
-          <button class="btn btn-sm" onclick="exportPDFsporCondicion('Suplente')" style="border-color:#d8b4fe;color:#6b21a8">
-            <i class="ic ic-download"></i> PDFs Suplentes (martes)
-          </button>
+          <button class="filter-tab" onclick="setPanelFiltro('sin_asignar')" title="Conductores sin condición o sin categorización"><i class="ic ic-alert"></i> Sin asignar<span id="panel-sinasignar-count"></span></button>
         </div>
 
         <!-- BUSCADOR -->

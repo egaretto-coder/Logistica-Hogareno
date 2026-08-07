@@ -122,15 +122,27 @@ function setPanelFiltro(filtro) {
     if (filtro === 'Titular' && txt.includes('Titular') && !txt.includes('Semi')) btn.classList.add('active-titular');
     if (filtro === 'Semi Titular' && txt.includes('Semi')) btn.classList.add('active-semitit');
     if (filtro === 'Suplente' && txt.includes('Suplente')) btn.classList.add('active-suplente');
+    if (filtro === 'sin_asignar' && txt.includes('Sin asignar')) btn.classList.add('active-sin-asignar');
   });
   renderPanelConductores();
 }
 
+// ¿Al conductor le falta condición o categorización?
+function panelSinAsignar(c) {
+  return !String(c && c.condicion || '').trim() || !String(c && c.categoria || '').trim();
+}
+
 function renderPanelConductores() {
+  // Contador de "sin asignar" para el badge del filtro (siempre, sobre el total).
+  const sinAsignarCount = AppData.panelConductores.filter(panelSinAsignar).length;
+  const saBadge = document.getElementById('panel-sinasignar-count');
+  if (saBadge) saBadge.textContent = sinAsignarCount ? (' · ' + sinAsignarCount) : '';
+
   // Filtro por condición (pestañas) + buscador por nombre o ID.
-  let lista = panelFiltroActivo === 'all'
-    ? AppData.panelConductores
-    : AppData.panelConductores.filter(c => c.condicion === panelFiltroActivo);
+  let lista;
+  if (panelFiltroActivo === 'all') lista = AppData.panelConductores;
+  else if (panelFiltroActivo === 'sin_asignar') lista = AppData.panelConductores.filter(panelSinAsignar);
+  else lista = AppData.panelConductores.filter(c => c.condicion === panelFiltroActivo);
 
   const q = (document.getElementById('panel-search')?.value || '').toLowerCase().trim();
   if (q) {
@@ -147,7 +159,7 @@ function renderPanelConductores() {
   if (!lista.length) {
     body.innerHTML = `<div class="empty-state" style="padding:40px">
       <div class="empty-icon" style="font-size:36px;opacity:0.3">${q ? '🔍' : '🚗'}</div>
-      <div class="empty-title">${q ? 'Sin resultados para “' + q + '”' : 'Sin conductores' + (panelFiltroActivo !== 'all' ? ' con condición "' + panelFiltroActivo + '"' : '')}</div>
+      <div class="empty-title">${q ? 'Sin resultados para “' + q + '”' : (panelFiltroActivo === 'all' ? 'Sin conductores' : panelFiltroActivo === 'sin_asignar' ? '✅ Todos los conductores tienen condición y categorización' : 'Sin conductores con condición "' + panelFiltroActivo + '"')}</div>
       <div class="empty-sub">${q ? 'Probá con otro nombre o ID' : 'Usá el botón "+ Agregar conductor" para cargar el primero'}</div>
     </div>`;
   } else {
@@ -280,8 +292,11 @@ function guardarConductorModal() {
     if (esEdicion) {
       AppData.panelConductores[conductorEditIdx] = entrada;
     } else {
-      if (AppData.panelConductores.some(c => c.nombre === nombre)) {
-        if (!confirm('Ya existe un conductor llamado "' + nombre + '". ¿Querés agregarlo de todas formas?')) return;
+      // Nombres únicos: el conductor se identifica por nombre (una sola liquidación
+      // por persona). Si ya existe, no duplicamos — se edita el existente.
+      if (AppData.panelConductores.some(c => normNombre(c.nombre) === normNombre(nombre))) {
+        alert('Ya existe un conductor llamado "' + nombre + '". Editá ese en vez de duplicarlo.');
+        return;
       }
       AppData.panelConductores.push(entrada);
     }
@@ -325,8 +340,12 @@ function closeConductorModal(e) {
 }
 
 function savePanelConductores() {
+  // Limpia duplicados (por nombre / ID repetido) antes de guardar.
+  AppData.panelConductores = dedupePanelConductores(AppData.panelConductores);
+  invalidarIndicePanel();
   localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
   dbPush('panel_conductores');
+  renderPanelConductores();
   showToast('Panel de conductores guardado');
 }
 

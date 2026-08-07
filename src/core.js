@@ -506,6 +506,37 @@ function conductorCanonico(nombre) {
   return p ? p.nombre : String(nombre || '').trim();
 }
 
+// Deduplica el panel de conductores: colapsa entradas repetidas por nombre
+// (queda la más completa: con condición/categoría/alias) y garantiza IDs únicos.
+// Un ID repetido rompe la sincronización con la nube: `id` es PRIMARY KEY, así que
+// el insert de dbPush('panel_conductores') falla y la tabla queda vacía. Se aplica
+// al cargar, al hidratar y antes de pushear.
+function dedupePanelConductores(lista) {
+  const arr = Array.isArray(lista) ? lista : [];
+  const completitud = c => (String(c && c.condicion || '').trim() ? 2 : 0) +
+                           (String(c && c.categoria || '').trim() ? 1 : 0) +
+                           (String(c && c.alias || '').trim() ? 1 : 0);
+  // 1) Colapsar por nombre normalizado (una sola entrada por persona; la más completa).
+  const porNombre = new Map();
+  arr.forEach(c => {
+    const k = normNombre(c && c.nombre);
+    if (!k) return;                                  // descartar entradas sin nombre
+    const prev = porNombre.get(k);
+    if (!prev || completitud(c) > completitud(prev)) porNombre.set(k, Object.assign({}, c));
+  });
+  // 2) Garantizar IDs únicos (evita el choque de PRIMARY KEY).
+  const out = Array.from(porNombre.values());
+  const usados = new Set();
+  let maxN = 0;
+  out.forEach(c => { const m = /^LH(\d+)$/i.exec(String(c.id || '')); if (m) maxN = Math.max(maxN, parseInt(m[1], 10)); });
+  out.forEach(c => {
+    let id = String(c.id || '').trim();
+    if (!id || usados.has(id)) { id = 'LH' + String(++maxN).padStart(5, '0'); c.id = id; }
+    usados.add(id);
+  });
+  return out;
+}
+
 // ===== PRICE LOGIC =====
 // Devuelve el precio a aplicar para un cadete en una zona puntual.
 // 1) Super SLA: si el cadete tiene regla especial para ESA zona, se respeta.

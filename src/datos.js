@@ -65,6 +65,7 @@ function loadSavedConfig() {
     } else {
       AppData.panelConductores = saved;
     }
+    AppData.panelConductores = dedupePanelConductores(AppData.panelConductores);
     invalidarIndicePanel();   // se cargó el panel desde localStorage
   }
 }
@@ -130,6 +131,7 @@ async function hydrateFromSupabase() {
       alias: c.alias || ''
     }));
   } else { faltaSeed.push('panel_conductores'); }
+  AppData.panelConductores = dedupePanelConductores(AppData.panelConductores);
   invalidarIndicePanel();   // se rehidrató el panel desde la nube → índice viejo
 
   AppData.dimensionesEspeciales = (data.dimensiones_especiales || []).map(d => ({
@@ -241,7 +243,7 @@ function dbPush(table) {
     super_sla: () => AppData.superSLA.map(r => ({
       conductor: r.conductor, zona: r.zona, precio: _num(r.precio != null ? r.precio : r.sla)
     })).filter(r => r.conductor && r.zona),
-    panel_conductores: () => AppData.panelConductores.map(c => ({
+    panel_conductores: () => dedupePanelConductores(AppData.panelConductores).map(c => ({
       id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
       alias: c.alias || ''
     })).filter(c => c.id),

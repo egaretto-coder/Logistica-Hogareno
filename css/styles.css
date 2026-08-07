@@ -778,6 +778,7 @@
   .filter-tab.active-semitit   { background: #fff8e1; color: #7a5c00; border-color: #ffe082; }
   .filter-tab.active-suplente  { background: #f3e8ff; color: #6b21a8; border-color: #d8b4fe; }
   .filter-tab.active-all       { background: var(--brand); color: white; border-color: var(--brand); }
+  .filter-tab.active-sin-asignar { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
 
   /* ===== SWITCH (Gestión de permisos) ===== */
   .switch { position: relative; display: inline-block; width: 42px; height: 23px; vertical-align: middle; }
