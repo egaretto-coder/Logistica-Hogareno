@@ -331,11 +331,11 @@ async function guardarEdicionConductores() {
 // su Super SLA. Devuelve [{ val, label }] (label con el precio que le corresponde).
 // Se computa UNA vez por render y se reutiliza (getPrecio solo se llama por zona).
 function zonaCatalogoDe(conductor) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   const zonas = new Set();
   AppData.tarifas.forEach(t => { const z = String(t.zona || '').toUpperCase().trim(); if (z) zonas.add(z); });
   AppData.superSLA.forEach(s => {
-    if (String(s.conductor || '').toUpperCase().trim() === key) { const z = String(s.zona || '').toUpperCase().trim(); if (z) zonas.add(z); }
+    if (conductorKey(s.conductor) === key) { const z = String(s.zona || '').toUpperCase().trim(); if (z) zonas.add(z); }
   });
   return Array.from(zonas).sort().map(z => {
     const p = getPrecio(conductor, z);

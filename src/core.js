@@ -260,10 +260,8 @@ let AppData = {
 // Devuelve el registro de km de desvío de un conductor (o null).
 function findKmDesvio(conductor) {
   if (!conductor || !AppData.kmDesvio.length) return null;
-  const key = String(conductor).toUpperCase().trim();
-  return AppData.kmDesvio.find(d =>
-    String(d.conductor || '').toUpperCase().trim() === key
-  ) || null;
+  const key = conductorKey(conductor);
+  return AppData.kmDesvio.find(d => conductorKey(d.conductor) === key) || null;
 }
 
 // Adicional por km de desvío de un conductor dentro de un período.
@@ -272,14 +270,14 @@ function findKmDesvio(conductor) {
 // liquidación semanal contempla solo los km de esa semana. Cada monto ya está
 // congelado a la tarifa vigente cuando se cargó (no se recalcula).
 function kmAdicionalConductor(conductor, rango) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
   if (desde) desde.setHours(0, 0, 0, 0);
   if (hasta) hasta.setHours(23, 59, 59, 999);
   let km = 0, monto = 0, n = 0;
   AppData.kmDesvio.forEach(d => {
-    if (String(d.conductor || '').toUpperCase().trim() !== key) return;
+    if (conductorKey(d.conductor) !== key) return;
     if (desde || hasta) {
       const f = parseFechaReg(d.fecha);
       if (!f) return; // sin fecha no entra en un período filtrado
