@@ -255,6 +255,7 @@ function dbPush(table) {
     })).filter(d => d.conductor),
   };
   const rows = builders[table] ? builders[table]() : [];
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
   return DB.replaceAll(table, rows).catch(e => {
     console.warn('Sincronización de "' + table + '" falló:', e);
     showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
@@ -312,6 +313,8 @@ let importPendiente = null;
 // Devuelve true si se sincronizó.
 async function guardarImportacionEnNube(nuevos) {
   if (!window.DB || !DB.ready) { showToast('Sin conexión: la carga quedó solo local'); importPendiente = nuevos; return false; }
+  // Import grande: silenciar el eco de Realtime un rato más largo.
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal(8000);
   try {
     showToast('Guardando ' + nuevos.length + ' registros en la nube…');
     const claves = Array.from(new Set(nuevos.map(n => n.clave || claveRegistro(n)).filter(Boolean)));

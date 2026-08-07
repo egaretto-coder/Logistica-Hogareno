@@ -39,6 +39,19 @@ function showPage(id) {
   if (id === 'upload') renderArchivoPanel();
 }
 
+// Id de la página actualmente visible (deriva del <div class="page active">).
+function paginaActivaId() {
+  const el = document.querySelector('.page.active');
+  return el ? el.id.replace(/^page-/, '') : null;
+}
+
+// Re-renderiza la pantalla activa (la usa la sincronización en tiempo real para
+// reflejar cambios sin recargar). No hace nada si no hay página activa.
+function rerenderPaginaActiva() {
+  const id = paginaActivaId();
+  if (id) showPage(id);
+}
+
 // ════════════════════════════════════════════════════════════════════════
 //  BOOTSTRAP: inyecta los parciales HTML y arranca la aplicación.
 // ════════════════════════════════════════════════════════════════════════

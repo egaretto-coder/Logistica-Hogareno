@@ -1,0 +1,98 @@
+// ════════════════════════════════════════════════════════════════════════
+//  SINCRONIZACIÓN EN TIEMPO REAL (Supabase Realtime)
+//  Escucha los cambios de las tablas clave y, cuando algo cambia (otro usuario,
+//  otro dispositivo o un import), re-hidrata AppData desde la nube y re-renderiza
+//  la pantalla activa — sin recargar la página. Así todas las pantallas quedan
+//  siempre al día.
+//
+//  Diseño: en vez de parchear AppData tabla por tabla, ante CUALQUIER cambio se
+//  dispara (con debounce) una re-hidratación completa vía hydrateFromSupabase()
+//  — reutiliza el mismo mapeo probado que usa el login. Es simple y resiliente:
+//  si se pierde un evento, el siguiente pone todo al día.
+// ════════════════════════════════════════════════════════════════════════
+
+// Tablas a las que nos suscribimos (deben estar en la publicación supabase_realtime).
+const RT_TABLAS = [
+  'registros', 'panel_conductores', 'tarifas', 'super_sla', 'dimensiones_especiales',
+  'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio',
+  'km_tarifas', 'config', 'rol_permisos', 'roles',
+];
+
+let _rtCanal = null;
+let _rtTimer = null;
+let _rtMuteHasta = 0;   // ignorar echos de nuestras propias escrituras hasta este instante
+
+// Marca que la app acaba de escribir en la nube: evita que el "eco" de Realtime
+// dispare una recarga redundante mientras el usuario sigue trabajando. La recarga
+// se posterga hasta que pase la ventana (así igual capta cambios de otros).
+function marcarEscrituraLocal(ms) {
+  _rtMuteHasta = Date.now() + (ms || 2500);
+}
+
+// ¿Hay algo en curso que NO conviene interrumpir con una recarga/re-render?
+function _rtEdicionEnCurso() {
+  // Ediciones sin guardar en el editor de Conductores.
+  if (typeof condEditPendientes !== 'undefined' && condEditPendientes) return true;
+  // Zona elegida pendiente de confirmar.
+  if (typeof _zonaPendiente !== 'undefined' && _zonaPendiente && Object.keys(_zonaPendiente).length) return true;
+  // Algún modal abierto (visible).
+  const modalAbierto = Array.from(document.querySelectorAll('.modal-backdrop'))
+    .some(m => m.offsetParent !== null);
+  if (modalAbierto) return true;
+  // Mapeo de columnas de importación abierto.
+  const mapper = document.getElementById('column-mapper');
+  if (mapper && mapper.style.display && mapper.style.display !== 'none') return true;
+  return false;
+}
+
+function _rtReprogramar(ms) {
+  clearTimeout(_rtTimer);
+  _rtTimer = setTimeout(sincronizarEnVivo, ms);
+}
+
+// Debounce: agrupa una ráfaga de eventos (ej. un import de miles de filas) en una
+// sola recarga.
+function _rtOnCambio() {
+  _rtReprogramar(1500);
+}
+
+async function sincronizarEnVivo() {
+  if (!currentUser) return;                        // sin sesión, no sincronizamos
+  if (AppData._hidratando) { _rtReprogramar(2000); return; }
+  if (_rtEdicionEnCurso()) { _rtReprogramar(3500); return; }   // no pisar al operador
+  const ahora = Date.now();
+  if (ahora < _rtMuteHasta) { _rtReprogramar(_rtMuteHasta - ahora + 200); return; } // esperar fin del mute
+
+  try {
+    await hydrateFromSupabase();                   // re-hidrata AppData desde la nube
+    if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+    if (typeof showToast === 'function') showToast('🔄 Datos actualizados');
+  } catch (e) {
+    console.warn('sincronizarEnVivo:', e);
+  }
+}
+
+// Arranca la suscripción (después del login). Idempotente.
+function iniciarRealtime() {
+  if (!window.sb || _rtCanal) return;
+  try {
+    let ch = sb.channel('liq-cambios');
+    RT_TABLAS.forEach(t => {
+      ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, _rtOnCambio);
+    });
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') console.info('[Realtime] Sincronización en vivo activa');
+      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') console.warn('[Realtime] Estado:', status);
+    });
+    _rtCanal = ch;
+  } catch (e) {
+    console.warn('No se pudo iniciar Realtime:', e);
+  }
+}
+
+// Corta la suscripción (al cerrar sesión).
+function detenerRealtime() {
+  clearTimeout(_rtTimer);
+  if (_rtCanal && window.sb) { try { sb.removeChannel(_rtCanal); } catch (e) {} }
+  _rtCanal = null;
+}

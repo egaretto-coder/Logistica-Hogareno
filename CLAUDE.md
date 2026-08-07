@@ -49,7 +49,8 @@ Nav en `components/sidebar.html`; títulos en `PAGE_TITLES` (`src/core.js`).
 ## Datos en tiempo real / sincronización
 - `AppData` es la fuente única en memoria. Arranque instantáneo/offline desde `localStorage`; datos frescos desde Supabase (`DB.loadAll`) al iniciar sesión / `restoreSession`.
 - Persistencia: `dbPush('tabla')` (reemplaza la tabla) para configuración; `DB.updateWhere` por-fila para ediciones de recorridos (**autosave ~2.5s** en Conductores).
-- Las vistas **recalculan desde `AppData` en cada render**, así que un cambio se refleja al instante en todas las pantallas que se vuelven a renderizar. No hay suscripciones realtime de Supabase; el refresco entre dispositivos ocurre al re-hidratar (re-login / recarga).
+- Las vistas **recalculan desde `AppData` en cada render**, así que un cambio se refleja al instante en todas las pantallas que se vuelven a renderizar.
+- **Sincronización en tiempo real** (`src/realtime.js`, Supabase Realtime): al iniciar sesión la app se suscribe a los cambios de las tablas clave. Ante cualquier cambio (otro usuario/dispositivo o un import) → re-hidrata `AppData` con `hydrateFromSupabase()` y re-renderiza la pantalla activa (`rerenderPaginaActiva`), sin recargar. Con **debounce** (agrupa ráfagas), **guarda de edición en curso** (no pisa al operador con cambios sin guardar / modal abierto) y **mute de escritura local** (`marcarEscrituraLocal()` en `dbPush`/autosave/import, para no recargar por el propio eco). Las tablas deben estar en la publicación `supabase_realtime`.
 - SW **network-first** para mismo-origen: con conexión siempre sirve la última versión del código; el caché es respaldo offline.
 
 ## Convenciones al editar

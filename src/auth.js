@@ -130,6 +130,7 @@ async function entrarConUsuario(user) {
 
   await hydrateFromSupabase();
   showApp();
+  if (typeof iniciarRealtime === 'function') iniciarRealtime();   // sincronización en vivo
 }
 
 function showApp() {
@@ -201,6 +202,7 @@ function esAnalista() {
 
 async function logout() {
   if (!confirm('¿Cerrar sesión?')) return;
+  if (typeof detenerRealtime === 'function') detenerRealtime();   // cortar sincronización
   try { if (sb) await sb.auth.signOut(); } catch(e) {}
   currentUser = null;
   document.getElementById('login-user').value = '';

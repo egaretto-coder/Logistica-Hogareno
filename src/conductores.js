@@ -292,6 +292,7 @@ async function guardarEdicionConductores() {
   if (!condEditPendientes || !condEditIdsSucios.size) return;
   clearTimeout(condEditTimer);
   if (!window.DB || !DB.ready) { actualizarEstadoEdicion('⚠️ Sin conexión — reintentá con el botón'); return; }
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
   actualizarEstadoEdicion('☁️ Guardando…');
   const ids = Array.from(condEditIdsSucios);
   let fallos = 0;
