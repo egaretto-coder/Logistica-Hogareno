@@ -304,9 +304,9 @@ function adelantoSaldado(a) { return cuotasPagadasDe(a.id) >= _num(a.cuotas_tota
 
 // Adelanto ACTIVO (con cuotas pendientes) de un conductor. Si hay varios, el más viejo.
 function adelantoActivoDe(conductor) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   return AppData.adelantos
-    .filter(a => String(a.conductor || '').toUpperCase().trim() === key && !adelantoSaldado(a))
+    .filter(a => conductorKey(a.conductor) === key && !adelantoSaldado(a))
     .sort((x, y) => x.id - y.id)[0] || null;
 }
 
@@ -314,9 +314,9 @@ function adelantoActivoDe(conductor) {
 // Suma las cuotas cuya fecha cae en el rango (o todas si no hay filtro).
 // Devuelve { monto, detalle: [{ nro, total, monto }] }.
 function adelantoDescuentoConductor(conductor, rango) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   const setIds = new Set(AppData.adelantos
-    .filter(a => String(a.conductor || '').toUpperCase().trim() === key).map(a => a.id));
+    .filter(a => conductorKey(a.conductor) === key).map(a => a.id));
   if (!setIds.size) return { monto: 0, detalle: [] };
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
@@ -342,16 +342,16 @@ function adelantoDescuentoConductor(conductor, rango) {
 // ── Descuentos por ítem con fecha (combustible / extraviados / proveedores) ──
 // Registros de un tipo para un conductor (sin filtrar por fecha).
 function descItemsDe(tipo, conductor) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   return AppData.descItems.filter(x =>
-    x.tipo === tipo && String(x.conductor || '').toUpperCase().trim() === key);
+    x.tipo === tipo && conductorKey(x.conductor) === key);
 }
 
 // Descuento de un tipo para un conductor dentro de un período (suma las cuotas
 // cuya fecha cae en el rango, o todas si no hay filtro). Espeja adelantoDescuentoConductor.
 // Devuelve { monto, detalle: [{ fecha, monto, referencia }] }.
 function descItemDescuentoConductor(tipo, conductor, rango) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
   if (desde) desde.setHours(0, 0, 0, 0);
@@ -360,7 +360,7 @@ function descItemDescuentoConductor(tipo, conductor, rango) {
   AppData.descItems.forEach(x => {
     if (x.tipo !== tipo) return;
     if (_num(x.cuotas_total) > 1) return; // cuoteado: no se imputa el total de una, va por cuotas
-    if (String(x.conductor || '').toUpperCase().trim() !== key) return;
+    if (conductorKey(x.conductor) !== key) return;
     if (desde || hasta) {
       const f = parseFechaReg(x.fecha);
       if (!f) return;
@@ -389,11 +389,11 @@ function descItemSaldado(item) { return descItemCuotasPagadas(item.id) >= _num(i
 // cae en el rango. Espeja adelantoDescuentoConductor.
 // Devuelve { monto, detalle: [{ nro, total, monto }] }.
 function extravioCuotaDescuento(conductor, rango) {
-  const key = String(conductor || '').toUpperCase().trim();
+  const key = conductorKey(conductor);
   const itemsTotal = {}; // item_id → cuotas_total (solo extravíos cuoteados del conductor)
   AppData.descItems.forEach(x => {
     if (x.tipo === 'extraviados' && _num(x.cuotas_total) > 1 &&
-        String(x.conductor || '').toUpperCase().trim() === key) itemsTotal[x.id] = _num(x.cuotas_total);
+        conductorKey(x.conductor) === key) itemsTotal[x.id] = _num(x.cuotas_total);
   });
   const setIds = new Set(Object.keys(itemsTotal).map(Number));
   if (!setIds.size) return { monto: 0, detalle: [] };
@@ -504,6 +504,13 @@ function panelConductorDe(nombre) {
 function conductorCanonico(nombre) {
   const p = panelConductorDe(nombre);
   return p ? p.nombre : String(nombre || '').trim();
+}
+
+// Clave de identidad canónica y normalizada de un conductor. La usan los helpers
+// de descuentos/adelantos/extravíos para imputar al conductor UNIFICADO (así un
+// descuento cargado con un alias/grafía distinta se aplica igual).
+function conductorKey(nombre) {
+  return normNombre(conductorCanonico(nombre));
 }
 
 // Deduplica el panel de conductores: colapsa entradas repetidas por nombre

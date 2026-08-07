@@ -1,8 +1,8 @@
 function loadSavedConfig() {
   const t = localStorage.getItem('liq_tarifas');
-  if (t) AppData.tarifas = JSON.parse(t);
+  if (t) { try { AppData.tarifas = JSON.parse(t); } catch(e) {} }
   const s = localStorage.getItem('liq_supersla');
-  if (s) AppData.superSLA = JSON.parse(s);
+  if (s) { try { AppData.superSLA = JSON.parse(s); } catch(e) {} }
   const dim = localStorage.getItem('liq_dimensiones_especiales');
   if (dim) {
     try { AppData.dimensionesEspeciales = JSON.parse(dim); } catch(e) {}
@@ -41,32 +41,21 @@ function loadSavedConfig() {
   if (advc) { try { AppData.adelantoCuotas = JSON.parse(advc) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
-    const saved = JSON.parse(p);
-    // Si los conductores guardados no tienen IDs, fusionar con los del HTML base
-    // para recuperar los IDs recién asignados
-    const sinId = saved.filter(c => !c.id || c.id === '').length;
-    if (sinId > 0) {
-      // Fusionar: tomar los datos guardados (condicion, etc.) pero recuperar IDs del base
-      AppData.panelConductores = AppData.panelConductores.map(base => {
-        const guardado = saved.find(s => s.nombre === base.nombre);
-        if (guardado) {
-          return {
-            id: base.id || guardado.id || '',
-            nombre: base.nombre,
-            condicion: guardado.condicion || base.condicion || '',
-            categoria: guardado.categoria || base.categoria || '',
-            alias: guardado.alias || base.alias || ''
-          };
-        }
-        return base;
+    try {
+      const saved = JSON.parse(p) || [];
+      // Preservar TODOS los conductores guardados (no solo los del seed). A los que
+      // les falte el id, se lo recuperamos desde el seed por nombre; dedupe completa
+      // los que sigan sin id y colapsa repetidos.
+      const seed = AppData.panelConductores || [];
+      const conIds = saved.map(gc => {
+        if (gc && gc.id) return gc;
+        const base = seed.find(b => normNombre(b.nombre) === normNombre(gc && gc.nombre));
+        return Object.assign({}, gc, { id: base ? base.id : '' });
       });
-      // Guardar la versión fusionada con IDs
+      AppData.panelConductores = dedupePanelConductores(conIds);
       localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
-    } else {
-      AppData.panelConductores = saved;
-    }
-    AppData.panelConductores = dedupePanelConductores(AppData.panelConductores);
-    invalidarIndicePanel();   // se cargó el panel desde localStorage
+      invalidarIndicePanel();   // se cargó el panel desde localStorage
+    } catch (e) { console.warn('Panel de conductores en cache corrupto, se ignora:', e); }
   }
 }
 
