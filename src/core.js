@@ -308,13 +308,29 @@ function adelantoActivoDe(conductor) {
     .sort((x, y) => x.id - y.id)[0] || null;
 }
 
+// ── Régimen de superposiciones (maker-checker) ──────────────────────────────
+// Adelantos y extravíos que carga un OPERADOR quedan 'pendiente' y NO impactan la
+// liquidación hasta que un SUPERVISOR (o analista) los autorice. Km y beneficios
+// se crean directo. Las filas viejas (sin estado) se tratan como autorizadas.
+function esAutorizado(x) {
+  const e = x && x.estado;
+  return !e || e === 'autorizado';
+}
+function puedeAutorizar() {
+  return !!currentUser && (currentUser.rol === 'supervisor' || currentUser.rol === 'analista');
+}
+// Estado inicial de una operación nueva según quién la carga.
+function estadoNuevaOperacion() {
+  return puedeAutorizar() ? 'autorizado' : 'pendiente';
+}
+
 // Descuento por cuotas de adelanto de un conductor dentro de un período.
 // Suma las cuotas cuya fecha cae en el rango (o todas si no hay filtro).
-// Devuelve { monto, detalle: [{ nro, total, monto }] }.
+// Solo cuenta adelantos AUTORIZADOS. Devuelve { monto, detalle: [{ nro, total, monto }] }.
 function adelantoDescuentoConductor(conductor, rango) {
   const key = conductorKey(conductor);
   const setIds = new Set(AppData.adelantos
-    .filter(a => conductorKey(a.conductor) === key).map(a => a.id));
+    .filter(a => conductorKey(a.conductor) === key && esAutorizado(a)).map(a => a.id));
   if (!setIds.size) return { monto: 0, detalle: [] };
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
@@ -357,6 +373,7 @@ function descItemDescuentoConductor(tipo, conductor, rango) {
   let monto = 0; const detalle = [];
   AppData.descItems.forEach(x => {
     if (x.tipo !== tipo) return;
+    if (!esAutorizado(x)) return;         // extravío pendiente de autorización: no impacta
     if (_num(x.cuotas_total) > 1) return; // cuoteado: no se imputa el total de una, va por cuotas
     if (conductorKey(x.conductor) !== key) return;
     if (desde || hasta) {
@@ -391,7 +408,7 @@ function extravioCuotaDescuento(conductor, rango) {
   const itemsTotal = {}; // item_id → cuotas_total (solo extravíos cuoteados del conductor)
   AppData.descItems.forEach(x => {
     if (x.tipo === 'extraviados' && _num(x.cuotas_total) > 1 &&
-        conductorKey(x.conductor) === key) itemsTotal[x.id] = _num(x.cuotas_total);
+        conductorKey(x.conductor) === key && esAutorizado(x)) itemsTotal[x.id] = _num(x.cuotas_total);
   });
   const setIds = new Set(Object.keys(itemsTotal).map(Number));
   if (!setIds.size) return { monto: 0, detalle: [] };

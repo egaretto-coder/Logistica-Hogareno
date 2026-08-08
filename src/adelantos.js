@@ -25,42 +25,127 @@ function renderAdelantos() {
                  || String(a.conductor).localeCompare(String(b.conductor)));
 
   const countEl = document.getElementById('adelantos-count');
-  const activos = AppData.adelantos.filter(a => !adelantoSaldado(a)).length;
-  if (countEl) countEl.textContent = AppData.adelantos.length + ' adelantos · ' + activos + ' activos';
+  const activos = AppData.adelantos.filter(a => !adelantoSaldado(a) && esAutorizado(a)).length;
+  const pendientes = AppData.adelantos.filter(a => a.estado === 'pendiente').length;
+  if (countEl) countEl.textContent = AppData.adelantos.length + ' adelantos · ' + activos + ' activos'
+    + (pendientes ? ' · ⏳ ' + pendientes + ' pendiente' + (pendientes > 1 ? 's' : '') : '');
+
+  renderAdelantosResumen(lista);
 
   if (!lista.length) {
     cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-card"></i></div><div class="empty-title">Sin adelantos</div><div class="empty-sub">Registrá uno con "+ Nuevo adelanto"</div></div></td></tr>';
     return;
   }
 
+  const puedeAut = puedeAutorizar();
   cont.innerHTML = lista.map(a => {
     const pagadas = cuotasPagadasDe(a.id);
     const saldado = pagadas >= a.cuotas_total;
     const pct = a.cuotas_total ? Math.round(pagadas / a.cuotas_total * 100) : 0;
     const saldo = saldoAdelanto(a);
-    return '<tr style="' + (saldado ? 'opacity:0.6;' : '') + '">' +
-      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(a.conductor) + ';width:28px;height:28px;font-size:10px">' + initials(a.conductor) + '</div><strong>' + a.conductor + '</strong></div></td>' +
+    const estado = a.estado || 'autorizado';
+    const pendiente = estado === 'pendiente';
+    const rechazado = estado === 'rechazado';
+
+    const estadoBadge = pendiente
+      ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74"><i class="ic ic-alert"></i> Pendiente</span>'
+      : rechazado ? '<span class="badge badge-red">Rechazado</span>' : '';
+
+    let acciones;
+    if (pendiente) {
+      acciones = puedeAut
+        ? '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;background:#16a34a;border-color:#16a34a;color:#fff" onclick="autorizarAdelanto(' + a.id + ')"><i class="ic ic-check"></i> Autorizar</button>' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="rechazarAdelanto(' + a.id + ')" title="Rechazar"><i class="ic ic-x"></i></button>'
+        : '<span style="font-size:11px;color:#9a3412;white-space:nowrap">Esperando autorización</span>' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarAdelanto(' + a.id + ')" title="Cancelar mi solicitud"><i class="ic ic-trash"></i></button>';
+    } else if (rechazado) {
+      acciones = (puedeAut ? '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="autorizarAdelanto(' + a.id + ')" title="Autorizar igual"><i class="ic ic-check"></i></button>' : '') +
+        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarAdelanto(' + a.id + ')"><i class="ic ic-trash"></i></button>';
+    } else {
+      acciones = (saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuota(' + a.id + ')" title="Registrar la próxima cuota en la fecha elegida arriba">− Cuota</button>') +
+        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialAdelanto(' + a.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>' +
+        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarAdelanto(' + a.id + ')"><i class="ic ic-trash"></i></button>';
+    }
+
+    const rowStyle = pendiente ? 'background:#fff7ed;' : (rechazado ? 'opacity:0.55;' : (saldado ? 'opacity:0.6;' : ''));
+    return '<tr style="' + rowStyle + '">' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(a.conductor) + ';width:28px;height:28px;font-size:10px">' + initials(a.conductor) + '</div><div style="min-width:0"><strong>' + a.conductor + '</strong>' + (estadoBadge ? '<div style="margin-top:3px">' + estadoBadge + '</div>' : '') + '</div></div></td>' +
       '<td class="mono muted">' + (a.fecha || '—') + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(a.monto_total) + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(a.monto_cuota) + '</td>' +
-      '<td style="min-width:150px"><div style="display:flex;align-items:center;gap:8px">' +
-        '<div style="flex:1;height:7px;background:var(--surface-0);border-radius:99px;overflow:hidden;border:1px solid var(--border)"><div style="height:100%;width:' + pct + '%;background:' + (saldado ? '#166534' : '#2d4fa1') + '"></div></div>' +
-        '<span style="font-size:12px;font-weight:600;white-space:nowrap">' + pagadas + '/' + a.cuotas_total + '</span>' +
-      '</div></td>' +
-      '<td class="mono" style="text-align:right;font-weight:700;color:' + (saldo > 0 ? '#b45309' : '#166534') + '">' + (saldo > 0 ? fmtPeso(saldo) : '✓ Saldado') + '</td>' +
-      '<td><div style="display:flex;gap:4px">' +
-        (saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuota(' + a.id + ')" title="Registrar la próxima cuota en la fecha elegida arriba">− Cuota</button>') +
-        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialAdelanto(' + a.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>' +
-        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarAdelanto(' + a.id + ')"><i class="ic ic-trash"></i></button>' +
-      '</div></td>' +
+      '<td style="min-width:150px">' + (pendiente ? '<span class="muted" style="font-size:12px">— (pendiente)</span>' :
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<div style="flex:1;height:7px;background:var(--surface-0);border-radius:99px;overflow:hidden;border:1px solid var(--border)"><div style="height:100%;width:' + pct + '%;background:' + (saldado ? '#166534' : '#2d4fa1') + '"></div></div>' +
+          '<span style="font-size:12px;font-weight:600;white-space:nowrap">' + pagadas + '/' + a.cuotas_total + '</span>' +
+        '</div>') + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700;color:' + (saldo > 0 ? '#b45309' : '#166534') + '">' + (pendiente ? '—' : (saldo > 0 ? fmtPeso(saldo) : '✓ Saldado')) + '</td>' +
+      '<td><div style="display:flex;gap:4px">' + acciones + '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+// Autoriza un adelanto pendiente (solo supervisor/analista). Recién ahí impacta
+// la liquidación.
+async function autorizarAdelanto(id) {
+  if (!puedeAutorizar()) { showToast('⛔ Solo un supervisor puede autorizar'); return; }
+  const a = AppData.adelantos.find(x => x.id === id);
+  if (!a) return;
+  const cuando = new Date().toISOString();
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  try {
+    await DB.updateWhere('adelantos', 'id', id, { estado: 'autorizado', autorizado_por: quien, autorizado_en: cuando });
+    a.estado = 'autorizado'; a.autorizado_por = quien; a.autorizado_en = cuando;
+    renderAdelantos();
+    showToast('✅ Adelanto de ' + a.conductor + ' autorizado — ya impacta la liquidación');
+  } catch (e) { console.warn('autorizarAdelanto:', e); showToast('⛔ No se pudo autorizar'); }
+}
+
+async function rechazarAdelanto(id) {
+  if (!puedeAutorizar()) { showToast('⛔ Solo un supervisor puede rechazar'); return; }
+  const a = AppData.adelantos.find(x => x.id === id);
+  if (!a) return;
+  if (!confirm('¿Rechazar el adelanto de ' + a.conductor + ' (' + fmtPeso(a.monto_total) + ')? No impactará ninguna liquidación.')) return;
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  try {
+    await DB.updateWhere('adelantos', 'id', id, { estado: 'rechazado', autorizado_por: quien, autorizado_en: new Date().toISOString() });
+    a.estado = 'rechazado';
+    renderAdelantos();
+    showToast('🚫 Adelanto de ' + a.conductor + ' rechazado');
+  } catch (e) { console.warn('rechazarAdelanto:', e); showToast('⛔ No se pudo rechazar'); }
+}
+
+// Resumen de deuda (solo adelantos AUTORIZADOS con saldo). Respeta el buscador
+// (filtro por conductor). Total + cantidad de conductores con deuda.
+function renderAdelantosResumen(lista) {
+  const cont = document.getElementById('adelantos-resumen');
+  if (!cont) return;
+  const conDeuda = (lista || []).filter(a => esAutorizado(a) && saldoAdelanto(a) > 0);
+  const totalDeuda = conDeuda.reduce((s, a) => s + saldoAdelanto(a), 0);
+  const conductores = new Set(conDeuda.map(a => conductorKey(a.conductor)));
+  const totalPrestado = conDeuda.reduce((s, a) => s + _num(a.monto_total), 0);
+  const q = (document.getElementById('adelantos-search')?.value || '').trim();
+  cont.innerHTML =
+    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+      '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
+        '<div class="metric-label">Deuda vigente' + (q ? ' (filtrado)' : '') + '</div>' +
+        '<div class="metric-value">' + fmtPeso(totalDeuda) + '</div>' +
+        '<div class="metric-sub">saldo pendiente de cobro</div></div>' +
+      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-users"></i></div>' +
+        '<div class="metric-label">Conductores con deuda</div>' +
+        '<div class="metric-value">' + conductores.size + '</div>' +
+        '<div class="metric-sub">con saldo &gt; 0</div></div>' +
+      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-card"></i></div>' +
+        '<div class="metric-label">Total prestado (activo)</div>' +
+        '<div class="metric-value">' + fmtPeso(totalPrestado) + '</div>' +
+        '<div class="metric-sub">' + conDeuda.length + ' adelanto' + (conDeuda.length !== 1 ? 's' : '') + ' con saldo</div></div>' +
+    '</div>';
 }
 
 // Registra la próxima cuota de un adelanto en la fecha elegida (la de su semana).
 async function descontarCuota(adelantoId) {
   const a = AppData.adelantos.find(x => x.id === adelantoId);
   if (!a) return;
+  if (!esAutorizado(a)) { showToast('⏳ Adelanto pendiente de autorización — no se puede imputar todavía'); return; }
   if (adelantoSaldado(a)) { showToast('Ese adelanto ya está saldado'); return; }
   const nro = cuotasPagadasDe(a.id) + 1;
   const fecha = fechaDescuentoAdelanto();
@@ -75,8 +160,8 @@ async function descontarCuota(adelantoId) {
 
 // Descuenta la próxima cuota de TODOS los adelantos activos, misma fecha (rutina semanal).
 async function descontarCuotaSemanal() {
-  const activos = AppData.adelantos.filter(a => !adelantoSaldado(a));
-  if (!activos.length) { showToast('No hay adelantos activos'); return; }
+  const activos = AppData.adelantos.filter(a => !adelantoSaldado(a) && esAutorizado(a));
+  if (!activos.length) { showToast('No hay adelantos activos autorizados'); return; }
   const fecha = fechaDescuentoAdelanto();
   if (!confirm('¿Descontar una cuota a los ' + activos.length + ' adelantos activos en la semana del ' + fecha + '?\nCada cuota aparecerá en la liquidación de esa semana del conductor.')) return;
   let ok = 0;
@@ -131,12 +216,15 @@ async function guardarAdelantoModal() {
   if (cuotas_total < 1) { alert('Ingresá la cantidad de cuotas (1 o más).'); return; }
   const monto_cuota = Math.round(monto_total / cuotas_total);
   const fecha = iso ? isoToDMY(iso) : isoToDMY(hoyISO());
+  const estado = estadoNuevaOperacion(); // operador → 'pendiente'; supervisor/analista → 'autorizado'
   try {
-    const row = await DB.insertRow('adelantos', { conductor, monto_total, cuotas_total, monto_cuota, fecha, obs });
-    AppData.adelantos.push({ id: row.id, conductor, monto_total, cuotas_total, monto_cuota, fecha, obs });
+    const row = await DB.insertRow('adelantos', { conductor, monto_total, cuotas_total, monto_cuota, fecha, obs, estado });
+    AppData.adelantos.push({ id: row.id, conductor, monto_total, cuotas_total, monto_cuota, fecha, obs, estado });
     document.getElementById('modal-adelanto-backdrop').style.display = 'none';
     renderAdelantos();
-    showToast('✅ Adelanto de ' + conductor + ': ' + fmtPeso(monto_total) + ' en ' + cuotas_total + ' cuotas de ' + fmtPeso(monto_cuota));
+    showToast(estado === 'pendiente'
+      ? '📋 Adelanto de ' + conductor + ' cargado como PENDIENTE — falta que un supervisor lo autorice'
+      : '✅ Adelanto de ' + conductor + ': ' + fmtPeso(monto_total) + ' en ' + cuotas_total + ' cuotas de ' + fmtPeso(monto_cuota));
   } catch (e) { console.warn('guardarAdelantoModal:', e); alert('No se pudo guardar el adelanto: ' + (e.message || e)); }
 }
 
@@ -266,7 +354,7 @@ function importAdelantos(event) {
         if (monto_total <= 0 || cuotas_total < 1) continue;
         const fecha = idx.fecha >= 0 ? fechaCeldaExcel(r[idx.fecha]) : '';
         const obs = idx.obs >= 0 ? String(r[idx.obs] || '').trim() : '';
-        nuevos.push({ conductor, monto_total, cuotas_total, monto_cuota: Math.round(monto_total / cuotas_total), fecha, obs });
+        nuevos.push({ conductor, monto_total, cuotas_total, monto_cuota: Math.round(monto_total / cuotas_total), fecha, obs, estado: estadoNuevaOperacion() });
       }
 
       if (!nuevos.length) { alert('No se importó ningún adelanto válido (revisá Conductor, Monto total y Cuotas).'); return; }

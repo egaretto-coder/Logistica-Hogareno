@@ -132,7 +132,8 @@ async function hydrateFromSupabase() {
   AppData.descItems = (data.descuentos_items || []).map(x => ({
     id: x.id, tipo: x.tipo, conductor: x.conductor, fecha: x.fecha || '',
     monto: _num(x.monto), referencia: x.referencia || '', detalle: x.detalle || '',
-    cuotas_total: _num(x.cuotas_total) || 1, monto_cuota: _num(x.monto_cuota)
+    cuotas_total: _num(x.cuotas_total) || 1, monto_cuota: _num(x.monto_cuota),
+    estado: x.estado || 'autorizado', autorizado_por: x.autorizado_por || '', autorizado_en: x.autorizado_en || ''
   }));
   // Cuotas de extravíos cuoteados (descuento_cuotas)
   AppData.descItemCuotas = (data.descuento_cuotas || []).map(c => ({
@@ -183,7 +184,8 @@ async function hydrateFromSupabase() {
   AppData.adelantos = (data.adelantos || []).map(a => ({
     id: a.id, conductor: a.conductor, monto_total: _num(a.monto_total),
     cuotas_total: _num(a.cuotas_total), monto_cuota: _num(a.monto_cuota),
-    fecha: a.fecha || '', obs: a.obs || ''
+    fecha: a.fecha || '', obs: a.obs || '',
+    estado: a.estado || 'autorizado', autorizado_por: a.autorizado_por || '', autorizado_en: a.autorizado_en || ''
   }));
   AppData.adelantoCuotas = (data.adelanto_cuotas || []).map(c => ({
     id: c.id, adelanto_id: c.adelanto_id, nro: _num(c.nro),

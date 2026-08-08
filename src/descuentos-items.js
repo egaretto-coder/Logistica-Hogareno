@@ -75,8 +75,17 @@ function renderDescItems(tipo) {
     return;
   }
 
+  const esExtravioTipo = (tipo === 'extraviados');
+  const puedeAut = puedeAutorizar();
   cont.innerHTML = lista.map(x => {
     const cuoteado = _num(x.cuotas_total) > 1;
+    const estado = x.estado || 'autorizado';
+    const pendiente = esExtravioTipo && estado === 'pendiente';
+    const rechazado = esExtravioTipo && estado === 'rechazado';
+    const estadoBadge = pendiente
+      ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74"><i class="ic ic-alert"></i> Pendiente</span>'
+      : rechazado ? '<span class="badge badge-red">Rechazado</span>' : '';
+
     const refCell = conRef
       ? '<td class="mono muted" style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis">' + (x.referencia || '—') + '</td>'
       : '';
@@ -84,7 +93,9 @@ function renderDescItems(tipo) {
     // Columna de cuotas/progreso (solo extravíos)
     let cuotasCell = '';
     if (conCuotas) {
-      if (cuoteado) {
+      if (pendiente) {
+        cuotasCell = '<td class="muted" style="font-size:11px">— (pendiente)</td>';
+      } else if (cuoteado) {
         const pagadas = descItemCuotasPagadas(x.id);
         const pct = x.cuotas_total ? Math.round(pagadas / x.cuotas_total * 100) : 0;
         const saldado = pagadas >= x.cuotas_total;
@@ -97,19 +108,31 @@ function renderDescItems(tipo) {
       }
     }
 
-    // Acciones: para cuoteados no saldados, botones de cuota
+    // Acciones según estado de autorización
     let acciones = '';
-    if (cuoteado) {
-      const saldado = descItemSaldado(x);
-      acciones += saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuotaExtravio(' + x.id + ')" title="Registrar la próxima cuota en la semana elegida arriba">− Cuota</button>';
-      acciones += '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialExtravio(' + x.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>';
+    if (pendiente) {
+      acciones = puedeAut
+        ? '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;background:#16a34a;border-color:#16a34a;color:#fff" onclick="autorizarExtravio(' + x.id + ')"><i class="ic ic-check"></i> Autorizar</button>' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="rechazarExtravio(' + x.id + ')" title="Rechazar"><i class="ic ic-x"></i></button>'
+        : '<span style="font-size:11px;color:#9a3412;white-space:nowrap">Esperando autorización</span>' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')" title="Cancelar mi solicitud"><i class="ic ic-trash"></i></button>';
+    } else if (rechazado) {
+      acciones = (puedeAut ? '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="autorizarExtravio(' + x.id + ')" title="Autorizar igual"><i class="ic ic-check"></i></button>' : '') +
+        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-trash"></i></button>';
     } else {
-      acciones += '<button class="btn btn-sm" onclick="editDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-edit"></i></button>';
+      if (cuoteado) {
+        const saldado = descItemSaldado(x);
+        acciones += saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuotaExtravio(' + x.id + ')" title="Registrar la próxima cuota en la semana elegida arriba">− Cuota</button>';
+        acciones += '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialExtravio(' + x.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>';
+      } else {
+        acciones += '<button class="btn btn-sm" onclick="editDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-edit"></i></button>';
+      }
+      acciones += '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-trash"></i></button>';
     }
-    acciones += '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-trash"></i></button>';
 
-    return '<tr' + (cuoteado && descItemSaldado(x) ? ' style="opacity:0.6"' : '') + '>' +
-      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.conductor) + ';width:28px;height:28px;font-size:10px">' + initials(x.conductor) + '</div><strong>' + x.conductor + '</strong></div></td>' +
+    const rowStyle = pendiente ? 'background:#fff7ed;' : (rechazado ? 'opacity:0.55;' : (cuoteado && descItemSaldado(x) ? 'opacity:0.6;' : ''));
+    return '<tr' + (rowStyle ? ' style="' + rowStyle + '"' : '') + '>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.conductor) + ';width:28px;height:28px;font-size:10px">' + initials(x.conductor) + '</div><div style="min-width:0"><strong>' + x.conductor + '</strong>' + (estadoBadge ? '<div style="margin-top:3px">' + estadoBadge + '</div>' : '') + '</div></div></td>' +
       '<td class="mono muted">' + (x.fecha || '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:600;color:' + (_num(x.monto) > 0 ? '#b91c1c' : '#9ca3af') + '">' + fmtPeso(_num(x.monto)) + (cuoteado ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400">en ' + x.cuotas_total + ' cuotas</div>' : '') + '</td>' +
       cuotasCell +
@@ -118,6 +141,35 @@ function renderDescItems(tipo) {
       '<td><div style="display:flex;gap:4px">' + acciones + '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+// Autoriza / rechaza un extravío pendiente (solo supervisor/analista).
+async function autorizarExtravio(id) {
+  if (!puedeAutorizar()) { showToast('⛔ Solo un supervisor puede autorizar'); return; }
+  const it = AppData.descItems.find(x => x.id === id);
+  if (!it) return;
+  const cuando = new Date().toISOString();
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  try {
+    await DB.updateWhere('descuentos_items', 'id', id, { estado: 'autorizado', autorizado_por: quien, autorizado_en: cuando });
+    it.estado = 'autorizado'; it.autorizado_por = quien; it.autorizado_en = cuando;
+    renderDescItems('extraviados');
+    showToast('✅ Extravío de ' + it.conductor + ' autorizado — ya impacta la liquidación');
+  } catch (e) { console.warn('autorizarExtravio:', e); showToast('⛔ No se pudo autorizar'); }
+}
+
+async function rechazarExtravio(id) {
+  if (!puedeAutorizar()) { showToast('⛔ Solo un supervisor puede rechazar'); return; }
+  const it = AppData.descItems.find(x => x.id === id);
+  if (!it) return;
+  if (!confirm('¿Rechazar el extravío de ' + it.conductor + ' (' + fmtPeso(_num(it.monto)) + ')? No impactará ninguna liquidación.')) return;
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  try {
+    await DB.updateWhere('descuentos_items', 'id', id, { estado: 'rechazado', autorizado_por: quien, autorizado_en: new Date().toISOString() });
+    it.estado = 'rechazado';
+    renderDescItems('extraviados');
+    showToast('🚫 Extravío de ' + it.conductor + ' rechazado');
+  } catch (e) { console.warn('rechazarExtravio:', e); showToast('⛔ No se pudo rechazar'); }
 }
 
 // ── Modal alta / edición ────────────────────────────────────────────────────
@@ -230,19 +282,28 @@ async function guardarDescItemModal() {
 
   try {
     if (descItemEditId != null) {
+      // Edición: preservar el estado de autorización (no re-autorizar por editar).
+      const prev = AppData.descItems.find(r => r.id === descItemEditId);
+      fila.estado = (prev && prev.estado) || 'autorizado';
+      fila.autorizado_por = (prev && prev.autorizado_por) || '';
+      fila.autorizado_en = (prev && prev.autorizado_en) || '';
       await DB.updateWhere('descuentos_items', 'id', descItemEditId, fila);
       const i = AppData.descItems.findIndex(r => r.id === descItemEditId);
       if (i >= 0) AppData.descItems[i] = { id: descItemEditId, ...fila };
     } else {
+      // Solo los EXTRAVÍOS pasan por autorización; beneficios (combustible/proveedores) directo.
+      fila.estado = (tipo === 'extraviados') ? estadoNuevaOperacion() : 'autorizado';
       const row = await DB.insertRow('descuentos_items', fila);
       AppData.descItems.push({ id: row.id, ...fila });
     }
     descItemEditId = null;
     document.getElementById('modal-descitem-backdrop').style.display = 'none';
     renderDescItems(tipo);
-    showToast(cuotas_total > 1
-      ? '✅ Extravío cuoteado: ' + fmtPeso(monto) + ' en ' + cuotas_total + ' cuotas de ' + fmtPeso(monto_cuota) + ' (' + conductor + ')'
-      : '✅ ' + cfg.label + ' guardado: ' + fmtPeso(monto) + ' (' + conductor + ', ' + fecha + ')');
+    showToast(fila.estado === 'pendiente'
+      ? '📋 Extravío de ' + conductor + ' cargado como PENDIENTE — falta que un supervisor lo autorice'
+      : cuotas_total > 1
+        ? '✅ Extravío cuoteado: ' + fmtPeso(monto) + ' en ' + cuotas_total + ' cuotas de ' + fmtPeso(monto_cuota) + ' (' + conductor + ')'
+        : '✅ ' + cfg.label + ' guardado: ' + fmtPeso(monto) + ' (' + conductor + ', ' + fecha + ')');
   } catch (e) {
     console.warn('guardarDescItemModal:', e);
     alert('No se pudo guardar: ' + (e.message || e));
@@ -324,6 +385,7 @@ function fechaSemanaExtravio() {
 async function descontarCuotaExtravio(itemId) {
   const it = AppData.descItems.find(x => x.id === itemId && x.tipo === 'extraviados');
   if (!it) return;
+  if (!esAutorizado(it)) { showToast('⏳ Extravío pendiente de autorización — no se puede imputar todavía'); return; }
   if (descItemSaldado(it)) { showToast('Ese extravío ya está saldado'); return; }
   const nro = descItemCuotasPagadas(it.id) + 1;
   const fecha = fechaSemanaExtravio();
@@ -337,8 +399,8 @@ async function descontarCuotaExtravio(itemId) {
 }
 
 async function descontarCuotaSemanalExtravios() {
-  const activos = AppData.descItems.filter(x => x.tipo === 'extraviados' && _num(x.cuotas_total) > 1 && !descItemSaldado(x));
-  if (!activos.length) { showToast('No hay extravíos cuoteados activos'); return; }
+  const activos = AppData.descItems.filter(x => x.tipo === 'extraviados' && _num(x.cuotas_total) > 1 && !descItemSaldado(x) && esAutorizado(x));
+  if (!activos.length) { showToast('No hay extravíos cuoteados activos autorizados'); return; }
   const fecha = fechaSemanaExtravio();
   if (!confirm('¿Descontar una cuota a los ' + activos.length + ' extravíos cuoteados activos en la semana del ' + fecha + '?')) return;
   let ok = 0;
@@ -506,7 +568,8 @@ function importDescItems(tipo, event) {
         const fecha = idx.fecha >= 0 ? parseFechaCell(r[idx.fecha]) : '';
         const referencia = idx.ref >= 0 ? String(r[idx.ref] || '').trim() : '';
         const detalle = idx.detalle >= 0 ? String(r[idx.detalle] || '').trim() : '';
-        const fila = { tipo, conductor, fecha, fecha_date: fechaISOde(fecha), monto, referencia, detalle };
+        const fila = { tipo, conductor, fecha, fecha_date: fechaISOde(fecha), monto, referencia, detalle,
+          estado: (tipo === 'extraviados') ? estadoNuevaOperacion() : 'autorizado' };
         if (yaExisten.has(claveDup(fila))) { salteados++; continue; }
         yaExisten.add(claveDup(fila));
         nuevos.push(fila);
