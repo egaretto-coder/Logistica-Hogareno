@@ -727,8 +727,11 @@ function tipoLabel(t) {
   return t || '—';
 }
 
+// "Entregado" = estado que CONTABILIZA en la liquidación (incluye "2da visita"),
+// para que los conteos (dashboard, resumen de import) coincidan con la plata.
 function esEstadoEntregado(estado) {
-  return (estado || '').toUpperCase().trim() === ESTADO_CONTABILIZA;
+  const e = (estado || '').toUpperCase().trim();
+  return e === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(e);
 }
 
 // ===== AVATAR COLORS =====

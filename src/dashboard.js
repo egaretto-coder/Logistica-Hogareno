@@ -37,7 +37,7 @@ function renderDashConductoresPanel(liqParam) {
   };
 
   const condLabel = dashCondFilter || 'Todos';
-  const condEmoji = dashCondFilter === 'Titular' ? '🟢' : dashCondFilter === 'Semi Titular' ? '🟡' : dashCondFilter === 'Suplente' ? '🔵' : '⚪';
+  const condEmoji = dashCondFilter === 'Titular' ? '🔵' : dashCondFilter === 'Semi Titular' ? '🟡' : dashCondFilter === 'Suplente' ? '🟣' : '⚪';
 
   const body = document.getElementById('dash-conductores-panel-body');
   if (!total) {
