@@ -509,7 +509,7 @@ function buildConductorDetail(cond) {
           <div class="conductor-meta">${cat ? 'Categoría: ' + tipoLabel(cat.categoria === 'super_sla' ? 'sla' : cat.categoria) : 'Sin categorizar'} · ${d.filas.length} entregados liquidados · ${d.filas_excluidas.length} en otros estados</div>
         </div>
         <div style="margin-left:auto">
-          <button class="btn" style="color:white;border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.1)" onclick="exportPDF('${cond}')"><i class="ic ic-download"></i> Exportar PDF</button>
+          <button class="btn" style="color:white;border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.1)" onclick="exportPDFConductor('${cond}')"><i class="ic ic-download"></i> Exportar PDF</button>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border)">

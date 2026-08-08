@@ -67,7 +67,7 @@ function renderConductorReport() {
       <td class="mono">${d.filas.length}</td>
       <td class="mono"><strong>${fmtPeso(d.total)}</strong></td>
       <td>${tieneSuper ? '<span class="tag super-sla"><i class="ic ic-star"></i> Sí</span>' : '—'}</td>
-      <td><button class="btn btn-sm btn-primary" onclick="exportPDF('${c}')">PDF</button></td>
+      <td><button class="btn btn-sm btn-primary" onclick="exportPDFConductor('${c}')">PDF</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="7"><div class="empty-state"><div class="empty-sub">${q ? 'Ningún conductor coincide con “' + q + '”' : 'Sin datos'}</div></div></td></tr>`;
 }

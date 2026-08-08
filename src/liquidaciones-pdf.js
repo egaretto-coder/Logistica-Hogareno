@@ -192,6 +192,18 @@ function confirmarYDescargarPDF() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Exporta el PDF de un conductor RESPETANDO el período activo del panel
+// Liquidaciones (mismo filtro y datos que la liquidación oficial). Lo usan los
+// botones "Exportar PDF" de Conductores y Reporte por conductor, para que el PDF
+// sea idéntico sin importar desde qué pantalla se genere. Si no hay período
+// activo (filtro en "todo"), exportPDF cae al rango completo de sus registros.
+function exportPDFConductor(conductor) {
+  exportPDF(conductor, {
+    rangoFechas: getLiqRangoFechasLabel(),
+    liqData: calcLiquidacionesFiltradas()
+  });
+}
+
 function exportPDF(conductor, opts) {
   opts = opts || {};
   // Descuentos: si el operador editó en el modal, vienen en opts.descuentos.
