@@ -109,6 +109,7 @@ const BD_FIELDS = [
   { key: 'estado', label: 'Estado', expectedCol: 'X', required: true, keywords: ['estado'] },
   { key: 'zona', label: 'Zona', expectedCol: 'AA', required: true, keywords: ['zona'] },
   { key: 'cadete', label: 'Cadete', expectedCol: 'AD', required: true, keywords: ['cadete', 'conductor', 'chofer'] },
+  { key: 'cliente', label: 'Cliente (empresa que factura)', expectedCol: 'BZ', required: false, keywords: ['empresa', 'remitente', 'vendedor', 'seller', 'tienda', 'razon social', 'razón social'] },
 ];
 
 function showColumnMapper() {

@@ -236,6 +236,12 @@ let AppData = {
   adelantos: [],
   adelantoCuotas: [],
 
+  // Clientes (facturación) y su tarifario de venta por zona.
+  // clientes: [{ id, nombre, razon_social, cuit, activo }]
+  // clienteTarifas: [{ id, cliente, zona, precio }]
+  clientes: [],
+  clienteTarifas: [],
+
   // Historial de tarifas de km de desvío (ordenado por vigencia).
   // Formato: { valor, vigente_desde (ISO), creado_por }
   // Cada cambio de precio queda registrado con su fecha/hora de vigencia.
@@ -783,6 +789,7 @@ const PAGE_TITLES = {
   'beneficios': ['Beneficios', 'Combustible y servicio de proveedores por conductor'],
   'km-desvio': ['Km de desvío', 'Adicional por km de desvío al retirar mercadería'],
   'adelantos': ['Adelantos', 'Préstamos en cuotas y deuda por conductor'],
+  'clientes': ['Clientes', 'Tarifario de venta y liquidación semanal (Vie→Jue)'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 

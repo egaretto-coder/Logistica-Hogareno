@@ -16,6 +16,7 @@ const RT_TABLAS = [
   'registros', 'panel_conductores', 'tarifas', 'super_sla', 'dimensiones_especiales',
   'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio',
   'km_tarifas', 'config', 'rol_permisos', 'roles',
+  'clientes', 'cliente_tarifas',
 ];
 
 let _rtCanal = null;

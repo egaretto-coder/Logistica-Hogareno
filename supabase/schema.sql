@@ -194,6 +194,31 @@ create table if not exists public.adelanto_cuotas (
 create index if not exists idx_adelanto_cuotas_adelanto on public.adelanto_cuotas (adelanto_id);
 create index if not exists idx_adelanto_cuotas_fecha on public.adelanto_cuotas (fecha_date);
 
+-- ---------- CLIENTES (facturación) ----------
+-- Maestro de clientes que factura la empresa. El nombre matchea (normalizado)
+-- con la columna 'cliente' de registros (que viene del Excel de recorridos).
+create table if not exists public.clientes (
+  id bigint generated always as identity primary key,
+  nombre text not null,
+  razon_social text default '',
+  cuit text default '',
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_clientes_nombre on public.clientes (upper(btrim(nombre)));
+
+-- Tarifario de VENTA por cliente y zona: lo que se le cobra al cliente por cada
+-- envío entregado en esa zona (distinto del costo que se paga al conductor).
+create table if not exists public.cliente_tarifas (
+  id bigint generated always as identity primary key,
+  cliente text not null,
+  zona text not null,
+  precio numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique (cliente, zona)
+);
+create index if not exists idx_cliente_tarifas_cliente on public.cliente_tarifas (cliente);
+
 -- Helper de rol: ¿el usuario actual es analista?
 create or replace function public.es_analista()
 returns boolean language sql stable security definer set search_path = public as $$
@@ -249,6 +274,7 @@ create table if not exists public.registros (
   clave text,                  -- clave de deduplicación (la calcula la app): T:tracking real, D:dirección+destinatario (tracking basura), F:huella
   manual boolean not null default false, -- true = envío cargado a mano desde el editor de Conductores (chip "Manual")
   zona_manual boolean not null default false, -- true = la zona fue definida/corregida a mano (para localizar correcciones)
+  cliente text default '',     -- empresa/cliente de facturación (viene del Excel; se factura por su tarifario de venta)
   created_at timestamptz not null default now()
 );
 create index if not exists idx_registros_fecha_date on public.registros (fecha_date);
@@ -272,6 +298,7 @@ create table if not exists public.registros_historico (
   fecha_date date,
   precio_manual numeric,
   zona_manual boolean not null default false,
+  cliente text default '',
   created_at timestamptz,
   archivado_en timestamptz not null default now()
 );
@@ -289,8 +316,8 @@ begin
     delete from public.registros r where r.fecha_date is not null and r.fecha_date < antes_de returning r.*
   )
   insert into public.registros_historico
-    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, created_at)
-  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, created_at from mov;
+    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, cliente, created_at)
+  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, cliente, created_at from mov;
   get diagnostics movidos = row_count;
   return movidos;
 end $$;
@@ -364,3 +391,10 @@ create policy desc_items_all on public.descuentos_items for all to authenticated
 -- descuento_cuotas: acceso completo para autenticados.
 alter table public.descuento_cuotas enable row level security;
 create policy descuento_cuotas_all on public.descuento_cuotas for all to authenticated using (true) with check (true);
+
+-- clientes / cliente_tarifas: acceso completo para autenticados (facturación;
+-- el control por rol se aplica en la UI vía rol_permisos).
+alter table public.clientes        enable row level security;
+alter table public.cliente_tarifas enable row level security;
+create policy clientes_all        on public.clientes        for all to authenticated using (true) with check (true);
+create policy cliente_tarifas_all on public.cliente_tarifas for all to authenticated using (true) with check (true);

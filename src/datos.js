@@ -39,6 +39,10 @@ function loadSavedConfig() {
   if (adv) { try { AppData.adelantos = JSON.parse(adv) || []; } catch(e) {} }
   const advc = localStorage.getItem('liq_adelanto_cuotas');
   if (advc) { try { AppData.adelantoCuotas = JSON.parse(advc) || []; } catch(e) {} }
+  const cli = localStorage.getItem('liq_clientes');
+  if (cli) { try { AppData.clientes = JSON.parse(cli) || []; } catch(e) {} }
+  const clit = localStorage.getItem('liq_cliente_tarifas');
+  if (clit) { try { AppData.clienteTarifas = JSON.parse(clit) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -152,11 +156,20 @@ async function hydrateFromSupabase() {
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '',
+    cliente: r.cliente || '', // empresa/cliente de facturación (viene del Excel)
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
     zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
+  }));
+
+  // Clientes (facturación) + su tarifario de venta por zona.
+  AppData.clientes = (data.clientes || []).map(c => ({
+    id: c.id, nombre: c.nombre, razon_social: c.razon_social || '', cuit: c.cuit || '', activo: c.activo !== false
+  }));
+  AppData.clienteTarifas = (data.cliente_tarifas || []).map(t => ({
+    id: t.id, cliente: t.cliente, zona: t.zona, precio: _num(t.precio)
   }));
 
   // Configuración clave/valor (genérica)
@@ -210,6 +223,8 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_roles', JSON.stringify(AppData.roles || null));
     localStorage.setItem('liq_adelantos', JSON.stringify(AppData.adelantos));
     localStorage.setItem('liq_adelanto_cuotas', JSON.stringify(AppData.adelantoCuotas));
+    localStorage.setItem('liq_clientes', JSON.stringify(AppData.clientes));
+    localStorage.setItem('liq_cliente_tarifas', JSON.stringify(AppData.clienteTarifas));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.
@@ -287,7 +302,7 @@ function filaRegistroNube(r) {
     cadete: r.cadete || '', tracking: r.tracking || '', fecha: r.fecha || '',
     fecha_date: fechaISOde(r.fecha),
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
-    direccion: r.direccion || '', destinatario: r.destinatario || '',
+    direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     clave: claveRegistro(r),
     manual: !!r.manual,
@@ -356,7 +371,7 @@ async function cargarHistorialCompleto(btn) {
       id: r.id,
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-      direccion: r.direccion || '', destinatario: r.destinatario || '',
+      direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
@@ -365,7 +380,7 @@ async function cargarHistorialCompleto(btn) {
       id: null, _historico: true,
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-      direccion: r.direccion || '', destinatario: r.destinatario || '',
+      direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)

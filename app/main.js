@@ -37,6 +37,7 @@ function showPage(id) {
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
+  if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('lista');
   if (id === 'gestion-permisos') renderGestionPermisos();
   if (id === 'upload') renderArchivoPanel();
 }
@@ -62,7 +63,7 @@ const PANTALLAS = [
   'tarifas', 'super-sla',
   'panel-conductores', 'dimensiones-especiales',
   'extraviados', 'beneficios', 'km-desvio', 'adelantos',
-  'gestion-permisos'
+  'clientes', 'gestion-permisos'
 ];
 
 async function fetchText(url) {

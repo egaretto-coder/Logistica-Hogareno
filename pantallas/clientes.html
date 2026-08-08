@@ -1,0 +1,67 @@
+      <div id="page-clientes" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-building"></i> Clientes</span>
+        </div>
+
+        <div class="tabs" id="cli-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="cli-btn-lista" onclick="switchClientesTab('lista')"><i class="ic ic-list"></i> Clientes y tarifario</button>
+          <button class="tab" id="cli-btn-liq" onclick="switchClientesTab('liq')"><i class="ic ic-file"></i> Liquidación</button>
+        </div>
+
+        <!-- ══════════ TAB: CLIENTES + TARIFARIO ══════════ -->
+        <div id="cli-tab-lista">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar tarifario
+                <input type="file" id="cli-tarifario-file" accept=".xlsx,.xls,.csv" onchange="importTarifarioClientes(event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="descargarPlantillaTarifario()"><i class="ic ic-download"></i> Plantilla Excel</button>
+              <button class="btn btn-sm btn-primary" onclick="openAddClienteModal()">+ Nuevo cliente</button>
+            </div>
+          </div>
+
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-building"></i> Cargá los clientes y su <strong>tarifario de venta por zona</strong> (lo que le cobrás al cliente por cada envío entregado). Subí todo de una con <strong>Importar tarifario</strong> (Excel: Cliente · Zona · Precio). La liquidación semanal <strong>Viernes→Jueves</strong> se calcula sola en la solapa "Liquidación".
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="cli-search" placeholder="🔍 Buscar cliente..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderClientes()">
+            <span id="cli-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Cliente</th><th>Razón social / CUIT</th><th style="text-align:right">Tarifario</th><th style="width:200px">Acciones</th>
+            </tr></thead>
+            <tbody id="cli-rows">
+              <tr><td colspan="4"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div><div class="empty-title">Sin clientes</div><div class="empty-sub">Agregá uno con "+ Nuevo cliente" o subí el tarifario</div></div></td></tr>
+            </tbody>
+          </table></div></div>
+        </div><!-- /cli lista -->
+
+        <!-- ══════════ TAB: LIQUIDACIÓN ══════════ -->
+        <div id="cli-tab-liq" style="display:none">
+          <div class="card" style="margin-bottom:14px;padding:14px 18px">
+            <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Cliente</label>
+                <select id="cli-liq-cliente" onchange="renderLiquidacionCliente()" style="width:240px;max-width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
+                  <option value="">Elegí un cliente…</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Jueves de corte (semana Vie→Jue)</label>
+                <input type="date" id="cli-liq-fecha" onchange="renderLiquidacionCliente()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              </div>
+              <span id="cli-liq-periodo" style="font-size:12px;color:var(--text-secondary);font-weight:600;padding-bottom:8px"></span>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="exportLiquidacionClientePDF()"><i class="ic ic-download"></i> Descargar PDF</button>
+            </div>
+          </div>
+          <div id="cli-liq-body">
+            <div class="empty-state" style="padding:30px"><div class="empty-icon"><i class="ic ic-file"></i></div><div class="empty-title">Elegí un cliente</div><div class="empty-sub">Y la semana (jueves de corte) para ver su liquidación</div></div>
+          </div>
+        </div><!-- /cli liq -->
+
+      </div>

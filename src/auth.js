@@ -16,6 +16,7 @@ const ROL_PERMISOS = {
       'panel-conductores', 'config-tarifas', 'config-supersla',
       'dimensiones-especiales',
       'extraviados', 'beneficios', 'km-desvio', 'adelantos',
+      'clientes',
       'gestion-permisos'
     ]
   },
@@ -26,7 +27,8 @@ const ROL_PERMISOS = {
       'liquidaciones', 'upload', 'conductores',
       'panel-conductores', 'config-tarifas', 'config-supersla',
       'dimensiones-especiales',
-      'extraviados', 'beneficios', 'km-desvio', 'adelantos'
+      'extraviados', 'beneficios', 'km-desvio', 'adelantos',
+      'clientes'
     ]
   }
 };
