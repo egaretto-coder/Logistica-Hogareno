@@ -271,6 +271,42 @@
   .metric-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   .metric-card.accent .metric-value { color: var(--accent); }
 
+  /* ── Dashboard: KPIs con ícono ── */
+  .metric-card { position: relative; }
+  .metric-card .metric-ic {
+    position: absolute; top: 14px; right: 14px;
+    width: 34px; height: 34px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-light); color: var(--accent);
+  }
+  .metric-card .metric-ic .ic { width: 17px; height: 17px; }
+  .metric-card.accent { border-color: var(--accent-border); }
+
+  /* ── Dashboard: panel condición ── */
+  .dash-cond-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; padding: 18px; }
+  @media (max-width: 860px) { .dash-cond-grid { grid-template-columns: 1fr; gap: 20px; } }
+  .dash-subtitle { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin: 0 0 14px; }
+  .dash-bar-row { display: grid; grid-template-columns: 104px 1fr auto; align-items: center; gap: 10px; margin-bottom: 11px; }
+  .dash-bar-row .lbl { font-size: 12.5px; display: flex; align-items: center; gap: 7px; }
+  .dash-bar-row .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dash-bar-track { height: 8px; border-radius: 6px; background: var(--surface-0); overflow: hidden; }
+  .dash-bar-fill { height: 100%; border-radius: 6px; transition: width .4s ease; }
+  .dash-bar-row .meta { font-size: 12px; white-space: nowrap; text-align: right; }
+  .dash-bar-row .meta b { font-weight: 700; }
+  .dash-bar-row .meta span { color: var(--text-muted); font-size: 11px; margin-left: 5px; }
+
+  /* ── Dashboard: ranking facturación ── */
+  .dash-rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .dash-rank-row:last-child { border-bottom: 0; }
+  .dash-rank-row .nom { flex: 1; font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dash-rank-row .amt { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+  .dash-rank-row .amt span { color: var(--text-muted); font-weight: 600; font-size: 11px; margin-left: 6px; }
+
+  /* ── Dashboard: reportes integrados ── */
+  .dash-reports { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+  .dash-report-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .dash-report-head .tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
   /* BUTTONS */
   .btn {
     display: inline-flex; align-items: center; gap: 6px;

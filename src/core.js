@@ -585,9 +585,11 @@ function getPrecio(conductor, zona) {
 // Estados que contabilizan (pueden venir del XLS con variantes)
 const ESTADOS_CONTABILIZAN = new Set(['ENTREGADO', 'ENTREGADO 2DA VISITA']);
 
-function calcLiquidaciones() {
+// Opcional: pasar un subconjunto de registros (ej. filtrados por período del
+// dashboard). Por defecto usa todos los de AppData.
+function calcLiquidaciones(records) {
   const byDriver = {};
-  AppData.records.forEach(r => {
+  (records || AppData.records).forEach(r => {
     // Identidad canónica: unifica alias/grafías de una misma persona en un solo
     // conductor (una sola liquidación), en vez de duplicarlo por cada nombre.
     const cond = conductorCanonico(r.cadete);
@@ -756,8 +758,6 @@ const PAGE_TITLES = {
   'upload': ['Importar datos', 'Cargá tu base de recorridos'],
   'liquidaciones': ['Liquidaciones', 'Cálculo por conductor'],
   'conductores': ['Detalle de conductor', 'Recorridos individuales'],
-  'reporte-zona': ['Reporte por zona', 'Análisis geográfico de recorridos'],
-  'reporte-conductor': ['Reporte por conductor', 'Resumen ejecutivo'],
   'config-tarifas': ['Configuración de tarifas', 'Precios por zona y categoría'],
   'config-supersla': ['Super SLA', 'Tarifas especiales por conductor y zona'],
   'panel-conductores':  ['Panel de conductores', 'Condición, día de pago y categorización'],

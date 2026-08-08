@@ -13,7 +13,6 @@ const ROL_PERMISOS = {
     color: '#059669',
     paginas: [
       'dashboard', 'upload', 'liquidaciones', 'conductores',
-      'reporte-zona', 'reporte-conductor',
       'panel-conductores', 'config-tarifas', 'config-supersla',
       'dimensiones-especiales', 'descuento-conductores',
       'gestion-permisos'

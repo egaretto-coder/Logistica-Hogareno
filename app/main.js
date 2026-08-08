@@ -30,8 +30,6 @@ function showPage(id) {
   if (id === 'dimensiones-especiales') renderDimensionesEspeciales();
   if (id === 'descuento-conductores') switchDescTab('combustible');
   if (id === 'conductores') renderConductorSelect();
-  if (id === 'reporte-zona') renderZonaReport();
-  if (id === 'reporte-conductor') renderConductorReport();
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
@@ -57,7 +55,7 @@ function rerenderPaginaActiva() {
 // ════════════════════════════════════════════════════════════════════════
 const PANTALLAS = [
   'dashboard', 'importar-datos', 'liquidaciones', 'conductores',
-  'reporte-zona', 'reporte-conductor', 'tarifas', 'super-sla',
+  'tarifas', 'super-sla',
   'panel-conductores', 'dimensiones-especiales', 'descuento-conductores',
   'gestion-permisos'
 ];

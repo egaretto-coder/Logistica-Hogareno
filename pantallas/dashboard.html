@@ -1,7 +1,7 @@
       <div id="page-dashboard" class="page active">
 
-        <!-- Filtro de fechas -->
-        <div class="card" style="margin-bottom:16px;padding:14px 18px">
+        <!-- Filtro de período -->
+        <div class="card" style="margin-bottom:16px;padding:12px 16px">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Período</span>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -27,23 +27,28 @@
           </div>
         </div>
 
+        <!-- KPIs -->
         <div class="metrics-grid">
-          <div class="metric-card">
+          <div class="metric-card accent">
+            <div class="metric-ic"><i class="ic ic-dollar"></i></div>
             <div class="metric-label">Total liquidado</div>
             <div class="metric-value" id="metric-total">$0</div>
             <div class="metric-sub" id="metric-sub-total">Sin datos</div>
           </div>
           <div class="metric-card">
+            <div class="metric-ic"><i class="ic ic-users"></i></div>
             <div class="metric-label">Conductores activos</div>
             <div class="metric-value" id="metric-conductores">0</div>
             <div class="metric-sub">En el período</div>
           </div>
           <div class="metric-card">
+            <div class="metric-ic"><i class="ic ic-trend"></i></div>
             <div class="metric-label">Promedio por conductor</div>
             <div class="metric-value" id="metric-promedio">$0</div>
             <div class="metric-sub" id="metric-promedio-sub">En el período</div>
           </div>
-          <div class="metric-card accent">
+          <div class="metric-card">
+            <div class="metric-ic"><i class="ic ic-truck"></i></div>
             <div class="metric-label">Conductores en panel</div>
             <div class="metric-value" id="metric-panel-total">0</div>
             <div class="metric-sub">Registrados en el sistema</div>
@@ -54,6 +59,7 @@
           ℹ️ <span>No hay datos cargados. Usá el módulo <strong>Importar datos</strong> para cargar tu base de recorridos.</span>
         </div>
 
+        <!-- Conductores por condición -->
         <div class="card">
           <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <span class="card-title">Conductores por condición</span>
@@ -64,11 +70,73 @@
               <button class="btn btn-sm dash-cond-btn" data-cond="Suplente" onclick="setDashCondFilter(this,'Suplente')">Suplentes</button>
             </div>
           </div>
-          <div id="dash-conductores-panel-body" style="padding:16px">
-            <div class="empty-state"><div class="empty-sub">Sin datos</div></div>
+          <div id="dash-conductores-panel-body">
+            <div class="empty-state" style="padding:24px"><div class="empty-sub">Sin datos</div></div>
           </div>
         </div>
 
-      </div>
+        <!-- Reportes integrados -->
+        <div class="dash-reports">
 
-      <!-- UPLOAD -->
+          <!-- Reporte por zona -->
+          <div class="card">
+            <div class="card-header dash-report-head">
+              <span class="card-title"><i class="ic ic-pin"></i> Reporte por zona</span>
+              <div class="tools">
+                <input type="search" id="zona-report-search" placeholder="🔍 Buscar zona..." oninput="renderZonaReport()" style="width:190px;max-width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
+                <span id="zona-report-count" style="font-size:12px;color:var(--text-muted)"></span>
+                <button class="btn btn-sm btn-primary" onclick="exportReporteZonaPDF()"><i class="ic ic-download"></i> PDF</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Zona</th>
+                    <th>Categoría</th>
+                    <th>Recorridos</th>
+                    <th>Conductores</th>
+                    <th>Total liquidado</th>
+                    <th>Promedio por recorrido</th>
+                  </tr>
+                </thead>
+                <tbody id="zona-table-body">
+                  <tr><td colspan="6"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Reporte por conductor -->
+          <div class="card">
+            <div class="card-header dash-report-head">
+              <span class="card-title"><i class="ic ic-user"></i> Reporte por conductor</span>
+              <div class="tools">
+                <input type="search" id="cond-report-search" placeholder="🔍 Buscar conductor..." oninput="renderConductorReport()" style="width:210px;max-width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
+                <span id="cond-report-count" style="font-size:12px;color:var(--text-muted)"></span>
+                <button class="btn btn-sm btn-primary" onclick="exportReporteConductorPDF()"><i class="ic ic-download"></i> PDF</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conductor</th>
+                    <th>Categoría</th>
+                    <th>Zonas visitadas</th>
+                    <th>Total recorridos</th>
+                    <th>Total liquidado</th>
+                    <th>Super SLA activo</th>
+                    <th>PDF</th>
+                  </tr>
+                </thead>
+                <tbody id="rep-cond-body">
+                  <tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>

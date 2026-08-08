@@ -106,116 +106,40 @@ function renderDashConductoresPanel(liqParam) {
   const maxMonto = liqPorConductor.length ? liqPorConductor[0].monto : 1;
   const top8 = liqPorConductor.slice(0, 8);
 
-  // ── Anillo conductores ───────────────────────────────────────────────────
-  const C = 2 * Math.PI * 36;
-  const offsetCond = C - (pct / 100) * C;
-
-  // ── Anillo facturación ───────────────────────────────────────────────────
-  const offsetFact = C - (pctFacturacion / 100) * C;
-
-  // ── Barras de categoría ──────────────────────────────────────────────────
+  // ── Distribución por categorización (barras) ─────────────────────────────
   const catRows = Object.entries(catCount)
     .sort((a, b) => b[1] - a[1])
     .map(([cat, cnt]) => {
       const info = CAT_INFO[cat] || { label: cat, color: '#9ca3af' };
       const catPct = totalParaPct ? Math.round(cnt / totalParaPct * 100) : 0;
-      return `
-        <div style="margin-bottom:9px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="width:9px;height:9px;border-radius:50%;background:${info.color};display:inline-block;flex-shrink:0"></span>
-              <span style="font-size:12px;font-weight:500">${info.label}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:11px;color:var(--text-muted)">${cnt}</span>
-              <span style="font-size:12px;font-weight:700;color:${info.color};min-width:32px;text-align:right">${catPct}%</span>
-            </div>
-          </div>
-          <div style="height:5px;border-radius:3px;background:var(--border);overflow:hidden">
-            <div style="height:100%;border-radius:3px;background:${info.color};width:${catPct}%;transition:width .4s"></div>
-          </div>
-        </div>`;
+      return `<div class="dash-bar-row">
+        <span class="lbl"><span class="dot" style="background:${info.color}"></span>${info.label}</span>
+        <span class="dash-bar-track"><span class="dash-bar-fill" style="width:${catPct}%;background:${info.color}"></span></span>
+        <span class="meta"><b style="color:${info.color}">${catPct}%</b><span>${cnt}</span></span>
+      </div>`;
     }).join('');
 
-  // ── Barras de facturación por conductor ──────────────────────────────────
+  // ── Participación en facturación por conductor (ranking) ─────────────────
   const factRows = top8.length ? top8.map(({ nombre, monto }) => {
-    const barPct = maxMonto > 0 ? Math.round(monto / maxMonto * 100) : 0;
     const partPct = montoGrupo > 0 ? Math.round(monto / montoGrupo * 100) : 0;
-    return `
-      <div style="margin-bottom:9px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-          <div style="display:flex;align-items:center;gap:6px;overflow:hidden">
-            <div class="conductor-avatar" style="background:${avatarColor(nombre)};width:20px;height:20px;font-size:8px;flex-shrink:0">${initials(nombre)}</div>
-            <span style="font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${nombre}</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <span style="font-size:11px;color:var(--text-muted)">${fmtPeso(monto)}</span>
-            <span style="font-size:11px;font-weight:700;color:#f59e0b;min-width:32px;text-align:right">${partPct}%</span>
-          </div>
-        </div>
-        <div style="height:5px;border-radius:3px;background:var(--border);overflow:hidden">
-          <div style="height:100%;border-radius:3px;background:linear-gradient(90deg,#f59e0b,#fbbf24);width:${barPct}%;transition:width .4s"></div>
-        </div>
-      </div>`;
-  }).join('') : '<div style="font-size:12px;color:var(--text-muted)">Sin liquidaciones para esta condición</div>';
+    return `<div class="dash-rank-row">
+      <div class="conductor-avatar" style="background:${avatarColor(nombre)};width:26px;height:26px;font-size:9px;flex-shrink:0">${initials(nombre)}</div>
+      <span class="nom">${nombre}</span>
+      <span class="amt">${fmtPeso(monto)}<span>${partPct}%</span></span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">Sin liquidaciones para esta condición</div>';
 
   body.innerHTML = `
-    <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
-
-      <!-- ── Col 1: Anillos ── -->
-      <div style="display:flex;flex-direction:column;gap:20px;align-items:center">
-
-        <!-- Anillo conductores -->
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <svg width="86" height="86" viewBox="0 0 90 90">
-            <circle cx="45" cy="45" r="36" fill="none" stroke="var(--border)" stroke-width="9"/>
-            <circle cx="45" cy="45" r="36" fill="none" stroke="var(--brand)" stroke-width="9"
-              stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${offsetCond.toFixed(1)}"
-              stroke-linecap="round" transform="rotate(-90 45 45)"/>
-            <text x="45" y="49" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text-primary)">${pct}%</text>
-          </svg>
-          <div style="text-align:center;line-height:1.3">
-            <div style="font-size:18px;font-weight:700">${dashCondFilter ? cantidad : totalConLiq}</div>
-            <div style="font-size:10px;color:var(--text-muted)">${condEmoji} ${condLabel}</div>
-            <div style="font-size:10px;color:var(--text-muted)">${dashCondFilter ? 'de ' + total + ' en panel' : 'conductores activos'}</div>
-          </div>
-        </div>
-
-        <!-- Anillo facturación -->
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <svg width="86" height="86" viewBox="0 0 90 90">
-            <circle cx="45" cy="45" r="36" fill="none" stroke="var(--border)" stroke-width="9"/>
-            <circle cx="45" cy="45" r="36" fill="none" stroke="#f59e0b" stroke-width="9"
-              stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${offsetFact.toFixed(1)}"
-              stroke-linecap="round" transform="rotate(-90 45 45)"/>
-            <text x="45" y="49" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text-primary)">${pctFacturacion}%</text>
-          </svg>
-          <div style="text-align:center;line-height:1.3">
-            <div style="font-size:15px;font-weight:700">${fmtPeso(montoGrupo)}</div>
-            <div style="font-size:10px;color:var(--text-muted)"><i class="ic ic-dollar"></i> Facturación</div>
-            <div style="font-size:10px;color:var(--text-muted)">del total general</div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- ── Col 2: Distribución por categorización ── -->
-      <div style="flex:1;min-width:160px">
-        <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">
-          Distribución por categorización
-        </div>
+    <div class="dash-cond-grid">
+      <div>
+        <div class="dash-subtitle">Distribución por categorización · <b style="color:var(--text-secondary)">${dashCondFilter ? cantidad : totalConLiq} conductores</b></div>
         ${catRows || '<div style="color:var(--text-muted);font-size:12px">Sin conductores</div>'}
       </div>
-
-      <!-- ── Col 3: Participación en facturación ── -->
-      <div style="flex:1.2;min-width:180px">
-        <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">
-          Participación en facturación ${dashCondFilter ? '— ' + condLabel : ''}
-        </div>
+      <div>
+        <div class="dash-subtitle">Participación en facturación${dashCondFilter ? ' · ' + condLabel : ''} · <b style="color:var(--text-secondary)">${fmtPeso(montoGrupo)}</b></div>
         ${factRows}
-        ${liqPorConductor.length > 8 ? '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">+ ' + (liqPorConductor.length - 8) + ' conductores más</div>' : ''}
+        ${liqPorConductor.length > 8 ? '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:center">+ ' + (liqPorConductor.length - 8) + ' conductores más</div>' : ''}
       </div>
-
     </div>`;
 }
 
@@ -373,6 +297,10 @@ function renderDashboard() {
 
   // Panel conductores por condición (pasa liqFecha para usar el período)
   renderDashConductoresPanel(liqFecha);
+
+  // Reportes integrados (por zona / por conductor), respetan el mismo período.
+  if (typeof renderZonaReport === 'function') renderZonaReport();
+  if (typeof renderConductorReport === 'function') renderConductorReport();
 }
 
 // ===== LIQUIDACIONES =====
