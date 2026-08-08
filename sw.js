@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v51';
+const CACHE = 'liq-cache-v52';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -50,7 +50,10 @@ const APP_SHELL = [
   './pantallas/super-sla.html',
   './pantallas/panel-conductores.html',
   './pantallas/dimensiones-especiales.html',
-  './pantallas/descuento-conductores.html',
+  './pantallas/extraviados.html',
+  './pantallas/beneficios.html',
+  './pantallas/km-desvio.html',
+  './pantallas/adelantos.html',
   './pantallas/gestion-permisos.html',
   // Iconos
   './assets/icons/icon-192.png',

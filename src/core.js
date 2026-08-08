@@ -762,7 +762,10 @@ const PAGE_TITLES = {
   'config-supersla': ['Super SLA', 'Tarifas especiales por conductor y zona'],
   'panel-conductores':  ['Panel de conductores', 'Condición, día de pago y categorización'],
   'dimensiones-especiales': ['Dimensiones Especiales', 'Trackings con condición y valor especial que reemplazan la tarifa'],
-  'descuento-conductores': ['Descuento Conductores', 'Combustible, extraviados, adelantos y servicio proveedores por conductor'],
+  'extraviados': ['Extraviados / Rotos', 'Envíos extraviados o rotos, con opción de cuotear'],
+  'beneficios': ['Beneficios', 'Combustible y servicio de proveedores por conductor'],
+  'km-desvio': ['Km de desvío', 'Adicional por km de desvío al retirar mercadería'],
+  'adelantos': ['Adelantos', 'Préstamos en cuotas y deuda por conductor'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 

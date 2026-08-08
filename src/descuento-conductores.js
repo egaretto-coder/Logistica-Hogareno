@@ -3,17 +3,15 @@
 //  (módulo descuentos-items.js) + adelantos (adelantos.js) + km de desvío (acá).
 // ════════════════════════════════════════════════════════════════════════
 
-function switchDescTab(tab) {
-  const tabs = ['combustible', 'extraviados', 'proveedores', 'adelantos', 'kmdesvio'];
-  tabs.forEach(t => {
-    const panel = document.getElementById('desc-tab-' + t);
-    const btn = document.getElementById('tab-btn-' + t);
+// Sub-solapas del panel "Beneficios" (Combustible / Proveedores).
+function switchBeneficioTab(tab) {
+  ['combustible', 'proveedores'].forEach(t => {
+    const panel = document.getElementById('benef-tab-' + t);
+    const btn = document.getElementById('benef-btn-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
     if (btn) btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'kmdesvio') renderKmDesvio();
-  else if (tab === 'adelantos') { if (typeof renderAdelantos === 'function') renderAdelantos(); }
-  else if (typeof renderDescItems === 'function') renderDescItems(tab); // combustible / extraviados / proveedores
+  if (typeof renderDescItems === 'function') renderDescItems(tab);
 }
 
 // ===== KM DE DESVÍO =====

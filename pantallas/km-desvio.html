@@ -1,0 +1,61 @@
+      <div id="page-km-desvio" class="page">
+
+        <div class="section-head" style="margin-bottom:8px">
+          <span class="section-title"><i class="ic ic-route"></i> Km de desvío</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
+              <input type="file" id="km-file-input" accept=".xlsx,.xls,.csv" onchange="importKmDesvio(event)" style="display:none">
+            </label>
+            <button class="btn btn-sm" onclick="openAddKmDesvioModal()">+ Agregar manual</button>
+            <button class="btn btn-sm" onclick="descargarPlantillaKm()"><i class="ic ic-download"></i> Plantilla Excel</button>
+            <button class="btn btn-sm" onclick="limpiarKmDesvio()" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Limpiar todo</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          <i class="ic ic-route"></i> Cargá acá los kilómetros de desvío que hizo cada conductor al retirar mercadería de un cliente, con la <strong>fecha</strong> en que ocurrió. El costo se calcula solo tomando la <strong>tarifa vigente a esa fecha</strong> y se suma como <strong>adicional</strong> en la liquidación de esa semana (incrementa el total del PDF). Solo un <strong>analista</strong> puede cambiar el valor por km; al subir la tarifa, los km ya cargados <strong>no se modifican</strong>.
+        </div>
+
+        <!-- VALOR POR KM -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600"><i class="ic ic-dollar"></i> Valor por km desviado</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:13px;color:var(--text-muted)">$</span>
+              <input type="number" id="km-valor-input" min="0" step="1" placeholder="0"
+                style="width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right;font-family:monospace;font-weight:600"
+                onchange="guardarKmValor(this)">
+              <span style="font-size:12px;color:var(--text-muted)">por km</span>
+            </div>
+            <span id="km-valor-estado" style="font-size:11px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+
+        <!-- FILTROS -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <input type="search" id="kmdesvio-search" placeholder="Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderKmDesvio()">
+          <span id="kmdesvio-count" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+
+        <!-- TABLA KM DE DESVÍO -->
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Conductor</th>
+                  <th><i class="ic ic-calendar"></i> Fecha</th>
+                  <th style="text-align:right"><i class="ic ic-route"></i> Km de desvío</th>
+                  <th style="text-align:right">Tarifa aplicada</th>
+                  <th style="text-align:right"><i class="ic ic-dollar"></i> Monto ($)</th>
+                  <th style="width:90px">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="kmdesvio-table-body">
+                <tr><td colspan="6"><div class="empty-state"><div class="empty-icon"><i class="ic ic-route"></i></div><div class="empty-title">Sin registros cargados</div><div class="empty-sub">Agregá un registro con "+ Agregar manual"</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>

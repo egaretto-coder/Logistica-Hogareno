@@ -30,6 +30,10 @@ function showPage(id) {
   if (id === 'dimensiones-especiales') renderDimensionesEspeciales();
   if (id === 'descuento-conductores') switchDescTab('combustible');
   if (id === 'conductores') renderConductorSelect();
+  if (id === 'extraviados' && typeof renderDescItems === 'function') renderDescItems('extraviados');
+  if (id === 'beneficios' && typeof switchBeneficioTab === 'function') switchBeneficioTab('combustible');
+  if (id === 'km-desvio' && typeof renderKmDesvio === 'function') renderKmDesvio();
+  if (id === 'adelantos' && typeof renderAdelantos === 'function') renderAdelantos();
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
@@ -56,7 +60,8 @@ function rerenderPaginaActiva() {
 const PANTALLAS = [
   'dashboard', 'importar-datos', 'liquidaciones', 'conductores',
   'tarifas', 'super-sla',
-  'panel-conductores', 'dimensiones-especiales', 'descuento-conductores',
+  'panel-conductores', 'dimensiones-especiales',
+  'extraviados', 'beneficios', 'km-desvio', 'adelantos',
   'gestion-permisos'
 ];
 

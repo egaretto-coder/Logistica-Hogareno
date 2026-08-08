@@ -1,0 +1,75 @@
+      <div id="page-beneficios" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-ticket"></i> Beneficios</span>
+        </div>
+
+        <!-- Sub-solapas -->
+        <div class="tabs" id="benef-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="benef-btn-combustible" onclick="switchBeneficioTab('combustible')"><i class="ic ic-fuel"></i> Combustible</button>
+          <button class="tab" id="benef-btn-proveedores" onclick="switchBeneficioTab('proveedores')"><i class="ic ic-receipt"></i> Servicio Proveedores</button>
+        </div>
+
+        <!-- ══════════ SUB-PANEL: COMBUSTIBLE ══════════ -->
+        <div id="benef-tab-combustible">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
+                <input type="file" id="descitem-combustible-file" accept=".xlsx,.xls,.csv" onchange="importDescItems('combustible', event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="openAddDescItemModal('combustible')">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaDescItems('combustible')"><i class="ic ic-download"></i> Plantilla Excel</button>
+              <button class="btn btn-sm" onclick="limpiarDescItems('combustible')" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Limpiar todo</button>
+            </div>
+          </div>
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-fuel"></i> Registrá cada gasto de <strong>combustible</strong> con su <strong>fecha</strong>. Cada registro se imputa automáticamente como descuento en la <strong>liquidación de esa semana</strong> (podés ajustarlo o excluirlo al generar el PDF).
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="descitem-combustible-search" placeholder="🔍 Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescItems('combustible')">
+            <span id="descitem-combustible-count" style="font-size:12px;color:var(--text-muted)"></span>
+            <input type="date" id="descitem-combustible-fecha-nuevo" style="display:none">
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th><i class="ic ic-calendar"></i> Fecha</th><th style="text-align:right"><i class="ic ic-dollar"></i> Monto</th><th>Detalle</th><th style="width:90px">Acciones</th>
+            </tr></thead>
+            <tbody id="descitem-combustible-rows">
+              <tr><td colspan="5"><div class="empty-state"><div class="empty-icon"><i class="ic ic-fuel"></i></div><div class="empty-title">Sin registros</div><div class="empty-sub">Agregá uno manual o importá un Excel</div></div></td></tr>
+            </tbody>
+          </table></div></div>
+        </div><!-- /benef combustible -->
+
+        <!-- ══════════ SUB-PANEL: SERVICIO PROVEEDORES ══════════ -->
+        <div id="benef-tab-proveedores" style="display:none">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
+                <input type="file" id="descitem-proveedores-file" accept=".xlsx,.xls,.csv" onchange="importDescItems('proveedores', event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="openAddDescItemModal('proveedores')">+ Agregar manual</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaDescItems('proveedores')"><i class="ic ic-download"></i> Plantilla Excel</button>
+              <button class="btn btn-sm" onclick="limpiarDescItems('proveedores')" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Limpiar todo</button>
+            </div>
+          </div>
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-receipt"></i> Registrá cada <strong>servicio de proveedor</strong> (gomería, taller, etc.) con su <strong>fecha</strong> y el <strong>proveedor</strong>. Cada registro se imputa como descuento en la <strong>liquidación de esa semana</strong>.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="descitem-proveedores-search" placeholder="🔍 Buscar conductor o proveedor..." style="width:300px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescItems('proveedores')">
+            <span id="descitem-proveedores-count" style="font-size:12px;color:var(--text-muted)"></span>
+            <input type="date" id="descitem-proveedores-fecha-nuevo" style="display:none">
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th><i class="ic ic-calendar"></i> Fecha</th><th style="text-align:right"><i class="ic ic-dollar"></i> Monto</th><th><i class="ic ic-building"></i> Proveedor</th><th>Detalle</th><th style="width:90px">Acciones</th>
+            </tr></thead>
+            <tbody id="descitem-proveedores-rows">
+              <tr><td colspan="6"><div class="empty-state"><div class="empty-icon"><i class="ic ic-receipt"></i></div><div class="empty-title">Sin registros</div><div class="empty-sub">Agregá uno manual o importá un Excel</div></div></td></tr>
+            </tbody>
+          </table></div></div>
+        </div><!-- /benef proveedores -->
+
+      </div>
