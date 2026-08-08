@@ -21,20 +21,21 @@ Nav en `components/sidebar.html`; títulos en `PAGE_TITLES` (`src/core.js`).
 | Pantalla (id) | Nav | HTML | JS | Qué hace |
 |---|---|---|---|---|
 | `login` | — | `pantallas/login.html` | `src/auth.js` | Login por email; roles y permisos por pantalla. |
-| `dashboard` | Dashboard | `pantallas/dashboard.html` | `src/dashboard.js` | Resumen general; totales y exportación de PDFs por día de pago. |
+| `dashboard` | Dashboard | `pantallas/dashboard.html` | `src/dashboard.js`, `src/reportes.js` | Resumen general (KPIs, distribución por categorización, ranking de facturación) por período. **Integra los reportes Por zona y Por conductor** (tablas + búsqueda + export PDF `exportReporteZonaPDF`/`exportReporteConductorPDF`), que respetan el período del Dashboard. |
 | `upload` | Importar datos | `pantallas/importar-datos.html` | `src/importar.js` | Importar Excel de recorridos (hoja "BD") con mapeo de columnas; también Km y Adelantos. |
 | `liquidaciones` | Liquidaciones | `pantallas/liquidaciones.html` | `src/liquidaciones.js`, `src/liquidaciones-pdf.js` | Cálculo por conductor y período; genera el PDF de liquidación (bruto − descuentos = neto). |
 | `conductores` | Conductores | `pantallas/conductores.html` | `src/conductores.js` | **Detalle/editor por conductor**: corregir a mano tracking, zona (confirmación en 2 pasos), precio y estado. Autosave a la nube. |
-| `reporte-zona` | Por zona | `pantallas/reporte-zona.html` | `src/reportes.js` | Análisis geográfico: recorridos, conductores y total por zona. |
-| `reporte-conductor` | Por conductor | `pantallas/reporte-conductor.html` | `src/reportes.js` | Resumen ejecutivo por conductor (categoría, zonas, total). |
-| `panel-conductores` | Panel de conductores | `pantallas/panel-conductores.html` | `src/panel-conductores.js` | Alta/edición de conductores: **condición** (día de pago) y **categorización** (precio). Vincular grafías de recorrido vía **alias**. |
+| `panel-conductores` | Panel de conductores | `pantallas/panel-conductores.html` | `src/panel-conductores.js` | Alta/edición de conductores: **condición** (día de pago) y **categorización** (precio). Vincular grafías de recorrido vía **alias**. Filtro "Sin asignar". |
 | `config-tarifas` | Tarifas | `pantallas/tarifas.html` | `src/config-tarifas.js` | Precios por zona y categoría (s_colecta / c_colecta / sla). |
 | `config-supersla` | Super SLA | `pantallas/super-sla.html` | `src/config-supersla.js` | Tarifa especial por conductor + zona (solo conductores categoría `super_sla`). |
 | `dimensiones-especiales` | Dimensiones Especiales | `pantallas/dimensiones-especiales.html` | `src/dimensiones-especiales.js` | Trackings con valor especial que **reemplaza** la tarifa de zona. |
-| `descuento-conductores` | Descuento Conductores | `pantallas/descuento-conductores.html` | `src/descuento-conductores.js`, `src/descuentos-items.js`, `src/adelantos.js` | Combustible, extraviados/rotos (cuoteables), adelantos y servicio proveedores por conductor; imputados por fecha. |
-| `gestion-permisos` | Gestión de permisos | `pantallas/gestion-permisos.html` | `src/gestion-permisos.js` | Qué pantallas ve cada rol y usuarios asignados. |
+| `extraviados` | Extraviados / Rotos | `pantallas/extraviados.html` | `src/descuentos-items.js` | Envíos extraviados/rotos por conductor (valor real, cuoteables). **Régimen de autorización** (ver dominio). |
+| `beneficios` | Beneficios | `pantallas/beneficios.html` | `src/descuentos-items.js`, `src/descuento-conductores.js` | Sub-solapas **Combustible** + **Servicio Proveedores** (`switchBeneficioTab`); descuentos por fecha, creación directa. |
+| `km-desvio` | Km de desvío | `pantallas/km-desvio.html` | `src/descuento-conductores.js` | Adicional por km de desvío (tarifa vigente a la fecha; suma al neto). Solo analista cambia el valor por km. Creación directa. |
+| `adelantos` | Adelantos | `pantallas/adelantos.html` | `src/adelantos.js` | Préstamos en cuotas + **resumen de deuda** (total y por conductor, solo autorizados). **Régimen de autorización**. |
+| `gestion-permisos` | Gestión de permisos | `pantallas/gestion-permisos.html` | `src/gestion-permisos.js` | Qué pantallas ve cada rol y usuarios asignados; alta/baja de roles. |
 
-**Módulos núcleo (no son pantallas):** `src/supabase.js` (cliente + helpers DB), `src/core.js` (estado `AppData`, cálculo de precios, seed, `PAGE_TITLES`), `src/auth.js` (roles/permisos), `src/datos.js` (hidratación + persistencia), `app/main.js` (router + bootstrap + SW). Componentes: `components/{sidebar,header,modales}.html`.
+**Módulos núcleo (no son pantallas):** `src/supabase.js` (cliente + helpers DB), `src/core.js` (estado `AppData`, cálculo de precios, seed, `PAGE_TITLES`), `src/auth.js` (roles/permisos), `src/datos.js` (hidratación + persistencia), `src/realtime.js` (sincronización en tiempo real), `app/main.js` (router + bootstrap + SW). Componentes: `components/{sidebar,header,modales}.html`.
 
 ## Modelo de dominio
 - **Conductor**: se identifica por nombre. Los recorridos traen `cadete` (texto). El **Panel de conductores** le asigna condición y categoría.
@@ -43,7 +44,9 @@ Nav en `components/sidebar.html`; títulos en `PAGE_TITLES` (`src/core.js`).
 - **Identidad canónica / alias**: el nombre del recorrido puede diferir del panel (apodos, typos). Se vinculan con **alias** y se unifican con `conductorCanonico()`. Ver `identidad-conductor-canonica` en memoria. **Invariante**: agrupar recorridos SIEMPRE por `conductorCanonico(r.cadete)`, e invalidar el índice (`invalidarIndicePanel()`) al mutar el panel.
 - **Precio** (`getPrecio` en `src/core.js`): 1) Super SLA para esa zona → precio especial; 2) tiene Super SLA en otra zona → SLA Cumplido estándar; 3) tipo fijo del panel. Las **dimensiones especiales** (por tracking) pisan todo; el **precio_manual** del operador pisa el cálculo.
 - **Correcciones a mano** (localizables con filtro "Solo corregidos"): `precio_manual` (precio pisado), `manual` (envío cargado a mano), `zona_manual` (zona definida a mano).
-- **Descuentos**: `descuentos_items` (combustible/extraviados/proveedores, imputados por fecha; extravíos cuoteables → `descuento_cuotas`), `adelantos`/`adelanto_cuotas`, km de desvío.
+- **Descuentos / movimientos** (4 paneles independientes, ex "Descuento Conductores"): **Extraviados/Rotos** y **Beneficios** (Combustible + Proveedores) → `descuentos_items` (imputados por fecha; extravíos cuoteables → `descuento_cuotas`); **Adelantos** → `adelantos`/`adelanto_cuotas`; **Km de desvío** → `km_desvio`. El operador elige en Liquidaciones imputar o no cada cuota/descuento.
+- **Régimen de superposiciones (maker-checker)**: los **adelantos** y **extravíos** cargados por un operador quedan `estado='pendiente'` y **NO impactan la liquidación** hasta que un supervisor/analista los autorice. Km y beneficios se crean directos (`autorizado`). Filas viejas (sin estado) = autorizadas. Helpers en `src/core.js`: `puedeAutorizar()` (supervisor/analista), `esAutorizado(x)`, `estadoNuevaOperacion()`. La imputación (`adelantoDescuentoConductor`, `extravioCuotaDescuento`, `descItemDescuentoConductor`) **excluye lo pendiente/rechazado**. Botones Autorizar/Rechazar en los paneles (solo autorizadores); el operador puede cancelar su solicitud pendiente.
+- **Roles** (`ROL_PERMISOS` en `src/auth.js` + tabla `rol_permisos` editable en Gestión de permisos): `analista` (acceso total, autoriza), `administrativo` (operador/preparador), `supervisor` (autoriza plata), `tesorero` (plata, no autoriza). `paginasDeRol()` resuelve permisos; los roles nuevos viven en la tabla `roles`.
 - **Registros**: viven en `registros`; los viejos se archivan a `registros_historico` (solo lectura) vía RPC `archivar_registros`.
 
 ## Datos en tiempo real / sincronización
