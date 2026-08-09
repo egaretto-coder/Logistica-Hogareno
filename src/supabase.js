@@ -26,54 +26,53 @@ try {
 const DB = {
   get ready() { return !!sb; },
 
-  // Trae una tabla completa paginando de a 1000 filas (PostgREST limita por
-  // defecto a 1000 por request). Imprescindible para 'registros'.
-  async selectAll(table, orderCol) {
+  // Trae TODAS las páginas de una consulta EN PARALELO (PostgREST limita a 1000
+  // filas por request). Pide la 1ª página con el count exacto y, si faltan filas,
+  // dispara el resto de páginas a la vez. Antes se hacía "de a 1000 EN SERIE",
+  // lo que en 'registros' (~10k) tardaba varios segundos en el login/refresh.
+  async _fetchAllParallel(table, { orderCol = null, filter = null } = {}) {
     const PAGE = 1000;
-    let from = 0, out = [];
-    for (;;) {
-      let q = sb.from(table).select('*').range(from, from + PAGE - 1);
-      if (orderCol) q = q.order(orderCol);
-      const { data, error } = await q;
-      if (error) throw error;
-      out = out.concat(data || []);
-      if (!data || data.length < PAGE) break;
-      from += PAGE;
+    const mk = (withCount) => {
+      let q = withCount
+        ? sb.from(table).select('*', { count: 'exact' })
+        : sb.from(table).select('*');
+      if (orderCol) q = q.order(orderCol);   // orden estable para paginar consistente
+      if (filter) q = filter(q);
+      return q;
+    };
+    const first = await mk(true).range(0, PAGE - 1);
+    if (first.error) throw first.error;
+    let out = first.data || [];
+    const total = (first.count != null) ? first.count : out.length;
+    if (out.length >= PAGE && total > PAGE) {
+      const reqs = [];
+      for (let p = 1, pages = Math.ceil(total / PAGE); p < pages; p++) {
+        reqs.push(mk(false).range(p * PAGE, p * PAGE + PAGE - 1));
+      }
+      const results = await Promise.all(reqs);
+      for (const r of results) { if (r.error) throw r.error; out = out.concat(r.data || []); }
     }
     return out;
+  },
+
+  // Trae una tabla completa. Imprescindible paginar para 'registros'.
+  async selectAll(table, orderCol) {
+    return this._fetchAllParallel(table, { orderCol });
   },
 
   // Registros dentro de una ventana de días (server-side, por fecha_date).
   // Incluye los sin fecha parseable (fecha_date null) por seguridad.
   // desdeISO null = traer todo el historial.
   async selectRegistrosVentana(desdeISO) {
-    const PAGE = 1000;
-    let from = 0, out = [];
-    for (;;) {
-      let q = sb.from('registros').select('*').order('id').range(from, from + PAGE - 1);
-      if (desdeISO) q = q.or('fecha_date.gte.' + desdeISO + ',fecha_date.is.null');
-      const { data, error } = await q;
-      if (error) throw error;
-      out = out.concat(data || []);
-      if (!data || data.length < PAGE) break;
-      from += PAGE;
-    }
-    return out;
+    return this._fetchAllParallel('registros', {
+      orderCol: 'id',
+      filter: desdeISO ? (q => q.or('fecha_date.gte.' + desdeISO + ',fecha_date.is.null')) : null
+    });
   },
 
   // Trae todos los registros archivados (tabla registros_historico).
   async selectHistorico() {
-    const PAGE = 1000;
-    let from = 0, out = [];
-    for (;;) {
-      const { data, error } = await sb.from('registros_historico')
-        .select('*').order('id').range(from, from + PAGE - 1);
-      if (error) throw error;
-      out = out.concat(data || []);
-      if (!data || data.length < PAGE) break;
-      from += PAGE;
-    }
-    return out;
+    return this._fetchAllParallel('registros_historico', { orderCol: 'id' });
   },
 
   // Mueve a histórico los registros con fecha anterior a antesDeISO.

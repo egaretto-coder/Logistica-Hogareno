@@ -76,17 +76,59 @@ function categoriaDeFacturacion(fact) {
   return match;
 }
 
-// Evaluación en vivo de un cliente: facturación de las 4 liquidaciones, categoría y monto.
-function evalComisionCliente(cliente) {
-  const rango = rangoEvaluacionCliente(cliente);
+// Recorridos contabilizables de un cliente (para evaluar sin escanear todo).
+function _recordsContabDeCliente(cliente) {
+  const cKey = normCliente(cliente);
+  return AppData.records.filter(r => {
+    if (normCliente(r.cliente) !== cKey) return false;
+    const est = (r.estado || '').toUpperCase().trim();
+    return est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est);
+  });
+}
+// Índice recorridos contabilizables por cliente (1 sola pasada) — para no repetir
+// el scan de AppData.records por cada fila en la tabla de comisiones (O(N) total
+// en vez de O(filas × registros)).
+function _indexRecordsContabPorCliente() {
+  const idx = new Map();
+  AppData.records.forEach(r => {
+    const est = (r.estado || '').toUpperCase().trim();
+    if (!(est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est))) return;
+    const k = normCliente(r.cliente);
+    if (!k) return;
+    let b = idx.get(k); if (!b) { b = []; idx.set(k, b); }
+    b.push(r);
+  });
+  return idx;
+}
+
+// Evaluación en vivo de un cliente: facturación de las 4 primeras liquidaciones,
+// categoría y monto. `recs` (opcional) = recorridos contabilizables ya filtrados
+// del cliente (los pasa la tabla desde su índice para no re-escanear todo).
+function evalComisionCliente(cliente, recs) {
   const tieneEscala = AppData.comisionCategorias.length > 0;
-  if (!rango) return { facturacion: 0, envios: 0, sinTarifa: 0, categoria: '', monto: 0, rango: null, completo: false, tieneEscala };
-  const liq = calcLiquidacionCliente(cliente, rango);
-  const cat = categoriaDeFacturacion(liq.total);
+  if (!recs) recs = _recordsContabDeCliente(cliente);
+  const vacio = { facturacion: 0, envios: 0, sinTarifa: 0, categoria: '', monto: 0, rango: null, completo: false, tieneEscala };
+  if (!recs.length) return vacio;
+  let min = null;
+  recs.forEach(r => { const f = parseFechaReg(r.fecha); if (f && (!min || f < min)) min = f; });
+  if (!min) return vacio;
+  const w1 = semanaClienteRango(isoDeFecha(min));
+  const desdeD = w1.desdeD;
+  const hastaD = new Date(desdeD); hastaD.setDate(desdeD.getDate() + 27); hastaD.setHours(23, 59, 59, 999);
+  const completo = new Date() > hastaD;
+  let total = 0, envios = 0, sinTarifa = 0;
+  recs.forEach(r => {
+    const f = parseFechaReg(r.fecha);
+    if (!f || f < desdeD || f > hastaD) return;
+    const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : ((r.localidad || '').trim() || '(sin zona)');
+    const precio = clienteTarifaEnZona(cliente, zona);
+    total += precio; envios++; if (precio <= 0) sinTarifa++;
+  });
+  const cat = categoriaDeFacturacion(total);
   return {
-    facturacion: liq.total, envios: liq.totalEnvios, sinTarifa: liq.sinTarifa,
+    facturacion: total, envios, sinTarifa,
     categoria: cat ? cat.categoria : '', monto: cat ? _num(cat.monto) : 0,
-    rango, completo: rango.completo, tieneEscala
+    rango: { desdeD, hastaD, completo, primeraSemana: w1.desde + ' → ' + w1.hasta }, completo, tieneEscala
   };
 }
 
@@ -386,14 +428,18 @@ function renderComisionClientes() {
     return;
   }
 
+  const idx = _indexRecordsContabPorCliente();
   cont.innerHTML = lista.map(row => {
-    const ev = evalComisionCliente(row.cliente);
+    const ev = evalComisionCliente(row.cliente, idx.get(normCliente(row.cliente)) || []);
     const bloq = !!row.bloqueado;
     const fact = bloq ? _num(row.facturacion_eval) : ev.facturacion;
     const cat = bloq ? (row.categoria || '—') : (ev.categoria || '—');
     const monto = bloq ? _num(row.monto) : ev.monto;
-    const meses = mesesPagoComision(row);
-    const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[4]);
+    // 5 meses de pago: desde row.mes_inicio, o el mes siguiente al fin de evaluación.
+    const miDefault = ev.rango ? addMeses(mesDeFechaD(ev.rango.hastaD), 1) : mesActualYYYYMM();
+    const mi = row.mes_inicio || miDefault;
+    const meses = [0, 4].map(i => addMeses(mi, i));
+    const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[1]);
 
     let estadoHtml, acciones;
     if (bloq) {

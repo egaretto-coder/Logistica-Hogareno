@@ -131,8 +131,13 @@ async function entrarConUsuario(user) {
     icono: perfil?.icono || '👤'
   };
 
-  await hydrateFromSupabase();
+  // Arranque instantáneo: mostramos la app YA con lo que haya en caché local
+  // (loadSavedConfig ya corrió al bootstrap). Los datos frescos se traen en
+  // SEGUNDO PLANO y refrescan la pantalla al llegar, sin bloquear el login.
   showApp();
+  hydrateFromSupabase()
+    .then(() => { if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva(); })
+    .catch(e => console.warn('Hidratación en segundo plano falló:', e));
   if (typeof iniciarRealtime === 'function') iniciarRealtime();   // sincronización en vivo
 }
 
