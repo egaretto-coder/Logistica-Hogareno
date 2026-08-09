@@ -1,0 +1,742 @@
+// ════════════════════════════════════════════════════════════════════════
+//  COMISIONES — comisiones de vendedores por clientes nuevos.
+//
+//  Regla de negocio:
+//   • Un cliente NUEVO se asigna a un VENDEDOR.
+//   • Se evalúan las PRIMERAS 4 LIQUIDACIONES del cliente (semanas Vie→Jue):
+//     la facturación total de esas 4 semanas define, según la ESCALA importada
+//     (rango de facturación → categoría → monto fijo), un MONTO FIJO mensual.
+//   • Ese monto se paga al vendedor durante 5 MESES (los primeros 5 del cliente).
+//   • El SUPERVISOR único cobra un % (default 30%) del total comisionado por
+//     todo el equipo de vendedores.
+//   • Al cierre de cada mes se marcan las comisiones como pagadas y se descarga
+//     el PDF. (La app registra el pago; no mueve plata.)
+//
+//  Depende de helpers de clientes.js (calcLiquidacionCliente, semanaClienteRango,
+//  normCliente) y de core.js (fmtPeso, avatarColor, initials, parseFechaReg, _num).
+// ════════════════════════════════════════════════════════════════════════
+
+const MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+// ── Helpers de mes (YYYY-MM) ────────────────────────────────────────────────
+function isoDeFecha(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function mesDeFechaD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function mesActualYYYYMM() { return mesDeFechaD(new Date()); }
+function addMeses(yyyymm, n) {
+  const p = String(yyyymm || '').split('-'); const y = +p[0], m = +p[1];
+  if (!y || !m) return yyyymm;
+  const d = new Date(y, (m - 1) + n, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function mesLabel(yyyymm) {
+  const p = String(yyyymm || '').split('-'); const y = +p[0], m = +p[1];
+  if (!y || !m) return '—';
+  return (MESES_ES[m - 1] || '?') + ' ' + y;
+}
+
+// ── Config del supervisor ───────────────────────────────────────────────────
+function supervisorName() { return (AppData.config && AppData.config.comision_supervisor) || ''; }
+function supervisorPct() { const n = parseFloat(AppData.config && AppData.config.comision_supervisor_pct); return isNaN(n) ? 30 : n; }
+
+// ── Evaluación de un cliente (primeras 4 liquidaciones) ─────────────────────
+// Fecha más temprana con envío contabilizable del cliente.
+function primeraFechaCliente(cliente) {
+  const cKey = normCliente(cliente);
+  let min = null;
+  AppData.records.forEach(r => {
+    if (normCliente(r.cliente) !== cKey) return;
+    const est = (r.estado || '').toUpperCase().trim();
+    if (!(est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est))) return;
+    const f = parseFechaReg(r.fecha);
+    if (!f) return;
+    if (!min || f < min) min = f;
+  });
+  return min;
+}
+
+// Rango de las 4 primeras liquidaciones (semana 1 Vie→Jue + 3 semanas = 28 días).
+function rangoEvaluacionCliente(cliente) {
+  const first = primeraFechaCliente(cliente);
+  if (!first) return null;
+  const w1 = semanaClienteRango(isoDeFecha(first));
+  const desdeD = w1.desdeD;
+  const hastaD = new Date(desdeD); hastaD.setDate(desdeD.getDate() + 27); hastaD.setHours(23, 59, 59, 999);
+  return { desdeD, hastaD, completo: new Date() > hastaD, primeraSemana: w1.desde + ' → ' + w1.hasta };
+}
+
+// Categoría (y monto) que le corresponde a una facturación según la escala.
+function categoriaDeFacturacion(fact) {
+  const cats = AppData.comisionCategorias.slice().sort((a, b) => a.fact_desde - b.fact_desde);
+  let match = null;
+  cats.forEach(c => {
+    const okDesde = fact >= _num(c.fact_desde);
+    const okHasta = (c.fact_hasta === null || c.fact_hasta === undefined || c.fact_hasta === '') ? true : fact <= _num(c.fact_hasta);
+    if (okDesde && okHasta) match = c; // en orden asc, gana el de mayor fact_desde
+  });
+  return match;
+}
+
+// Evaluación en vivo de un cliente: facturación de las 4 liquidaciones, categoría y monto.
+function evalComisionCliente(cliente) {
+  const rango = rangoEvaluacionCliente(cliente);
+  const tieneEscala = AppData.comisionCategorias.length > 0;
+  if (!rango) return { facturacion: 0, envios: 0, sinTarifa: 0, categoria: '', monto: 0, rango: null, completo: false, tieneEscala };
+  const liq = calcLiquidacionCliente(cliente, rango);
+  const cat = categoriaDeFacturacion(liq.total);
+  return {
+    facturacion: liq.total, envios: liq.totalEnvios, sinTarifa: liq.sinTarifa,
+    categoria: cat ? cat.categoria : '', monto: cat ? _num(cat.monto) : 0,
+    rango, completo: rango.completo, tieneEscala
+  };
+}
+
+// Primer mes de pago por defecto: el mes siguiente al fin de la evaluación.
+function mesInicioDefaultCliente(cliente) {
+  const rango = rangoEvaluacionCliente(cliente);
+  if (!rango) return mesActualYYYYMM();
+  return addMeses(mesDeFechaD(rango.hastaD), 1);
+}
+
+// Los 5 meses de pago de una fila de comisión.
+function mesesPagoComision(row) {
+  const mi = row.mes_inicio || mesInicioDefaultCliente(row.cliente);
+  const arr = [];
+  for (let i = 0; i < 5; i++) arr.push(addMeses(mi, i));
+  return arr;
+}
+
+// ── Cálculo de comisiones de un mes (solo filas confirmadas/bloqueadas) ─────
+function calcComisionesMes(periodo) {
+  const porVend = {};
+  AppData.comisionClientes.forEach(row => {
+    if (!row.bloqueado) return;
+    const monto = _num(row.monto);
+    if (monto <= 0) return;
+    if (!mesesPagoComision(row).includes(periodo)) return;
+    const v = row.vendedor || '(sin vendedor)';
+    if (!porVend[v]) porVend[v] = { vendedor: v, clientes: [], monto: 0 };
+    const meses = mesesPagoComision(row);
+    porVend[v].clientes.push({ cliente: row.cliente, monto, categoria: row.categoria, nroMes: meses.indexOf(periodo) + 1 });
+    porVend[v].monto += monto;
+  });
+  const vendedores = Object.values(porVend).sort((a, b) => b.monto - a.monto);
+  const totalVendedores = vendedores.reduce((s, v) => s + v.monto, 0);
+  const pct = supervisorPct();
+  const supNombre = supervisorName();
+  const supMonto = Math.round(totalVendedores * pct / 100);
+  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto };
+}
+
+function comisionPagoDe(periodo, beneficiario) {
+  return AppData.comisionPagos.find(p => p.periodo === periodo && normNombre(p.beneficiario) === normNombre(beneficiario));
+}
+
+// ── Persistencia local ──────────────────────────────────────────────────────
+function persistirComisionesLocal() {
+  try {
+    localStorage.setItem('liq_vendedores', JSON.stringify(AppData.vendedores));
+    localStorage.setItem('liq_comision_categorias', JSON.stringify(AppData.comisionCategorias));
+    localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));
+    localStorage.setItem('liq_comision_pagos', JSON.stringify(AppData.comisionPagos));
+  } catch (e) {}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  SOLAPAS
+// ════════════════════════════════════════════════════════════════════════
+function switchComisionesTab(tab) {
+  ['vend', 'clientes', 'cierre'].forEach(t => {
+    const panel = document.getElementById('com-tab-' + t);
+    const btn = document.getElementById('com-btn-' + t);
+    if (panel) panel.style.display = (t === tab) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'vend') renderVendedoresYEscala();
+  else if (tab === 'clientes') renderComisionClientes();
+  else renderCierreMensual();
+}
+
+function renderComisiones() { switchComisionesTab('vend'); }
+
+// ════════════════════════════════════════════════════════════════════════
+//  TAB 1 — VENDEDORES + SUPERVISOR + ESCALA
+// ════════════════════════════════════════════════════════════════════════
+function renderVendedoresYEscala() {
+  // Supervisor
+  const sn = document.getElementById('com-sup-nombre');
+  const sp = document.getElementById('com-sup-pct');
+  if (sn && document.activeElement !== sn) sn.value = supervisorName();
+  if (sp && document.activeElement !== sp) sp.value = supervisorPct();
+
+  // Vendedores
+  const cont = document.getElementById('com-vend-rows');
+  if (cont) {
+    const lista = AppData.vendedores.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    const cEl = document.getElementById('com-vend-count');
+    if (cEl) cEl.textContent = AppData.vendedores.length + ' vendedor' + (AppData.vendedores.length !== 1 ? 'es' : '');
+    if (!lista.length) {
+      cont.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">Sin vendedores</div><div class="empty-sub">Agregá uno con "+ Nuevo vendedor"</div></div></td></tr>';
+    } else {
+      cont.innerHTML = lista.map(v => {
+        const nCli = AppData.comisionClientes.filter(c => normNombre(c.vendedor) === normNombre(v.nombre)).length;
+        return '<tr' + (v.activo === false ? ' style="opacity:.55"' : '') + '>' +
+          '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(v.nombre) + ';width:28px;height:28px;font-size:10px">' + initials(v.nombre) + '</div><strong>' + v.nombre + '</strong></div></td>' +
+          '<td class="mono" style="text-align:right">' + nCli + ' cliente' + (nCli !== 1 ? 's' : '') + '</td>' +
+          '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
+            '<button class="btn btn-sm" onclick="editVendedor(' + v.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' +
+            '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarVendedor(' + v.id + ')"><i class="ic ic-trash"></i></button>' +
+          '</div></td>' +
+        '</tr>';
+      }).join('');
+    }
+  }
+
+  // Escala
+  const esc = document.getElementById('com-escala-rows');
+  if (esc) {
+    const cats = AppData.comisionCategorias.slice().sort((a, b) => _num(a.fact_desde) - _num(b.fact_desde));
+    if (!cats.length) {
+      esc.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="empty-icon"><i class="ic ic-tag"></i></div><div class="empty-title">Sin escala cargada</div><div class="empty-sub">Importá la escala de categorización (Categoría · Desde · Hasta · Monto)</div></div></td></tr>';
+    } else {
+      esc.innerHTML = cats.map(c =>
+        '<tr>' +
+          '<td><strong>' + c.categoria + '</strong></td>' +
+          '<td class="mono" style="text-align:right">' + fmtPeso(_num(c.fact_desde)) + '</td>' +
+          '<td class="mono" style="text-align:right">' + ((c.fact_hasta === null || c.fact_hasta === undefined || c.fact_hasta === '') ? '<span class="muted">sin tope</span>' : fmtPeso(_num(c.fact_hasta))) + '</td>' +
+          '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(_num(c.monto)) + '</td>' +
+        '</tr>').join('');
+    }
+  }
+}
+
+async function guardarSupervisorConfig() {
+  const nombre = (document.getElementById('com-sup-nombre').value || '').trim().toUpperCase();
+  let pct = parseFloat(document.getElementById('com-sup-pct').value);
+  if (isNaN(pct) || pct < 0) pct = 30;
+  try {
+    await DB.setConfig('comision_supervisor', nombre);
+    await DB.setConfig('comision_supervisor_pct', String(pct));
+    AppData.config.comision_supervisor = nombre;
+    AppData.config.comision_supervisor_pct = String(pct);
+    try { localStorage.setItem('liq_config', JSON.stringify(AppData.config)); } catch (e) {}
+    showToast('✅ Supervisor guardado (' + (nombre || 'sin nombre') + ' · ' + pct + '%)');
+  } catch (e) { console.warn('guardarSupervisorConfig', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// ── ABM vendedor ─────────────────────────────────────────────────────────────
+let vendedorEditId = null;
+function openAddVendedorModal() {
+  vendedorEditId = null;
+  document.getElementById('modal-vendedor-title').textContent = 'Nuevo vendedor';
+  document.getElementById('mven-nombre').value = '';
+  document.getElementById('modal-vendedor-backdrop').style.display = 'flex';
+}
+function editVendedor(id) {
+  const v = AppData.vendedores.find(x => x.id === id);
+  if (!v) return;
+  vendedorEditId = id;
+  document.getElementById('modal-vendedor-title').textContent = 'Editar vendedor';
+  document.getElementById('mven-nombre').value = v.nombre || '';
+  document.getElementById('modal-vendedor-backdrop').style.display = 'flex';
+}
+function closeVendedorModal(e) {
+  if (!e || e.target.id === 'modal-vendedor-backdrop') document.getElementById('modal-vendedor-backdrop').style.display = 'none';
+}
+async function guardarVendedorModal() {
+  const nombre = (document.getElementById('mven-nombre').value || '').trim().toUpperCase();
+  if (!nombre) { alert('El nombre del vendedor es obligatorio.'); return; }
+  const dup = AppData.vendedores.find(v => normNombre(v.nombre) === normNombre(nombre) && v.id !== vendedorEditId);
+  if (dup) { alert('Ya existe un vendedor "' + nombre + '".'); return; }
+  try {
+    if (vendedorEditId != null) {
+      const anterior = AppData.vendedores.find(x => x.id === vendedorEditId);
+      const nombreAnterior = anterior ? anterior.nombre : '';
+      await DB.updateWhere('vendedores', 'id', vendedorEditId, { nombre });
+      if (anterior) anterior.nombre = nombre;
+      // Propagar el rename a las asignaciones de comisión.
+      if (nombreAnterior && normNombre(nombreAnterior) !== normNombre(nombre)) {
+        for (const cc of AppData.comisionClientes.filter(c => normNombre(c.vendedor) === normNombre(nombreAnterior))) {
+          try { await DB.updateWhere('comision_clientes', 'id', cc.id, { vendedor: nombre }); cc.vendedor = nombre; } catch (e) {}
+        }
+      }
+    } else {
+      const row = await DB.insertRow('vendedores', { nombre, activo: true });
+      AppData.vendedores.push({ id: row.id, nombre, activo: true });
+    }
+    persistirComisionesLocal();
+    vendedorEditId = null;
+    document.getElementById('modal-vendedor-backdrop').style.display = 'none';
+    renderVendedoresYEscala();
+    showToast('✅ Vendedor guardado');
+  } catch (e) { console.warn('guardarVendedorModal', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+async function eliminarVendedor(id) {
+  const v = AppData.vendedores.find(x => x.id === id);
+  if (!v) return;
+  const nCli = AppData.comisionClientes.filter(c => normNombre(c.vendedor) === normNombre(v.nombre)).length;
+  if (!confirm('¿Eliminar al vendedor ' + v.nombre + '?' + (nCli ? '\nTiene ' + nCli + ' cliente(s) asignado(s); esas asignaciones quedarán sin vendedor válido.' : ''))) return;
+  try {
+    await DB.deleteWhere('vendedores', 'id', id);
+    AppData.vendedores = AppData.vendedores.filter(x => x.id !== id);
+    persistirComisionesLocal();
+    renderVendedoresYEscala();
+    showToast('🗑 Vendedor eliminado');
+  } catch (e) { console.warn('eliminarVendedor', e); showToast('⛔ No se pudo eliminar'); }
+}
+
+// ── Import de la escala de categorización ────────────────────────────────────
+function descargarPlantillaEscala() {
+  const aoa = [
+    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por categoría. "Desde/Hasta" = rango de facturación de las 4 primeras liquidaciones. "Hasta" vacío = sin tope. "Monto" = comisión fija mensual.'],
+    ['Categoria', 'Desde', 'Hasta', 'Monto'],
+    ['A', 0, 500000, 30000],
+    ['B', 500000, 1500000, 60000],
+    ['C', 1500000, '', 100000],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+  ws['!rows'] = [{ hpx: 42 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Escala');
+  XLSX.writeFile(wb, 'Plantilla_Escala_Comisiones.xlsx');
+  showToast('📥 Plantilla descargada — completá y volvé a subirla sin tocar los encabezados');
+}
+
+function importEscalaComision(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+      if (rows.length < 2) { alert('El archivo está vacío.'); return; }
+      let h = -1;
+      for (let r = 0; r < Math.min(rows.length, 5); r++) {
+        const cells = rows[r].map(x => String(x).toLowerCase().replace(/[^a-z]/g, ''));
+        if (cells.includes('categoria') && cells.some(c => c.includes('desde')) && cells.some(c => c.includes('monto'))) { h = r; break; }
+      }
+      if (h < 0) { alert('No se encontraron las columnas "Categoria", "Desde" y "Monto". Descargá la plantilla oficial.'); return; }
+      const header = rows[h].map(x => String(x).toLowerCase().trim());
+      const iCat = header.findIndex(x => x.includes('categor'));
+      const iDesde = header.findIndex(x => x.includes('desde') || x.includes('min'));
+      const iHasta = header.findIndex(x => x.includes('hasta') || x.includes('max'));
+      const iMonto = header.findIndex(x => x.includes('monto') || x.includes('comisi') || x.includes('valor') || x.includes('importe'));
+      if (iCat < 0 || iDesde < 0 || iMonto < 0) { alert('Faltan columnas Categoria / Desde / Monto.'); return; }
+      const parseNum = v => { if (typeof v === 'number') return v; const s = String(v || '').replace(/[^0-9.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'); const n = parseFloat(s); return isNaN(n) ? 0 : n; };
+      const nuevas = [];
+      for (let i = h + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const categoria = String(r[iCat] || '').trim();
+        if (!categoria) continue;
+        const desde = parseNum(r[iDesde]);
+        const hastaRaw = iHasta >= 0 ? String(r[iHasta] || '').trim() : '';
+        const hasta = (hastaRaw === '' ) ? null : parseNum(r[iHasta]);
+        const monto = parseNum(r[iMonto]);
+        nuevas.push({ categoria, fact_desde: desde, fact_hasta: hasta, monto });
+      }
+      if (!nuevas.length) { alert('No se importó ninguna categoría válida.'); return; }
+      // Reemplazo total de la escala.
+      await deleteAllComisionCategorias();
+      const ids = await DB.insertRows('comision_categorias', nuevas);
+      AppData.comisionCategorias = nuevas.map((n, i) => ({ id: ids[i], categoria: n.categoria, fact_desde: n.fact_desde, fact_hasta: n.fact_hasta, monto: n.monto }));
+      persistirComisionesLocal();
+      renderVendedoresYEscala();
+      showToast('✅ Escala importada: ' + nuevas.length + ' categoría(s)');
+    } catch (err) { console.error(err); alert('Error al importar la escala: ' + err.message); }
+    finally { event.target.value = ''; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+// Borra todas las filas de la escala (id no nulo).
+async function deleteAllComisionCategorias() {
+  for (const c of AppData.comisionCategorias.slice()) {
+    try { await DB.deleteWhere('comision_categorias', 'id', c.id); } catch (e) {}
+  }
+  AppData.comisionCategorias = [];
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  TAB 2 — CLIENTES EN COMISIÓN
+// ════════════════════════════════════════════════════════════════════════
+function renderComisionClientes() {
+  // Datalists de los modales
+  const dlCli = document.getElementById('mcc-clientes-list');
+  if (dlCli) dlCli.innerHTML = AppData.clientes.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(c => '<option value="' + String(c.nombre).replace(/"/g, '&quot;') + '">').join('');
+  const dlVen = document.getElementById('mcc-vendedores-list');
+  if (dlVen) dlVen.innerHTML = AppData.vendedores.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(v => '<option value="' + String(v.nombre).replace(/"/g, '&quot;') + '">').join('');
+
+  const cont = document.getElementById('com-cli-rows');
+  if (!cont) return;
+  const q = (document.getElementById('com-cli-search')?.value || '').toLowerCase().trim();
+  const lista = AppData.comisionClientes
+    .filter(c => !q || String(c.cliente).toLowerCase().includes(q) || String(c.vendedor).toLowerCase().includes(q))
+    .sort((a, b) => String(a.cliente).localeCompare(String(b.cliente)));
+
+  // Contador + clientes sin asignar
+  const asignados = new Set(AppData.comisionClientes.map(c => normCliente(c.cliente)));
+  const sinAsignar = AppData.clientes.filter(c => !asignados.has(normCliente(c.nombre))).length;
+  const cEl = document.getElementById('com-cli-count');
+  if (cEl) cEl.textContent = AppData.comisionClientes.length + ' en comisión' + (sinAsignar ? ' · ' + sinAsignar + ' cliente(s) sin asignar' : '');
+
+  if (!lista.length) {
+    cont.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">Sin clientes en comisión</div><div class="empty-sub">Asigná un cliente nuevo a un vendedor con "+ Asignar cliente"</div></div></td></tr>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(row => {
+    const ev = evalComisionCliente(row.cliente);
+    const bloq = !!row.bloqueado;
+    const fact = bloq ? _num(row.facturacion_eval) : ev.facturacion;
+    const cat = bloq ? (row.categoria || '—') : (ev.categoria || '—');
+    const monto = bloq ? _num(row.monto) : ev.monto;
+    const meses = mesesPagoComision(row);
+    const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[4]);
+
+    let estadoHtml, acciones;
+    if (bloq) {
+      estadoHtml = '<span class="badge" style="background:#dcfce7;color:#166534">✓ Confirmado</span>';
+      acciones = '<button class="btn btn-sm" onclick="desbloquearComisionCliente(' + row.id + ')" title="Volver a evaluar">↺ Reabrir</button>';
+    } else if (!ev.tieneEscala) {
+      estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c">Falta escala</span>';
+      acciones = '';
+    } else if (!ev.completo) {
+      estadoHtml = '<span class="badge" style="background:#fef9c3;color:#854d0e">En evaluación</span>';
+      acciones = '';
+    } else {
+      estadoHtml = '<span class="badge" style="background:#e0e7ff;color:#3730a3">Listo p/ confirmar</span>';
+      acciones = '<button class="btn btn-sm btn-primary" onclick="confirmarComisionCliente(' + row.id + ')" title="Congela el monto y arranca los 5 pagos"><i class="ic ic-check"></i> Confirmar</button>';
+    }
+    const warnTarifa = (!bloq && ev.rango && ev.sinTarifa > 0) ? ' <span title="Hay envíos sin tarifa de venta cargada — la facturación evaluada puede estar incompleta" style="color:#b45309">⚠</span>' : '';
+
+    return '<tr' + (bloq ? '' : ' style="background:var(--surface-0)"') + '>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(row.cliente) + ';width:26px;height:26px;font-size:9px">' + initials(row.cliente) + '</div><strong>' + row.cliente + '</strong></div></td>' +
+      '<td>' + (row.vendedor || '<span class="muted">—</span>') + '</td>' +
+      '<td class="mono" style="text-align:right">' + fmtPeso(fact) + warnTarifa + '</td>' +
+      '<td style="text-align:center">' + cat + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + (monto > 0 ? fmtPeso(monto) : '—') + '</td>' +
+      '<td style="font-size:11px;color:var(--text-secondary)">' + mesesTxt + '</td>' +
+      '<td style="text-align:center">' + estadoHtml + '</td>' +
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">' + acciones +
+        '<button class="btn btn-sm" onclick="editComisionCliente(' + row.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' +
+        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="quitarComisionCliente(' + row.id + ')"><i class="ic ic-trash"></i></button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Asignar / editar cliente en comisión ─────────────────────────────────────
+let comisionClienteEditId = null;
+function openAddComisionClienteModal() {
+  comisionClienteEditId = null;
+  document.getElementById('modal-cc-title').textContent = 'Asignar cliente a vendedor';
+  document.getElementById('mcc-cliente').value = '';
+  document.getElementById('mcc-cliente').removeAttribute('disabled');
+  document.getElementById('mcc-vendedor').value = '';
+  document.getElementById('mcc-fecha').value = '';
+  document.getElementById('mcc-mesinicio').value = '';
+  renderComisionClientes(); // refresca datalists
+  actualizarPreviewComisionCliente();
+  document.getElementById('modal-cc-backdrop').style.display = 'flex';
+}
+function editComisionCliente(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  comisionClienteEditId = id;
+  document.getElementById('modal-cc-title').textContent = 'Editar asignación';
+  const cliInput = document.getElementById('mcc-cliente');
+  cliInput.value = row.cliente || '';
+  cliInput.setAttribute('disabled', 'disabled'); // no se cambia el cliente al editar
+  document.getElementById('mcc-vendedor').value = row.vendedor || '';
+  document.getElementById('mcc-fecha').value = row.fecha_alta && /^\d{4}-\d{2}-\d{2}$/.test(row.fecha_alta) ? row.fecha_alta : '';
+  document.getElementById('mcc-mesinicio').value = row.mes_inicio || '';
+  actualizarPreviewComisionCliente();
+  document.getElementById('modal-cc-backdrop').style.display = 'flex';
+}
+function closeComisionClienteModal(e) {
+  if (!e || e.target.id === 'modal-cc-backdrop') document.getElementById('modal-cc-backdrop').style.display = 'none';
+}
+function actualizarPreviewComisionCliente() {
+  const cliente = (document.getElementById('mcc-cliente').value || '').trim();
+  const box = document.getElementById('mcc-preview');
+  const miInput = document.getElementById('mcc-mesinicio');
+  if (!box) return;
+  if (!cliente) { box.innerHTML = '<span class="muted">Elegí un cliente para ver la evaluación de sus primeras 4 liquidaciones.</span>'; return; }
+  const ev = evalComisionCliente(cliente);
+  if (miInput && !miInput.value) miInput.placeholder = mesInicioDefaultCliente(cliente) + ' (por defecto)';
+  if (!ev.tieneEscala) { box.innerHTML = '<span style="color:#b91c1c">⚠ No hay escala de categorización cargada. Importala en la solapa "Vendedores y escala".</span>'; return; }
+  if (!ev.rango) { box.innerHTML = '<span style="color:#854d0e">Sin envíos entregados de este cliente todavía — no se puede evaluar aún.</span>'; return; }
+  const estado = ev.completo ? '<span style="color:#166534">4 liquidaciones completas ✓</span>' : '<span style="color:#854d0e">Evaluación en curso (aún no pasaron las 4 semanas)</span>';
+  box.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">' +
+      '<div><div class="muted" style="font-size:10px">Facturación 4 liq.</div><div style="font-weight:700">' + fmtPeso(ev.facturacion) + '</div></div>' +
+      '<div><div class="muted" style="font-size:10px">Categoría</div><div style="font-weight:700">' + (ev.categoria || '—') + '</div></div>' +
+      '<div><div class="muted" style="font-size:10px">Monto fijo/mes</div><div style="font-weight:700">' + (ev.monto > 0 ? fmtPeso(ev.monto) : '—') + '</div></div>' +
+    '</div>' +
+    '<div style="margin-top:6px;font-size:11px">' + estado + (ev.sinTarifa > 0 ? ' · <span style="color:#b45309">⚠ ' + ev.sinTarifa + ' envío(s) sin tarifa de venta</span>' : '') + '</div>';
+}
+async function guardarComisionClienteModal() {
+  const cliente = (document.getElementById('mcc-cliente').value || '').trim().toUpperCase();
+  const vendedor = (document.getElementById('mcc-vendedor').value || '').trim().toUpperCase();
+  const fecha_alta = document.getElementById('mcc-fecha').value || '';
+  const mes_inicio = document.getElementById('mcc-mesinicio').value || '';
+  if (!cliente) { alert('Elegí un cliente.'); return; }
+  if (!vendedor) { alert('Elegí o escribí un vendedor.'); return; }
+  const dup = AppData.comisionClientes.find(c => normCliente(c.cliente) === normCliente(cliente) && c.id !== comisionClienteEditId);
+  if (dup) { alert('El cliente "' + cliente + '" ya está asignado a ' + dup.vendedor + '.'); return; }
+  try {
+    // Crear el vendedor si no existe.
+    if (!AppData.vendedores.find(v => normNombre(v.nombre) === normNombre(vendedor))) {
+      try { const vr = await DB.insertRow('vendedores', { nombre: vendedor, activo: true }); AppData.vendedores.push({ id: vr.id, nombre: vendedor, activo: true }); } catch (e) {}
+    }
+    if (comisionClienteEditId != null) {
+      await DB.updateWhere('comision_clientes', 'id', comisionClienteEditId, { vendedor, fecha_alta, mes_inicio });
+      const row = AppData.comisionClientes.find(x => x.id === comisionClienteEditId);
+      if (row) { row.vendedor = vendedor; row.fecha_alta = fecha_alta; row.mes_inicio = mes_inicio; }
+    } else {
+      const rec = { cliente, vendedor, fecha_alta, mes_inicio, categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false };
+      const r = await DB.insertRow('comision_clientes', rec);
+      AppData.comisionClientes.push(Object.assign({ id: r.id }, rec));
+    }
+    persistirComisionesLocal();
+    comisionClienteEditId = null;
+    document.getElementById('modal-cc-backdrop').style.display = 'none';
+    renderComisionClientes();
+    showToast('✅ Asignación guardada');
+  } catch (e) { console.warn('guardarComisionClienteModal', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// Confirma la evaluación: congela facturación/categoría/monto/mes_inicio y arranca los 5 pagos.
+async function confirmarComisionCliente(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  const ev = evalComisionCliente(row.cliente);
+  if (!ev.tieneEscala) { alert('No hay escala de categorización cargada.'); return; }
+  if (!ev.completo) { if (!confirm('Las 4 liquidaciones todavía no están completas. ¿Confirmar igual con la facturación actual (' + fmtPeso(ev.facturacion) + ')?')) return; }
+  if (ev.monto <= 0) { if (!confirm('La categoría evaluada da monto $0 (facturación ' + fmtPeso(ev.facturacion) + '). ¿Confirmar igual?')) return; }
+  const mesInicio = row.mes_inicio || mesInicioDefaultCliente(row.cliente);
+  const campos = { categoria: ev.categoria, facturacion_eval: ev.facturacion, monto: ev.monto, mes_inicio: mesInicio, bloqueado: true };
+  try {
+    await DB.updateWhere('comision_clientes', 'id', id, campos);
+    Object.assign(row, campos);
+    persistirComisionesLocal();
+    renderComisionClientes();
+    showToast('✅ ' + row.cliente + ' confirmado · ' + fmtPeso(ev.monto) + '/mes × 5 (' + mesLabel(mesInicio) + '→' + mesLabel(addMeses(mesInicio, 4)) + ')');
+  } catch (e) { console.warn('confirmarComisionCliente', e); alert('No se pudo confirmar: ' + (e.message || e)); }
+}
+async function desbloquearComisionCliente(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  if (!confirm('¿Reabrir la evaluación de ' + row.cliente + '?\nDejará de contarse en los cierres mensuales hasta volver a confirmarlo.')) return;
+  try {
+    await DB.updateWhere('comision_clientes', 'id', id, { bloqueado: false });
+    row.bloqueado = false;
+    persistirComisionesLocal();
+    renderComisionClientes();
+    showToast('↺ Evaluación reabierta');
+  } catch (e) { console.warn('desbloquearComisionCliente', e); showToast('⛔ No se pudo reabrir'); }
+}
+async function quitarComisionCliente(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  if (!confirm('¿Quitar a ' + row.cliente + ' del régimen de comisiones?')) return;
+  try {
+    await DB.deleteWhere('comision_clientes', 'id', id);
+    AppData.comisionClientes = AppData.comisionClientes.filter(x => x.id !== id);
+    persistirComisionesLocal();
+    renderComisionClientes();
+    showToast('🗑 Quitado de comisiones');
+  } catch (e) { console.warn('quitarComisionCliente', e); showToast('⛔ No se pudo quitar'); }
+}
+
+// ── Import de asignaciones (Cliente · Vendedor · [Fecha alta]) ────────────────
+function descargarPlantillaAsignaciones() {
+  const aoa = [
+    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por cliente nuevo. "Vendedor" se crea solo si no existe. "Fecha alta" es opcional (DD/MM/AAAA).'],
+    ['Cliente', 'Vendedor', 'Fecha alta'],
+    ['MERCADO LIBRE', 'JUAN PEREZ', '01/08/2026'],
+    ['TIENDA XYZ', 'ANA GOMEZ', ''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 26 }, { wch: 22 }, { wch: 14 }];
+  ws['!rows'] = [{ hpx: 34 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Asignaciones');
+  XLSX.writeFile(wb, 'Plantilla_Asignaciones_Comisiones.xlsx');
+  showToast('📥 Plantilla descargada');
+}
+function importAsignacionesComision(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+      if (rows.length < 2) { alert('El archivo está vacío.'); return; }
+      let h = -1;
+      for (let r = 0; r < Math.min(rows.length, 5); r++) {
+        const cells = rows[r].map(x => String(x).toLowerCase().replace(/[^a-z]/g, ''));
+        if (cells.includes('cliente') && cells.includes('vendedor')) { h = r; break; }
+      }
+      if (h < 0) { alert('No se encontraron las columnas "Cliente" y "Vendedor". Descargá la plantilla oficial.'); return; }
+      const header = rows[h].map(x => String(x).toLowerCase().trim());
+      const iCli = header.findIndex(x => x.includes('cliente'));
+      const iVen = header.findIndex(x => x.includes('vendedor'));
+      const iFec = header.findIndex(x => x.includes('fecha') || x.includes('alta'));
+      let nuevos = 0, actualizados = 0, vendNuevos = 0;
+      for (let i = h + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const cliente = String(r[iCli] || '').trim().toUpperCase();
+        const vendedor = String(r[iVen] || '').trim().toUpperCase();
+        const fecha_alta = iFec >= 0 ? String(r[iFec] || '').trim() : '';
+        if (!cliente || !vendedor) continue;
+        // Crear vendedor si no existe.
+        if (!AppData.vendedores.find(v => normNombre(v.nombre) === normNombre(vendedor))) {
+          try { const vr = await DB.insertRow('vendedores', { nombre: vendedor, activo: true }); AppData.vendedores.push({ id: vr.id, nombre: vendedor, activo: true }); vendNuevos++; } catch (e) {}
+        }
+        const existente = AppData.comisionClientes.find(c => normCliente(c.cliente) === normCliente(cliente));
+        if (existente) {
+          try { await DB.updateWhere('comision_clientes', 'id', existente.id, { vendedor, fecha_alta }); existente.vendedor = vendedor; existente.fecha_alta = fecha_alta; actualizados++; } catch (e) {}
+        } else {
+          const rec = { cliente, vendedor, fecha_alta, mes_inicio: '', categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false };
+          try { const rr = await DB.insertRow('comision_clientes', rec); AppData.comisionClientes.push(Object.assign({ id: rr.id }, rec)); nuevos++; } catch (e) {}
+        }
+      }
+      persistirComisionesLocal();
+      renderComisionClientes();
+      showToast('✅ Asignaciones: ' + nuevos + ' nueva(s), ' + actualizados + ' actualizada(s)' + (vendNuevos ? ' · ' + vendNuevos + ' vendedor(es) nuevo(s)' : ''));
+    } catch (err) { console.error(err); alert('Error al importar asignaciones: ' + err.message); }
+    finally { event.target.value = ''; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  TAB 3 — CIERRE MENSUAL
+// ════════════════════════════════════════════════════════════════════════
+function renderCierreMensual() {
+  const mesInput = document.getElementById('com-cierre-mes');
+  if (mesInput && !mesInput.value) mesInput.value = mesActualYYYYMM();
+  const periodo = (mesInput && mesInput.value) || mesActualYYYYMM();
+  const body = document.getElementById('com-cierre-body');
+  if (!body) return;
+
+  const r = calcComisionesMes(periodo);
+  const lbl = document.getElementById('com-cierre-periodo');
+  if (lbl) lbl.textContent = mesLabel(periodo);
+
+  if (!r.vendedores.length) {
+    body.innerHTML = '<div class="empty-state" style="padding:30px"><div class="empty-icon"><i class="ic ic-file"></i></div><div class="empty-title">Sin comisiones en ' + mesLabel(periodo) + '</div><div class="empty-sub">No hay clientes confirmados con pago en este mes. Confirmá asignaciones en "Clientes en comisión".</div></div>';
+    return;
+  }
+
+  const filasVend = r.vendedores.map(v => {
+    const pago = comisionPagoDe(periodo, v.vendedor);
+    const detalle = v.clientes.map(c => c.cliente + ' (' + (c.categoria || '?') + ', mes ' + c.nroMes + '/5)').join(' · ');
+    return '<tr>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(v.vendedor) + ';width:26px;height:26px;font-size:9px">' + initials(v.vendedor) + '</div><div><strong>' + v.vendedor + '</strong><div class="muted" style="font-size:10px">' + detalle + '</div></div></div></td>' +
+      '<td class="mono" style="text-align:right">' + v.clientes.length + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(v.monto) + '</td>' +
+      '<td style="text-align:center">' + (pago
+        ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ')" title="Deshacer">↺</button>'
+        : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ',\'vendedor\',' + v.monto + ')"><i class="ic ic-check"></i> Marcar pagado</button>') + '</td>' +
+    '</tr>';
+  }).join('');
+
+  // Fila supervisor
+  const supNombre = r.supNombre || '(supervisor sin definir)';
+  const pagoSup = r.supNombre ? comisionPagoDe(periodo, r.supNombre) : null;
+  const filaSup = '<tr style="background:var(--surface-0)">' +
+    '<td><strong>' + supNombre + '</strong> <span class="muted" style="font-size:11px">· supervisor (' + r.pct + '% del equipo)</span></td>' +
+    '<td class="mono" style="text-align:right">—</td>' +
+    '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(r.supMonto) + '</td>' +
+    '<td style="text-align:center">' + (!r.supNombre
+      ? '<span class="muted" style="font-size:11px">definí el supervisor</span>'
+      : (pagoSup
+        ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ')" title="Deshacer">↺</button>'
+        : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ',\'supervisor\',' + r.supMonto + ')"><i class="ic ic-check"></i> Marcar pagado</button>')) + '</td>' +
+  '</tr>';
+
+  body.innerHTML =
+    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-user"></i></div><div class="metric-label">Comisión vendedores</div><div class="metric-value">' + fmtPeso(r.totalVendedores) + '</div><div class="metric-sub">' + r.vendedores.length + ' vendedor(es)</div></div>' +
+      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-shield"></i></div><div class="metric-label">Supervisor (' + r.pct + '%)</div><div class="metric-value">' + fmtPeso(r.supMonto) + '</div><div class="metric-sub">' + (r.supNombre || 'sin definir') + '</div></div>' +
+      '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Total a pagar</div><div class="metric-value">' + fmtPeso(r.total) + '</div><div class="metric-sub">' + mesLabel(periodo) + '</div></div>' +
+    '</div>' +
+    '<div class="card"><div class="table-wrap"><table>' +
+      '<thead><tr><th>Beneficiario</th><th style="text-align:right">Clientes</th><th style="text-align:right">Monto</th><th style="text-align:center;width:170px">Estado</th></tr></thead>' +
+      '<tbody>' + filasVend + filaSup + '</tbody>' +
+      '<tfoot><tr style="font-weight:700;background:var(--surface-0)"><td>TOTAL</td><td></td><td class="mono" style="text-align:right">' + fmtPeso(r.total) + '</td><td></td></tr></tfoot>' +
+    '</table></div></div>';
+}
+
+// Escapa un string para incrustarlo como argumento JS en un onclick.
+function jsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+
+async function marcarPagoComision(periodo, beneficiario, tipo, monto) {
+  if (comisionPagoDe(periodo, beneficiario)) { renderCierreMensual(); return; }
+  const rec = { periodo, beneficiario, tipo, monto: _num(monto), detalle: '' };
+  try {
+    const r = await DB.insertRow('comision_pagos', rec);
+    AppData.comisionPagos.push(Object.assign({ id: r.id, pagado_en: new Date().toISOString() }, rec));
+    persistirComisionesLocal();
+    renderCierreMensual();
+    showToast('✅ Pago registrado: ' + beneficiario + ' · ' + fmtPeso(monto));
+  } catch (e) { console.warn('marcarPagoComision', e); alert('No se pudo registrar el pago: ' + (e.message || e)); }
+}
+async function deshacerPagoComision(periodo, beneficiario) {
+  const pago = comisionPagoDe(periodo, beneficiario);
+  if (!pago) return;
+  if (!confirm('¿Deshacer el pago registrado de ' + beneficiario + ' (' + mesLabel(periodo) + ')?')) return;
+  try {
+    await DB.deleteWhere('comision_pagos', 'id', pago.id);
+    AppData.comisionPagos = AppData.comisionPagos.filter(p => p.id !== pago.id);
+    persistirComisionesLocal();
+    renderCierreMensual();
+    showToast('↺ Pago deshecho');
+  } catch (e) { console.warn('deshacerPagoComision', e); showToast('⛔ No se pudo deshacer'); }
+}
+
+// ── PDF del cierre mensual ───────────────────────────────────────────────────
+function exportComisionesMesPDF() {
+  const periodo = document.getElementById('com-cierre-mes')?.value || mesActualYYYYMM();
+  const r = calcComisionesMes(periodo);
+  if (!r.vendedores.length) { alert('No hay comisiones en ' + mesLabel(periodo) + '.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
+  doc.text('Liquidación de comisiones', 14, 18);
+  doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.setTextColor(40, 50, 70);
+  doc.text(mesLabel(periodo), 14, 26);
+  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
+  doc.text('Generado: ' + new Date().toLocaleString('es-AR'), 14, 31);
+
+  const body = r.vendedores.map(v => [
+    v.vendedor,
+    v.clientes.map(c => c.cliente + ' (' + (c.categoria || '?') + ')').join(', '),
+    v.clientes.length,
+    fmtPeso(v.monto)
+  ]);
+  body.push([{ content: (r.supNombre || 'Supervisor') + ' — supervisor (' + r.pct + '% del equipo)', colSpan: 2, styles: { fontStyle: 'bold' } }, '', fmtPeso(r.supMonto)]);
+
+  doc.autoTable({
+    startY: 37,
+    head: [['Beneficiario', 'Clientes', 'Cant.', 'Monto']],
+    body,
+    foot: [[{ content: 'TOTAL A PAGAR', colSpan: 3, styles: { halign: 'right' } }, fmtPeso(r.total)]],
+    theme: 'striped',
+    headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+    footStyles: { fillColor: [37, 79, 161], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
+    alternateRowStyles: { fillColor: [244, 247, 252] },
+    columnStyles: { 1: { cellWidth: 78, fontSize: 7 }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    margin: { left: 14, right: 14 }
+  });
+  doc.save('Comisiones_' + periodo + '.pdf');
+  showToast('📥 Comisiones de ' + mesLabel(periodo) + ' descargadas');
+}

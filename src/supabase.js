@@ -92,7 +92,7 @@ const DB = {
   async loadAll(desdeISO) {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, clienteTarifas] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -109,6 +109,10 @@ const DB = {
         this.selectAll('descuento_cuotas', 'id'),
         this.selectAll('clientes', 'nombre'),
         this.selectAll('cliente_tarifas', 'id'),
+        this.selectAll('vendedores', 'nombre'),
+        this.selectAll('comision_categorias', 'fact_desde'),
+        this.selectAll('comision_clientes', 'id'),
+        this.selectAll('comision_pagos', 'id'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
@@ -117,6 +121,8 @@ const DB = {
         rol_permisos: rolPerm, roles, adelantos, adelanto_cuotas: adelantoCuotas,
         descuentos_items: descItems, descuento_cuotas: descItemCuotas,
         clientes, cliente_tarifas: clienteTarifas,
+        vendedores, comision_categorias: comisionCategorias,
+        comision_clientes: comisionClientes, comision_pagos: comisionPagos,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);

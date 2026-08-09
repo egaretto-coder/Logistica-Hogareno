@@ -219,6 +219,64 @@ create table if not exists public.cliente_tarifas (
 );
 create index if not exists idx_cliente_tarifas_cliente on public.cliente_tarifas (cliente);
 
+-- ---------- COMISIONES (de vendedores por clientes nuevos) ----------
+-- Vendedores que comisionan.
+create table if not exists public.vendedores (
+  id bigint generated always as identity primary key,
+  nombre text not null,
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_vendedores_nombre on public.vendedores (upper(btrim(nombre)));
+
+-- Escala de categorización (importada): mapea la facturación evaluada (4 primeras
+-- liquidaciones del cliente) a una categoría y su monto fijo mensual.
+-- fact_hasta null = sin tope superior.
+create table if not exists public.comision_categorias (
+  id bigint generated always as identity primary key,
+  categoria text not null,
+  fact_desde numeric not null default 0,
+  fact_hasta numeric,
+  monto numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_comision_categorias_desde on public.comision_categorias (fact_desde);
+
+-- Cliente nuevo asignado a un vendedor. La evaluación (categoría/facturación/monto)
+-- se calcula en la app y se congela al confirmar (bloqueado=true). mes_inicio =
+-- primer mes de los 5 de pago.
+create table if not exists public.comision_clientes (
+  id bigint generated always as identity primary key,
+  cliente text not null,
+  vendedor text not null,
+  fecha_alta text default '',
+  mes_inicio text default '',
+  categoria text default '',
+  facturacion_eval numeric default 0,
+  monto numeric default 0,
+  bloqueado boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_comision_clientes_cliente on public.comision_clientes (upper(btrim(cliente)));
+create index if not exists idx_comision_clientes_vendedor on public.comision_clientes (vendedor);
+
+-- Registro de cierre mensual: (periodo, beneficiario) abonado. Habilita el PDF.
+create table if not exists public.comision_pagos (
+  id bigint generated always as identity primary key,
+  periodo text not null,          -- YYYY-MM
+  beneficiario text not null,     -- vendedor o supervisor
+  tipo text not null default 'vendedor', -- 'vendedor' | 'supervisor'
+  monto numeric not null default 0,
+  detalle text default '',
+  pagado_en timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (periodo, beneficiario)
+);
+create index if not exists idx_comision_pagos_periodo on public.comision_pagos (periodo);
+-- Config del supervisor único (clave/valor en la tabla config):
+--   comision_supervisor      = nombre del supervisor que cobra el %
+--   comision_supervisor_pct  = porcentaje del total del equipo (default 30)
+
 -- Helper de rol: ¿el usuario actual es analista?
 create or replace function public.es_analista()
 returns boolean language sql stable security definer set search_path = public as $$
@@ -398,3 +456,13 @@ alter table public.clientes        enable row level security;
 alter table public.cliente_tarifas enable row level security;
 create policy clientes_all        on public.clientes        for all to authenticated using (true) with check (true);
 create policy cliente_tarifas_all on public.cliente_tarifas for all to authenticated using (true) with check (true);
+
+-- comisiones: acceso completo para autenticados (el control por rol se aplica en la UI).
+alter table public.vendedores          enable row level security;
+alter table public.comision_categorias enable row level security;
+alter table public.comision_clientes   enable row level security;
+alter table public.comision_pagos      enable row level security;
+create policy vendedores_all          on public.vendedores          for all to authenticated using (true) with check (true);
+create policy comision_categorias_all on public.comision_categorias for all to authenticated using (true) with check (true);
+create policy comision_clientes_all   on public.comision_clientes   for all to authenticated using (true) with check (true);
+create policy comision_pagos_all      on public.comision_pagos      for all to authenticated using (true) with check (true);

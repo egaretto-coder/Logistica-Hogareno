@@ -471,3 +471,61 @@
     </div>
   </div>
 </div>
+
+<!-- MODAL VENDEDOR -->
+<div class="modal-backdrop" id="modal-vendedor-backdrop" onclick="closeVendedorModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-user"></i> <span id="modal-vendedor-title">Nuevo vendedor</span></span>
+      <button class="modal-close" onclick="closeVendedorModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Nombre del vendedor *</label>
+        <input type="text" id="mven-nombre" class="form-input" placeholder="Ej: JUAN PEREZ" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeVendedorModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarVendedorModal()"><i class="ic ic-save"></i> Guardar vendedor</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ASIGNAR CLIENTE A VENDEDOR (comisión) -->
+<div class="modal-backdrop" id="modal-cc-backdrop" onclick="closeComisionClienteModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:480px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-building"></i> <span id="modal-cc-title">Asignar cliente a vendedor</span></span>
+      <button class="modal-close" onclick="closeComisionClienteModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Cliente (nuevo) *</label>
+        <input type="text" id="mcc-cliente" class="form-input" placeholder="Elegí un cliente" style="width:100%;text-transform:uppercase" list="mcc-clientes-list" oninput="this.value=this.value.toUpperCase();actualizarPreviewComisionCliente()" />
+        <datalist id="mcc-clientes-list"></datalist>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Vendedor *</label>
+        <input type="text" id="mcc-vendedor" class="form-input" placeholder="Elegí o escribí un vendedor" style="width:100%;text-transform:uppercase" list="mcc-vendedores-list" oninput="this.value=this.value.toUpperCase()" />
+        <datalist id="mcc-vendedores-list"></datalist>
+        <span style="font-size:11px;color:var(--text-muted)">Si el vendedor no existe, se crea automáticamente.</span>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Fecha de alta (opcional)</label>
+          <input type="date" id="mcc-fecha" class="form-input" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">1er mes de pago (opcional)</label>
+          <input type="month" id="mcc-mesinicio" class="form-input" style="width:100%" />
+        </div>
+      </div>
+      <div id="mcc-preview" style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeComisionClienteModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarComisionClienteModal()"><i class="ic ic-save"></i> Guardar asignación</button>
+      </div>
+    </div>
+  </div>
+</div>

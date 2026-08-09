@@ -17,6 +17,7 @@ const RT_TABLAS = [
   'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio',
   'km_tarifas', 'config', 'rol_permisos', 'roles',
   'clientes', 'cliente_tarifas',
+  'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
 ];
 
 let _rtCanal = null;

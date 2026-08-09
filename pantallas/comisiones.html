@@ -1,0 +1,109 @@
+      <div id="page-comisiones" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-dollar"></i> Comisiones</span>
+        </div>
+
+        <div class="tabs" id="com-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="com-btn-vend" onclick="switchComisionesTab('vend')"><i class="ic ic-user"></i> Vendedores y escala</button>
+          <button class="tab" id="com-btn-clientes" onclick="switchComisionesTab('clientes')"><i class="ic ic-building"></i> Clientes en comisión</button>
+          <button class="tab" id="com-btn-cierre" onclick="switchComisionesTab('cierre')"><i class="ic ic-file"></i> Cierre mensual</button>
+        </div>
+
+        <!-- ══════════ TAB: VENDEDORES + SUPERVISOR + ESCALA ══════════ -->
+        <div id="com-tab-vend">
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-dollar"></i> Los vendedores comisionan un <strong>monto fijo mensual</strong> por cada <strong>cliente nuevo</strong>, durante <strong>5 meses</strong>. El monto surge de evaluar las <strong>4 primeras liquidaciones</strong> del cliente y ubicar su facturación en la <strong>escala de categorización</strong>. El <strong>supervisor</strong> cobra un % del total del equipo.
+          </div>
+
+          <!-- Supervisor -->
+          <div class="card" style="margin-bottom:16px;padding:14px 18px">
+            <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label class="form-label" style="display:block"><i class="ic ic-shield"></i> Supervisor (cobra % del equipo)</label>
+                <input type="text" id="com-sup-nombre" class="form-input" placeholder="Nombre del supervisor" style="width:240px;max-width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+              </div>
+              <div>
+                <label class="form-label" style="display:block">% del total del equipo</label>
+                <input type="number" id="com-sup-pct" class="form-input" min="0" max="100" step="1" style="width:110px" placeholder="30">
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="guardarSupervisorConfig()"><i class="ic ic-save"></i> Guardar supervisor</button>
+            </div>
+          </div>
+
+          <!-- Vendedores -->
+          <div class="section-head" style="margin-bottom:8px">
+            <span class="section-title" style="font-size:14px"><i class="ic ic-user"></i> Vendedores <span id="com-vend-count" style="font-size:12px;color:var(--text-muted);font-weight:400"></span></span>
+            <button class="btn btn-sm btn-primary" onclick="openAddVendedorModal()">+ Nuevo vendedor</button>
+          </div>
+          <div class="card" style="margin-bottom:16px"><div class="table-wrap"><table>
+            <thead><tr><th>Vendedor</th><th style="text-align:right">Clientes</th><th style="width:110px"></th></tr></thead>
+            <tbody id="com-vend-rows"></tbody>
+          </table></div></div>
+
+          <!-- Escala -->
+          <div class="section-head" style="margin-bottom:8px">
+            <span class="section-title" style="font-size:14px"><i class="ic ic-tag"></i> Escala de categorización</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar escala
+                <input type="file" id="com-escala-file" accept=".xlsx,.xls,.csv" onchange="importEscalaComision(event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="descargarPlantillaEscala()"><i class="ic ic-download"></i> Plantilla Excel</button>
+            </div>
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr><th>Categoría</th><th style="text-align:right">Facturación desde</th><th style="text-align:right">Hasta</th><th style="text-align:right">Monto fijo / mes</th></tr></thead>
+            <tbody id="com-escala-rows"></tbody>
+          </table></div></div>
+        </div><!-- /vend -->
+
+        <!-- ══════════ TAB: CLIENTES EN COMISIÓN ══════════ -->
+        <div id="com-tab-clientes" style="display:none">
+          <div class="section-head" style="margin-bottom:8px">
+            <span></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar asignaciones
+                <input type="file" id="com-asig-file" accept=".xlsx,.xls,.csv" onchange="importAsignacionesComision(event)" style="display:none">
+              </label>
+              <button class="btn btn-sm" onclick="descargarPlantillaAsignaciones()"><i class="ic ic-download"></i> Plantilla Excel</button>
+              <button class="btn btn-sm btn-primary" onclick="openAddComisionClienteModal()">+ Asignar cliente</button>
+            </div>
+          </div>
+
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-building"></i> Asigná cada <strong>cliente nuevo</strong> a un vendedor. Tras sus <strong>4 primeras liquidaciones</strong> el sistema calcula la facturación y la categoría; cuando esté completa, <strong>Confirmá</strong> para congelar el monto y arrancar los 5 pagos mensuales.
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="com-cli-search" placeholder="🔍 Buscar cliente o vendedor..." style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderComisionClientes()">
+            <span id="com-cli-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Cliente</th><th>Vendedor</th><th style="text-align:right">Facturación 4 liq.</th>
+              <th style="text-align:center">Cat.</th><th style="text-align:right">Monto/mes</th>
+              <th>Meses de pago</th><th style="text-align:center">Estado</th><th style="width:200px"></th>
+            </tr></thead>
+            <tbody id="com-cli-rows"></tbody>
+          </table></div></div>
+        </div><!-- /clientes -->
+
+        <!-- ══════════ TAB: CIERRE MENSUAL ══════════ -->
+        <div id="com-tab-cierre" style="display:none">
+          <div class="card" style="margin-bottom:14px;padding:14px 18px">
+            <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes de cierre</label>
+                <input type="month" id="com-cierre-mes" onchange="renderCierreMensual()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              </div>
+              <span id="com-cierre-periodo" style="font-size:12px;color:var(--text-secondary);font-weight:600;padding-bottom:8px"></span>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="exportComisionesMesPDF()"><i class="ic ic-download"></i> Descargar PDF</button>
+            </div>
+          </div>
+          <div id="com-cierre-body">
+            <div class="empty-state" style="padding:30px"><div class="empty-icon"><i class="ic ic-file"></i></div><div class="empty-title">Elegí un mes</div><div class="empty-sub">Para ver y abonar las comisiones de ese cierre</div></div>
+          </div>
+        </div><!-- /cierre -->
+
+      </div>

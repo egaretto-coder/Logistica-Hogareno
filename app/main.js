@@ -38,6 +38,7 @@ function showPage(id) {
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
   if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('lista');
+  if (id === 'comisiones' && typeof switchComisionesTab === 'function') switchComisionesTab('vend');
   if (id === 'gestion-permisos') renderGestionPermisos();
   if (id === 'upload') renderArchivoPanel();
 }
@@ -63,7 +64,7 @@ const PANTALLAS = [
   'tarifas', 'super-sla',
   'panel-conductores', 'dimensiones-especiales',
   'extraviados', 'beneficios', 'km-desvio', 'adelantos',
-  'clientes', 'gestion-permisos'
+  'clientes', 'comisiones', 'gestion-permisos'
 ];
 
 async function fetchText(url) {

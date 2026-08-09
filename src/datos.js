@@ -43,6 +43,14 @@ function loadSavedConfig() {
   if (cli) { try { AppData.clientes = JSON.parse(cli) || []; } catch(e) {} }
   const clit = localStorage.getItem('liq_cliente_tarifas');
   if (clit) { try { AppData.clienteTarifas = JSON.parse(clit) || []; } catch(e) {} }
+  const ven = localStorage.getItem('liq_vendedores');
+  if (ven) { try { AppData.vendedores = JSON.parse(ven) || []; } catch(e) {} }
+  const ccat = localStorage.getItem('liq_comision_categorias');
+  if (ccat) { try { AppData.comisionCategorias = JSON.parse(ccat) || []; } catch(e) {} }
+  const ccli = localStorage.getItem('liq_comision_clientes');
+  if (ccli) { try { AppData.comisionClientes = JSON.parse(ccli) || []; } catch(e) {} }
+  const cpag = localStorage.getItem('liq_comision_pagos');
+  if (cpag) { try { AppData.comisionPagos = JSON.parse(cpag) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -172,6 +180,28 @@ async function hydrateFromSupabase() {
     id: t.id, cliente: t.cliente, zona: t.zona, precio: _num(t.precio)
   }));
 
+  // Comisiones: vendedores, escala de categorización, clientes en comisión y pagos.
+  AppData.vendedores = (data.vendedores || []).map(v => ({
+    id: v.id, nombre: v.nombre, activo: v.activo !== false
+  }));
+  AppData.comisionCategorias = (data.comision_categorias || []).map(c => ({
+    id: c.id, categoria: c.categoria,
+    fact_desde: _num(c.fact_desde),
+    fact_hasta: (c.fact_hasta === null || c.fact_hasta === undefined) ? null : _num(c.fact_hasta),
+    monto: _num(c.monto)
+  }));
+  AppData.comisionClientes = (data.comision_clientes || []).map(c => ({
+    id: c.id, cliente: c.cliente, vendedor: c.vendedor,
+    fecha_alta: c.fecha_alta || '', mes_inicio: c.mes_inicio || '',
+    categoria: c.categoria || '', facturacion_eval: _num(c.facturacion_eval),
+    monto: _num(c.monto), bloqueado: !!c.bloqueado
+  }));
+  AppData.comisionPagos = (data.comision_pagos || []).map(p => ({
+    id: p.id, periodo: p.periodo, beneficiario: p.beneficiario,
+    tipo: p.tipo || 'vendedor', monto: _num(p.monto),
+    detalle: p.detalle || '', pagado_en: p.pagado_en || ''
+  }));
+
   // Configuración clave/valor (genérica)
   AppData.config = {};
   (data.config || []).forEach(row => { AppData.config[row.clave] = row.valor; });
@@ -225,6 +255,10 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_adelanto_cuotas', JSON.stringify(AppData.adelantoCuotas));
     localStorage.setItem('liq_clientes', JSON.stringify(AppData.clientes));
     localStorage.setItem('liq_cliente_tarifas', JSON.stringify(AppData.clienteTarifas));
+    localStorage.setItem('liq_vendedores', JSON.stringify(AppData.vendedores));
+    localStorage.setItem('liq_comision_categorias', JSON.stringify(AppData.comisionCategorias));
+    localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));
+    localStorage.setItem('liq_comision_pagos', JSON.stringify(AppData.comisionPagos));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.

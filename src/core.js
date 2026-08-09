@@ -242,6 +242,16 @@ let AppData = {
   clientes: [],
   clienteTarifas: [],
 
+  // Comisiones de vendedores.
+  // vendedores: [{ id, nombre, activo }]
+  // comisionCategorias (escala importada): [{ id, categoria, fact_desde, fact_hasta, monto }]
+  // comisionClientes (cliente nuevo -> vendedor + evaluación): [{ id, cliente, vendedor, fecha_alta, mes_inicio, categoria, facturacion_eval, monto, bloqueado }]
+  // comisionPagos (cierre mensual): [{ id, periodo, beneficiario, tipo, monto, detalle, pagado_en }]
+  vendedores: [],
+  comisionCategorias: [],
+  comisionClientes: [],
+  comisionPagos: [],
+
   // Historial de tarifas de km de desvío (ordenado por vigencia).
   // Formato: { valor, vigente_desde (ISO), creado_por }
   // Cada cambio de precio queda registrado con su fecha/hora de vigencia.
@@ -790,6 +800,7 @@ const PAGE_TITLES = {
   'km-desvio': ['Km de desvío', 'Adicional por km de desvío al retirar mercadería'],
   'adelantos': ['Adelantos', 'Préstamos en cuotas y deuda por conductor'],
   'clientes': ['Clientes', 'Tarifario de venta y liquidación semanal (Vie→Jue)'],
+  'comisiones': ['Comisiones', 'Comisiones de vendedores por clientes nuevos y cierre mensual'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 
