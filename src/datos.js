@@ -51,6 +51,8 @@ function loadSavedConfig() {
   if (ccli) { try { AppData.comisionClientes = JSON.parse(ccli) || []; } catch(e) {} }
   const cpag = localStorage.getItem('liq_comision_pagos');
   if (cpag) { try { AppData.comisionPagos = JSON.parse(cpag) || []; } catch(e) {} }
+  const imps = localStorage.getItem('liq_importaciones');
+  if (imps) { try { AppData.importaciones = JSON.parse(imps) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -202,6 +204,15 @@ async function hydrateFromSupabase() {
     detalle: p.detalle || '', pagado_en: p.pagado_en || ''
   }));
 
+  // Historial de importaciones de recorridos.
+  AppData.importaciones = (data.importaciones || []).map(i => ({
+    id: i.id, archivo: i.archivo || '', hash: i.hash || '',
+    fecha_carga: i.fecha_carga || '', filas: _num(i.filas),
+    agregados: _num(i.agregados), reemplazados: _num(i.reemplazados),
+    fecha_desde: i.fecha_desde || '', fecha_hasta: i.fecha_hasta || '',
+    usuario: i.usuario || '', created_at: i.created_at || ''
+  }));
+
   // Configuración clave/valor (genérica)
   AppData.config = {};
   (data.config || []).forEach(row => { AppData.config[row.clave] = row.valor; });
@@ -259,6 +270,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_comision_categorias', JSON.stringify(AppData.comisionCategorias));
     localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));
     localStorage.setItem('liq_comision_pagos', JSON.stringify(AppData.comisionPagos));
+    localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.

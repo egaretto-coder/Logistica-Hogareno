@@ -26,16 +26,29 @@
           </div>
         </div>
 
+        <!-- HISTORIAL DE IMPORTACIONES -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <span class="card-title"><i class="ic ic-folder"></i> Historial de importaciones <span id="hist-imp-count" style="font-size:12px;color:var(--text-muted);font-weight:400"></span></span>
+          </div>
+          <div class="card-body">
+            <div class="alert" id="hist-imp-faltantes" style="display:none;margin-bottom:12px;background:#fff8e1;border:1px solid #f5d97a;color:#7a5c00"></div>
+            <div class="table-wrap"><table>
+              <thead><tr>
+                <th>Cargado</th><th>Documento</th>
+                <th style="text-align:right">Filas</th><th style="text-align:right">Nuevos</th><th style="text-align:right">Reempl.</th>
+                <th>Fechas de recorridos</th><th style="width:44px"></th>
+              </tr></thead>
+              <tbody id="hist-imp-rows"></tbody>
+            </table></div>
+          </div>
+        </div>
+
         <!-- ARCHIVO HISTÓRICO (solo analista) -->
         <div class="card" id="archivo-panel" style="margin-bottom:16px;display:none">
           <div class="card-header"><span class="card-title">🗄️ Archivo histórico</span></div>
           <div class="card-body">
-            <div class="alert alert-info" style="margin-bottom:12px">
-              Mové los registros ya liquidados y antiguos a un <strong>archivo histórico</strong> para mantener la app rápida.
-              Los archivados <strong>no</strong> se cargan en el día a día, pero siguen disponibles con el botón
-              “<i class="ic ic-upload"></i> Cargar historial completo” del Dashboard (como solo lectura). Es una operación segura y transaccional.
-            </div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
               <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 16px">
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">Registros activos</div>
                 <div id="arch-count-activos" style="font-size:20px;font-weight:700">—</div>
@@ -45,13 +58,33 @@
                 <div id="arch-count-historico" style="font-size:20px;font-weight:700;color:#6b7280">—</div>
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <span style="font-size:13px;font-weight:600">Archivar registros anteriores a</span>
-              <input type="date" id="arch-fecha" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
-              <button class="btn btn-sm btn-primary" onclick="ejecutarArchivado()">🗄️ Archivar</button>
-              <span id="arch-estado" style="font-size:11px;color:var(--text-muted)"></span>
+
+            <!-- CONSULTAR ARCHIVADOS POR FECHA -->
+            <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:16px">
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px"><i class="ic ic-search"></i> Consultar registros archivados</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Elegí un rango de fechas para ver los recorridos que ya fueron archivados (solo lectura, se traen de la nube).</div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:12px;color:var(--text-secondary)">Desde</span>
+                <input type="date" id="arch-desde" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+                <span style="font-size:12px;color:var(--text-secondary)">Hasta</span>
+                <input type="date" id="arch-hasta" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+                <button class="btn btn-sm btn-primary" onclick="consultarArchivados()"><i class="ic ic-search"></i> Consultar</button>
+              </div>
+              <div id="arch-consulta-result" style="margin-top:12px"></div>
             </div>
-            <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Sugerencia: archivá lo anterior a hace 6–12 meses. Los registros de esa fecha en adelante quedan intactos.</div>
+
+            <!-- ARCHIVAR VIEJOS -->
+            <div style="border-top:1px solid var(--border);padding-top:14px">
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🗄️ Archivar registros viejos</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Mové los recorridos ya liquidados y antiguos al archivo para mantener la app rápida. <strong>No se borran</strong> (siguen consultables acá arriba). Operación segura y transaccional.</div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="font-size:13px;font-weight:600">Archivar anteriores a</span>
+                <input type="date" id="arch-fecha" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <button class="btn btn-sm btn-primary" onclick="ejecutarArchivado()">🗄️ Archivar</button>
+                <span id="arch-estado" style="font-size:11px;color:var(--text-muted)"></span>
+              </div>
+              <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Sugerencia: archivá lo anterior a hace 6–12 meses.</div>
+            </div>
           </div>
         </div>
 

@@ -75,6 +75,19 @@ const DB = {
     return this._fetchAllParallel('registros_historico', { orderCol: 'id' });
   },
 
+  // Registros archivados dentro de un rango de fechas (server-side, por fecha_date).
+  // Permite consultar lo archivado sin traer las decenas de miles de filas enteras.
+  async selectHistoricoRango(desdeISO, hastaISO) {
+    return this._fetchAllParallel('registros_historico', {
+      orderCol: 'fecha_date',
+      filter: q => {
+        if (desdeISO) q = q.gte('fecha_date', desdeISO);
+        if (hastaISO) q = q.lte('fecha_date', hastaISO);
+        return q;
+      }
+    });
+  },
+
   // Mueve a histórico los registros con fecha anterior a antesDeISO.
   // Es transaccional en el servidor (función archivar_registros). Solo analista.
   // Devuelve la cantidad de registros archivados.
@@ -91,7 +104,7 @@ const DB = {
   async loadAll(desdeISO) {
     if (!sb) return null;
     try {
-      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -112,6 +125,7 @@ const DB = {
         this.selectAll('comision_categorias', 'fact_desde'),
         this.selectAll('comision_clientes', 'id'),
         this.selectAll('comision_pagos', 'id'),
+        this.selectAll('importaciones', 'id'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
@@ -122,6 +136,7 @@ const DB = {
         clientes, cliente_tarifas: clienteTarifas,
         vendedores, comision_categorias: comisionCategorias,
         comision_clientes: comisionClientes, comision_pagos: comisionPagos,
+        importaciones,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);

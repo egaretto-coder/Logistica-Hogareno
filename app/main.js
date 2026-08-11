@@ -40,7 +40,7 @@ function showPage(id) {
   if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('lista');
   if (id === 'comisiones' && typeof switchComisionesTab === 'function') switchComisionesTab('vend');
   if (id === 'gestion-permisos') renderGestionPermisos();
-  if (id === 'upload') renderArchivoPanel();
+  if (id === 'upload') { renderArchivoPanel(); if (typeof renderHistorialImportaciones === 'function') renderHistorialImportaciones(); }
 }
 
 // Id de la página actualmente visible (deriva del <div class="page active">).

@@ -252,6 +252,10 @@ let AppData = {
   comisionClientes: [],
   comisionPagos: [],
 
+  // Historial de importaciones de recorridos (visibilidad + dedup por hash).
+  // importaciones: [{ id, archivo, hash, fecha_carga, filas, agregados, reemplazados, fecha_desde, fecha_hasta, usuario, created_at }]
+  importaciones: [],
+
   // Historial de tarifas de km de desvío (ordenado por vigencia).
   // Formato: { valor, vigente_desde (ISO), creado_por }
   // Cada cambio de precio queda registrado con su fecha/hora de vigencia.

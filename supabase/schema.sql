@@ -277,6 +277,25 @@ create index if not exists idx_comision_pagos_periodo on public.comision_pagos (
 --   comision_supervisor      = nombre del supervisor que cobra el %
 --   comision_supervisor_pct  = porcentaje del total del equipo (default 30)
 
+-- ---------- IMPORTACIONES (historial de cargas de recorridos) ----------
+-- Cada carga de un documento queda registrada (visibilidad + dedup por hash de
+-- contenido, que bloquea reimportar el mismo archivo).
+create table if not exists public.importaciones (
+  id bigint generated always as identity primary key,
+  archivo text not null default '',
+  hash text not null,                 -- SHA-256 del contenido (dedup)
+  fecha_carga text default '',        -- día de carga elegido (DD/MM/YYYY)
+  filas int not null default 0,
+  agregados int not null default 0,
+  reemplazados int not null default 0,
+  fecha_desde text default '',        -- 1ra fecha de recorrido del documento
+  fecha_hasta text default '',        -- última fecha de recorrido del documento
+  usuario text default '',
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_importaciones_hash on public.importaciones (hash);
+create index if not exists idx_importaciones_created on public.importaciones (created_at desc);
+
 -- Helper de rol: ¿el usuario actual es analista?
 create or replace function public.es_analista()
 returns boolean language sql stable security definer set search_path = public as $$
@@ -466,3 +485,7 @@ create policy vendedores_all          on public.vendedores          for all to a
 create policy comision_categorias_all on public.comision_categorias for all to authenticated using (true) with check (true);
 create policy comision_clientes_all   on public.comision_clientes   for all to authenticated using (true) with check (true);
 create policy comision_pagos_all      on public.comision_pagos      for all to authenticated using (true) with check (true);
+
+-- importaciones: historial de cargas; acceso completo para autenticados.
+alter table public.importaciones enable row level security;
+create policy importaciones_all on public.importaciones for all to authenticated using (true) with check (true);

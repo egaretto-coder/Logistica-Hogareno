@@ -18,6 +18,7 @@ const RT_TABLAS = [
   'km_tarifas', 'config', 'rol_permisos', 'roles',
   'clientes', 'cliente_tarifas',
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
+  'importaciones',
 ];
 
 let _rtCanal = null;

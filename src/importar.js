@@ -63,21 +63,50 @@ function handleFileUpload(e) {
   if (file) processFile(file);
 }
 
-function processFile(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const data = new Uint8Array(e.target.result);
-    const wb = XLSX.read(data, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    if (json.length < 2) { alert('El archivo no tiene datos suficientes.'); return; }
+async function processFile(file) {
+  let buf;
+  try { buf = await file.arrayBuffer(); }
+  catch (e) { alert('No se pudo leer el archivo.'); return; }
 
-    AppData.rawHeaders = json[0].map(h => String(h).trim());
-    AppData.rawRows = json.slice(1).filter(row => row.some(c => c !== ''));
+  // Hash del CONTENIDO para bloquear la doble carga del mismo documento.
+  const hash = await hashArchivo(buf);
+  const dup = (AppData.importaciones || []).find(i => i.hash === hash);
+  if (dup) {
+    alert('⛔ Este documento ya fue importado.\n\n' +
+      'Archivo: ' + (dup.archivo || '—') + '\n' +
+      'Cargado el: ' + (dup.fecha_carga || '—') + '\n' +
+      'Filas: ' + dup.filas + '\n\n' +
+      'No se vuelve a cargar para evitar duplicados. Si necesitás reimportarlo ' +
+      '(p. ej. una versión corregida), borralo primero del "Historial de importaciones".');
+    const inp = document.getElementById('file-input'); if (inp) inp.value = '';
+    return;
+  }
+  AppData._importPend = { archivo: file.name || 'documento', hash };
 
-    showColumnMapper();
-  };
-  reader.readAsArrayBuffer(file);
+  const data = new Uint8Array(buf);
+  const wb = XLSX.read(data, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  if (json.length < 2) { alert('El archivo no tiene datos suficientes.'); return; }
+
+  AppData.rawHeaders = json[0].map(h => String(h).trim());
+  AppData.rawRows = json.slice(1).filter(row => row.some(c => c !== ''));
+
+  showColumnMapper();
+}
+
+// SHA-256 del contenido del archivo (hex). Fallback djb2 si no hay crypto.subtle.
+async function hashArchivo(buffer) {
+  try {
+    if (window.crypto && crypto.subtle && crypto.subtle.digest) {
+      const h = await crypto.subtle.digest('SHA-256', buffer);
+      return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) { console.warn('hash subtle falló, uso fallback:', e); }
+  const bytes = new Uint8Array(buffer);
+  let h = 5381;
+  for (let i = 0; i < bytes.length; i++) h = ((h << 5) + h + bytes[i]) >>> 0;
+  return 'fb' + bytes.length.toString(16) + '-' + h.toString(16);
 }
 
 // Convierte índice de columna (0-based) a letra de Excel (A, B, ... AA, AD...)
@@ -244,6 +273,26 @@ function processUpload() {
   AppData.records = restantes.concat(nuevos);
   registrarSuperposiciones('registros', fechaCarga, sup);
 
+  // Registrar esta importación en el historial (solo si vino de un archivo real).
+  if (AppData._importPend) {
+    const fechasD = nuevos.map(r => parseFechaReg(r.fecha)).filter(Boolean).sort((a, b) => a - b);
+    registrarImportacion({
+      archivo: AppData._importPend.archivo,
+      hash: AppData._importPend.hash,
+      fecha_carga: fechaCarga,
+      filas: nuevos.length,
+      agregados: agregados,
+      reemplazados: sup.length,
+      fecha_desde: fechasD.length ? dmyDe(fechasD[0]) : '',
+      fecha_hasta: fechasD.length ? dmyDe(fechasD[fechasD.length - 1]) : '',
+      usuario: (typeof currentUser !== 'undefined' && currentUser) ? (currentUser.nombre || currentUser.usuario || '') : ''
+    });
+    AppData._importPend = null;
+  }
+
+  // Días hábiles (Lun–Sáb) sin registros dentro del rango cargado.
+  const faltantesDias = diasFaltantesRecorridos();
+
   // Detectar si hay fechas fuera del rango lunes-sábado (posible domingo cargado)
   const diasFueraDeRango = nuevos.filter(r => diaSemana(r.fecha) === 6).length;
 
@@ -264,9 +313,11 @@ function processUpload() {
     (enArchivoColapsadas ? `<br>ℹ️ ${enArchivoColapsadas} fila(s) del archivo eran el mismo envío repetido (mismo tracking o misma dirección) y se unificaron. ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
     `${diasFueraDeRango ? `<br><i class="ic ic-alert"></i> ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
+    `${faltantesDias.length ? `<br><i class="ic ic-alert"></i> <strong>Ojo:</strong> ${faltantesDias.length} día(s) hábil(es) sin registros dentro del rango cargado (${faltantesDias.slice(0, 6).map(diaLabel).join(' · ')}${faltantesDias.length > 6 ? '…' : ''}). ¿Te faltó cargar alguna fecha?` : ''}` +
     ` La base total queda en <strong>${AppData.records.length}</strong> registros. <span id="upload-nube-estado">☁️ Guardando en la nube…</span>`;
 
   renderDashboard();
+  renderHistorialImportaciones();
 
   // Guardado automático QUIRÚRGICO: solo se borran/insertan en la nube los
   // trackings de ESTA carga (no se reescribe la base entera — con ~2.000
@@ -334,6 +385,143 @@ async function clearData() {
     catch(e) { console.warn('clearData nube:', e); }
   }
   renderDashboard();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HISTORIAL DE IMPORTACIONES + DÍAS FALTANTES + CONSULTA DE ARCHIVADOS
+// ════════════════════════════════════════════════════════════════════════
+const DIAS_SEM = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+function dmyDe(d) { return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); }
+function diaLabel(d) { return DIAS_SEM[d.getDay()] + ' ' + dmyDe(d); }
+
+// Días hábiles (Lun–Sáb) SIN registros dentro del rango de fechas de recorrido
+// cargado. La liquidación es de lunes a sábado, así que los domingos no cuentan.
+function diasFaltantesRecorridos() {
+  let min = null, max = null;
+  const set = new Set();
+  AppData.records.forEach(r => {
+    const f = parseFechaReg(r.fecha);
+    if (!f) return;
+    set.add(f.getFullYear() + '-' + f.getMonth() + '-' + f.getDate());
+    if (!min || f < min) min = f;
+    if (!max || f > max) max = f;
+  });
+  if (!min || !max) return [];
+  const faltan = [];
+  const d = new Date(min.getFullYear(), min.getMonth(), min.getDate());
+  const end = new Date(max.getFullYear(), max.getMonth(), max.getDate());
+  for (; d <= end; d.setDate(d.getDate() + 1)) {
+    if (d.getDay() === 0) continue; // domingo
+    if (!set.has(d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate())) faltan.push(new Date(d));
+  }
+  return faltan;
+}
+
+function persistirImportacionesLocal() {
+  try { localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones)); } catch (e) {}
+}
+
+// Registra una importación (optimista en memoria + insert en la nube).
+async function registrarImportacion(meta) {
+  const local = Object.assign({ id: 'tmp-' + Date.now(), created_at: new Date().toISOString() }, meta);
+  AppData.importaciones = (AppData.importaciones || []).concat(local);
+  persistirImportacionesLocal();
+  renderHistorialImportaciones();
+  try {
+    if (window.DB && DB.ready) {
+      const row = await DB.insertRow('importaciones', meta);
+      if (row && row.id) { local.id = row.id; local.created_at = row.created_at || local.created_at; persistirImportacionesLocal(); renderHistorialImportaciones(); }
+    }
+  } catch (e) { console.warn('registrarImportacion nube:', e); }
+}
+
+// Etiqueta "día de semana + fecha de carga + hora".
+function fmtCargadoLabel(i) {
+  let dow = '', hora = '';
+  const m = String(i.fecha_carga || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) dow = DIAS_SEM[new Date(+m[3], +m[2] - 1, +m[1]).getDay()] + ' ';
+  if (i.created_at) { const dt = new Date(i.created_at); if (!isNaN(dt)) hora = String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0'); }
+  return '<strong>' + dow + (i.fecha_carga || '—') + '</strong>' + (hora ? ' <span class="muted" style="font-size:10px">' + hora + '</span>' : '');
+}
+
+function renderHistorialImportaciones() {
+  const cont = document.getElementById('hist-imp-rows');
+  if (!cont) return;
+
+  // Banner de días faltantes (Lun–Sáb sin registros).
+  const banner = document.getElementById('hist-imp-faltantes');
+  if (banner) {
+    const faltan = diasFaltantesRecorridos();
+    if (faltan.length) {
+      banner.style.display = '';
+      banner.innerHTML = '<i class="ic ic-alert"></i> <strong>' + faltan.length + ' día(s) hábil(es) sin registros</strong> (Lun–Sáb) dentro del rango cargado: ' +
+        faltan.slice(0, 14).map(diaLabel).join(' · ') + (faltan.length > 14 ? ' … y ' + (faltan.length - 14) + ' más' : '') +
+        '. Revisá si te faltó cargar alguna fecha.';
+    } else { banner.style.display = 'none'; }
+  }
+
+  const imps = (AppData.importaciones || []).slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  const cEl = document.getElementById('hist-imp-count');
+  if (cEl) cEl.textContent = imps.length + (imps.length === 1 ? ' importación' : ' importaciones');
+
+  if (!imps.length) {
+    cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-folder"></i></div><div class="empty-title">Sin importaciones registradas</div><div class="empty-sub">Cargá un documento para verlo acá</div></div></td></tr>';
+    return;
+  }
+  cont.innerHTML = imps.slice(0, 60).map(i => {
+    const cubre = (i.fecha_desde && i.fecha_hasta)
+      ? (i.fecha_desde === i.fecha_hasta ? i.fecha_desde : i.fecha_desde + ' → ' + i.fecha_hasta) : '—';
+    return '<tr>' +
+      '<td style="font-size:12px">' + fmtCargadoLabel(i) + '</td>' +
+      '<td><strong style="font-size:12px">' + (i.archivo || '—') + '</strong>' + (i.usuario ? '<div class="muted" style="font-size:10px">por ' + i.usuario + '</div>' : '') + '</td>' +
+      '<td class="mono" style="text-align:right">' + i.filas + '</td>' +
+      '<td class="mono" style="text-align:right;color:#166534">+' + i.agregados + '</td>' +
+      '<td class="mono" style="text-align:right;color:#92400e">' + i.reemplazados + '</td>' +
+      '<td style="font-size:11px">' + cubre + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;padding:3px 7px" title="Quitar del historial (no borra registros; libera el bloqueo para reimportar)" onclick="eliminarImportacion(\'' + i.id + '\')"><i class="ic ic-trash"></i></button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// Quita una importación del historial: NO borra los registros ya cargados,
+// solo libera el bloqueo (hash) para poder volver a importar ese documento.
+async function eliminarImportacion(id) {
+  const imp = (AppData.importaciones || []).find(x => String(x.id) === String(id));
+  if (!imp) return;
+  if (!confirm('¿Borrar del historial la importación "' + (imp.archivo || '') + '" (' + (imp.fecha_carga || '') + ')?\n\n' +
+    'OJO: NO borra los registros ya cargados. Solo quita esta fila del historial y libera el bloqueo para poder reimportar ese documento.')) return;
+  try {
+    if (window.DB && DB.ready && typeof imp.id === 'number') await DB.deleteWhere('importaciones', 'id', imp.id);
+    AppData.importaciones = AppData.importaciones.filter(x => String(x.id) !== String(id));
+    persistirImportacionesLocal();
+    renderHistorialImportaciones();
+    showToast('🗑 Importación quitada del historial');
+  } catch (e) { console.warn('eliminarImportacion', e); showToast('⛔ No se pudo borrar'); }
+}
+
+// ── Consulta de registros archivados por fecha (panel Archivo) ──────────────
+async function consultarArchivados() {
+  if (!(window.DB && DB.ready)) { showToast('Sin conexión con la nube'); return; }
+  const desde = document.getElementById('arch-desde')?.value || '';
+  const hasta = document.getElementById('arch-hasta')?.value || '';
+  const cont = document.getElementById('arch-consulta-result');
+  if (cont) cont.innerHTML = '<div class="muted" style="padding:10px">⏳ Buscando en el archivo…</div>';
+  try {
+    const rows = await DB.selectHistoricoRango(desde || null, hasta || null);
+    renderArchivadosResult(rows);
+  } catch (e) {
+    console.warn('consultarArchivados', e);
+    if (cont) cont.innerHTML = '<div style="color:#b91c1c;padding:10px">No se pudo consultar: ' + (e.message || e) + '</div>';
+  }
+}
+function renderArchivadosResult(rows) {
+  const cont = document.getElementById('arch-consulta-result');
+  if (!cont) return;
+  if (!rows.length) { cont.innerHTML = '<div class="muted" style="padding:10px">No hay registros archivados en ese rango.</div>'; return; }
+  const body = rows.slice(0, 200).map(r =>
+    '<tr><td class="mono muted">' + (r.tracking || '') + '</td><td class="muted">' + (r.fecha || '—') + '</td><td>' + (r.zona || r.localidad || '—') + '</td><td>' + (r.estado || '—') + '</td><td><strong>' + (r.cadete || '') + '</strong></td></tr>').join('');
+  cont.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Tracking</th><th>Fecha</th><th>Zona</th><th>Estado</th><th>Cadete</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+    (rows.length > 200 ? '<div class="muted" style="text-align:center;padding:8px">…y ' + (rows.length - 200) + ' más (' + rows.length + ' archivados en el rango)</div>' : '<div class="muted" style="padding:6px">' + rows.length + ' registros archivados en el rango</div>');
 }
 
 // ===== CONFIG TARIFAS =====
