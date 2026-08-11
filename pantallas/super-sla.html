@@ -1,8 +1,12 @@
       <div id="page-config-supersla" class="page">
         <div class="section-head">
           <span class="section-title">Tarifas Super SLA</span>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-sm" onclick="openAgregarConductorSuperSLA()">➕ Agregar conductor</button>
+            <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar
+              <input type="file" id="supersla-import-file" accept=".xlsx,.xls,.csv" onchange="importarSuperSLA(event)" style="display:none">
+            </label>
+            <button class="btn btn-sm" onclick="exportarSuperSLA()"><i class="ic ic-download"></i> Exportar</button>
             <button class="btn btn-sm btn-primary" onclick="saveSuperSLA()">Guardar cambios</button>
           </div>
         </div>
