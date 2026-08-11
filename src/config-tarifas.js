@@ -7,6 +7,7 @@ const TARIFAS_CATEGORIAS = ['Muy cerca', 'Cerca', 'Intermedio', 'Lejos', 'Muy Le
 const PLANTILLA_TARIFAS_HEADERS = ['Zona', 'Categoría', 'S/ Colecta', 'C/ Colecta', 'SLA Cumplido'];
 
 function renderTarifas() {
+  if (typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas(); // por si se editaron tarifas
   actualizarBotonSuperposiciones('tarifas');
   const cont = document.getElementById('tarifas-rows');
   if (!cont) return;

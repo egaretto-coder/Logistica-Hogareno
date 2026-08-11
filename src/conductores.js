@@ -1,9 +1,13 @@
 function renderConductorSelect() {
-  const liq = calcLiquidaciones();
-  const conductores = Object.keys(liq).sort();
+  // Lista de conductores (canónicos) con recorridos. Evitamos calcLiquidaciones()
+  // completo (que recorre precios de las ~10k filas) solo para listar nombres.
+  const set = new Set();
+  AppData.records.forEach(r => { const c = conductorCanonico(r.cadete); if (c) set.add(c); });
+  const conductores = Array.from(set).sort();
   const sel = document.getElementById('cond-select');
+  if (!sel) return;
   sel.innerHTML = '<option value="">Seleccionar conductor...</option>' +
-    conductores.map(c => `<option value="${c}">${c}</option>`).join('');
+    conductores.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">${c}</option>`).join('');
 }
 
 // ════════════════════════════════════════════════════════════════════════

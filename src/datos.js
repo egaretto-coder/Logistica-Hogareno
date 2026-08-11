@@ -140,6 +140,7 @@ async function hydrateFromSupabase() {
   } else { faltaSeed.push('panel_conductores'); }
   AppData.panelConductores = dedupePanelConductores(AppData.panelConductores);
   invalidarIndicePanel();   // se rehidrató el panel desde la nube → índice viejo
+  if (typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas(); // tarifas/superSLA frescos
 
   AppData.dimensionesEspeciales = (data.dimensiones_especiales || []).map(d => ({
     fecha: d.fecha || '', tracking: d.tracking || '', cliente: d.cliente || '',
@@ -334,6 +335,7 @@ function dbPush(table) {
     })).filter(d => d.conductor),
   };
   const rows = builders[table] ? builders[table]() : [];
+  if ((table === 'super_sla' || table === 'tarifas') && typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas();
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
   return DB.replaceAll(table, rows).catch(e => {
     console.warn('Sincronización de "' + table + '" falló:', e);

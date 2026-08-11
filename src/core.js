@@ -494,8 +494,15 @@ function tarifaKmEnFecha(fechaStr) {
 // solo espacio) y además permitimos "alias": nombres tal como aparecen en los
 // recorridos, cargados en el panel para vincularlos a mano. Así la categoría del
 // panel se aplica aunque el nombre difiera.
+// Memo: normNombre se llama MILES de veces por render (una por fila × varias
+// tablas) siempre con el mismo puñado de nombres/zonas. Cachear el resultado del
+// translit (6 regex) evita recomputarlo y descongestiona el cálculo de precios.
+const _normCache = new Map();
 function normNombre(s) {
-  return String(s || '')
+  const key = s == null ? '' : String(s);
+  const hit = _normCache.get(key);
+  if (hit !== undefined) return hit;
+  const out = key
     .toUpperCase()
     // Saca acentos y ñ con un translit explícito (evita marcas combinantes).
     .replace(/[ÁÀÄÂÃ]/g, 'A')
@@ -506,6 +513,8 @@ function normNombre(s) {
     .replace(/Ñ/g, 'N')
     .replace(/\s+/g, ' ')
     .trim();
+  if (_normCache.size < 50000) _normCache.set(key, out);   // cota para no crecer sin límite
+  return out;
 }
 
 // Lista de alias normalizados de un conductor del panel (separados por ";").
@@ -595,8 +604,32 @@ function dedupePanelConductores(lista) {
 //    en OTRA zona), se cae al precio "SLA Cumplido" estándar de la zona.
 // 3) Si el cadete no tiene ninguna relación con Super SLA, se usa el tipo fijo
 //    asignado en "Categorización de Conductores" (s_colecta | c_colecta | sla).
+// Índices cacheados para getPrecio (evitan escanear superSLA/tarifas —con
+// normNombre— por CADA envío, que era el gran cuello de botella con ~10k filas).
+// Se reconstruyen cuando cambian tarifas/superSLA (ver invalidarIndiceTarifas).
+let _superSLAIdxCache = null, _tarifaIdxCache = null;
+function invalidarIndiceTarifas() { _superSLAIdxCache = null; _tarifaIdxCache = null; }
+function _superSLAIndex() {
+  if (_superSLAIdxCache) return _superSLAIdxCache;
+  const porCond = new Map();   // normCond -> Map(normZona -> precio)
+  (AppData.superSLA || []).forEach(r => {
+    const c = normNombre(r.conductor); if (!c) return;
+    let zm = porCond.get(c); if (!zm) { zm = new Map(); porCond.set(c, zm); }
+    zm.set(normNombre(r.zona), _num(r.precio != null ? r.precio : r.sla));
+  });
+  _superSLAIdxCache = porCond;
+  return porCond;
+}
+function _tarifaIndex() {
+  if (_tarifaIdxCache) return _tarifaIdxCache;
+  const m = new Map();
+  (AppData.tarifas || []).forEach(t => { m.set(normNombre(t.zona), t); });
+  _tarifaIdxCache = m;
+  return m;
+}
+
 function getPrecio(conductor, zona) {
-  const zNorm = (zona || '').toUpperCase().trim();
+  const zNorm = normNombre(zona);
 
   // Categoría y nombre canónico desde el panel (resuelve alias). El super SLA se
   // guarda con el nombre del panel, así que hay que matchearlo por el canónico
@@ -604,16 +637,14 @@ function getPrecio(conductor, zona) {
   const panelCond = panelConductorDe(conductor);
   const cNorm = normNombre(panelCond ? panelCond.nombre : conductor);
 
-  const superRule = AppData.superSLA.find(
-    r => normNombre(r.conductor) === cNorm && r.zona.toUpperCase().trim() === zNorm
-  );
-
-  const tarifa = AppData.tarifas.find(t => t.zona.toUpperCase().trim() === zNorm);
+  const superZonas = _superSLAIndex().get(cNorm);          // Map(zona -> precio) o undefined
+  const superPrecio = superZonas ? superZonas.get(zNorm) : undefined;
+  const tarifa = _tarifaIndex().get(zNorm);
   const tipoFijo = panelCond?.categoria === 'super_sla' ? 'sla' : (panelCond?.categoria || 's_colecta');
-  const tieneSuperSLAEnOtraZona = AppData.superSLA.some(r => normNombre(r.conductor) === cNorm);
+  const tieneSuperSLAEnOtraZona = !!(superZonas && superZonas.size);
 
-  if (superRule) {
-    return { precio: superRule.precio ?? superRule.sla ?? 0, tipo: 'sla', es_super: true, sin_tarifa: false };
+  if (superPrecio !== undefined) {
+    return { precio: superPrecio ?? 0, tipo: 'sla', es_super: true, sin_tarifa: false };
   }
 
   if (!tarifa) {

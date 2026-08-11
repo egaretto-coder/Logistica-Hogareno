@@ -2,6 +2,7 @@
 function puedeEditarSuperSLA() { return puedeAutorizar(); }
 
 function renderSuperSLA() {
+  if (typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas(); // pudo cambiar el precio/zonas
   const todos = AppData.panelConductores.filter(c => c.categoria === 'super_sla');
   const wrap = document.getElementById('supersla-conductor-bloques');
   const countEl = document.getElementById('supersla-count');
