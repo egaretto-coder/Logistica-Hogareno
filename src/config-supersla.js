@@ -1,7 +1,14 @@
+// Solo supervisor/analista pueden editar el precio de Super SLA directamente.
+function puedeEditarSuperSLA() { return puedeAutorizar(); }
+
 function renderSuperSLA() {
   const todos = AppData.panelConductores.filter(c => c.categoria === 'super_sla');
   const wrap = document.getElementById('supersla-conductor-bloques');
   const countEl = document.getElementById('supersla-count');
+
+  const editable = puedeEditarSuperSLA();
+  aplicarLockSuperSLA(editable);            // candado: gate de la barra + aviso
+  renderSuperSLASolicitudes(editable);      // pendientes de autorización
 
   if (!todos.length) {
     if (countEl) countEl.textContent = '';
@@ -37,6 +44,7 @@ function renderSuperSLA() {
     return;
   }
 
+  const cols = 'grid-template-columns:1fr 160px 84px';
   wrap.innerHTML = conductoresSuperSLA.map(cond => {
     const nombre = cond.nombre;
     const color  = avatarColor(nombre);
@@ -47,32 +55,40 @@ function renderSuperSLA() {
     const filasZonas = reglas.length
       ? reglas.map(r => {
           const realIdx = AppData.superSLA.indexOf(r);
+          const precio = _num(r.precio || r.sla || 0);
+          // ZONA: editable solo para autorizados.
+          const zonaCell = editable
+            ? `<input type="text" value="${r.zona}" data-idx="${realIdx}" data-field="zona" placeholder="Ej: PILAR" style="border:none;background:none;font-size:13px;font-weight:500;width:100%;outline:none;color:var(--text-primary)" onchange="updateSuperSLA(this)" />`
+            : `<span style="font-size:13px;font-weight:500">${r.zona || '<span style="color:var(--text-muted)">(sin zona)</span>'}</span>`;
+          // PRECIO: input editable, o valor con candado.
+          let precioCell, accionCell;
+          if (editable) {
+            precioCell = `<span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
+              <input type="number" value="${precio}" data-idx="${realIdx}" data-field="precio" style="border:none;background:none;font-size:14px;font-weight:600;width:100%;outline:none;text-align:right;color:var(--text-primary)" onchange="updateSuperSLA(this)" />`;
+            accionCell = `<button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%" onclick="deleteSuperSLA(${realIdx})" title="Eliminar zona"><i class="ic ic-x"></i></button>`;
+          } else {
+            const pend = solicitudPendienteDe(nombre, r.zona);
+            precioCell = `<span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
+              <span style="font-size:14px;font-weight:600;flex:1;text-align:right;color:var(--text-primary)">${precio.toLocaleString('es-AR')}</span>
+              <i class="ic ic-lock" title="Solo supervisor/analista puede editar el precio" style="opacity:.45;margin-left:6px;width:14px;height:14px"></i>`;
+            accionCell = pend
+              ? `<span title="Cambio a $${_num(pend.precio_propuesto).toLocaleString('es-AR')} pendiente de autorización" style="font-size:10px;color:#854d0e;text-align:center;line-height:1.15">⏳ pendiente</span>`
+              : `<button class="btn btn-sm" style="padding:3px 6px;font-size:10px;white-space:nowrap" onclick="solicitarCambioSuperSLA('${nombre.replace(/'/g, "\\'")}','${String(r.zona).replace(/'/g, "\\'")}',${precio})" title="Pedir autorización para cambiar el precio">Solicitar</button>`;
+          }
           return `
-          <div style="display:grid;grid-template-columns:1fr 160px 36px;gap:0;padding:0;border-bottom:1px solid var(--border);align-items:stretch">
-            <div style="padding:10px 16px;display:flex;align-items:center">
-              <input type="text" value="${r.zona}" data-idx="${realIdx}" data-field="zona"
-                placeholder="Ej: PILAR"
-                style="border:none;background:none;font-size:13px;font-weight:500;width:100%;outline:none;color:var(--text-primary)"
-                onchange="updateSuperSLA(this)" />
-            </div>
-            <div style="padding:10px 16px;border-left:1px solid var(--border);display:flex;align-items:center;gap:4px">
-              <span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
-              <input type="number" value="${r.precio || r.sla || 0}" data-idx="${realIdx}" data-field="precio"
-                style="border:none;background:none;font-size:14px;font-weight:600;width:100%;outline:none;text-align:right;color:var(--text-primary)"
-                onchange="updateSuperSLA(this)" />
-            </div>
-            <div style="border-left:1px solid var(--border);display:flex;align-items:center;justify-content:center">
-              <button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%"
-                onclick="deleteSuperSLA(${realIdx})" title="Eliminar zona"><i class="ic ic-x"></i></button>
-            </div>
+          <div style="display:grid;${cols};gap:0;padding:0;border-bottom:1px solid var(--border);align-items:stretch">
+            <div style="padding:10px 16px;display:flex;align-items:center">${zonaCell}</div>
+            <div style="padding:10px 16px;border-left:1px solid var(--border);display:flex;align-items:center;gap:4px">${precioCell}</div>
+            <div style="border-left:1px solid var(--border);display:flex;align-items:center;justify-content:center">${accionCell}</div>
           </div>`;
         }).join('')
-      : `<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted)">
-           Sin zonas especiales — usá "+ Agregar zona" para cargar la primera.
-         </div>`;
+      : `<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted)">Sin zonas especiales${editable ? ' — usá "+ Agregar zona" para cargar la primera.' : '.'}</div>`;
 
-    // Total de zonas configuradas para el resumen
     const totalZonas = reglas.length;
+    const accionesHeader = editable
+      ? `<button class="btn btn-sm" onclick="addZonaSuperSLA('${nombre.replace(/'/g, "\\'")}')">+ Agregar zona</button>
+         <button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarConductorSuperSLA('${nombre.replace(/'/g, "\\'")}')" title="Quitar de Super SLA"><i class="ic ic-trash"></i></button>`
+      : '';
 
     return `
     <div class="card" style="margin-bottom:16px;overflow:hidden">
@@ -88,12 +104,11 @@ function renderSuperSLA() {
             <span>${totalZonas} zona${totalZonas !== 1 ? 's' : ''} especial${totalZonas !== 1 ? 'es' : ''} configurada${totalZonas !== 1 ? 's' : ''}</span>
           </div>
         </div>
-        <button class="btn btn-sm" onclick="addZonaSuperSLA('${nombre.replace(/'/g, "\\'")}')">+ Agregar zona</button>
-        <button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarConductorSuperSLA('${nombre.replace(/'/g, "\\'")}')" title="Quitar de Super SLA"><i class="ic ic-trash"></i></button>
+        ${accionesHeader}
       </div>
 
       <!-- Header columnas -->
-      <div style="display:grid;grid-template-columns:1fr 160px 36px;gap:0;background:var(--surface-0);border-bottom:1px solid var(--border)">
+      <div style="display:grid;${cols};gap:0;background:var(--surface-0);border-bottom:1px solid var(--border)">
         <div style="padding:8px 16px;font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Zona afectada</div>
         <div style="padding:8px 16px;font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;border-left:1px solid var(--border)">Tarifa Super SLA</div>
         <div style="border-left:1px solid var(--border)"></div>
@@ -107,6 +122,7 @@ function renderSuperSLA() {
 }
 
 function addZonaSuperSLA(conductor) {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   AppData.superSLA.push({ conductor: conductor.toUpperCase(), zona: '', precio: 3500 });
   renderSuperSLA();
   setTimeout(() => {
@@ -116,6 +132,7 @@ function addZonaSuperSLA(conductor) {
 }
 
 function updateSuperSLA(el) {
+  if (!puedeEditarSuperSLA()) return;
   const i = parseInt(el.dataset.idx), f = el.dataset.field;
   AppData.superSLA[i][f] = f === 'zona' || f === 'conductor'
     ? el.value.toUpperCase()
@@ -123,12 +140,14 @@ function updateSuperSLA(el) {
 }
 
 function deleteSuperSLA(i) {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   if (!confirm('¿Eliminar esta zona especial?')) return;
   AppData.superSLA.splice(i, 1);
   renderSuperSLA();
 }
 
 function saveSuperSLA() {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   localStorage.setItem('liq_supersla', JSON.stringify(AppData.superSLA));
   dbPush('super_sla');
   showToast('Tarifas Super SLA guardadas');
@@ -136,6 +155,7 @@ function saveSuperSLA() {
 
 // Abre el modal para sumar a Super SLA un conductor ya existente del panel.
 function openAgregarConductorSuperSLA() {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   const elegibles = AppData.panelConductores
     .filter(c => (c.categoria || '') !== 'super_sla')
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
@@ -162,6 +182,7 @@ function closeAgregarConductorSuperSLA(e) {
 
 // Pasa el conductor elegido a categoría Super SLA (se refleja también en el panel).
 function confirmarAgregarConductorSuperSLA() {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   const sel = document.getElementById('supersla-nuevo-conductor');
   const id = sel && sel.value;
   const cond = AppData.panelConductores.find(c => String(c.id) === String(id));
@@ -180,6 +201,7 @@ function confirmarAgregarConductorSuperSLA() {
 // Quita un conductor de Super SLA: pasa a categoría "SLA Cumplido" (el estándar
 // que usaría igual en las zonas no especiales) y borra sus zonas especiales.
 function eliminarConductorSuperSLA(nombre) {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   const key = normNombre(nombre);
   const cond = AppData.panelConductores.find(c => normNombre(c.nombre) === key);
   const reglas = AppData.superSLA.filter(r => normNombre(r.conductor) === key);
@@ -239,6 +261,7 @@ function generarIdSuperSLA() {
 // si no existe) y REEMPLAZA sus zonas por las del archivo. Los conductores que
 // NO están en el archivo no se tocan (para quitar uno, usá el botón eliminar).
 function importarSuperSLA(event) {
+  if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); event.target.value = ''; return; }
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -307,6 +330,155 @@ function importarSuperSLA(event) {
     finally { event.target.value = ''; }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  CANDADO + SOLICITUDES DE CAMBIO DE PRECIO (maker-checker)
+//  Solo supervisor/analista editan el precio. Los demás lo ven con candado y
+//  usan "Solicitar cambio"; el cambio queda pendiente hasta que un autorizado
+//  lo apruebe (recién ahí se aplica al precio real).
+// ════════════════════════════════════════════════════════════════════════
+
+// Muestra/oculta los controles de edición de la barra según el rol + aviso.
+function aplicarLockSuperSLA(editable) {
+  ['sla-btn-agregar', 'sla-import-label', 'sla-btn-guardar'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = editable ? '' : 'none';
+  });
+  const notice = document.getElementById('sla-lock-notice');
+  if (notice) notice.style.display = editable ? 'none' : '';
+}
+
+function persistirSuperSLASolicitudesLocal() {
+  try { localStorage.setItem('liq_supersla_solic', JSON.stringify(AppData.superSLASolicitudes)); } catch (e) {}
+}
+
+// Solicitud pendiente para un conductor+zona (o null).
+function solicitudPendienteDe(conductor, zona) {
+  return (AppData.superSLASolicitudes || []).find(s =>
+    s.estado === 'pendiente' &&
+    normNombre(s.conductor) === normNombre(conductor) &&
+    normNombre(s.zona) === normNombre(zona));
+}
+
+// Render de las solicitudes pendientes (arriba del listado).
+function renderSuperSLASolicitudes(editable) {
+  const cont = document.getElementById('supersla-solicitudes');
+  if (!cont) return;
+  const pendientes = (AppData.superSLASolicitudes || []).filter(s => s.estado === 'pendiente');
+  const yo = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  // A los NO autorizados solo les mostramos sus propias solicitudes.
+  const visibles = editable ? pendientes : pendientes.filter(s => normNombre(s.solicitante) === normNombre(yo));
+  if (!visibles.length) { cont.style.display = 'none'; cont.innerHTML = ''; return; }
+  cont.style.display = '';
+  const filas = visibles.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map(s => {
+    const delta = _num(s.precio_propuesto) - _num(s.precio_anterior);
+    const signo = delta > 0 ? '+' : '';
+    const acciones = editable
+      ? `<button class="btn btn-sm btn-primary" style="padding:4px 10px" onclick="autorizarSolicitudSuperSLA(${s.id})"><i class="ic ic-check"></i> Autorizar</button>
+         <button class="btn btn-sm" style="padding:4px 10px;border-color:#fca5a5;color:#b91c1c" onclick="rechazarSolicitudSuperSLA(${s.id})">Rechazar</button>`
+      : `<button class="btn btn-sm" style="padding:4px 10px" onclick="cancelarSolicitudSuperSLA(${s.id})">Cancelar</button>`;
+    return `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;border:1px solid #f5d97a;background:#fffbeb;border-radius:8px;margin-bottom:8px">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:13px;font-weight:600">${s.conductor} · ${s.zona}</div>
+        <div style="font-size:12px;color:var(--text-secondary)">$${_num(s.precio_anterior).toLocaleString('es-AR')} → <strong>$${_num(s.precio_propuesto).toLocaleString('es-AR')}</strong> <span style="color:${delta > 0 ? '#166534' : '#b91c1c'}">(${signo}${delta.toLocaleString('es-AR')})</span></div>
+        <div style="font-size:11px;color:var(--text-muted)">Pide: ${s.solicitante || '—'}${s.motivo ? ' · ' + s.motivo : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px">${acciones}</div>
+    </div>`;
+  }).join('');
+  const titulo = editable
+    ? `<i class="ic ic-alert"></i> Solicitudes de cambio de precio pendientes (${visibles.length})`
+    : `<i class="ic ic-alert"></i> Tus solicitudes pendientes (${visibles.length})`;
+  cont.innerHTML = `<div style="font-size:13px;font-weight:700;margin-bottom:8px">${titulo}</div>${filas}`;
+}
+
+// Abre el modal para solicitar un cambio de precio (roles no autorizados).
+let slaSolicitudCtx = null;
+function solicitarCambioSuperSLA(conductor, zona, precioActual) {
+  if (puedeEditarSuperSLA()) return; // los autorizados editan directo
+  if (solicitudPendienteDe(conductor, zona)) { showToast('Ya hay una solicitud pendiente para esa zona'); return; }
+  slaSolicitudCtx = { conductor, zona, precioActual: _num(precioActual) };
+  document.getElementById('msla-conductor').textContent = conductor;
+  document.getElementById('msla-zona').textContent = zona;
+  document.getElementById('msla-precio-actual').textContent = '$' + _num(precioActual).toLocaleString('es-AR');
+  document.getElementById('msla-precio-nuevo').value = '';
+  document.getElementById('msla-motivo').value = '';
+  document.getElementById('modal-sla-solicitud-backdrop').style.display = 'flex';
+}
+function closeSlaSolicitudModal(e) {
+  if (!e || e.target.id === 'modal-sla-solicitud-backdrop') document.getElementById('modal-sla-solicitud-backdrop').style.display = 'none';
+}
+async function guardarSolicitudSuperSLA() {
+  if (!slaSolicitudCtx) return;
+  const nuevo = parseFloat(document.getElementById('msla-precio-nuevo').value);
+  if (isNaN(nuevo) || nuevo < 0) { alert('Ingresá un precio válido.'); return; }
+  const motivo = (document.getElementById('msla-motivo').value || '').trim();
+  const rec = {
+    conductor: slaSolicitudCtx.conductor, zona: slaSolicitudCtx.zona,
+    precio_anterior: slaSolicitudCtx.precioActual, precio_propuesto: nuevo,
+    motivo, solicitante: (currentUser && (currentUser.nombre || currentUser.usuario)) || '', estado: 'pendiente'
+  };
+  const local = Object.assign({ id: 'tmp-' + Date.now(), created_at: new Date().toISOString() }, rec);
+  AppData.superSLASolicitudes = (AppData.superSLASolicitudes || []).concat(local);
+  persistirSuperSLASolicitudesLocal();
+  document.getElementById('modal-sla-solicitud-backdrop').style.display = 'none';
+  renderSuperSLA();
+  showToast('✅ Solicitud enviada — un supervisor/analista la va a autorizar');
+  try {
+    const row = await DB.insertRow('supersla_solicitudes', rec);
+    if (row && row.id) { local.id = row.id; local.created_at = row.created_at || local.created_at; persistirSuperSLASolicitudesLocal(); }
+  } catch (e) { console.warn('guardarSolicitudSuperSLA nube:', e); }
+}
+
+// Autoriza una solicitud: aplica el precio propuesto a la zona y la marca autorizada.
+async function autorizarSolicitudSuperSLA(id) {
+  if (!puedeEditarSuperSLA()) { showToast('⛔ Solo supervisor/analista puede autorizar'); return; }
+  const s = (AppData.superSLASolicitudes || []).find(x => x.id === id);
+  if (!s || s.estado !== 'pendiente') return;
+  // Aplicar el precio a la regla existente (o crearla si la zona ya no está).
+  let regla = AppData.superSLA.find(r => normNombre(r.conductor) === normNombre(s.conductor) && normNombre(r.zona) === normNombre(s.zona));
+  if (regla) regla.precio = _num(s.precio_propuesto);
+  else AppData.superSLA.push({ conductor: s.conductor, zona: s.zona, precio: _num(s.precio_propuesto) });
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  s.estado = 'autorizado'; s.resuelto_por = quien;
+  try {
+    localStorage.setItem('liq_supersla', JSON.stringify(AppData.superSLA));
+    persistirSuperSLASolicitudesLocal();
+    dbPush('super_sla');
+    if (typeof s.id === 'number') await DB.updateWhere('supersla_solicitudes', 'id', s.id, { estado: 'autorizado', resuelto_por: quien, resolved_at: new Date().toISOString() });
+    renderSuperSLA();
+    showToast('✅ Precio autorizado y aplicado: ' + s.conductor + ' · ' + s.zona + ' → $' + _num(s.precio_propuesto).toLocaleString('es-AR'));
+  } catch (e) { console.warn('autorizarSolicitudSuperSLA:', e); showToast('⛔ No se pudo autorizar'); }
+}
+
+async function rechazarSolicitudSuperSLA(id) {
+  if (!puedeEditarSuperSLA()) { showToast('⛔ Solo supervisor/analista puede rechazar'); return; }
+  const s = (AppData.superSLASolicitudes || []).find(x => x.id === id);
+  if (!s || s.estado !== 'pendiente') return;
+  if (!confirm('¿Rechazar la solicitud de ' + s.conductor + ' · ' + s.zona + '? El precio no cambia.')) return;
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  s.estado = 'rechazado'; s.resuelto_por = quien;
+  persistirSuperSLASolicitudesLocal();
+  try {
+    if (typeof s.id === 'number') await DB.updateWhere('supersla_solicitudes', 'id', s.id, { estado: 'rechazado', resuelto_por: quien, resolved_at: new Date().toISOString() });
+  } catch (e) { console.warn('rechazarSolicitudSuperSLA:', e); }
+  renderSuperSLA();
+  showToast('🚫 Solicitud rechazada');
+}
+
+// El solicitante cancela su propia solicitud pendiente.
+async function cancelarSolicitudSuperSLA(id) {
+  const s = (AppData.superSLASolicitudes || []).find(x => x.id === id);
+  if (!s || s.estado !== 'pendiente') return;
+  if (!confirm('¿Cancelar tu solicitud de cambio de precio para ' + s.conductor + ' · ' + s.zona + '?')) return;
+  AppData.superSLASolicitudes = AppData.superSLASolicitudes.filter(x => x.id !== id);
+  persistirSuperSLASolicitudesLocal();
+  try {
+    if (typeof s.id === 'number') await DB.deleteWhere('supersla_solicitudes', 'id', s.id);
+  } catch (e) { console.warn('cancelarSolicitudSuperSLA:', e); }
+  renderSuperSLA();
+  showToast('Solicitud cancelada');
 }
 
 // ===== PANEL DE CONDUCTORES =====

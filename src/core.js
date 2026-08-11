@@ -256,6 +256,10 @@ let AppData = {
   // importaciones: [{ id, archivo, hash, fecha_carga, filas, agregados, reemplazados, fecha_desde, fecha_hasta, usuario, created_at }]
   importaciones: [],
 
+  // Solicitudes de cambio de precio de Super SLA (maker-checker).
+  // superSLASolicitudes: [{ id, conductor, zona, precio_anterior, precio_propuesto, motivo, solicitante, estado, resuelto_por, created_at }]
+  superSLASolicitudes: [],
+
   // Historial de tarifas de km de desvío (ordenado por vigencia).
   // Formato: { valor, vigente_desde (ISO), creado_por }
   // Cada cambio de precio queda registrado con su fecha/hora de vigencia.

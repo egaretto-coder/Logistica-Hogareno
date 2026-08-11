@@ -296,6 +296,25 @@ create table if not exists public.importaciones (
 create unique index if not exists idx_importaciones_hash on public.importaciones (hash);
 create index if not exists idx_importaciones_created on public.importaciones (created_at desc);
 
+-- ---------- SUPER SLA: solicitudes de cambio de precio (maker-checker) ----------
+-- Un rol no autorizado propone un precio nuevo para (conductor, zona); queda
+-- 'pendiente' y NO cambia el precio real hasta que un supervisor/analista la
+-- autorice (recién ahí se aplica a super_sla).
+create table if not exists public.supersla_solicitudes (
+  id bigint generated always as identity primary key,
+  conductor text not null,
+  zona text not null,
+  precio_anterior numeric not null default 0,
+  precio_propuesto numeric not null default 0,
+  motivo text default '',
+  solicitante text default '',
+  estado text not null default 'pendiente',  -- pendiente | autorizado | rechazado
+  resuelto_por text default '',
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create index if not exists idx_supersla_sol_estado on public.supersla_solicitudes (estado);
+
 -- Helper de rol: ¿el usuario actual es analista?
 create or replace function public.es_analista()
 returns boolean language sql stable security definer set search_path = public as $$
@@ -489,3 +508,8 @@ create policy comision_pagos_all      on public.comision_pagos      for all to a
 -- importaciones: historial de cargas; acceso completo para autenticados.
 alter table public.importaciones enable row level security;
 create policy importaciones_all on public.importaciones for all to authenticated using (true) with check (true);
+
+-- supersla_solicitudes: acceso completo para autenticados (el control de quién
+-- puede autorizar/editar el precio se aplica en la UI: solo supervisor/analista).
+alter table public.supersla_solicitudes enable row level security;
+create policy supersla_solicitudes_all on public.supersla_solicitudes for all to authenticated using (true) with check (true);

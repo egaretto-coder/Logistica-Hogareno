@@ -2,18 +2,26 @@
         <div class="section-head">
           <span class="section-title">Tarifas Super SLA</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-sm" onclick="openAgregarConductorSuperSLA()">➕ Agregar conductor</button>
-            <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar
+            <button class="btn btn-sm" id="sla-btn-agregar" onclick="openAgregarConductorSuperSLA()">➕ Agregar conductor</button>
+            <label class="btn btn-sm" id="sla-import-label" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar
               <input type="file" id="supersla-import-file" accept=".xlsx,.xls,.csv" onchange="importarSuperSLA(event)" style="display:none">
             </label>
             <button class="btn btn-sm" onclick="exportarSuperSLA()"><i class="ic ic-download"></i> Exportar</button>
-            <button class="btn btn-sm btn-primary" onclick="saveSuperSLA()">Guardar cambios</button>
+            <button class="btn btn-sm btn-primary" id="sla-btn-guardar" onclick="saveSuperSLA()">Guardar cambios</button>
           </div>
         </div>
 
         <div class="alert alert-info">
           <i class="ic ic-star"></i> Acá configurás las <strong>zonas con precio especial</strong> para cada conductor con categoría Super SLA. El precio especial aplica <strong>solo en esas zonas</strong>. En cualquier otra zona, el conductor usa el precio SLA Cumplido estándar.
         </div>
+
+        <!-- Aviso de candado (roles sin permiso de edición) -->
+        <div class="alert" id="sla-lock-notice" style="display:none;background:#fef9c3;border:1px solid #f5d97a;color:#854d0e">
+          <i class="ic ic-lock"></i> El precio de Super SLA está <strong>bloqueado</strong> para tu rol. Podés <strong>solicitar un cambio</strong> con el botón “Solicitar” de cada zona; un <strong>supervisor</strong> o <strong>analista</strong> lo autoriza.
+        </div>
+
+        <!-- Solicitudes de cambio de precio pendientes -->
+        <div id="supersla-solicitudes" style="display:none;margin-bottom:12px"></div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
           <input type="search" id="supersla-search" placeholder="🔍 Buscar conductor por nombre o ID..." style="width:320px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderSuperSLA()">

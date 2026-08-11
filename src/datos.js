@@ -53,6 +53,8 @@ function loadSavedConfig() {
   if (cpag) { try { AppData.comisionPagos = JSON.parse(cpag) || []; } catch(e) {} }
   const imps = localStorage.getItem('liq_importaciones');
   if (imps) { try { AppData.importaciones = JSON.parse(imps) || []; } catch(e) {} }
+  const slasol = localStorage.getItem('liq_supersla_solic');
+  if (slasol) { try { AppData.superSLASolicitudes = JSON.parse(slasol) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -213,6 +215,15 @@ async function hydrateFromSupabase() {
     usuario: i.usuario || '', created_at: i.created_at || ''
   }));
 
+  // Solicitudes de cambio de precio de Super SLA.
+  AppData.superSLASolicitudes = (data.supersla_solicitudes || []).map(s => ({
+    id: s.id, conductor: s.conductor, zona: s.zona,
+    precio_anterior: _num(s.precio_anterior), precio_propuesto: _num(s.precio_propuesto),
+    motivo: s.motivo || '', solicitante: s.solicitante || '',
+    estado: s.estado || 'pendiente', resuelto_por: s.resuelto_por || '',
+    created_at: s.created_at || ''
+  }));
+
   // Configuración clave/valor (genérica)
   AppData.config = {};
   (data.config || []).forEach(row => { AppData.config[row.clave] = row.valor; });
@@ -271,6 +282,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));
     localStorage.setItem('liq_comision_pagos', JSON.stringify(AppData.comisionPagos));
     localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones));
+    localStorage.setItem('liq_supersla_solic', JSON.stringify(AppData.superSLASolicitudes));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.
