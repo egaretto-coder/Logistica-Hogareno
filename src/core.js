@@ -260,6 +260,11 @@ let AppData = {
   // superSLASolicitudes: [{ id, conductor, zona, precio_anterior, precio_propuesto, motivo, solicitante, estado, resuelto_por, created_at }]
   superSLASolicitudes: [],
 
+  // Catálogo de dimensiones especiales (base de datos por cliente).
+  // dimCatalogo: [{ id, cliente, nombre, zona, precio }] — un precio por (cliente, dimensión, zona).
+  // La asignación a un envío se guarda en el registro (dim_especial + dim_cliente).
+  dimCatalogo: [],
+
   // Historial de tarifas de km de desvío (ordenado por vigencia).
   // Formato: { valor, vigente_desde (ISO), creado_por }
   // Cada cambio de precio queda registrado con su fecha/hora de vigencia.
@@ -648,21 +653,22 @@ function calcLiquidaciones(records) {
     }
 
     if (contabiliza) {
-      // Buscar si este tracking tiene una DIMENSIÓN ESPECIAL cargada.
-      // Si existe, REEMPLAZA el precio tradicional (no lo suma).
-      const dim = tracking ? findDimensionEspecial(tracking) : null;
+      // ¿Este envío tiene una DIMENSIÓN ESPECIAL asignada (a mano, desde
+      // Conductores)? Si sí, REEMPLAZA el precio tradicional por el de la
+      // dimensión en la zona de entrega (no lo suma).
+      const dim = dimensionAsignada(r);
 
       let precio, tipo, es_super = false, sin_tarifa = false;
       let es_dim_especial = false;
       let dim_cliente = '', dim_condicion = '';
 
       if (dim) {
-        // Precio reemplazado por el valor especial
-        precio = dim.valor;
+        precio = dim.precio;
         tipo = 'dim_especial';
         es_dim_especial = true;
+        sin_tarifa = dim.sinPrecioZona;   // dimensión asignada sin precio en esa zona
         dim_cliente = dim.cliente || '';
-        dim_condicion = dim.condicion || '';
+        dim_condicion = dim.nombre || '';
       } else {
         // Cálculo tradicional desde panel de tarifas
         const p = getPrecio(cond, zona);
@@ -697,13 +703,38 @@ function calcLiquidaciones(records) {
   return byDriver;
 }
 
-// ═══ Buscar dimensión especial por tracking ══════════════════════════════
-function findDimensionEspecial(tracking) {
-  if (!tracking || !AppData.dimensionesEspeciales.length) return null;
-  const t = String(tracking).trim().toUpperCase();
-  return AppData.dimensionesEspeciales.find(d =>
-    String(d.tracking || '').trim().toUpperCase() === t
-  ) || null;
+// ═══ Dimensiones especiales (catálogo por cliente, precio por zona) ══════════
+// El catálogo (AppData.dimCatalogo) guarda un precio por (cliente, dimensión,
+// zona). La asignación a un envío vive en el registro (dim_especial + dim_cliente)
+// y el precio aplicado sale de la zona de entrega del envío.
+function dimClientes() {
+  const m = new Map();
+  AppData.dimCatalogo.forEach(d => { const k = normNombre(d.cliente); if (k && !m.has(k)) m.set(k, d.cliente); });
+  return Array.from(m.values()).sort((a, b) => String(a).localeCompare(String(b)));
+}
+function dimNombresDe(cliente) {
+  const ck = normNombre(cliente), m = new Map();
+  AppData.dimCatalogo.forEach(d => { if (normNombre(d.cliente) === ck) { const k = normNombre(d.nombre); if (k && !m.has(k)) m.set(k, d.nombre); } });
+  return Array.from(m.values()).sort((a, b) => String(a).localeCompare(String(b)));
+}
+function dimPrecioEnZona(cliente, nombre, zona) {
+  const ck = normNombre(cliente), nk = normNombre(nombre), zk = normNombre(zona);
+  const row = AppData.dimCatalogo.find(d => normNombre(d.cliente) === ck && normNombre(d.nombre) === nk && normNombre(d.zona) === zk);
+  return row ? _num(row.precio) : null;
+}
+// Zonas (con precio) en las que existe una dimensión de un cliente.
+function dimZonasDe(cliente, nombre) {
+  const ck = normNombre(cliente), nk = normNombre(nombre);
+  return AppData.dimCatalogo.filter(d => normNombre(d.cliente) === ck && normNombre(d.nombre) === nk)
+    .map(d => ({ zona: d.zona, precio: _num(d.precio) }));
+}
+// Dimensión asignada a un envío (o null). El precio sale de la zona de entrega.
+function dimensionAsignada(r) {
+  if (!r || !r.dim_especial) return null;
+  const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
+  const cli = r.dim_cliente || r.cliente || '';
+  const precio = dimPrecioEnZona(cli, r.dim_especial, zona);
+  return { cliente: cli, nombre: r.dim_especial, precio: precio == null ? 0 : precio, sinPrecioZona: precio == null };
 }
 
 // Devuelve el precio corregido a mano de un registro, o null si no tiene.

@@ -16,11 +16,11 @@ function renderConductorSelect() {
 let condEditPendientes = false;
 let condEditTimer = null;
 
-// Precio automático de un registro (dimensión especial > tarifas/Super SLA).
+// Precio automático de un registro (dimensión especial asignada > tarifas/Super SLA).
 function precioAutoDe(r) {
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
-  const dim = r.tracking ? findDimensionEspecial(r.tracking) : null;
-  if (dim) return { precio: dim.valor, etiqueta: 'Dimensión Especial' };
+  const dim = dimensionAsignada(r);
+  if (dim) return { precio: dim.precio, etiqueta: 'Dimensión: ' + dim.nombre + (dim.sinPrecioZona ? ' (sin precio en ' + (zona || 'zona') + ')' : '') };
   const p = getPrecio((r.cadete || '').trim(), zona);
   return { precio: p.precio, etiqueta: tipoLabel(p.tipo) + (p.es_super ? ' ⭐' : '') + (p.sin_tarifa ? ' (sin tarifa)' : '') };
 }
@@ -171,9 +171,12 @@ function renderConductorDetail() {
           </div>
         </td>
         <td style="font-size:11px;color:var(--text-muted)">
-          ${r.manual ? '<span class="tag" title="Envío cargado a mano desde este panel" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;margin-right:4px"><i class="ic ic-plus"></i> Manual</span>' : ''}${r.zona_manual ? '<span class="tag" title="La zona fue definida/corregida a mano" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;margin-right:4px"><i class="ic ic-pin"></i> Zona a mano</span>' : ''}${manual !== null
+          <div>${r.manual ? '<span class="tag" title="Envío cargado a mano desde este panel" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;margin-right:4px"><i class="ic ic-plus"></i> Manual</span>' : ''}${r.zona_manual ? '<span class="tag" title="La zona fue definida/corregida a mano" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;margin-right:4px"><i class="ic ic-pin"></i> Zona a mano</span>' : ''}${manual !== null
             ? '<span class="tag" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a"><i class="ic ic-edit"></i> Corregido (auto: ' + fmtPeso(auto.precio) + ')</span>'
-            : auto.etiqueta}
+            : auto.etiqueta}</div>
+          <div style="margin-top:5px">${r.dim_especial
+            ? '<span class="tag" style="background:#fef9c3;color:#92400e;border:1px solid #fde68a" title="Dimensión especial asignada — precio por zona de entrega"><i class="ic ic-box"></i> ' + r.dim_especial + '</span> <button class="btn btn-sm" style="padding:2px 6px;font-size:10px" onclick="openDimAsignarModal(' + i + ')" title="Cambiar dimensión"><i class="ic ic-edit"></i></button> <button class="btn btn-sm" style="padding:2px 6px;font-size:10px;border-color:#fca5a5;color:#b91c1c" onclick="quitarDimensionEnvio(' + i + ')" title="Quitar dimensión">✕</button>'
+            : '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="openDimAsignarModal(' + i + ')" title="Asignar una dimensión especial del catálogo"><i class="ic ic-box"></i> Dimensión</button>'}</div>
         </td>
       </tr>`;
   }).join('');
@@ -287,6 +290,88 @@ function actualizarEstadoEdicion(txt) {
   if (btn) btn.style.display = condEditPendientes ? '' : 'none';
 }
 
+// ── Asignar una DIMENSIÓN ESPECIAL a un envío (catálogo por cliente + zona) ──
+// Flujo: elegir Cliente → aparecen solo las dimensiones de ese cliente → al
+// elegir una, el precio del envío pasa a ser el de esa dimensión en su zona.
+let dimAsignarIdx = -1;
+function _dimJs(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+
+function openDimAsignarModal(idx) {
+  const r = AppData.records[idx];
+  if (!r) return;
+  if (r._historico) { showToast('🗄️ Registro archivado (solo lectura)'); return; }
+  dimAsignarIdx = idx;
+  const zona = (r.zona && r.zona.trim()) ? r.zona.trim().toUpperCase() : (r.localidad || '').trim().toUpperCase();
+  const info = document.getElementById('mda-envio');
+  if (info) info.innerHTML = 'Tracking <strong>' + (r.tracking || '—') + '</strong> · Zona <strong>' + (zona || '—') + '</strong>';
+  // Clientes con dimensiones en el catálogo (+ el del envío, si no estuviera).
+  const clientes = dimClientes();
+  const rc = r.dim_cliente || r.cliente || '';
+  if (rc && !clientes.some(c => normNombre(c) === normNombre(rc))) clientes.unshift(rc);
+  const sel = document.getElementById('mda-cliente');
+  if (sel) {
+    const preferido = rc;
+    sel.innerHTML = '<option value="">— Elegí un cliente —</option>' + clientes.map(c =>
+      '<option value="' + String(c).replace(/"/g, '&quot;') + '"' + (preferido && normNombre(preferido) === normNombre(c) ? ' selected' : '') + '>' + c + '</option>').join('');
+  }
+  renderDimAsignarOpciones();
+  document.getElementById('modal-dim-asignar-backdrop').style.display = 'flex';
+}
+
+function renderDimAsignarOpciones() {
+  const cont = document.getElementById('mda-opciones');
+  const r = AppData.records[dimAsignarIdx];
+  if (!cont || !r) return;
+  const cliente = document.getElementById('mda-cliente')?.value || '';
+  const zona = (r.zona && r.zona.trim()) ? r.zona.trim().toUpperCase() : (r.localidad || '').trim().toUpperCase();
+  if (!cliente) { cont.innerHTML = '<div class="muted" style="padding:12px">Elegí primero un cliente para ver sus dimensiones.</div>'; return; }
+  const nombres = dimNombresDe(cliente);
+  if (!nombres.length) { cont.innerHTML = '<div class="muted" style="padding:12px">Ese cliente no tiene dimensiones en el catálogo. Cargalas en el panel <strong>Dimensiones Especiales</strong>.</div>'; return; }
+  cont.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Dimensiones de <strong>' + cliente + '</strong> para la zona <strong>' + (zona || '—') + '</strong>:</div>' +
+    nombres.map(n => {
+      const precio = dimPrecioEnZona(cliente, n, zona);
+      const asignada = normNombre(r.dim_especial) === normNombre(n) && normNombre(r.dim_cliente || r.cliente) === normNombre(cliente);
+      if (precio == null) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;opacity:.55"><span><i class="ic ic-box"></i> <strong>' + n + '</strong></span><span class="muted" style="font-size:11px">sin precio en ' + (zona || 'esta zona') + '</span></div>';
+      }
+      return '<button class="btn" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;margin-bottom:6px;' + (asignada ? 'border-color:#16a34a;background:#f0fdf4' : '') + '" onclick="aplicarDimensionEnvio(' + _dimJs(cliente) + ',' + _dimJs(n) + ')"><span><i class="ic ic-box"></i> <strong>' + n + '</strong></span><span class="mono" style="font-weight:700">' + fmtPeso(precio) + (asignada ? ' ✓' : '') + '</span></button>';
+    }).join('');
+}
+
+function closeDimAsignarModal(e) {
+  if (!e || e.target.id === 'modal-dim-asignar-backdrop') document.getElementById('modal-dim-asignar-backdrop').style.display = 'none';
+}
+
+function aplicarDimensionEnvio(cliente, nombre) {
+  const r = AppData.records[dimAsignarIdx];
+  if (!r) return;
+  r.dim_cliente = String(cliente).toUpperCase();
+  r.dim_especial = String(nombre).toUpperCase();
+  document.getElementById('modal-dim-asignar-backdrop').style.display = 'none';
+  _marcarDimDirty(r);
+  showToast('✅ Dimensión "' + nombre + '" asignada al envío');
+}
+
+function quitarDimensionEnvio(idx) {
+  const r = AppData.records[idx];
+  if (!r) return;
+  if (r._historico) { showToast('🗄️ Registro archivado (solo lectura)'); return; }
+  r.dim_especial = ''; r.dim_cliente = '';
+  _marcarDimDirty(r);
+  showToast('Dimensión quitada del envío');
+}
+
+// Marca el registro como sucio y agenda el autoguardado (igual que las ediciones).
+function _marcarDimDirty(r) {
+  if (r.id) condEditIdsSucios.add(r.id);
+  else console.warn('Registro sin id de nube (no se podrá sincronizar la dimensión):', r.tracking);
+  condEditPendientes = true;
+  actualizarEstadoEdicion('Cambios sin guardar…');
+  renderConductorDetail();
+  clearTimeout(condEditTimer);
+  condEditTimer = setTimeout(guardarEdicionConductores, 1500);
+}
+
 // Sincroniza SOLO las filas editadas (update por id) — no reescribe la base.
 async function guardarEdicionConductores() {
   if (!condEditPendientes || !condEditIdsSucios.size) return;
@@ -304,6 +389,7 @@ async function guardarEdicionConductores() {
         tracking: r.tracking || '', zona: r.zona || '', estado: r.estado || '',
         fecha_date: fechaISOde(r.fecha), clave: claveRegistro(r),
         zona_manual: !!r.zona_manual,
+        dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
         precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : parseFloat(r.precio_manual)
       });
       condEditIdsSucios.delete(id);

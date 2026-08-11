@@ -55,6 +55,8 @@ function loadSavedConfig() {
   if (imps) { try { AppData.importaciones = JSON.parse(imps) || []; } catch(e) {} }
   const slasol = localStorage.getItem('liq_supersla_solic');
   if (slasol) { try { AppData.superSLASolicitudes = JSON.parse(slasol) || []; } catch(e) {} }
+  const dimc = localStorage.getItem('liq_dim_catalogo');
+  if (dimc) { try { AppData.dimCatalogo = JSON.parse(dimc) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -169,6 +171,8 @@ async function hydrateFromSupabase() {
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '',
     cliente: r.cliente || '', // empresa/cliente de facturación (viene del Excel)
+    dim_especial: r.dim_especial || '', // dimensión especial asignada (nombre) — vacío = ninguna
+    dim_cliente: r.dim_cliente || '',   // cliente de esa dimensión (para resolver el precio por zona)
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
     zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
@@ -213,6 +217,11 @@ async function hydrateFromSupabase() {
     agregados: _num(i.agregados), reemplazados: _num(i.reemplazados),
     fecha_desde: i.fecha_desde || '', fecha_hasta: i.fecha_hasta || '',
     usuario: i.usuario || '', created_at: i.created_at || ''
+  }));
+
+  // Catálogo de dimensiones especiales (cliente · dimensión · zona · precio).
+  AppData.dimCatalogo = (data.dimensiones_catalogo || []).map(d => ({
+    id: d.id, cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio)
   }));
 
   // Solicitudes de cambio de precio de Super SLA.
@@ -283,6 +292,7 @@ async function hydrateFromSupabase() {
     localStorage.setItem('liq_comision_pagos', JSON.stringify(AppData.comisionPagos));
     localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones));
     localStorage.setItem('liq_supersla_solic', JSON.stringify(AppData.superSLASolicitudes));
+    localStorage.setItem('liq_dim_catalogo', JSON.stringify(AppData.dimCatalogo));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.
@@ -315,6 +325,9 @@ function dbPush(table) {
       fecha: d.fecha || '', tracking: d.tracking || '', cliente: d.cliente || '',
       zona: d.zona || '', valor: _num(d.valor), condicion: d.condicion || ''
     })),
+    dimensiones_catalogo: () => AppData.dimCatalogo.map(d => ({
+      cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio)
+    })).filter(d => d.cliente && d.nombre && d.zona),
     km_desvio: () => AppData.kmDesvio.map(d => ({
       conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
       valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || ''
@@ -361,6 +374,7 @@ function filaRegistroNube(r) {
     fecha_date: fechaISOde(r.fecha),
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
+    dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     clave: claveRegistro(r),
     manual: !!r.manual,
@@ -430,6 +444,7 @@ async function cargarHistorialCompleto(btn) {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
+      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
@@ -439,6 +454,7 @@ async function cargarHistorialCompleto(btn) {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
+      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)

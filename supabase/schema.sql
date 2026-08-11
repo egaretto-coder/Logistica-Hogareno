@@ -73,6 +73,9 @@ create table if not exists public.panel_conductores (
 );
 
 -- ---------- DIMENSIONES ESPECIALES ----------
+-- (DEPRECADA) Modelo viejo por tracking (valor único que reemplazaba la tarifa).
+-- Reemplazada por dimensiones_catalogo (catálogo por cliente, precio por zona) +
+-- la asignación manual desde Conductores (registros.dim_especial/dim_cliente).
 create table if not exists public.dimensiones_especiales (
   id bigint generated always as identity primary key,
   fecha text default '',
@@ -83,6 +86,22 @@ create table if not exists public.dimensiones_especiales (
   condicion text default '',
   updated_at timestamptz not null default now()
 );
+
+-- ---------- DIMENSIONES ESPECIALES: CATÁLOGO (por cliente, precio por zona) ----------
+-- Base de datos de dimensiones especiales. Cada (cliente, dimensión) tiene un
+-- precio por zona. La asignación a un envío se guarda en registros
+-- (dim_especial + dim_cliente) y el precio aplicado sale de la zona de entrega.
+create table if not exists public.dimensiones_catalogo (
+  id bigint generated always as identity primary key,
+  cliente text not null,
+  nombre text not null,           -- nombre de la dimensión (ej. "Heladera")
+  zona text not null,
+  precio numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique (cliente, nombre, zona)
+);
+create index if not exists idx_dim_catalogo_cliente on public.dimensiones_catalogo (cliente);
+-- Asignación en registros: columnas dim_especial (nombre) + dim_cliente.
 
 -- ---------- DESCUENTOS CONDUCTORES (DEPRECADA) ----------
 -- Modelo viejo: una fila-resumen por conductor con 4 montos sueltos, sin fecha
@@ -371,6 +390,8 @@ create table if not exists public.registros (
   manual boolean not null default false, -- true = envío cargado a mano desde el editor de Conductores (chip "Manual")
   zona_manual boolean not null default false, -- true = la zona fue definida/corregida a mano (para localizar correcciones)
   cliente text default '',     -- empresa/cliente de facturación (viene del Excel; se factura por su tarifario de venta)
+  dim_especial text default '', -- dimensión especial asignada a mano (nombre); '' = ninguna
+  dim_cliente text default '',  -- cliente de esa dimensión (para resolver el precio por zona)
   created_at timestamptz not null default now()
 );
 create index if not exists idx_registros_fecha_date on public.registros (fecha_date);
@@ -395,6 +416,8 @@ create table if not exists public.registros_historico (
   precio_manual numeric,
   zona_manual boolean not null default false,
   cliente text default '',
+  dim_especial text default '',
+  dim_cliente text default '',
   created_at timestamptz,
   archivado_en timestamptz not null default now()
 );
@@ -412,8 +435,8 @@ begin
     delete from public.registros r where r.fecha_date is not null and r.fecha_date < antes_de returning r.*
   )
   insert into public.registros_historico
-    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, cliente, created_at)
-  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, cliente, created_at from mov;
+    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, cliente, dim_especial, dim_cliente, created_at)
+  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha, fecha_date, precio_manual, zona_manual, cliente, dim_especial, dim_cliente, created_at from mov;
   get diagnostics movidos = row_count;
   return movidos;
 end $$;
@@ -440,6 +463,10 @@ create policy tarifas_all   on public.tarifas                for all to authenti
 create policy super_sla_all on public.super_sla              for all to authenticated using (true) with check (true);
 create policy panel_all     on public.panel_conductores      for all to authenticated using (true) with check (true);
 create policy dim_all       on public.dimensiones_especiales for all to authenticated using (true) with check (true);
+
+-- dimensiones_catalogo: acceso completo para autenticados.
+alter table public.dimensiones_catalogo enable row level security;
+create policy dim_catalogo_all on public.dimensiones_catalogo for all to authenticated using (true) with check (true);
 create policy desc_all      on public.descuentos_conductores for all to authenticated using (true) with check (true);
 create policy km_all        on public.km_desvio              for all to authenticated using (true) with check (true);
 create policy config_all    on public.config                 for all to authenticated using (true) with check (true);

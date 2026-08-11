@@ -359,33 +359,57 @@
       <button class="modal-close" onclick="closeDimModal()"><i class="ic ic-x"></i></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">Una fila del catálogo = el precio de <strong>una dimensión</strong> de <strong>un cliente</strong> en <strong>una zona</strong>. Cargá una fila por cada zona en la que aplique.</div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">Fecha</label>
-        <input type="date" id="md-fecha" class="form-input" style="width:100%" />
+        <label class="form-label">Cliente *</label>
+        <input type="text" id="md-cliente" class="form-input" placeholder="Ej: MERCADO LIBRE" style="width:100%;text-transform:uppercase" list="md-clientes-list" oninput="this.value=this.value.toUpperCase()" />
+        <datalist id="md-clientes-list"></datalist>
       </div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">Tracking</label>
-        <input type="text" id="md-tracking" class="form-input" placeholder="Ej: 12345678" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+        <label class="form-label">Dimensión *</label>
+        <input type="text" id="md-nombre" class="form-input" placeholder="Ej: HELADERA, COLCHON KING…" style="width:100%;text-transform:uppercase" list="md-nombres-list" oninput="this.value=this.value.toUpperCase()" />
+        <datalist id="md-nombres-list"></datalist>
       </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Cliente</label>
-        <input type="text" id="md-cliente" class="form-input" placeholder="Nombre del cliente" style="width:100%" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Zona</label>
-        <input type="text" id="md-zona" class="form-input" placeholder="Ej: LA PLATA" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Condición Especial</label>
-        <input type="text" id="md-condicion" class="form-input" placeholder="Ej: Volumen grande, Frágil, Peligroso..." style="width:100%" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Valor especial ($)</label>
-        <input type="number" id="md-valor" class="form-input" placeholder="4500" style="width:100%" min="0" step="1" />
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Zona *</label>
+          <input type="text" id="md-zona" class="form-input" placeholder="Ej: LA PLATA" style="width:100%;text-transform:uppercase" list="md-zonas-list" oninput="this.value=this.value.toUpperCase()" />
+          <datalist id="md-zonas-list"></datalist>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:130px">
+          <label class="form-label"><i class="ic ic-dollar"></i> Precio en esa zona ($) *</label>
+          <input type="number" id="md-precio" class="form-input" placeholder="6500" style="width:100%" min="0" step="1" />
+        </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
         <button class="btn" onclick="closeDimModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarDimensionModal()">Guardar</button>
+        <button class="btn btn-primary" onclick="guardarDimensionModal()"><i class="ic ic-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ASIGNAR DIMENSIÓN ESPECIAL A UN ENVÍO (desde Conductores) -->
+<div class="modal-backdrop" id="modal-dim-asignar-backdrop" onclick="closeDimAsignarModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:460px;max-height:90vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-box"></i> Asignar dimensión especial</span>
+      <button class="modal-close" onclick="closeDimAsignarModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;overflow-y:auto">
+      <div class="alert alert-info" style="margin:0" id="mda-envio">—</div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">1) Cliente</label>
+        <select id="mda-cliente" class="form-input" style="width:100%" onchange="renderDimAsignarOpciones()">
+          <option value="">— Elegí un cliente —</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">2) Dimensión (precio según la zona del envío)</label>
+        <div id="mda-opciones" style="min-height:60px"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="closeDimAsignarModal()">Cerrar</button>
       </div>
     </div>
   </div>
