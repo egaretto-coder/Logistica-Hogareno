@@ -133,10 +133,10 @@ async function entrarConUsuario(user) {
 
   // Arranque instantáneo: mostramos la app YA con lo que haya en caché local
   // (loadSavedConfig ya corrió al bootstrap). Los datos frescos se traen en
-  // SEGUNDO PLANO y refrescan la pantalla al llegar, sin bloquear el login.
+  // SEGUNDO PLANO y EN 2 FASES (config primero, recorridos después) para que la
+  // app sea usable enseguida en vez de esperar los ~10k registros.
   showApp();
-  hydrateFromSupabase()
-    .then(() => { if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva(); })
+  hydrateEnFases()
     .catch(e => console.warn('Hidratación en segundo plano falló:', e));
   if (typeof iniciarRealtime === 'function') iniciarRealtime();   // sincronización en vivo
 }

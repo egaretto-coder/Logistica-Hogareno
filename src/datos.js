@@ -312,6 +312,71 @@ async function hydrateFromSupabase(opts) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  CARGA EN 2 FASES (arranque ágil)
+//  Los recorridos son lo pesado (~10k filas / varios MB) y tardan >1,5 s. Si
+//  esperamos todo junto, el operador ve pantallas vacías y siente la app
+//  trabada. Por eso: primero la configuración (liviana → la app queda usable
+//  al instante) y después los recorridos, repintando al llegar.
+// ════════════════════════════════════════════════════════════════════════
+
+// Trae SOLO la tabla de recorridos y actualiza AppData.records.
+async function hydrateRegistros() {
+  if (!window.DB || !DB.ready) return false;
+  const _t0 = (window.performance && performance.now()) || 0;
+  AppData._cargandoRegistros = true;
+  actualizarEstadoCarga();
+  try {
+    const filas = await DB.selectRegistrosVentana(AppData.historialCompleto ? null : ventanaDesdeISO());
+    AppData.records = (filas || []).map(r => ({
+      id: r.id,
+      cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
+      zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
+      direccion: r.direccion || '', destinatario: r.destinatario || '',
+      cliente: r.cliente || '', dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
+      estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+      manual: !!r.manual, zona_manual: !!r.zona_manual,
+      precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
+    }));
+    if (window.__perfLog) window.__perfLog('cargar recorridos (' + AppData.records.length + ')', _t0);
+    return true;
+  } catch (e) {
+    console.warn('hydrateRegistros:', e);
+    return false;
+  } finally {
+    AppData._cargandoRegistros = false;
+    actualizarEstadoCarga();
+  }
+}
+
+// Aviso visible mientras bajan los recorridos (así el operador entiende que los
+// números todavía se están completando, en vez de ver una pantalla vacía).
+function actualizarEstadoCarga() {
+  const el = document.getElementById('sidebar-record-count');
+  if (!el) return;
+  if (AppData._cargandoRegistros) {
+    el.textContent = '⏳ Cargando recorridos…';
+  } else {
+    // Mismo texto que escribe el Dashboard al renderizar.
+    el.textContent = AppData.records.length
+      ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
+      : 'Sin datos cargados';
+  }
+}
+
+// Orquesta el arranque. Las dos cargas salen EN PARALELO (el tiempo total es el
+// de la más lenta, no la suma), pero la pantalla se repinta apenas llega la
+// configuración: la app queda operativa sin esperar los ~10k recorridos.
+async function hydrateEnFases() {
+  const pRegistros = hydrateRegistros();                       // arranca ya
+  try {
+    await hydrateFromSupabase({ sinRegistros: true });          // config (liviana)
+    if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+  } catch (e) { console.warn('Fase config:', e); }
+  const ok = await pRegistros;                                 // recorridos (pesado)
+  if (ok && typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+}
+
 // Empuja una tabla de configuración a Supabase (reemplazo total).
 // Se llama desde cada función save*(); si no hay conexión, no rompe nada
 // (el caché local ya quedó guardado).
