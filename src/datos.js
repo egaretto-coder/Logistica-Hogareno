@@ -104,15 +104,20 @@ function fechaISOde(fechaStr) {
 
 // Trae todos los datos desde Supabase y reemplaza AppData + caché local.
 // Si no hay conexión, deja el caché local que ya cargó loadSavedConfig().
-async function hydrateFromSupabase() {
+// opts.sinRegistros = true → refresca solo las tablas de configuración//movimientos
+// y CONSERVA AppData.records (evita rebajar ~10k filas cuando el cambio no las toca).
+async function hydrateFromSupabase(opts) {
   if (!window.DB || !DB.ready) return;
+  const sinRegistros = !!(opts && opts.sinRegistros);
   AppData._hidratando = true;
+  const _t0 = (window.performance && performance.now()) || 0;
   let data;
   try {
-    data = await DB.loadAll(AppData.historialCompleto ? null : ventanaDesdeISO());
+    data = await DB.loadAll(AppData.historialCompleto ? null : ventanaDesdeISO(), { sinRegistros });
   } finally {
     AppData._hidratando = false;
   }
+  if (window.__perfLog) window.__perfLog('hydrate' + (sinRegistros ? '(sin registros)' : '(completa)'), _t0);
   if (!data) return; // offline: se conserva el caché local
 
   // Tablas base: si Supabase está vacío (primer arranque), conservamos los
@@ -166,7 +171,9 @@ async function hydrateFromSupabase() {
   AppData.kmTarifas = (data.km_tarifas || [])
     .map(t => ({ valor: _num(t.valor), vigente_desde: t.vigente_desde, creado_por: t.creado_por || '' }))
     .sort((a, b) => new Date(a.vigente_desde) - new Date(b.vigente_desde));
-  AppData.records = (data.registros || []).map(r => ({
+  // OJO: con sinRegistros, data.registros viene null y NO se toca AppData.records
+  // (si mapeáramos null quedaría vacío y se perdería la base en memoria).
+  if (data.registros) AppData.records = data.registros.map(r => ({
     id: r.id, // id de la fila en la nube: permite ediciones puntuales sin reescribir la base
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',

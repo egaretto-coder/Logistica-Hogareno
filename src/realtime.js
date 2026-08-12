@@ -24,6 +24,34 @@ const RT_TABLAS = [
 let _rtCanal = null;
 let _rtTimer = null;
 let _rtMuteHasta = 0;   // ignorar echos de nuestras propias escrituras hasta este instante
+// Tablas que cambiaron desde la última sincronización. Permite recargar SOLO lo
+// necesario: si nadie tocó 'registros' (la tabla pesada, ~10k filas), la sync se
+// hace sin ella. Antes cualquier cambio (un adelanto, un permiso) rebajaba toda
+// la base y dejaba la UI trabada varios segundos.
+let _rtTablasSucias = new Set();
+
+// Qué tablas mira cada pantalla. Si ninguna de las que cambió está acá, NO se
+// re-renderiza la pantalla activa (evita repintar de prepo mientras el operador
+// está trabajando).
+const RT_PANTALLA_TABLAS = {
+  'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo'],
+  'upload':                 ['registros', 'importaciones'],
+  'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
+                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'km_tarifas'],
+  'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo'],
+  'panel-conductores':      ['panel_conductores'],
+  'config-tarifas':         ['tarifas'],
+  'config-supersla':        ['super_sla', 'panel_conductores', 'supersla_solicitudes'],
+  'dimensiones-especiales': ['dimensiones_catalogo'],
+  'extraviados':            ['descuentos_items', 'descuento_cuotas'],
+  'beneficios':             ['descuentos_items'],
+  'km-desvio':              ['km_desvio', 'km_tarifas'],
+  'adelantos':              ['adelantos', 'adelanto_cuotas'],
+  'clientes':               ['clientes', 'cliente_tarifas', 'registros'],
+  'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
+                             'clientes', 'cliente_tarifas', 'registros', 'config'],
+  'gestion-permisos':       ['rol_permisos', 'roles'],
+};
 
 // Marca que la app acaba de escribir en la nube: evita que el "eco" de Realtime
 // dispare una recarga redundante mientras el usuario sigue trabajando. La recarga
@@ -54,8 +82,10 @@ function _rtReprogramar(ms) {
 }
 
 // Debounce: agrupa una ráfaga de eventos (ej. un import de miles de filas) en una
-// sola recarga.
-function _rtOnCambio() {
+// sola recarga. Anota QUÉ tabla cambió para recargar solo lo necesario.
+function _rtOnCambio(payload) {
+  const t = payload && (payload.table || (payload.new && payload.new.table));
+  if (t) _rtTablasSucias.add(t);
   _rtReprogramar(1500);
 }
 
@@ -66,10 +96,25 @@ async function sincronizarEnVivo() {
   const ahora = Date.now();
   if (ahora < _rtMuteHasta) { _rtReprogramar(_rtMuteHasta - ahora + 200); return; } // esperar fin del mute
 
+  // Qué cambió (si no lo sabemos, vamos por la recarga completa por seguridad).
+  const sucias = _rtTablasSucias;
+  _rtTablasSucias = new Set();
+  const desconocido = sucias.size === 0;
+  const tocoRegistros = desconocido || sucias.has('registros');
+
   try {
-    await hydrateFromSupabase();                   // re-hidrata AppData desde la nube
-    if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
-    if (typeof showToast === 'function') showToast('🔄 Datos actualizados');
+    // Si nadie tocó 'registros', se refresca todo MENOS esa tabla: la sync pasa
+    // de bajar varios MB a un puñado de filas.
+    await hydrateFromSupabase({ sinRegistros: !tocoRegistros });
+
+    // Re-render solo si la pantalla activa mira alguna de las tablas que cambió.
+    const pagina = (typeof paginaActivaId === 'function') ? paginaActivaId() : null;
+    const mira = RT_PANTALLA_TABLAS[pagina] || null;
+    const afecta = desconocido || !mira || Array.from(sucias).some(t => mira.indexOf(t) >= 0);
+    if (afecta && typeof rerenderPaginaActiva === 'function') {
+      rerenderPaginaActiva();
+      if (typeof showToast === 'function') showToast('🔄 Datos actualizados');
+    }
   } catch (e) {
     console.warn('sincronizarEnVivo:', e);
   }

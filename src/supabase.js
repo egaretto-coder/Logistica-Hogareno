@@ -101,8 +101,12 @@ const DB = {
   // Trae TODAS las tablas de configuración + los registros de la ventana.
   // Devuelve null si no hay conexión (para que la app use el caché local).
   // desdeISO: límite inferior de fecha para registros (null = todo).
-  async loadAll(desdeISO) {
+  // opts.sinRegistros = true → NO trae la tabla 'registros' (la más pesada:
+  // ~10k filas / varios MB). La usa la sincronización en vivo cuando el cambio
+  // ocurrió en otra tabla, para no rebajar toda la base por un adelanto.
+  async loadAll(desdeISO, opts) {
     if (!sb) return null;
+    const sinRegistros = !!(opts && opts.sinRegistros);
     try {
       const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
@@ -111,7 +115,7 @@ const DB = {
         this.selectAll('dimensiones_especiales'),
         this.selectAll('km_desvio'),
         this.selectAll('km_tarifas', 'vigente_desde'),
-        this.selectRegistrosVentana(desdeISO),
+        sinRegistros ? Promise.resolve(null) : this.selectRegistrosVentana(desdeISO),
         this.selectAll('config'),
         this.selectAll('rol_permisos'),
         this.selectAll('roles', 'created_at'),

@@ -3,8 +3,37 @@
 //  router de páginas e inicialización.
 // ════════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════════
+//  MEDICIÓN DE PERFORMANCE (diagnóstico en producción)
+//  Registra cuánto tarda cada navegación/hidratación. Para ver el resumen,
+//  escribir  perf()  en la consola del navegador (F12).
+// ════════════════════════════════════════════════════════════════════════
+window.__perfDatos = [];
+window.__perfLog = function (etiqueta, t0) {
+  const ms = Math.round(((window.performance && performance.now()) || 0) - t0);
+  window.__perfDatos.push({ etiqueta, ms, hora: new Date().toLocaleTimeString('es-AR') });
+  if (window.__perfDatos.length > 200) window.__perfDatos.shift();
+  if (ms >= 400) console.warn('[perf] ' + etiqueta + ': ' + ms + ' ms');
+  return ms;
+};
+window.perf = function () {
+  const porEtiqueta = {};
+  window.__perfDatos.forEach(d => {
+    const e = porEtiqueta[d.etiqueta] || (porEtiqueta[d.etiqueta] = { n: 0, total: 0, max: 0 });
+    e.n++; e.total += d.ms; if (d.ms > e.max) e.max = d.ms;
+  });
+  const filas = Object.keys(porEtiqueta).map(k => ({
+    accion: k, veces: porEtiqueta[k].n,
+    promedio_ms: Math.round(porEtiqueta[k].total / porEtiqueta[k].n),
+    peor_ms: porEtiqueta[k].max
+  })).sort((a, b) => b.peor_ms - a.peor_ms);
+  console.table(filas);
+  return filas;
+};
+
 // ===== ROUTER =====
 function showPage(id) {
+  const _t0 = (window.performance && performance.now()) || 0;
   // Verificar permisos: si el usuario no puede ver esta página, redirigir a la primera permitida
   if (currentUser && !puedeVer(id)) {
     const primera = paginasDeRol(currentUser.rol)[0] || 'liquidaciones';
@@ -41,6 +70,7 @@ function showPage(id) {
   if (id === 'comisiones' && typeof switchComisionesTab === 'function') switchComisionesTab('vend');
   if (id === 'gestion-permisos') renderGestionPermisos();
   if (id === 'upload') { renderArchivoPanel(); if (typeof renderHistorialImportaciones === 'function') renderHistorialImportaciones(); }
+  window.__perfLog('pantalla: ' + id, _t0);
 }
 
 // Id de la página actualmente visible (deriva del <div class="page active">).
