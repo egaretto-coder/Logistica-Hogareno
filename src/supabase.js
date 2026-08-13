@@ -75,6 +75,20 @@ const DB = {
     return this._fetchAllParallel('registros_historico', { orderCol: 'id' });
   },
 
+  // TODOS los recorridos de un cliente (vivos + archivados), sin importar la
+  // ventana de días que carga la app. Lo usa Comisiones: la evaluación de un
+  // cliente nuevo mira sus 4 primeras liquidaciones (28 días), que pueden quedar
+  // fuera de la ventana operativa; si faltaran, la comisión se calcularía de menos.
+  async selectRegistrosDeCliente(cliente) {
+    const nombre = String(cliente || '').trim();
+    if (!nombre) return [];
+    const [vivos, hist] = await Promise.all([
+      this._fetchAllParallel('registros', { orderCol: 'id', filter: q => q.ilike('cliente', nombre) }),
+      this._fetchAllParallel('registros_historico', { orderCol: 'id', filter: q => q.ilike('cliente', nombre) }),
+    ]);
+    return (hist || []).concat(vivos || []);
+  },
+
   // Registros archivados dentro de un rango de fechas (server-side, por fecha_date).
   // Permite consultar lo archivado sin traer las decenas de miles de filas enteras.
   async selectHistoricoRango(desdeISO, hastaISO) {

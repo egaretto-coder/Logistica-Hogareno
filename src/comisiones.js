@@ -76,14 +76,54 @@ function categoriaDeFacturacion(fact) {
   return match;
 }
 
-// Recorridos contabilizables de un cliente (para evaluar sin escanear todo).
+// ── Recorridos del cliente para EVALUAR la comisión ─────────────────────────
+// La app carga una ventana corta de días (lo operativo), pero la evaluación de
+// un cliente nuevo necesita sus 4 primeras liquidaciones (28 días desde su
+// primer envío), que pueden ser anteriores. Por eso los traemos BAJO DEMANDA
+// desde la nube (vivos + archivados) y los cacheamos por cliente.
+const _comisionRecords = new Map();      // normCliente -> [registros contabilizables]
+const _comisionCargando = new Set();
+
+function _esContab(r) {
+  const est = (r.estado || '').toUpperCase().trim();
+  return est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est);
+}
+
+// Recorridos contabilizables de un cliente: los traídos bajo demanda si están,
+// si no los que haya en memoria (ventana operativa).
 function _recordsContabDeCliente(cliente) {
   const cKey = normCliente(cliente);
-  return AppData.records.filter(r => {
-    if (normCliente(r.cliente) !== cKey) return false;
-    const est = (r.estado || '').toUpperCase().trim();
-    return est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est);
-  });
+  const completos = _comisionRecords.get(cKey);
+  if (completos) return completos;
+  return AppData.records.filter(r => normCliente(r.cliente) === cKey && _esContab(r));
+}
+
+// Trae de la nube TODOS los recorridos del cliente (fuera de la ventana también).
+async function cargarRecorridosCliente(cliente) {
+  const cKey = normCliente(cliente);
+  if (_comisionRecords.has(cKey) || _comisionCargando.has(cKey)) return false;
+  if (!(window.DB && DB.ready)) return false;
+  _comisionCargando.add(cKey);
+  try {
+    const filas = await DB.selectRegistrosDeCliente(cliente);
+    _comisionRecords.set(cKey, (filas || []).filter(_esContab).map(r => ({
+      cliente: r.cliente || '', zona: r.zona || r.localidad || '', localidad: r.localidad || '',
+      estado: r.estado || '', fecha: r.fecha || ''
+    })));
+    return true;
+  } catch (e) {
+    console.warn('cargarRecorridosCliente(' + cliente + '):', e);
+    return false;
+  } finally { _comisionCargando.delete(cKey); }
+}
+
+// Para los clientes que todavía no están confirmados, asegura tener su historia
+// completa y re-renderiza cuando llegan (así el monto nunca se evalúa de menos).
+async function asegurarRecorridosParaEvaluar() {
+  const pendientes = (AppData.comisionClientes || []).filter(c => !c.bloqueado);
+  if (!pendientes.length) return;
+  const res = await Promise.all(pendientes.map(c => cargarRecorridosCliente(c.cliente)));
+  if (res.some(Boolean)) renderComisionClientes();
 }
 // Índice recorridos contabilizables por cliente (1 sola pasada) — para no repetir
 // el scan de AppData.records por cada fila en la tabla de comisiones (O(N) total
@@ -430,7 +470,10 @@ function renderComisionClientes() {
 
   const idx = _indexRecordsContabPorCliente();
   cont.innerHTML = lista.map(row => {
-    const ev = evalComisionCliente(row.cliente, idx.get(normCliente(row.cliente)) || []);
+    const _k = normCliente(row.cliente);
+    // Preferimos la historia completa traída de la nube; si aún no llegó, lo que
+    // haya en la ventana operativa (se repinta solo al llegar).
+    const ev = evalComisionCliente(row.cliente, _comisionRecords.get(_k) || idx.get(_k) || []);
     const bloq = !!row.bloqueado;
     const fact = bloq ? _num(row.facturacion_eval) : ev.facturacion;
     const cat = bloq ? (row.categoria || '—') : (ev.categoria || '—');
@@ -471,6 +514,10 @@ function renderComisionClientes() {
       '</div></td>' +
     '</tr>';
   }).join('');
+
+  // Traer de la nube la historia completa de los clientes aún sin confirmar
+  // (puede exceder la ventana de días que carga la app) y repintar al llegar.
+  asegurarRecorridosParaEvaluar();
 }
 
 // ── Asignar / editar cliente en comisión ─────────────────────────────────────
@@ -510,6 +557,10 @@ function actualizarPreviewComisionCliente() {
   const miInput = document.getElementById('mcc-mesinicio');
   if (!box) return;
   if (!cliente) { box.innerHTML = '<span class="muted">Elegí un cliente para ver la evaluación de sus primeras 4 liquidaciones.</span>'; return; }
+  // Si todavía no tenemos su historia completa, la pedimos y refrescamos el preview.
+  if (!_comisionRecords.has(normCliente(cliente))) {
+    cargarRecorridosCliente(cliente).then(ok => { if (ok) actualizarPreviewComisionCliente(); });
+  }
   const ev = evalComisionCliente(cliente);
   if (miInput && !miInput.value) miInput.placeholder = mesInicioDefaultCliente(cliente) + ' (por defecto)';
   if (!ev.tieneEscala) { box.innerHTML = '<span style="color:#b91c1c">⚠ No hay escala de categorización cargada. Importala en la solapa "Vendedores y escala".</span>'; return; }
@@ -558,6 +609,9 @@ async function guardarComisionClienteModal() {
 async function confirmarComisionCliente(id) {
   const row = AppData.comisionClientes.find(x => x.id === id);
   if (!row) return;
+  // CONGELA el monto: nos aseguramos de tener TODOS sus envíos (incluso fuera de
+  // la ventana operativa) antes de evaluar, para no comisionar de menos.
+  await cargarRecorridosCliente(row.cliente);
   const ev = evalComisionCliente(row.cliente);
   if (!ev.tieneEscala) { alert('No hay escala de categorización cargada.'); return; }
   if (!ev.completo) { if (!confirm('Las 4 liquidaciones todavía no están completas. ¿Confirmar igual con la facturación actual (' + fmtPeso(ev.facturacion) + ')?')) return; }

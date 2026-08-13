@@ -83,11 +83,15 @@ function loadSavedConfig() {
 
 const _num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 
-// Ventana de registros que se carga al iniciar. Con ~2.000 registros diarios,
-// traer todo el historial en cada arranque no escala: se cargan los últimos
-// N días (las liquidaciones son semanales) y el resto a demanda con
-// cargarHistorialCompleto().
-const VENTANA_DIAS_REGISTROS = 90;
+// Ventana de registros que se carga al iniciar. Con ~1.200 recorridos por día,
+// traer meses de historial en cada arranque no escala (90 días ≈ 100.000 filas).
+// La operación es SEMANAL: se cargan los últimos N días (la semana que se liquida
+// + una de margen para correcciones) y el resto se consulta a demanda:
+//   • "Cargar historial completo" (Dashboard) para análisis,
+//   • el panel Archivo por rango de fechas,
+//   • Comisiones trae por su cuenta la historia del cliente que evalúa
+//     (DB.selectRegistrosDeCliente), así el monto nunca se calcula de menos.
+const VENTANA_DIAS_REGISTROS = 14;
 
 function ventanaDesdeISO() {
   const d = new Date();
