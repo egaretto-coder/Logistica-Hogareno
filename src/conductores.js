@@ -71,6 +71,15 @@ function indicesConductorFiltrados(cond) {
     }
     out.push(i);
   });
+  // ORDEN POR FECHA DE ENVÍO (no por orden de importación). Si un día se carga
+  // tarde, sus envíos igual quedan en su lugar cronológico y no al final.
+  // Los que no tienen fecha parseable van al final; empate = orden estable.
+  const tsPorIdx = new Map();
+  out.forEach(i => {
+    const f = parseFechaReg(AppData.records[i].fecha);
+    tsPorIdx.set(i, f ? f.getTime() : Infinity);
+  });
+  out.sort((a, b) => (tsPorIdx.get(a) - tsPorIdx.get(b)) || (a - b));
   return out;
 }
 

@@ -742,8 +742,23 @@ function calcLiquidaciones(records) {
       byDriver[cond].total_excluido_count++;
     }
   });
+  // Las filas se arman en el orden en que están los registros (orden de
+  // importación). Las ordenamos por FECHA DE ENVÍO para que el detalle y el PDF
+  // sigan la cronología real aunque un día se haya cargado tarde.
+  Object.keys(byDriver).forEach(k => {
+    byDriver[k].filas.sort(_cmpPorFechaEnvio);
+    byDriver[k].filas_excluidas.sort(_cmpPorFechaEnvio);
+  });
   if (cacheable) { _liqCache.t = Date.now(); _liqCache.data = byDriver; }
   return byDriver;
+}
+
+// Comparador por fecha de envío (DD/MM/YYYY). Sin fecha → al final.
+function _cmpPorFechaEnvio(a, b) {
+  const fa = parseFechaReg(a.fecha), fb = parseFechaReg(b.fecha);
+  const ta = fa ? fa.getTime() : Infinity, tb = fb ? fb.getTime() : Infinity;
+  if (ta !== tb) return ta - tb;
+  return String(a.tracking || '').localeCompare(String(b.tracking || ''));
 }
 
 // ═══ Dimensiones especiales (catálogo por cliente, precio por zona) ══════════
