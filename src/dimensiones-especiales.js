@@ -158,19 +158,21 @@ function limpiarDimensiones() {
 }
 
 function descargarPlantillaDimensiones() {
+  // Mismo vocabulario que la planilla de la empresa ("HOJA DE CARGA"), para que
+  // ambos archivos sean intercambiables al importar.
   const aoa = [
-    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Cliente + Dimensión + Zona. El precio es lo que vale ESA dimensión en ESA zona.'],
-    ['Cliente', 'Dimension', 'Zona', 'Precio'],
-    ['MERCADO LIBRE', 'HELADERA', 'LA PLATA', 6500],
-    ['MERCADO LIBRE', 'HELADERA', 'CABA', 5200],
-    ['MERCADO LIBRE', 'COLCHON KING', 'LA PLATA', 4800],
+    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Cliente + Condición especial + Zona. El precio es lo que se le paga al conductor por ESA condición en ESA zona. La columna Detalle es informativa: la app no la usa.'],
+    ['CLIENTE', 'ZONA', 'CONDICION ESPECIAL', 'PRECIO A PAGAR AL CONDUCTOR', 'DETALLE'],
+    ['ACONCAGUA', 'CABA', '3 Y 4 BULTOS', 5040, '3 Y 4 BULTOS X2'],
+    ['ACONCAGUA', 'MERLO', '3 Y 4 BULTOS', 5600, '3 Y 4 BULTOS X2'],
+    ['FERRETERIA MARTIN', 'ZARATE', 'CARRETILLA', 10000, 'LAS CARRETILLAS VALEN $10000'],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 24 }, { wch: 22 }, { wch: 20 }, { wch: 12 }];
+  ws['!cols'] = [{ wch: 24 }, { wch: 20 }, { wch: 30 }, { wch: 28 }, { wch: 32 }];
   ws['!rows'] = [{ hpx: 34 }];
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Dimensiones');
+  XLSX.utils.book_append_sheet(wb, ws, 'HOJA DE CARGA');
   XLSX.writeFile(wb, 'Plantilla_Dimensiones_Catalogo.xlsx');
   showToast('📥 Plantilla descargada — completá y volvé a subirla sin tocar los encabezados');
 }
@@ -186,37 +188,83 @@ function importDimensionesEspeciales(event) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
       if (rows.length < 2) { alert('El archivo está vacío.'); return; }
 
+      // Detección de la fila de encabezados. Acepta la planilla de la EMPRESA
+      // ("HOJA DE CARGA": título en la fila 1, encabezados en la 3, columna A
+      // vacía, "CONDICION ESPECIAL" + "PRECIO A PAGAR AL CONDUCTOR" + "DETALLE")
+      // y también la plantilla simple que genera la app.
+      const esCli    = c => c.includes('cliente') || c.includes('empresa');
+      const esZona   = c => c.includes('zona') || c.includes('localidad');
+      const esDim    = c => c.includes('dimension') || c.includes('dimensin') || c.includes('condicion') || c.includes('condicin') || c.includes('nombre');
+      const esPrecio = c => c.includes('precio') || c.includes('valor') || c.includes('monto') || c.includes('tarifa');
       let h = -1;
-      for (let r = 0; r < Math.min(rows.length, 5); r++) {
-        const cells = rows[r].map(x => String(x).toLowerCase().replace(/[^a-z]/g, ''));
-        if (cells.includes('cliente') && cells.some(c => c.includes('dimension') || c.includes('dimensin') || c.includes('nombre')) && cells.some(c => c.includes('zona'))) { h = r; break; }
+      for (let r = 0; r < Math.min(rows.length, 15); r++) {
+        const cells = (rows[r] || []).map(x => String(x).toLowerCase().replace(/[^a-z]/g, ''));
+        if (cells.some(esCli) && cells.some(esZona) && cells.some(esDim)) { h = r; break; }
       }
-      if (h < 0) { alert('No se encontraron las columnas "Cliente", "Dimension" y "Zona". Descargá la plantilla oficial.'); return; }
-      const header = rows[h].map(x => String(x).toLowerCase().trim());
-      const iCli = header.findIndex(x => x.includes('cliente') || x.includes('empresa'));
-      const iNom = header.findIndex(x => x.includes('dimension') || x.includes('dimensión') || x.includes('nombre') || x.includes('condicion') || x.includes('condición'));
-      const iZona = header.findIndex(x => x.includes('zona') || x.includes('localidad'));
-      const iPrecio = header.findIndex(x => x.includes('precio') || x.includes('valor') || x.includes('monto') || x.includes('tarifa'));
-      if (iCli < 0 || iNom < 0 || iZona < 0 || iPrecio < 0) { alert('Faltan columnas Cliente / Dimension / Zona / Precio.'); return; }
+      if (h < 0) {
+        alert('No se encontró la fila de encabezados.\n\nSe esperan columnas de Cliente, Zona y Condición especial (o Dimensión).\nFunciona con la planilla de la empresa ("HOJA DE CARGA") o con la plantilla que descarga la app.');
+        return;
+      }
+      const header = (rows[h] || []).map(x => String(x).toLowerCase().trim());
+      const norm = x => String(x).toLowerCase().replace(/[^a-z]/g, '');
+      const iCli    = header.findIndex(x => esCli(norm(x)));
+      const iNom    = header.findIndex(x => esDim(norm(x)));
+      const iZona   = header.findIndex(x => esZona(norm(x)));
+      const iPrecio = header.findIndex(x => esPrecio(norm(x)));
+      if (iCli < 0 || iNom < 0 || iZona < 0 || iPrecio < 0) {
+        alert('Faltan columnas. Se necesitan: Cliente, Zona, Condición especial (o Dimensión) y Precio.');
+        return;
+      }
+      // Las demás columnas (p. ej. DETALLE) se ignoran: no afectan el cálculo.
 
       const parseNum = v => { if (typeof v === 'number') return v; const n = parseFloat(String(v || '').replace(/[^0-9.-]/g, '')); return isNaN(n) ? 0 : n; };
-      let nuevas = 0, actualizadas = 0;
+      const claveDe = (c, n, z) => normNombre(c) + '|' + normNombre(n) + '|' + normNombre(z);
+
+      // Índice del catálogo actual (evita el escaneo por fila: con ~2.700 filas
+      // el findIndex anidado hacía millones de comparaciones).
+      const idxActual = new Map();
+      AppData.dimCatalogo.forEach((d, i) => idxActual.set(claveDe(d.cliente, d.nombre, d.zona), i));
+
+      const vistas = new Set();
+      let nuevas = 0, actualizadas = 0, sinCambio = 0, ignoradas = 0;
       for (let i = h + 1; i < rows.length; i++) {
-        const r = rows[i];
+        const r = rows[i] || [];
         const cliente = String(r[iCli] || '').trim().toUpperCase();
-        const nombre = String(r[iNom] || '').trim().toUpperCase();
-        const zona = String(r[iZona] || '').trim().toUpperCase();
-        const precio = parseNum(r[iPrecio]);
-        if (!cliente || !nombre || !zona) continue;
-        const idx = AppData.dimCatalogo.findIndex(x => normNombre(x.cliente) === normNombre(cliente) && normNombre(x.nombre) === normNombre(nombre) && normNombre(x.zona) === normNombre(zona));
-        if (idx >= 0) { AppData.dimCatalogo[idx].precio = precio; actualizadas++; }
-        else { AppData.dimCatalogo.push({ cliente, nombre, zona, precio }); nuevas++; }
+        const nombre  = String(r[iNom] || '').trim().toUpperCase();
+        const zona    = String(r[iZona] || '').trim().toUpperCase();
+        const precio  = parseNum(r[iPrecio]);
+        if (!cliente || !nombre || !zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
+        const k = claveDe(cliente, nombre, zona);
+        vistas.add(k);
+        const pos = idxActual.get(k);
+        if (pos !== undefined) {
+          if (_num(AppData.dimCatalogo[pos].precio) !== precio) { AppData.dimCatalogo[pos].precio = precio; actualizadas++; }
+          else sinCambio++;
+        } else {
+          idxActual.set(k, AppData.dimCatalogo.length);
+          AppData.dimCatalogo.push({ cliente, nombre, zona, precio });
+          nuevas++;
+        }
       }
-      if (!nuevas && !actualizadas) { alert('No se importó ninguna dimensión válida (Cliente, Dimension, Zona).'); return; }
+      if (!vistas.size) { alert('No se importó ninguna fila válida (se necesitan Cliente, Zona y Condición especial).'); return; }
+
+      // La planilla de la empresa es la base de datos maestra: ofrecemos dejar el
+      // catálogo idéntico al archivo, quitando lo que ya no figura en él.
+      const sobrantes = AppData.dimCatalogo.filter(d => !vistas.has(claveDe(d.cliente, d.nombre, d.zona)));
+      let eliminadas = 0;
+      if (sobrantes.length) {
+        const muestra = sobrantes.slice(0, 5).map(d => '· ' + d.cliente + ' — ' + d.nombre + ' (' + d.zona + ')').join('\n');
+        if (confirm('El archivo trae ' + vistas.size + ' combinaciones.\n\nEn el catálogo hay ' + sobrantes.length + ' que NO figuran en el archivo:\n' + muestra + (sobrantes.length > 5 ? '\n…y ' + (sobrantes.length - 5) + ' más' : '') +
+          '\n\n¿Eliminarlas para que el catálogo quede igual al archivo?\n(Aceptar = sincronizar · Cancelar = conservarlas)')) {
+          AppData.dimCatalogo = AppData.dimCatalogo.filter(d => vistas.has(claveDe(d.cliente, d.nombre, d.zona)));
+          eliminadas = sobrantes.length;
+        }
+      }
 
       saveDimCatalogo();
       renderDimensionesEspeciales();
-      showToast('✅ Catálogo importado: ' + nuevas + ' nueva(s), ' + actualizadas + ' actualizada(s)');
+      showToast('✅ Catálogo importado: ' + nuevas + ' nueva(s) · ' + actualizadas + ' con precio actualizado · ' + sinCambio + ' sin cambios' +
+        (eliminadas ? ' · ' + eliminadas + ' eliminada(s)' : '') + (ignoradas ? ' · ' + ignoradas + ' fila(s) ignorada(s)' : ''));
     } catch (err) { console.error(err); alert('Error al importar: ' + err.message); }
     finally { event.target.value = ''; }
   };
