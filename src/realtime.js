@@ -29,6 +29,7 @@ let _rtMuteHasta = 0;   // ignorar echos de nuestras propias escrituras hasta es
 // hace sin ella. Antes cualquier cambio (un adelanto, un permiso) rebajaba toda
 // la base y dejaba la UI trabada varios segundos.
 let _rtTablasSucias = new Set();
+let _rtUltimaCargaRegistros = Date.now();   // para no rebajar recorridos de más
 
 // Qué tablas mira cada pantalla. Si ninguna de las que cambió está acá, NO se
 // re-renderiza la pantalla activa (evita repintar de prepo mientras el operador
@@ -96,11 +97,15 @@ async function sincronizarEnVivo() {
   const ahora = Date.now();
   if (ahora < _rtMuteHasta) { _rtReprogramar(_rtMuteHasta - ahora + 200); return; } // esperar fin del mute
 
-  // Qué cambió (si no lo sabemos, vamos por la recarga completa por seguridad).
+  // Qué cambió. Los eventos de recorridos llegan con table='registros'; si no
+  // sabemos qué cambió, NO rebajamos ~13k filas: refrescamos solo la config y,
+  // como red de seguridad, recargamos recorridos si hace rato que no lo hacemos.
   const sucias = _rtTablasSucias;
   _rtTablasSucias = new Set();
   const desconocido = sucias.size === 0;
-  const tocoRegistros = desconocido || sucias.has('registros');
+  const haceMucho = (Date.now() - _rtUltimaCargaRegistros) > 120000;   // 2 min
+  const tocoRegistros = sucias.has('registros') || (desconocido && haceMucho);
+  if (tocoRegistros) _rtUltimaCargaRegistros = Date.now();
 
   try {
     // Si nadie tocó 'registros', se refresca todo MENOS esa tabla: la sync pasa

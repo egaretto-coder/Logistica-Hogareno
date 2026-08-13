@@ -106,7 +106,17 @@ function fechaISOde(fechaStr) {
 // Si no hay conexión, deja el caché local que ya cargó loadSavedConfig().
 // opts.sinRegistros = true → refresca solo las tablas de configuración//movimientos
 // y CONSERVA AppData.records (evita rebajar ~10k filas cuando el cambio no las toca).
-async function hydrateFromSupabase(opts) {
+// GUARDA anti-duplicación: si ya hay una hidratación equivalente en curso, se
+// reutiliza en vez de disparar otra tanda de ~28 consultas (y otra bajada de
+// registros si fuera completa).
+let _pHydrate = { completa: null, config: null };
+function hydrateFromSupabase(opts) {
+  const clave = (opts && opts.sinRegistros) ? 'config' : 'completa';
+  if (_pHydrate[clave]) return _pHydrate[clave];
+  _pHydrate[clave] = _hydrateFromSupabaseReal(opts).finally(() => { _pHydrate[clave] = null; });
+  return _pHydrate[clave];
+}
+async function _hydrateFromSupabaseReal(opts) {
   if (!window.DB || !DB.ready) return;
   const sinRegistros = !!(opts && opts.sinRegistros);
   AppData._hidratando = true;
@@ -321,7 +331,16 @@ async function hydrateFromSupabase(opts) {
 // ════════════════════════════════════════════════════════════════════════
 
 // Trae SOLO la tabla de recorridos y actualiza AppData.records.
-async function hydrateRegistros() {
+// GUARDA anti-duplicación: si ya hay una carga en curso, devuelve ESA misma
+// promesa en vez de disparar otra descarga (bajar ~13k filas dos o tres veces
+// en paralelo era el mayor costo del arranque).
+let _pCargaRegistros = null;
+function hydrateRegistros() {
+  if (_pCargaRegistros) return _pCargaRegistros;
+  _pCargaRegistros = _hydrateRegistrosReal().finally(() => { _pCargaRegistros = null; });
+  return _pCargaRegistros;
+}
+async function _hydrateRegistrosReal() {
   if (!window.DB || !DB.ready) return false;
   const _t0 = (window.performance && performance.now()) || 0;
   AppData._cargandoRegistros = true;
@@ -338,6 +357,7 @@ async function hydrateRegistros() {
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     }));
+    invalidarLiquidaciones();   // base nueva en memoria: recalcular totales
     if (window.__perfLog) window.__perfLog('cargar recorridos (' + AppData.records.length + ')', _t0);
     return true;
   } catch (e) {

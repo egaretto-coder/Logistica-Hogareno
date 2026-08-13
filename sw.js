@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v63';
+const CACHE = 'liq-cache-v64';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -121,19 +121,32 @@ self.addEventListener('fetch', (event) => {
   const sameOrigin = url.origin === self.location.origin;
 
   // Código propio de la app (mismo origen: HTML, JS, CSS, parciales) →
-  // NETWORK-FIRST: siempre la última versión si hay conexión; el caché es sólo
-  // respaldo offline. Así una actualización se ve al instante, sin quedar pegado
-  // a una versión vieja cacheada.
+  // CACHE-FIRST con revalidación en segundo plano (stale-while-revalidate).
+  // El caché está versionado por CACHE (liq-cache-vNN): al desplegar una versión
+  // nueva, el SW nuevo la descarga entera y el banner "Actualizar" la activa. Es
+  // seguro y evita que abrir la app dependa de ~40 idas a la red (lo que hacía
+  // el arranque lento con conexión mala).
   if (sameOrigin) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
+      const cached = await cache.match(req);
+      if (cached) {
+        // Servimos ya desde el caché y actualizamos por detrás, sin bloquear.
+        event.waitUntil((async () => {
+          try {
+            const fresca = await fetch(req);
+            if (fresca && fresca.ok) await cache.put(req, fresca.clone());
+          } catch (e) { /* sin conexión: se queda la copia cacheada */ }
+        })());
+        return cached;
+      }
       try {
         const res = await fetch(req);
         if (res && res.ok) cache.put(req, res.clone());
         return res;
       } catch (e) {
-        const cached = await cache.match(req);
-        if (cached) return cached;
+        const cached2 = await cache.match(req);
+        if (cached2) return cached2;
         if (req.mode === 'navigate') {
           return (await cache.match('./index.html')) || Response.error();
         }

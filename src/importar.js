@@ -271,6 +271,7 @@ function processUpload() {
   });
   const agregados = nuevos.filter(n => !clavesExist.has(n.clave)).length;
   AppData.records = restantes.concat(nuevos);
+  if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
   registrarSuperposiciones('registros', fechaCarga, sup);
 
   // Registrar esta importación en el historial (solo si vino de un archivo real).

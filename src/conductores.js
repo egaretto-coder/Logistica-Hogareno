@@ -248,6 +248,7 @@ function editarRegistroConductor(idx, campo, valor) {
   }
   if (r.id) condEditIdsSucios.add(r.id);
   else console.warn('Registro sin id de nube (no se podrá sincronizar):', r.tracking);
+  invalidarLiquidaciones();   // cambió un envío: los totales se recalculan
   condEditPendientes = true;
   actualizarEstadoEdicion('Cambios sin guardar…');
   renderConductorDetail();
@@ -369,6 +370,7 @@ function quitarDimensionEnvio(idx) {
 function _marcarDimDirty(r) {
   if (r.id) condEditIdsSucios.add(r.id);
   else console.warn('Registro sin id de nube (no se podrá sincronizar la dimensión):', r.tracking);
+  invalidarLiquidaciones();   // cambió el precio del envío por la dimensión
   condEditPendientes = true;
   actualizarEstadoEdicion('Cambios sin guardar…');
   renderConductorDetail();

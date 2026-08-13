@@ -528,7 +528,7 @@ function panelAliasNorm(c) {
 // (ver invalidarIndicePanel). Un cambio de categoría NO requiere invalidar: el
 // Map guarda la referencia al objeto, que se muta in-place.
 let _indicePanelCache = null;
-function invalidarIndicePanel() { _indicePanelCache = null; }
+function invalidarIndicePanel() { _indicePanelCache = null; invalidarLiquidaciones(); }
 function _indicePanel() {
   if (_indicePanelCache) return _indicePanelCache;
   const m = new Map();
@@ -608,7 +608,7 @@ function dedupePanelConductores(lista) {
 // normNombre— por CADA envío, que era el gran cuello de botella con ~10k filas).
 // Se reconstruyen cuando cambian tarifas/superSLA (ver invalidarIndiceTarifas).
 let _superSLAIdxCache = null, _tarifaIdxCache = null;
-function invalidarIndiceTarifas() { _superSLAIdxCache = null; _tarifaIdxCache = null; }
+function invalidarIndiceTarifas() { _superSLAIdxCache = null; _tarifaIdxCache = null; invalidarLiquidaciones(); }
 function _superSLAIndex() {
   if (_superSLAIdxCache) return _superSLAIdxCache;
   const porCond = new Map();   // normCond -> Map(normZona -> precio)
@@ -664,7 +664,18 @@ const ESTADOS_CONTABILIZAN = new Set(['ENTREGADO', 'ENTREGADO 2DA VISITA']);
 
 // Opcional: pasar un subconjunto de registros (ej. filtrados por período del
 // dashboard). Por defecto usa todos los de AppData.
+// Memo de vida corta: dentro de un mismo render varias vistas piden lo mismo
+// (Dashboard + sus dos reportes, Liquidaciones, el selector de Conductores).
+// El TTL chico evita recálculos en cascada SIN riesgo de mostrar plata vieja:
+// además se invalida explícitamente ante cualquier cambio de datos o precios.
+let _liqCache = { t: 0, data: null };
+function invalidarLiquidaciones() { _liqCache.t = 0; _liqCache.data = null; }
+const _LIQ_TTL_MS = 250;
+
 function calcLiquidaciones(records) {
+  // Solo se cachea el cálculo sobre TODA la base (sin subconjunto filtrado).
+  const cacheable = !records;
+  if (cacheable && _liqCache.data && (Date.now() - _liqCache.t) < _LIQ_TTL_MS) return _liqCache.data;
   const byDriver = {};
   (records || AppData.records).forEach(r => {
     // Identidad canónica: unifica alias/grafías de una misma persona en un solo
@@ -731,6 +742,7 @@ function calcLiquidaciones(records) {
       byDriver[cond].total_excluido_count++;
     }
   });
+  if (cacheable) { _liqCache.t = Date.now(); _liqCache.data = byDriver; }
   return byDriver;
 }
 
