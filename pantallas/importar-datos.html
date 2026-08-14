@@ -19,6 +19,10 @@
               <span style="font-size:11px;color:var(--text-muted)">La importación queda registrada con este día. Si un tracking ya existía, la información nueva <strong>reemplaza</strong> a la anterior. Al procesar, la base se <strong>guarda sola en la nube</strong>.</span>
             </div>
 
+            <div style="margin-top:10px;background:#fff8e1;border:1px solid #f5d97a;color:#7a5c00;border-radius:8px;padding:10px 14px;font-size:12px">
+              <i class="ic ic-alert"></i> <strong>Descargá el listado filtrando por “fecha de último movimiento”</strong> (no por fecha del envío). Como se paga por <strong>entrega efectiva</strong>, cada envío se imputa al día en que quedó <strong>Entregado</strong> (columna <em>Fecha estado</em>). Un envío generado el 06/08 y entregado el 07/08 se paga en el 07/08. Si filtrás por fecha de envío, ese día queda incompleto: las entregas que ocurrieron después no aparecen todavía.
+            </div>
+
             <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <button class="btn btn-sm" onclick="cargarSeedRegistros()"><i class="ic ic-upload"></i> Cargar registros de ejemplo</button>
               <span style="font-size:11px;color:var(--text-muted)">Carga el set inicial (~5.500 registros) para probar; luego usá “☁️ Guardar en la nube”.</span>

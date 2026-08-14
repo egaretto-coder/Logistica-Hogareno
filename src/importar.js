@@ -133,7 +133,14 @@ const BD_FIELDS = [
   { key: 'tracking', label: 'N° Tracking', expectedCol: 'B', required: true, keywords: ['tracking', 'n° tracking', 'numero tracking', 'nro tracking'] },
   { key: 'destinatario', label: 'Destinatario (nombre)', expectedCol: 'M', required: false, keywords: ['destinatario', 'nombre destinatario', 'comprador', 'cliente'] },
   { key: 'direccion', label: 'Dirección (distingue envíos con tracking inválido)', expectedCol: 'R', required: false, keywords: ['direccion', 'dirección', 'domicilio', 'direccion de entrega'] },
-  { key: 'fecha', label: 'Fecha', expectedCol: 'G', required: true, keywords: ['fecha'] },
+  // FECHA DE LIQUIDACIÓN = el día en que el envío quedó ENTREGADO ("Fecha estado"
+  // / último movimiento), no el día en que se generó ("Fecha Hogareño"): se paga
+  // por entrega efectiva. Un envío del 06/08 entregado el 07/08 se paga el 07/08.
+  // preferKeywords: primero busca el encabezado por nombre y recién después cae a
+  // la columna de referencia (así funciona con listados de distinto ancho).
+  { key: 'fecha', label: 'Fecha de ENTREGA — "Fecha estado" / último movimiento', expectedCol: 'Y', required: true,
+    preferKeywords: true,
+    keywords: ['fecha estado', 'fecha de estado', 'fecha del estado', 'ultimo movimiento', 'último movimiento', 'fecha ultimo movimiento', 'fecha último movimiento'] },
   { key: 'localidad', label: 'Localidad (respaldo si Zona está vacía)', expectedCol: 'T', required: false, keywords: ['localidad'] },
   { key: 'estado', label: 'Estado', expectedCol: 'X', required: true, keywords: ['estado'] },
   { key: 'zona', label: 'Zona', expectedCol: 'AA', required: true, keywords: ['zona'] },
@@ -145,13 +152,19 @@ function showColumnMapper() {
   const headers = AppData.rawHeaders;
 
   document.getElementById('mapper-rows').innerHTML = BD_FIELDS.map(f => {
-    // Prioridad de automatch: 1) la columna esperada (B, G, T, X, AA, AD) si existe en el archivo,
-    // 2) coincidencia por nombre de encabezado.
+    // Automatch. Por defecto manda la columna esperada (B, G, T, X, AA, AD) y el
+    // nombre del encabezado queda de respaldo. Con preferKeywords se invierte:
+    // primero el NOMBRE (p. ej. "Fecha estado"), porque esa columna cambia de
+    // lugar según el listado y elegir la posición equivocada mete una fecha que
+    // no corresponde.
+    const buscarPorNombre = () => headers.findIndex(h => {
+      const hn = String(h).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+      return f.keywords.some(k => hn.includes(String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')));
+    });
     const expectedIdx = colLetterToIndex(f.expectedCol);
-    let autoIdx = (expectedIdx < headers.length) ? expectedIdx : -1;
-    if (autoIdx === -1) {
-      autoIdx = headers.findIndex(h => f.keywords.some(k => h.toLowerCase().includes(k)));
-    }
+    const porPosicion = (expectedIdx < headers.length) ? expectedIdx : -1;
+    let autoIdx = f.preferKeywords ? buscarPorNombre() : porPosicion;
+    if (autoIdx === -1) autoIdx = f.preferKeywords ? porPosicion : buscarPorNombre();
 
     return `
     <div class="column-map-row">
