@@ -61,11 +61,14 @@ function calcLiquidacionesFiltradas() {
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
     if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond };
     if (contabiliza) {
-      const dim = r.tracking ? findDimensionEspecial(r.tracking) : null;
+      // Dimensión especial ASIGNADA a mano al envío (catálogo por cliente; el
+      // precio sale de la zona de entrega). Reemplaza la tarifa, no la suma.
+      const dim = dimensionAsignada(r);
       let precio, tipo, es_super=false, sin_tarifa=false, es_dim_especial=false, dim_cliente='', dim_condicion='';
       if (dim) {
-        precio = dim.valor; tipo = 'dim_especial'; es_dim_especial=true;
-        dim_cliente=dim.cliente||''; dim_condicion=dim.condicion||'';
+        precio = dim.precio; tipo = 'dim_especial'; es_dim_especial=true;
+        sin_tarifa = dim.sinPrecioZona;
+        dim_cliente = dim.cliente||''; dim_condicion = dim.nombre||'';
       } else {
         const p = getPrecio(cond, zona);
         precio=p.precio; tipo=p.tipo; es_super=p.es_super; sin_tarifa=p.sin_tarifa;
@@ -98,6 +101,16 @@ function getLiqRangoFechasLabel() {
   };
 }
 
+// Lista de días (DD/MM/YYYY) ordenada cronológicamente, para el tooltip.
+function diasLista(setDias) {
+  return Array.from(setDias || [])
+    .sort((a, b) => {
+      const fa = parseFechaReg(a), fb = parseFechaReg(b);
+      return (fa ? fa.getTime() : 0) - (fb ? fb.getTime() : 0);
+    })
+    .join(' · ');
+}
+
 function renderLiquidaciones() {
   // Calcular liquidaciones sobre los registros filtrados por fecha
   const recordsFiltrados = filtrarRecordsLiq(AppData.records);
@@ -107,13 +120,17 @@ function renderLiquidaciones() {
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
-    if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond, corregidos: 0 };
+    if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond, corregidos: 0, dias: new Set() };
     if (esCorregidoRegistro(r)) liqBase[cond].corregidos++;
     if (contabiliza) {
-      const p = getPrecio(cond, zona);
+      // Precio de la dimensión especial asignada, si tiene; si no, tarifa/Super SLA.
+      const dim = dimensionAsignada(r);
+      const p = dim ? { precio: dim.precio, tipo: 'dim_especial', es_super: false } : getPrecio(cond, zona);
       const precio = precioManualDe(r) !== null ? precioManualDe(r) : p.precio;
       liqBase[cond].total += precio;
       liqBase[cond].filas.push({ zona, precio, subtotal: precio, tipo: p.tipo, es_super: p.es_super });
+      // Días trabajados = fechas distintas con al menos un envío entregado.
+      if (r.fecha) liqBase[cond].dias.add(String(r.fecha).trim());
     } else {
       liqBase[cond].filas_excluidas.push({ zona, estado: r.estado });
     }
@@ -149,7 +166,7 @@ function renderLiquidaciones() {
 
   const body = document.getElementById('liq-table-body');
   if (!conductores.length) {
-    body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
     return;
   }
 
@@ -172,6 +189,7 @@ function renderLiquidaciones() {
         </div>
       </td>
       <td><span class="badge ${cat ? 'badge-blue' : 'badge-gray'}">${cat ? tipoLabel(cat.categoria === 'super_sla' ? 'sla' : cat.categoria) : 'Sin categorizar'}</span></td>
+      <td class="mono" title="${diasLista(d.dias)}"><strong>${d.dias.size}</strong> <span class="muted" style="font-size:11px">día${d.dias.size === 1 ? '' : 's'}</span></td>
       <td class="mono">${d.filas.length} <span class="muted" style="font-size:11px">(${d.filas_excluidas.length} no entreg.)</span></td>
       <td class="mono">${sSin.length} — ${fmtPeso(sSin.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sCon.length} — ${fmtPeso(sCon.reduce((s,f) => s+f.subtotal,0))}</td>

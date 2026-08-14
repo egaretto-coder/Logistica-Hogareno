@@ -153,14 +153,52 @@ function renderConductorDetail() {
   if (cntEl) cntEl.textContent = hayFiltro ? ('Mostrando ' + idxsVista.length + ' de ' + idxs.length + ' recorridos') : '';
 
   const zonaCat = zonaCatalogoDe(cond); // catálogo de zonas válidas (una vez por render)
+
+  // Resumen por día (para los separadores): envíos, cuántos contabilizan y subtotal.
+  const resumenDia = new Map();
+  idxsVista.forEach(i => {
+    const r = AppData.records[i];
+    const dia = (r.fecha || '').trim() || 'Sin fecha';
+    let x = resumenDia.get(dia);
+    if (!x) { x = { envios: 0, contab: 0, total: 0 }; resumenDia.set(dia, x); }
+    x.envios++;
+    const est = (r.estado || '').toUpperCase().trim();
+    if (est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est)) {
+      x.contab++;
+      const m = precioManualDe(r);
+      x.total += (m !== null ? m : precioAutoDe(r).precio);
+    }
+  });
+  const diasTrabajados = Array.from(resumenDia.entries()).filter(([, v]) => v.contab > 0).length;
+
+  let _diaPrev = null;
   const filas = idxsVista.map(i => {
     const r = AppData.records[i];
+    // Separador al empezar cada día (los envíos ya vienen ordenados por fecha).
+    const _dia = (r.fecha || '').trim() || 'Sin fecha';
+    let separador = '';
+    if (_dia !== _diaPrev) {
+      _diaPrev = _dia;
+      const rd = resumenDia.get(_dia) || { envios: 0, contab: 0, total: 0 };
+      const fd = parseFechaReg(_dia);
+      const dow = fd && typeof DIAS_SEM !== 'undefined' ? DIAS_SEM[fd.getDay()] + ' ' : '';
+      separador =
+        '<tr style="background:var(--surface-0)">' +
+          '<td colspan="6" style="padding:8px 12px;border-top:2px solid var(--border)">' +
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px">' +
+              '<strong style="font-size:13px"><i class="ic ic-calendar"></i> ' + dow + _dia + '</strong>' +
+              '<span class="muted">' + rd.contab + ' de ' + rd.envios + ' contabilizan</span>' +
+              '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(rd.total) + '</strong>' +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+    }
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
     const auto = precioAutoDe(r);
     const manual = precioManualDe(r);
     const esCanonico = ['ENTREGADO', 'NO ENTREGADO'].includes(estadoNorm);
-    return `
+    return separador + `
       <tr style="${contabiliza ? '' : 'background:#fdf6f6;'}${manual !== null ? 'box-shadow:inset 3px 0 0 #f59e0b;' : ''}">
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
           class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '"><i class="ic ic-user"></i> ' + r.destinatario + '</div>' : ''}</td>
@@ -200,7 +238,7 @@ function renderConductorDetail() {
         <div class="big-avatar" style="background:rgba(255,255,255,0.25)">${initials(cond)}</div>
         <div>
           <div class="conductor-name">${cond}</div>
-          <div class="conductor-meta">${idxs.length} recorridos en el período · ${entregados} contabilizan · ${noEntregados} no suman${corregidos ? ' · ✏️ ' + corregidos + ' corregidos a mano' : ''}</div>
+          <div class="conductor-meta"><strong>${diasTrabajados} día${diasTrabajados === 1 ? '' : 's'} trabajado${diasTrabajados === 1 ? '' : 's'}</strong> · ${idxs.length} recorridos en el período · ${entregados} contabilizan · ${noEntregados} no suman${corregidos ? ' · ✏️ ' + corregidos + ' corregidos a mano' : ''}</div>
         </div>
         <div style="margin-left:auto;text-align:right">
           <div style="font-size:11px;opacity:0.85;text-transform:uppercase;letter-spacing:.04em">Total del período</div>

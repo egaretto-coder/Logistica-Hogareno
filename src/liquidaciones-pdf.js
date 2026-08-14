@@ -35,7 +35,10 @@ function openLiqModal(conductor) {
     condLabel +
     '<br><span style="color:#6b7280"><i class="ic ic-calendar"></i> Período: ' + rangoTxt + '</span>';
   const corregidas = d.filas.filter(f => f.corregido);
+  // Días trabajados = fechas distintas con al menos un envío entregado.
+  const diasTrab = new Set(d.filas.map(f => String(f.fecha || '').trim()).filter(Boolean)).size;
   document.getElementById('liq-modal-recorridos-info').textContent =
+    diasTrab + ' día' + (diasTrab === 1 ? '' : 's') + ' trabajado' + (diasTrab === 1 ? '' : 's') + ' · ' +
     d.filas.length + ' entregados · ' + d.filas_excluidas.length + ' en otros estados' +
     (corregidas.length ? ' · ✏️ ' + corregidas.length + ' corregido' + (corregidas.length > 1 ? 's' : '') + ' a mano' : '');
   document.getElementById('liq-modal-total-bruto').textContent = fmtPeso(d.total);
@@ -391,13 +394,19 @@ function exportPDF(conductor, opts) {
   const totalNoEntregados = d.filas_excluidas.length;
   const totalPesos = d.total;
 
+  // Días trabajados = fechas distintas con al menos un envío entregado.
+  const diasTrabajados = new Set(
+    (d.filas || []).map(f => String(f.fecha || '').trim()).filter(Boolean)
+  ).size;
+
   const summaryBoxes = [
+    { label: 'DÍAS TRABAJADOS', sub: 'con entregas', val: diasTrabajados, unit: 'días', color: LH_NAVY, bg: LH_LIGHT, isNum: false },
     { label: 'ENTREGADOS', sub: 'contabilizan', val: totalEntregados, unit: 'envíos', color: LH_GREEN, bg: LH_GREEN_BG, isNum: false },
     { label: 'NO ENTREGADOS', sub: 'no contabilizan', val: totalNoEntregados, unit: 'envíos', color: LH_RED, bg: LH_RED_BG, isNum: false },
     { label: 'TOTAL A LIQUIDAR', sub: 'período semanal', val: totalPesos, unit: '', color: LH_BLUE, bg: LH_LIGHT, isNum: true },
   ];
 
-  const boxW = (W - MARGIN*2 - 8) / 3;
+  const boxW = (W - MARGIN*2 - 12) / 4;
   let bx = MARGIN;
   summaryBoxes.forEach((box, i) => {
     doc.setFillColor(...box.bg);
