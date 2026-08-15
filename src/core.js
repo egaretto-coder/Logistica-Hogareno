@@ -393,7 +393,10 @@ function descItemsDe(tipo, conductor) {
 // Descuento de un tipo para un conductor dentro de un período (suma las cuotas
 // cuya fecha cae en el rango, o todas si no hay filtro). Espeja adelantoDescuentoConductor.
 // Devuelve { monto, detalle: [{ fecha, monto, referencia }] }.
-function descItemDescuentoConductor(tipo, conductor, rango) {
+// incluirExcluidos = true → devuelve también los marcados "no imputar" (con
+// imputar:false), para que el modal de liquidación pueda mostrarlos destildados.
+// El monto SIEMPRE suma solo los imputables.
+function descItemDescuentoConductor(tipo, conductor, rango, incluirExcluidos) {
   const key = conductorKey(conductor);
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
@@ -405,14 +408,16 @@ function descItemDescuentoConductor(tipo, conductor, rango) {
     if (!esAutorizado(x)) return;         // extravío pendiente de autorización: no impacta
     if (_num(x.cuotas_total) > 1) return; // cuoteado: no se imputa el total de una, va por cuotas
     if (conductorKey(x.conductor) !== key) return;
+    const imputable = x.imputar !== false; // excluido a mano: no descuenta
+    if (!imputable && !incluirExcluidos) return;
     if (desde || hasta) {
       const f = parseFechaReg(x.fecha);
       if (!f) return;
       if (desde && f < desde) return;
       if (hasta && f > hasta) return;
     }
-    monto += _num(x.monto);
-    detalle.push({ fecha: x.fecha, monto: _num(x.monto), referencia: x.referencia || '' });
+    if (imputable) monto += _num(x.monto);
+    detalle.push({ id: x.id, fecha: x.fecha, monto: _num(x.monto), referencia: x.referencia || '', detalleTxt: x.detalle || '', imputar: imputable });
   });
   return { monto, detalle };
 }

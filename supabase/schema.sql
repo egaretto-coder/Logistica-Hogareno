@@ -135,6 +135,9 @@ create table if not exists public.descuentos_items (
   detalle text default '',
   cuotas_total int not null default 1,   -- 1 = pago único; >1 = extravío cuoteado (monto = total)
   monto_cuota numeric not null default 0,
+  imputar boolean not null default true, -- false = excluido a mano de las liquidaciones
+                                         -- (se decide desde el panel del registro
+                                         --  o desde el modal de Liquidaciones)
   created_at timestamptz not null default now()
 );
 create index if not exists idx_desc_items_tipo_cond on public.descuentos_items (tipo, conductor);

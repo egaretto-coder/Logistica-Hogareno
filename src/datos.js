@@ -171,6 +171,7 @@ async function _hydrateFromSupabaseReal(opts) {
     id: x.id, tipo: x.tipo, conductor: x.conductor, fecha: x.fecha || '',
     monto: _num(x.monto), referencia: x.referencia || '', detalle: x.detalle || '',
     cuotas_total: _num(x.cuotas_total) || 1, monto_cuota: _num(x.monto_cuota),
+    imputar: x.imputar !== false,   // false = excluido de las liquidaciones a propósito
     estado: x.estado || 'autorizado', autorizado_por: x.autorizado_por || '', autorizado_en: x.autorizado_en || ''
   }));
   // Cuotas de extravíos cuoteados (descuento_cuotas)

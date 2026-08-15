@@ -125,6 +125,10 @@ function renderDescItems(tipo) {
         acciones += saldado ? '' : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="descontarCuotaExtravio(' + x.id + ')" title="Registrar la próxima cuota en la semana elegida arriba">− Cuota</button>';
         acciones += '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verHistorialExtravio(' + x.id + ')" title="Ver cuotas"><i class="ic ic-list"></i></button>';
       } else {
+        // Imputar o no en la liquidación (misma decisión que en el modal de Liquidaciones).
+        acciones += x.imputar === false
+          ? '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px;border-color:#fdba74;background:#fff7ed;color:#9a3412" onclick="toggleImputarDescItem(\'' + tipo + '\',' + x.id + ')" title="Excluido: NO se descuenta en la liquidación. Tocá para volver a imputarlo."><i class="ic ic-x"></i> No imputa</button>'
+          : '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="toggleImputarDescItem(\'' + tipo + '\',' + x.id + ')" title="Se descuenta en la liquidación del período. Tocá para excluirlo."><i class="ic ic-check"></i> Imputa</button>';
         acciones += '<button class="btn btn-sm" onclick="editDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-edit"></i></button>';
       }
       acciones += '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDescItem(\'' + tipo + '\',' + x.id + ')"><i class="ic ic-trash"></i></button>';
@@ -170,6 +174,29 @@ async function rechazarExtravio(id) {
     renderDescItems('extraviados');
     showToast('🚫 Extravío de ' + it.conductor + ' rechazado');
   } catch (e) { console.warn('rechazarExtravio:', e); showToast('⛔ No se pudo rechazar'); }
+}
+
+// Incluir / excluir un ítem de las liquidaciones sin borrarlo. Es la MISMA
+// decisión que se puede tomar desde el modal de Liquidaciones (un solo campo en
+// la base), así que lo que se marca acá se ve allá y viceversa.
+async function toggleImputarDescItem(tipo, id) {
+  const it = AppData.descItems.find(x => x.id === id);
+  if (!it) return;
+  const nuevo = !(it.imputar !== false);   // invierte el estado actual
+  const etiqueta = (DESC_ITEMS[tipo] && DESC_ITEMS[tipo].label) || tipo;
+  if (!nuevo && !confirm('¿Excluir este ' + etiqueta.toLowerCase() + ' de ' + it.conductor + ' (' + fmtPeso(_num(it.monto)) + ')?\n\nNO se va a descontar en la liquidación. El registro se conserva y podés volver a incluirlo cuando quieras.')) return;
+  const antes = it.imputar;
+  it.imputar = nuevo;                       // optimista: la UI responde al toque
+  renderDescItems(tipo);
+  try {
+    await DB.updateWhere('descuentos_items', 'id', id, { imputar: nuevo });
+    try { localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems)); } catch (e) {}
+    showToast(nuevo ? '✅ Se imputará en la liquidación' : '🚫 Excluido de la liquidación');
+  } catch (e) {
+    it.imputar = antes; renderDescItems(tipo);   // revertir si la nube falló
+    console.warn('toggleImputarDescItem:', e);
+    showToast('⛔ No se pudo guardar el cambio');
+  }
 }
 
 // ── Modal alta / edición ────────────────────────────────────────────────────

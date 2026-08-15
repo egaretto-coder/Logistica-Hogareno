@@ -145,6 +145,8 @@
             </div>
             <input type="number" id="liq-desc-combustible" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
+          <div id="liq-desc-combustible-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
+
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
             <div>
               <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-box"></i> Envíos extraviados / rotos</label>
@@ -152,6 +154,8 @@
             </div>
             <input type="number" id="liq-desc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
+          <div id="liq-desc-extraviados-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
+
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
             <div>
               <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-receipt"></i> Servicio proveedores</label>
@@ -159,7 +163,18 @@
             </div>
             <input type="number" id="liq-desc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
           </div>
+          <div id="liq-desc-proveedores-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
         </div>
+      </div>
+
+      <!-- CUOTAS IMPUTABLES: adelantos y extravíos cuoteados con saldo. Tildar
+           imputa la cuota en esta liquidación (se aplica al confirmar). -->
+      <div id="liq-cuotas-wrap" style="display:none">
+        <label class="form-label" style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">
+          Cuotas a imputar en esta liquidación
+          <span style="font-size:10px;font-weight:500;color:#6b7280;text-transform:none;letter-spacing:normal">— tildá las que se descuentan; se registran al confirmar</span>
+        </label>
+        <div id="liq-cuotas-imputables"></div>
       </div>
 
       <!-- Observación opcional -->

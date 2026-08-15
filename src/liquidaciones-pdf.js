@@ -74,12 +74,16 @@ function openLiqModal(conductor) {
   // fecha, editable). Cada uno suma los registros de su solapa que caen en el rango.
   const rangoImp = getLiqRangoFechasLabel();
   const setItemPre = (tipo, campo) => {
-    const r = descItemDescuentoConductor(tipo, conductor, rangoImp);
+    // incluirExcluidos: traemos también los marcados "no imputar" para poder
+    // mostrarlos destildados (y que el operador los reincorpore si quiere).
+    const r = descItemDescuentoConductor(tipo, conductor, rangoImp, true);
     document.getElementById('liq-desc-' + campo).value = r.monto ? r.monto : '';
     const info = document.getElementById('liq-desc-' + campo + '-info');
+    const nImp = r.detalle.filter(x => x.imputar).length;
     if (info) info.textContent = r.detalle.length
-      ? (r.detalle.length + (r.detalle.length === 1 ? ' registro imputado' : ' registros imputados'))
+      ? (nImp + ' de ' + r.detalle.length + (r.detalle.length === 1 ? ' registro imputado' : ' registros imputados'))
       : 'Sin registros en el período';
+    renderDetalleImputable(campo, tipo, r.detalle);
     return r.monto;
   };
   const totalItemsPre = setItemPre('combustible', 'combustible')
@@ -87,10 +91,176 @@ function openLiqModal(conductor) {
     + setItemPre('proveedores', 'proveedores');
   document.getElementById('liq-desc-obs').value = '';
   const origenEl = document.getElementById('liq-desc-origen');
-  if (origenEl) origenEl.textContent = totalItemsPre > 0 ? 'Imputado por fecha del período' : '';
+  if (origenEl) origenEl.textContent = totalItemsPre > 0 ? 'Imputado por fecha del período · destildá lo que no quieras descontar' : '';
 
+  renderCuotasImputables(conductor, rangoImp);
   recalcLiqModal();
   document.getElementById('modal-liq-backdrop').style.display = 'flex';
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  IMPUTACIÓN DESDE LA LIQUIDACIÓN
+//  El operador ve el detalle de lo que se le está descontando al conductor y
+//  decide ítem por ítem. Dos naturalezas distintas:
+//   • Ítems (extravío de pago único, combustible, proveedores): el tilde cambia
+//     el campo 'imputar' del registro — la MISMA decisión que en su panel.
+//   • Cuotas (adelanto / extravío cuoteado): el tilde CREA o BORRA la cuota del
+//     período, que es lo que mueve el saldo de la deuda. Se aplica al confirmar.
+// ════════════════════════════════════════════════════════════════════════
+
+// Cuotas marcadas en el modal y aún no aplicadas: { 'adelanto:12': true, ... }
+let liqCuotasPend = {};
+
+function renderDetalleImputable(campo, tipo, detalle) {
+  const cont = document.getElementById('liq-desc-' + campo + '-detalle');
+  if (!cont) return;
+  if (!detalle.length) { cont.style.display = 'none'; cont.innerHTML = ''; return; }
+  cont.style.display = '';
+  cont.innerHTML = detalle.map(x =>
+    '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;cursor:pointer' + (x.imputar ? '' : ';opacity:.55') + '">' +
+      '<input type="checkbox" ' + (x.imputar ? 'checked' : '') + ' onchange="toggleImputarDesdeLiq(' + x.id + ',\'' + tipo + '\',\'' + campo + '\',this.checked)">' +
+      '<span style="color:var(--text-muted);white-space:nowrap">' + (x.fecha || '—') + '</span>' +
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (x.referencia || x.detalleTxt || '—') + '</span>' +
+      '<strong>' + fmtPeso(x.monto) + '</strong>' +
+    '</label>').join('');
+}
+
+// Marca/desmarca un ítem desde el modal. Persiste igual que el botón del panel.
+async function toggleImputarDesdeLiq(id, tipo, campo, marcado) {
+  const it = AppData.descItems.find(x => x.id === id);
+  if (!it) return;
+  it.imputar = !!marcado;
+  try {
+    await DB.updateWhere('descuentos_items', 'id', id, { imputar: !!marcado });
+    try { localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems)); } catch (e) {}
+  } catch (e) { console.warn('toggleImputarDesdeLiq:', e); showToast('⛔ No se pudo guardar; se descuenta igual que lo que ves'); }
+  // Recalcular el monto del campo con lo que quedó tildado.
+  const r = descItemDescuentoConductor(tipo, liqModalConductor, getLiqRangoFechasLabel(), true);
+  document.getElementById('liq-desc-' + campo).value = r.monto ? r.monto : '';
+  const info = document.getElementById('liq-desc-' + campo + '-info');
+  const nImp = r.detalle.filter(x => x.imputar).length;
+  if (info) info.textContent = nImp + ' de ' + r.detalle.length + ' registros imputados';
+  recalcLiqModal();
+}
+
+// Cuotas que se PUEDEN imputar en esta liquidación: adelantos con saldo y
+// extravíos cuoteados con saldo. Si ya tienen una cuota registrada en el
+// período, aparecen tildadas (destildar = deshacer esa cuota).
+function renderCuotasImputables(conductor, rango) {
+  const cont = document.getElementById('liq-cuotas-imputables');
+  if (!cont) return;
+  liqCuotasPend = {};
+  const key = conductorKey(conductor);
+  const filas = [];
+
+  // — Adelantos con saldo —
+  (AppData.adelantos || []).forEach(a => {
+    if (conductorKey(a.conductor) !== key || !esAutorizado(a)) return;
+    if (typeof saldoAdelanto === 'function' && saldoAdelanto(a) <= 0) return;
+    const yaEnPeriodo = (AppData.adelantoCuotas || []).some(c => c.adelanto_id === a.id && _fechaEnRango(c.fecha, rango));
+    const pagadas = (AppData.adelantoCuotas || []).filter(c => c.adelanto_id === a.id).length;
+    filas.push({ clave: 'adelanto:' + a.id, tipo: 'adelanto', id: a.id, marcado: yaEnPeriodo,
+      label: 'Cuota de adelanto ' + Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(a.cuotas_total)) + '/' + _num(a.cuotas_total),
+      sub: fmtPeso(_num(a.monto_total)) + ' en ' + _num(a.cuotas_total) + ' cuotas', monto: _num(a.monto_cuota) });
+  });
+
+  // — Extravíos cuoteados con saldo —
+  (AppData.descItems || []).forEach(x => {
+    if (x.tipo !== 'extraviados' || _num(x.cuotas_total) <= 1) return;
+    if (conductorKey(x.conductor) !== key || !esAutorizado(x)) return;
+    if (descItemSaldado(x)) return;
+    const yaEnPeriodo = (AppData.descItemCuotas || []).some(c => c.item_id === x.id && _fechaEnRango(c.fecha, rango));
+    const pagadas = descItemCuotasPagadas(x.id);
+    filas.push({ clave: 'extravio:' + x.id, tipo: 'extravio', id: x.id, marcado: yaEnPeriodo,
+      label: 'Cuota de extravío ' + Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(x.cuotas_total)) + '/' + _num(x.cuotas_total),
+      sub: (x.referencia || x.detalle || 'Extravío') + ' · ' + fmtPeso(_num(x.monto)), monto: _num(x.monto_cuota) });
+  });
+
+  const wrap = document.getElementById('liq-cuotas-wrap');
+  if (!filas.length) { if (wrap) wrap.style.display = 'none'; cont.innerHTML = ''; return; }
+  if (wrap) wrap.style.display = '';
+  filas.forEach(f => { liqCuotasPend[f.clave] = f.marcado; });
+  cont.innerHTML = filas.map(f =>
+    '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;cursor:pointer">' +
+      '<input type="checkbox" ' + (f.marcado ? 'checked' : '') + ' onchange="marcarCuotaLiq(\'' + f.clave + '\',this.checked)">' +
+      '<span style="flex:1"><strong>' + f.label + '</strong><div style="font-size:10px;color:var(--text-muted)">' + f.sub + '</div></span>' +
+      '<strong style="white-space:nowrap">-' + fmtPeso(f.monto) + '</strong>' +
+    '</label>').join('');
+}
+
+function _fechaEnRango(fechaStr, rango) {
+  if (!rango || (!rango.desde && !rango.hasta)) return true;
+  const f = parseFechaReg(fechaStr); if (!f) return false;
+  const d = rango.desde ? parseFechaReg(rango.desde) : null;
+  const h = rango.hasta ? parseFechaReg(rango.hasta) : null;
+  if (d) { d.setHours(0,0,0,0); if (f < d) return false; }
+  if (h) { h.setHours(23,59,59,999); if (f > h) return false; }
+  return true;
+}
+
+// Diferencia entre lo tildado en el modal y lo YA registrado en el período:
+// + cuotas nuevas tildadas, − cuotas registradas que se destildaron.
+function _ajusteCuotasPend(tipo, rango) {
+  let delta = 0;
+  Object.keys(liqCuotasPend || {}).forEach(clave => {
+    const [t, idTxt] = clave.split(':');
+    if (t !== tipo) return;
+    const id = parseInt(idTxt);
+    const quiere = !!liqCuotasPend[clave];
+    if (tipo === 'adelanto') {
+      const reg = (AppData.adelantoCuotas || []).find(c => c.adelanto_id === id && _fechaEnRango(c.fecha, rango));
+      const a = (AppData.adelantos || []).find(x => x.id === id); if (!a) return;
+      if (quiere && !reg) delta += _num(a.monto_cuota);
+      if (!quiere && reg) delta -= _num(reg.monto);
+    } else {
+      const reg = (AppData.descItemCuotas || []).find(c => c.item_id === id && _fechaEnRango(c.fecha, rango));
+      const it = (AppData.descItems || []).find(x => x.id === id); if (!it) return;
+      if (quiere && !reg) delta += _num(it.monto_cuota);
+      if (!quiere && reg) delta -= _num(reg.monto);
+    }
+  });
+  return delta;
+}
+
+// Solo anota la decisión; se aplica al confirmar (así nada cambia si cancela).
+function marcarCuotaLiq(clave, marcado) {
+  liqCuotasPend[clave] = !!marcado;
+  recalcLiqModal();
+}
+
+// Aplica en la nube las cuotas tildadas/destildadas del modal.
+async function aplicarCuotasLiq(rango) {
+  const fechaImp = (rango && rango.hasta) || (rango && rango.desde) || isoToDMY(hoyISO());
+  for (const clave of Object.keys(liqCuotasPend)) {
+    const [tipo, idTxt] = clave.split(':');
+    const id = parseInt(idTxt);
+    const quiere = !!liqCuotasPend[clave];
+    if (tipo === 'adelanto') {
+      const yaId = (AppData.adelantoCuotas || []).find(c => c.adelanto_id === id && _fechaEnRango(c.fecha, rango));
+      if (quiere && !yaId) {
+        const a = AppData.adelantos.find(x => x.id === id); if (!a) continue;
+        const nro = (AppData.adelantoCuotas || []).filter(c => c.adelanto_id === id).length + 1;
+        const rec = { adelanto_id: id, nro, monto: _num(a.monto_cuota), fecha: fechaImp, fecha_date: fechaISOde(fechaImp) };
+        try { const row = await DB.insertRow('adelanto_cuotas', rec); AppData.adelantoCuotas.push(Object.assign({ id: row && row.id }, rec)); }
+        catch (e) { console.warn('imputar cuota adelanto:', e); }
+      } else if (!quiere && yaId) {
+        try { await DB.deleteWhere('adelanto_cuotas', 'id', yaId.id); AppData.adelantoCuotas = AppData.adelantoCuotas.filter(c => c.id !== yaId.id); }
+        catch (e) { console.warn('deshacer cuota adelanto:', e); }
+      }
+    } else if (tipo === 'extravio') {
+      const yaId = (AppData.descItemCuotas || []).find(c => c.item_id === id && _fechaEnRango(c.fecha, rango));
+      if (quiere && !yaId) {
+        const it = AppData.descItems.find(x => x.id === id); if (!it) continue;
+        const nro = descItemCuotasPagadas(id) + 1;
+        const rec = { item_id: id, nro, monto: _num(it.monto_cuota), fecha: fechaImp, fecha_date: fechaISOde(fechaImp) };
+        try { const row = await DB.insertRow('descuento_cuotas', rec); AppData.descItemCuotas.push(Object.assign({ id: row && row.id }, rec)); }
+        catch (e) { console.warn('imputar cuota extravío:', e); }
+      } else if (!quiere && yaId) {
+        try { await DB.deleteWhere('descuento_cuotas', 'id', yaId.id); AppData.descItemCuotas = AppData.descItemCuotas.filter(c => c.id !== yaId.id); }
+        catch (e) { console.warn('deshacer cuota extravío:', e); }
+      }
+    }
+  }
 }
 
 function recalcLiqModal() {
@@ -116,9 +286,11 @@ function recalcLiqModal() {
     }
   }
 
-  // Cuota(s) de adelanto imputadas al período (deducción, igual que el PDF)
+  // Cuota(s) de adelanto imputadas al período (deducción, igual que el PDF).
+  // Al monto ya registrado le sumamos/restamos lo que el operador acaba de
+  // tildar o destildar en el modal (se aplica recién al confirmar).
   const advAd = adelantoDescuentoConductor(liqModalConductor, getLiqRangoFechasLabel());
-  const advMonto = advAd.monto;
+  const advMonto = Math.max(0, advAd.monto + _ajusteCuotasPend('adelanto', getLiqRangoFechasLabel()));
   const advWrap = document.getElementById('liq-modal-linea-adelanto-wrap');
   if (advWrap) {
     advWrap.style.display = advMonto > 0 ? 'flex' : 'none';
@@ -132,7 +304,7 @@ function recalcLiqModal() {
 
   // Cuota(s) de extravío cuoteado imputadas al período (deducción, igual que el PDF)
   const extAd = extravioCuotaDescuento(liqModalConductor, getLiqRangoFechasLabel());
-  const extMonto = extAd.monto;
+  const extMonto = Math.max(0, extAd.monto + _ajusteCuotasPend('extravio', getLiqRangoFechasLabel()));
   const extWrap = document.getElementById('liq-modal-linea-extravio-wrap');
   if (extWrap) {
     extWrap.style.display = extMonto > 0 ? 'flex' : 'none';
@@ -166,7 +338,7 @@ function verDetalleDesdeModal() {
   showConductorModal(c);
 }
 
-function confirmarYDescargarPDF() {
+async function confirmarYDescargarPDF() {
   if (!liqModalConductor || !liqModalData) return;
 
   const descuentos = {
@@ -178,6 +350,11 @@ function confirmarYDescargarPDF() {
 
   // Rango de fechas del panel Liquidaciones al momento
   const rangoFechas = getLiqRangoFechasLabel();
+
+  // Aplicar las cuotas que el operador tildó/destildó en el modal ANTES de
+  // generar el PDF: son las que mueven el saldo de la deuda del conductor.
+  try { await aplicarCuotasLiq(rangoFechas); }
+  catch (e) { console.warn('aplicarCuotasLiq:', e); }
 
   try {
     exportPDF(liqModalConductor, {
