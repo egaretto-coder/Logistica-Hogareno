@@ -604,3 +604,34 @@ alter table public.empleado_sueldos enable row level security;
 create policy empleados_all        on public.empleados        for all to authenticated using (true) with check (true);
 create policy empleado_ajustes_all on public.empleado_ajustes for all to authenticated using (true) with check (true);
 create policy empleado_sueldos_all on public.empleado_sueldos for all to authenticated using (true) with check (true);
+
+-- ---------- RENDICIÓN DE ENVÍOS (cobros en destino) ----------
+-- Envíos que se cobran al destinatario: el conductor cobra y debe RENDIR ese
+-- dinero al día siguiente de la entrega (fecha_limite). Lo vencido se reclama.
+-- Los pendientes se cargan a mano o se generan desde los recorridos entregados
+-- con cobro_destino > 0 (columna "Total a cobrar" del listado importado).
+create table if not exists public.rendiciones (
+  id bigint generated always as identity primary key,
+  tracking text default '',
+  conductor text not null,
+  cliente text default '',
+  monto numeric not null default 0,
+  fecha_entrega text default '',
+  fecha_entrega_date date,
+  fecha_limite date,
+  estado text not null default 'pendiente',   -- pendiente | rendido | anulado
+  fecha_rendicion text default '',
+  fecha_rendicion_date date,
+  medio text default '',                      -- efectivo | transferencia
+  obs text default '',
+  origen text default 'manual',               -- manual | envios
+  registrado_por text default '', recibido_por text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_rendiciones_estado on public.rendiciones (estado);
+create index if not exists idx_rendiciones_conductor on public.rendiciones (conductor);
+-- Evita duplicar el mismo cobro al generarlo desde los envíos.
+create unique index if not exists idx_rendiciones_trk on public.rendiciones (tracking) where tracking <> '';
+alter table public.rendiciones enable row level security;
+create policy rendiciones_all on public.rendiciones for all to authenticated using (true) with check (true);
+-- registros/registros_historico: columna cobro_destino (monto a cobrar en destino).

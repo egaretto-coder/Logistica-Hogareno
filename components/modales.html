@@ -569,6 +569,85 @@
   </div>
 </div>
 
+<!-- MODAL COBRO EN DESTINO (alta / edición) -->
+<div class="modal-backdrop" id="modal-rend-backdrop" onclick="closeRendModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-dollar"></i> <span id="modal-rend-title">Nuevo cobro en destino</span></span>
+      <button class="modal-close" onclick="closeRendModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Conductor que cobró *</label>
+        <input type="text" id="mrend-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" list="mrend-conductores-list" oninput="this.value=this.value.toUpperCase()" />
+        <datalist id="mrend-conductores-list"></datalist>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Cliente al que corresponde</label>
+        <input type="text" id="mrend-cliente" class="form-input" placeholder="Cliente" style="width:100%;text-transform:uppercase" list="mrend-clientes-list" oninput="this.value=this.value.toUpperCase()" />
+        <datalist id="mrend-clientes-list"></datalist>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-dollar"></i> Monto cobrado ($) *</label>
+          <input type="number" id="mrend-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha de entrega *</label>
+          <input type="date" id="mrend-fecha" class="form-input" style="width:100%" />
+          <span style="font-size:10px;color:var(--text-muted)">Vence al día siguiente.</span>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Tracking / envío</label>
+        <input type="text" id="mrend-tracking" class="form-input" placeholder="Opcional" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <textarea id="mrend-obs" class="form-input" rows="2" style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeRendModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarRendicionModal()"><i class="ic ic-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RENDIR (registrar la entrega del dinero) -->
+<div class="modal-backdrop" id="modal-rendir-backdrop" onclick="closeRendirModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:430px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-check"></i> Registrar rendición</span>
+      <button class="modal-close" onclick="closeRendirModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0" id="mrendir-info">—</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Fecha de rendición</label>
+          <input type="date" id="mrendir-fecha" class="form-input" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Medio</label>
+          <select id="mrendir-medio" class="form-input" style="width:100%">
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <textarea id="mrendir-obs" class="form-input" rows="2" placeholder="Ej: rinde parcial, comprobante…" style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeRendirModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarRendicion()"><i class="ic ic-check"></i> Confirmar rendición</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL EMPLEADO (alta / edición) -->
 <div class="modal-backdrop" id="modal-emp-backdrop" onclick="closeEmpleadoModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
   <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">

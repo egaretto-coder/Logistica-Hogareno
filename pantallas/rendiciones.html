@@ -1,0 +1,48 @@
+      <div id="page-rendiciones" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-dollar"></i> Rendición de envíos</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="generarRendicionesDesdeEnvios()" title="Busca en los envíos importados los que tienen cobro en destino"><i class="ic ic-upload"></i> Traer de los envíos</button>
+            <button class="btn btn-sm" onclick="exportRendicionesPDF()"><i class="ic ic-download"></i> PDF pendientes</button>
+            <button class="btn btn-sm btn-primary" onclick="openAddRendicionModal()">+ Nuevo cobro</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          <i class="ic ic-dollar"></i> Envíos que se <strong>cobran en destino</strong>: el conductor cobra al destinatario y debe <strong>rendir el dinero al día siguiente de la entrega</strong>. Lo que pasa esa fecha aparece como <strong>vencido</strong> para que administración lo reclame. Podés cargarlos a mano o traerlos de los envíos importados (columna “Total a cobrar”).
+        </div>
+
+        <div class="metrics-grid" id="rend-resumen" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start">
+          <div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+              <div class="tabs" style="margin:0">
+                <button class="tab active" id="rend-f-abiertas" onclick="setFiltroRendicion('abiertas')">A rendir</button>
+                <button class="tab" id="rend-f-vencido" onclick="setFiltroRendicion('vencido')">Vencidos</button>
+                <button class="tab" id="rend-f-rendido" onclick="setFiltroRendicion('rendido')">Rendidos</button>
+                <button class="tab" id="rend-f-todas" onclick="setFiltroRendicion('todas')">Todos</button>
+              </div>
+              <input type="search" id="rend-search" placeholder="🔍 Conductor, cliente o tracking..." style="width:240px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderRendiciones()">
+              <span id="rend-count" style="font-size:12px;color:var(--text-muted)"></span>
+            </div>
+
+            <div class="card"><div class="table-wrap"><table>
+              <thead><tr>
+                <th>Tracking</th><th>Conductor</th><th>Cliente</th>
+                <th style="text-align:right">Monto</th><th>Entrega / vence</th>
+                <th style="text-align:center">Estado</th><th>Rendido</th><th style="width:150px"></th>
+              </tr></thead>
+              <tbody id="rend-rows"></tbody>
+            </table></div></div>
+          </div>
+
+          <div class="card" style="padding:14px 16px">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px"><i class="ic ic-user"></i> Deuda por conductor</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Dinero cobrado en destino que todavía no rindió.</div>
+            <div id="rend-por-conductor"></div>
+          </div>
+        </div>
+
+      </div>

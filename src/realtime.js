@@ -19,7 +19,7 @@ const RT_TABLAS = [
   'clientes', 'cliente_tarifas',
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
-  'empleados', 'empleado_ajustes', 'empleado_sueldos',
+  'empleados', 'empleado_ajustes', 'empleado_sueldos', 'rendiciones',
 ];
 
 let _rtCanal = null;

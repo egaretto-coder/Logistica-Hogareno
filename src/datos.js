@@ -63,6 +63,8 @@ function loadSavedConfig() {
   if (empa) { try { AppData.empleadoAjustes = JSON.parse(empa) || []; } catch(e) {} }
   const emps = localStorage.getItem('liq_empleado_sueldos');
   if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
+  const rend = localStorage.getItem('liq_rendiciones');
+  if (rend) { try { AppData.rendiciones = JSON.parse(rend) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -202,6 +204,7 @@ async function _hydrateFromSupabaseReal(opts) {
     cliente: r.cliente || '', // empresa/cliente de facturación (viene del Excel)
     dim_especial: r.dim_especial || '', // dimensión especial asignada (nombre) — vacío = ninguna
     dim_cliente: r.dim_cliente || '',   // cliente de esa dimensión (para resolver el precio por zona)
+    cobro_destino: _num(r.cobro_destino), // monto que el conductor cobra al destinatario y debe rendir
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
     zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
@@ -269,6 +272,15 @@ async function _hydrateFromSupabaseReal(opts) {
     monto_adelanto: _num(s.monto_adelanto), total: _num(s.total),
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
+  }));
+
+  // Rendiciones de cobros en destino.
+  AppData.rendiciones = (data.rendiciones || []).map(r => ({
+    id: r.id, tracking: r.tracking || '', conductor: r.conductor, cliente: r.cliente || '',
+    monto: _num(r.monto), fecha_entrega: r.fecha_entrega || '', fecha_limite: r.fecha_limite || '',
+    estado: r.estado || 'pendiente', fecha_rendicion: r.fecha_rendicion || '',
+    medio: r.medio || '', obs: r.obs || '', origen: r.origen || 'manual',
+    registrado_por: r.registrado_por || '', recibido_por: r.recibido_por || ''
   }));
 
   // Catálogo de dimensiones especiales (cliente · dimensión · zona · precio).
@@ -348,6 +360,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
+    localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.
@@ -506,6 +519,7 @@ function filaRegistroNube(r) {
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
     dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
+    cobro_destino: _num(r.cobro_destino),  // cobro en destino a rendir
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     clave: claveRegistro(r),
     manual: !!r.manual,
@@ -575,7 +589,7 @@ async function cargarHistorialCompleto(btn) {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
-      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
+      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
@@ -585,7 +599,7 @@ async function cargarHistorialCompleto(btn) {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
-      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
+      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)

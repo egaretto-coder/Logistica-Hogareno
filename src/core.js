@@ -268,6 +268,9 @@ let AppData = {
   empleadoAjustes: [],
   empleadoSueldos: [],
 
+  // Rendicion de envios con cobro en destino (el conductor cobra y rinde al dia siguiente).
+  rendiciones: [],
+
   // Catálogo de dimensiones especiales (base de datos por cliente).
   // dimCatalogo: [{ id, cliente, nombre, zona, precio }] — un precio por (cliente, dimensión, zona).
   // La asignación a un envío se guarda en el registro (dim_especial + dim_cliente).
@@ -912,6 +915,7 @@ const PAGE_TITLES = {
   'clientes': ['Clientes', 'Tarifario de venta y liquidación semanal (Vie→Jue)'],
   'comisiones': ['Comisiones', 'Comisiones de vendedores por clientes nuevos y cierre mensual'],
   'empleados': ['Empleados', 'Sueldos, ajustes trimestrales y liquidación mensual del personal'],
+  'rendiciones': ['Rendición de envíos', 'Cobros en destino que el conductor debe rendir'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 

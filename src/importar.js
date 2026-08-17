@@ -146,6 +146,10 @@ const BD_FIELDS = [
   { key: 'zona', label: 'Zona', expectedCol: 'AA', required: true, keywords: ['zona'] },
   { key: 'cadete', label: 'Cadete', expectedCol: 'AD', required: true, keywords: ['cadete', 'conductor', 'chofer'] },
   { key: 'cliente', label: 'Cliente (empresa que factura)', expectedCol: 'BZ', required: false, keywords: ['empresa', 'remitente', 'vendedor', 'seller', 'tienda', 'razon social', 'razón social'] },
+  // Cobro en destino: el conductor cobra al destinatario y lo rinde al día
+  // siguiente (panel Rendición de envíos). En el listado es "Total a cobrar".
+  { key: 'cobro_destino', label: 'Cobro en destino ("Total a cobrar")', expectedCol: 'AI', required: false,
+    preferKeywords: true, keywords: ['total a cobrar', 'a cobrar', 'cobro destino', 'contrareembolso', 'contra reembolso'] },
 ];
 
 function showColumnMapper() {
@@ -245,6 +249,14 @@ function processUpload() {
       rec[field] = String(row[colIdx] !== undefined ? row[colIdx] : '').trim();
     });
     rec.fecha = normalizaFecha(row[mapping.fecha]);
+    // Monto a cobrar en destino (0 si el envío no tiene cobro).
+    rec.cobro_destino = (() => {
+      if (mapping.cobro_destino === undefined) return 0;
+      const v = row[mapping.cobro_destino];
+      if (typeof v === 'number') return v;
+      const n = parseFloat(String(v || '').replace(/[^0-9.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+      return isNaN(n) ? 0 : n;
+    })();
     rec.carga_fecha = fechaCarga;
     rec.clave = claveRegistro(rec);
     return rec;
