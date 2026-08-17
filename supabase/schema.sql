@@ -543,3 +543,64 @@ create policy importaciones_all on public.importaciones for all to authenticated
 -- puede autorizar/editar el precio se aplica en la UI: solo supervisor/analista).
 alter table public.supersla_solicitudes enable row level security;
 create policy supersla_solicitudes_all on public.supersla_solicitudes for all to authenticated using (true) with check (true);
+
+-- ---------- RECURSOS HUMANOS: EMPLEADOS ----------
+-- Personal de la empresa (distinto de los cadetes). "registrado" = en blanco.
+-- El ajuste de sueldo corre cada 3 MESES contados desde la fecha_ingreso de
+-- cada uno, por eso a cada empleado le toca en un mes distinto.
+create table if not exists public.empleados (
+  id bigint generated always as identity primary key,
+  nombre text not null,
+  dni text default '', telefono text default '', email text default '',
+  direccion text default '', puesto text default '',
+  registrado boolean not null default true,
+  fecha_ingreso date,
+  sueldo numeric not null default 0,
+  pct_transferencia numeric not null default 100,  -- resto = efectivo
+  activo boolean not null default true,
+  obs text default '',
+  created_at timestamptz not null default now()
+);
+
+-- Historial de aumentos (uno por empleado y ajuste aplicado).
+create table if not exists public.empleado_ajustes (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  fecha date not null default current_date,
+  periodo text default '',
+  pct numeric not null default 0,
+  sueldo_anterior numeric not null default 0,
+  sueldo_nuevo numeric not null default 0,
+  motivo text default '', aplicado_por text default '',
+  created_at timestamptz not null default now()
+);
+
+-- Liquidación mensual del sueldo, con el corte transferencia/efectivo.
+create table if not exists public.empleado_sueldos (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  periodo text not null,                       -- YYYY-MM
+  sueldo_base numeric not null default 0,
+  horas_extra numeric not null default 0,
+  valor_hora_extra numeric not null default 0,
+  monto_horas_extra numeric not null default 0,
+  bono_eficiencia numeric not null default 0,
+  descuenta_adelanto boolean not null default false,
+  monto_adelanto numeric not null default 0,
+  total numeric not null default 0,
+  pct_transferencia numeric not null default 100,
+  monto_transferencia numeric not null default 0,
+  monto_efectivo numeric not null default 0,
+  pagado boolean not null default false,
+  pagado_en timestamptz,
+  obs text default '',
+  created_at timestamptz not null default now(),
+  unique (empleado_id, periodo)
+);
+
+alter table public.empleados        enable row level security;
+alter table public.empleado_ajustes enable row level security;
+alter table public.empleado_sueldos enable row level security;
+create policy empleados_all        on public.empleados        for all to authenticated using (true) with check (true);
+create policy empleado_ajustes_all on public.empleado_ajustes for all to authenticated using (true) with check (true);
+create policy empleado_sueldos_all on public.empleado_sueldos for all to authenticated using (true) with check (true);

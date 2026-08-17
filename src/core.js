@@ -260,6 +260,14 @@ let AppData = {
   // superSLASolicitudes: [{ id, conductor, zona, precio_anterior, precio_propuesto, motivo, solicitante, estado, resuelto_por, created_at }]
   superSLASolicitudes: [],
 
+  // Recursos Humanos: empleados de la empresa, su historial de ajustes de
+  // sueldo (cada 3 meses desde SU fecha de ingreso) y la liquidación mensual.
+  // empleados: [{ id, nombre, dni, telefono, email, direccion, puesto, registrado,
+  //               fecha_ingreso, sueldo, pct_transferencia, activo, obs }]
+  empleados: [],
+  empleadoAjustes: [],
+  empleadoSueldos: [],
+
   // Catálogo de dimensiones especiales (base de datos por cliente).
   // dimCatalogo: [{ id, cliente, nombre, zona, precio }] — un precio por (cliente, dimensión, zona).
   // La asignación a un envío se guarda en el registro (dim_especial + dim_cliente).
@@ -903,6 +911,7 @@ const PAGE_TITLES = {
   'adelantos': ['Adelantos', 'Préstamos en cuotas y deuda por conductor'],
   'clientes': ['Clientes', 'Tarifario de venta y liquidación semanal (Vie→Jue)'],
   'comisiones': ['Comisiones', 'Comisiones de vendedores por clientes nuevos y cierre mensual'],
+  'empleados': ['Empleados', 'Sueldos, ajustes trimestrales y liquidación mensual del personal'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 

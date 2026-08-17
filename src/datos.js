@@ -57,6 +57,12 @@ function loadSavedConfig() {
   if (slasol) { try { AppData.superSLASolicitudes = JSON.parse(slasol) || []; } catch(e) {} }
   const dimc = localStorage.getItem('liq_dim_catalogo');
   if (dimc) { try { AppData.dimCatalogo = JSON.parse(dimc) || []; } catch(e) {} }
+  const emp = localStorage.getItem('liq_empleados');
+  if (emp) { try { AppData.empleados = JSON.parse(emp) || []; } catch(e) {} }
+  const empa = localStorage.getItem('liq_empleado_ajustes');
+  if (empa) { try { AppData.empleadoAjustes = JSON.parse(empa) || []; } catch(e) {} }
+  const emps = localStorage.getItem('liq_empleado_sueldos');
+  if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
   if (p) {
     try {
@@ -242,6 +248,29 @@ async function _hydrateFromSupabaseReal(opts) {
     usuario: i.usuario || '', created_at: i.created_at || ''
   }));
 
+  // Recursos Humanos.
+  AppData.empleados = (data.empleados || []).map(e => ({
+    id: e.id, nombre: e.nombre, dni: e.dni || '', telefono: e.telefono || '', email: e.email || '',
+    direccion: e.direccion || '', puesto: e.puesto || '', registrado: e.registrado !== false,
+    fecha_ingreso: e.fecha_ingreso || '', sueldo: _num(e.sueldo),
+    pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),
+    activo: e.activo !== false, obs: e.obs || ''
+  }));
+  AppData.empleadoAjustes = (data.empleado_ajustes || []).map(a => ({
+    id: a.id, empleado_id: a.empleado_id, fecha: a.fecha || '', periodo: a.periodo || '',
+    pct: _num(a.pct), sueldo_anterior: _num(a.sueldo_anterior), sueldo_nuevo: _num(a.sueldo_nuevo),
+    motivo: a.motivo || '', aplicado_por: a.aplicado_por || ''
+  }));
+  AppData.empleadoSueldos = (data.empleado_sueldos || []).map(s => ({
+    id: s.id, empleado_id: s.empleado_id, periodo: s.periodo,
+    sueldo_base: _num(s.sueldo_base), horas_extra: _num(s.horas_extra),
+    valor_hora_extra: _num(s.valor_hora_extra), monto_horas_extra: _num(s.monto_horas_extra),
+    bono_eficiencia: _num(s.bono_eficiencia), descuenta_adelanto: !!s.descuenta_adelanto,
+    monto_adelanto: _num(s.monto_adelanto), total: _num(s.total),
+    pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
+    monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
+  }));
+
   // Catálogo de dimensiones especiales (cliente · dimensión · zona · precio).
   AppData.dimCatalogo = (data.dimensiones_catalogo || []).map(d => ({
     id: d.id, cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio)
@@ -316,6 +345,9 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones));
     localStorage.setItem('liq_supersla_solic', JSON.stringify(AppData.superSLASolicitudes));
     localStorage.setItem('liq_dim_catalogo', JSON.stringify(AppData.dimCatalogo));
+    localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
+    localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
+    localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
   } catch(e) {}
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.

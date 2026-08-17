@@ -1,0 +1,90 @@
+      <div id="page-empleados" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-user"></i> Empleados</span>
+          <button class="btn btn-sm btn-primary" onclick="openAddEmpleadoModal()">+ Nuevo empleado</button>
+        </div>
+
+        <div class="tabs" id="emp-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="emp-btn-plantel" onclick="switchEmpleadosTab('plantel')"><i class="ic ic-user"></i> Plantel</button>
+          <button class="tab" id="emp-btn-ajustes" onclick="switchEmpleadosTab('ajustes')"><i class="ic ic-alert"></i> Ajustes de sueldo</button>
+          <button class="tab" id="emp-btn-sueldos" onclick="switchEmpleadosTab('sueldos')"><i class="ic ic-dollar"></i> Liquidación mensual</button>
+        </div>
+
+        <!-- ══════════ TAB: PLANTEL ══════════ -->
+        <div id="emp-tab-plantel">
+          <div class="metrics-grid" id="emp-resumen" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="emp-search" placeholder="🔍 Buscar por nombre, puesto o DNI..." style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderEmpleados()">
+            <button class="btn btn-sm" id="emp-filtro-ajuste" onclick="toggleFiltroAjuste()"><i class="ic ic-alert"></i> Solo los que necesitan ajuste</button>
+            <span id="emp-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div id="emp-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
+        </div>
+
+        <!-- ══════════ TAB: AJUSTES ══════════ -->
+        <div id="emp-tab-ajustes" style="display:none">
+          <div class="alert alert-info" style="margin-bottom:14px">
+            <i class="ic ic-alert"></i> El ajuste corre <strong>cada 3 meses desde la fecha de ingreso de cada empleado</strong>, así que a cada uno le toca en un mes distinto. Acá aparecen solo los que tienen el ajuste <strong>pendiente o vencido</strong>: cargás el aumento, destildás a quien no corresponda y lo aplicás. Queda registrado en su historial.
+          </div>
+
+          <div class="card" style="margin-bottom:14px;padding:14px 18px">
+            <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes del ajuste</label>
+                <input type="month" id="emp-ajuste-periodo" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Aumento %</label>
+                <input type="number" id="emp-ajuste-pct" placeholder="10" min="0" step="0.5" style="width:100px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right" oninput="_actualizarPreviewAjuste()">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">o monto fijo ($)</label>
+                <input type="number" id="emp-ajuste-monto" placeholder="0" min="0" step="1000" style="width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right" oninput="_actualizarPreviewAjuste()">
+              </div>
+              <div style="flex:1;min-width:160px">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Motivo (opcional)</label>
+                <input type="text" id="emp-ajuste-motivo" placeholder="Ej: paritaria, mérito…" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="aplicarAjusteSueldos()"><i class="ic ic-check"></i> Aplicar ajuste</button>
+            </div>
+            <div id="emp-ajuste-resumen" style="margin-top:10px;font-size:12px;color:var(--text-secondary)"></div>
+          </div>
+
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px" id="emp-ajuste-info"></div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Empleado</th><th>Puesto</th><th>Ingreso</th><th>Ajuste</th>
+              <th style="text-align:right">Sueldo actual</th><th style="text-align:right">Quedaría en</th>
+            </tr></thead>
+            <tbody id="emp-ajustes-rows"></tbody>
+          </table></div></div>
+        </div>
+
+        <!-- ══════════ TAB: LIQUIDACIÓN MENSUAL ══════════ -->
+        <div id="emp-tab-sueldos" style="display:none">
+          <div class="card" style="margin-bottom:14px;padding:14px 18px">
+            <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes a liquidar</label>
+                <input type="month" id="emp-sueldo-periodo" onchange="renderSueldosPanel()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              </div>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="exportSueldosPDF()"><i class="ic ic-download"></i> Descargar PDF</button>
+            </div>
+          </div>
+
+          <div class="metrics-grid" id="emp-sueldos-total" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
+
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Empleado</th><th style="text-align:right">Sueldo</th><th style="text-align:right">H. extras</th>
+              <th style="text-align:right">Bono</th><th style="text-align:right">Adelanto</th>
+              <th style="text-align:right">Total</th><th>Forma de pago</th><th style="width:150px"></th>
+            </tr></thead>
+            <tbody id="emp-sueldos-rows"></tbody>
+          </table></div></div>
+        </div>
+
+      </div>

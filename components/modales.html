@@ -569,6 +569,148 @@
   </div>
 </div>
 
+<!-- MODAL EMPLEADO (alta / edición) -->
+<div class="modal-backdrop" id="modal-emp-backdrop" onclick="closeEmpleadoModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-user"></i> <span id="modal-emp-title">Nuevo empleado</span></span>
+      <button class="modal-close" onclick="closeEmpleadoModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Nombre y apellido *</label>
+        <input type="text" id="memp-nombre" class="form-input" placeholder="Ej: MARIA GOMEZ" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">DNI</label>
+          <input type="text" id="memp-dni" class="form-input" placeholder="30111222" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Puesto / área</label>
+          <input type="text" id="memp-puesto" class="form-input" placeholder="Administración" style="width:100%" />
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Teléfono</label>
+          <input type="text" id="memp-telefono" class="form-input" placeholder="11 5555-5555" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:160px">
+          <label class="form-label">Email</label>
+          <input type="email" id="memp-email" class="form-input" placeholder="nombre@correo.com" style="width:100%" />
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Dirección</label>
+        <input type="text" id="memp-direccion" class="form-input" placeholder="Calle 123" style="width:100%" />
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">¿Registrado?</label>
+          <select id="memp-registrado" class="form-input" style="width:100%">
+            <option value="si">Sí — en blanco</option>
+            <option value="no">No registrado</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha de ingreso *</label>
+          <input type="date" id="memp-ingreso" class="form-input" style="width:100%" />
+          <span style="font-size:10px;color:var(--text-muted)">Define cuándo le toca cada ajuste (cada 3 meses).</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-dollar"></i> Sueldo actual ($)</label>
+          <input type="number" id="memp-sueldo" class="form-input" placeholder="800000" min="0" step="1000" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">% por transferencia</label>
+          <input type="number" id="memp-pct-transf" class="form-input" placeholder="100" min="0" max="100" step="5" style="width:100%" />
+          <span style="font-size:10px;color:var(--text-muted)">El resto se paga en efectivo.</span>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <textarea id="memp-obs" class="form-input" rows="2" style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeEmpleadoModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarEmpleadoModal()"><i class="ic ic-save"></i> Guardar empleado</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LIQUIDAR SUELDO (mes) -->
+<div class="modal-backdrop" id="modal-sueldo-backdrop" onclick="closeSueldoModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-dollar"></i> <span id="modal-sueldo-title">Liquidar sueldo</span></span>
+      <button class="modal-close" onclick="closeSueldoModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0" id="msld-info">—</div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Sueldo del mes ($)</label>
+        <input type="number" id="msld-base" class="form-input" min="0" step="1000" style="width:100%" oninput="recalcSueldoModal()" />
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1;min-width:110px">
+          <label class="form-label">Horas extras</label>
+          <input type="number" id="msld-horas" class="form-input" placeholder="0" min="0" step="0.5" style="width:100%" oninput="recalcSueldoModal()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px">
+          <label class="form-label">Valor por hora ($)</label>
+          <input type="number" id="msld-valor-hora" class="form-input" placeholder="0" min="0" step="100" style="width:100%" oninput="recalcSueldoModal()" />
+        </div>
+        <div style="flex:1;min-width:140px;font-size:11px;color:var(--text-secondary);padding-bottom:8px" id="msld-extras-calc">—</div>
+      </div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">🎯 Bono por eficiencia ($)</label>
+        <input type="number" id="msld-bono" class="form-input" placeholder="0" min="0" step="1000" style="width:100%" oninput="recalcSueldoModal()" />
+      </div>
+
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="msld-desc-adelanto" onchange="recalcSueldoModal()">
+          Descontar adelanto solicitado
+        </label>
+        <div class="form-group" style="margin:8px 0 0">
+          <label class="form-label">Monto del adelanto ($)</label>
+          <input type="number" id="msld-adelanto" class="form-input" placeholder="0" min="0" step="1000" style="width:100%" oninput="recalcSueldoModal()" />
+        </div>
+      </div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">% por transferencia (el resto, efectivo)</label>
+        <input type="number" id="msld-pct-transf" class="form-input" min="0" max="100" step="5" style="width:100%" oninput="recalcSueldoModal()" />
+      </div>
+
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700">
+          <span>Total a pagar</span><span id="msld-total">$0</span>
+        </div>
+        <div style="margin-top:6px;font-size:12px;color:var(--text-secondary)" id="msld-split"></div>
+      </div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <textarea id="msld-obs" class="form-input" rows="2" style="width:100%;resize:vertical"></textarea>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;flex-wrap:wrap">
+        <button class="btn" onclick="closeSueldoModal()">Cancelar</button>
+        <button class="btn" onclick="guardarSueldo(false)"><i class="ic ic-save"></i> Guardar</button>
+        <button class="btn btn-primary" onclick="guardarSueldo(true)"><i class="ic ic-check"></i> Guardar y marcar pagado</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL SOLICITAR CAMBIO DE PRECIO SUPER SLA -->
 <div class="modal-backdrop" id="modal-sla-solicitud-backdrop" onclick="closeSlaSolicitudModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:440px" onclick="event.stopPropagation()">
