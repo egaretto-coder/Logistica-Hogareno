@@ -97,15 +97,52 @@ async function attemptLogin() {
   if (btn) { btn.disabled = true; btn.textContent = 'Ingresando…'; }
 
   try {
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (error || !data?.user) {
+    // BARRERA 1 — ¿este email está bloqueado por intentos fallidos?
+    // El control vive en la base (no en el navegador), así que no se saltea
+    // borrando datos del sitio ni cambiando de equipo.
+    const bloqueo = await estadoBloqueoAcceso(email);
+    if (bloqueo && bloqueo.bloqueado) {
       errorEl.classList.add('visible');
-      errorEl.textContent = 'Usuario o contraseña incorrectos';
+      errorEl.textContent = 'Acceso bloqueado por intentos fallidos. Reintentá en ' +
+        minutosTexto(bloqueo.segundos_restantes) + ' o pedile a un analista que lo destrabe.';
       document.getElementById('login-pass').value = '';
       return;
     }
+
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error || !data?.user) {
+      // Contraseña incorrecta: se registra el intento y se avisa cuántos quedan.
+      const st = await registrarIntentoAcceso(email, false);
+      errorEl.classList.add('visible');
+      if (st && st.bloqueado) {
+        errorEl.textContent = 'Demasiados intentos fallidos. Acceso bloqueado por ' +
+          minutosTexto(st.segundos_restantes) + '.';
+      } else if (st && st.max_intentos) {
+        const restantes = Math.max(0, st.max_intentos - st.intentos);
+        errorEl.textContent = 'Usuario o contraseña incorrectos' +
+          (restantes > 0
+            ? ' — te ' + (restantes === 1 ? 'queda 1 intento' : 'quedan ' + restantes + ' intentos')
+            : '');
+      } else {
+        errorEl.textContent = 'Usuario o contraseña incorrectos';
+      }
+      document.getElementById('login-pass').value = '';
+      return;
+    }
+
+    // BARRERA 2 — el usuario puede estar dado de baja aunque su clave sea válida.
+    const perfil = await leerPerfil(data.user.id);
+    if (perfil && perfil.activo === false) {
+      await sb.auth.signOut();
+      errorEl.classList.add('visible');
+      errorEl.textContent = 'Tu usuario está deshabilitado. Contactá a un analista.';
+      document.getElementById('login-pass').value = '';
+      return;
+    }
+
+    await registrarIntentoAcceso(email, true);   // ingreso OK: limpia el contador
     errorEl.classList.remove('visible');
-    await entrarConUsuario(data.user);
+    await entrarConUsuario(data.user, perfil);
   } catch (e) {
     errorEl.classList.add('visible');
     errorEl.textContent = 'Error al iniciar sesión: ' + (e.message || e);
@@ -114,14 +151,51 @@ async function attemptLogin() {
   }
 }
 
+// ── Control de intentos (RPC en la base) ────────────────────────────────────
+async function estadoBloqueoAcceso(email) {
+  try {
+    const { data, error } = await sb.rpc('estado_acceso', { p_email: email });
+    if (error) return null;
+    return Array.isArray(data) ? data[0] : data;
+  } catch (e) { return null; }   // si falla la consulta, no trabamos el ingreso
+}
+async function registrarIntentoAcceso(email, exito) {
+  try {
+    const { data, error } = await sb.rpc('registrar_intento_login', { p_email: email, p_exito: !!exito });
+    if (error) return null;
+    return Array.isArray(data) ? data[0] : data;
+  } catch (e) { return null; }
+}
+function minutosTexto(segundos) {
+  const s = Math.max(0, parseInt(segundos) || 0);
+  if (s < 60) return s + ' segundos';
+  const m = Math.ceil(s / 60);
+  return m + ' minuto' + (m === 1 ? '' : 's');
+}
+async function leerPerfil(userId) {
+  try {
+    const { data } = await sb.from('perfiles').select('*').eq('id', userId).single();
+    return data;
+  } catch (e) { console.warn('No se pudo leer el perfil:', e); return null; }
+}
+
 // Carga el perfil (rol/nombre/icono) del usuario autenticado, hidrata los datos
 // desde Supabase y muestra la app.
-async function entrarConUsuario(user) {
-  let perfil = null;
-  try {
-    const { data } = await sb.from('perfiles').select('*').eq('id', user.id).single();
-    perfil = data;
-  } catch (e) { console.warn('No se pudo leer el perfil:', e); }
+async function entrarConUsuario(user, perfilPrecargado) {
+  const perfil = perfilPrecargado !== undefined ? perfilPrecargado : await leerPerfil(user.id);
+
+  // Un usuario dado de baja no entra, aunque tenga la sesión guardada de antes.
+  // (Además, la base le niega los datos por RLS: ver es_usuario_activo.)
+  if (perfil && perfil.activo === false) {
+    try { await sb.auth.signOut(); } catch (e) {}
+    currentUser = null;
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    document.getElementById('app-layout').style.display = 'none';
+    const errorEl = document.getElementById('login-error');
+    if (errorEl) { errorEl.classList.add('visible'); errorEl.textContent = 'Tu usuario está deshabilitado. Contactá a un analista.'; }
+    return;
+  }
 
   currentUser = {
     id: user.id,

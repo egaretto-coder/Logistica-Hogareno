@@ -635,3 +635,116 @@ create unique index if not exists idx_rendiciones_trk on public.rendiciones (tra
 alter table public.rendiciones enable row level security;
 create policy rendiciones_all on public.rendiciones for all to authenticated using (true) with check (true);
 -- registros/registros_historico: columna cobro_destino (monto a cobrar en destino).
+
+-- ---------- BARRERA DE SEGURIDAD DE ACCESO ----------
+-- Dos controles, ambos en la BASE (no en el navegador): borrar los datos del
+-- sitio o cambiar de equipo no los saltea.
+--   1) Bloqueo por intentos fallidos: 5 intentos → 15 minutos de bloqueo.
+--   2) Alta/baja de usuarios: perfiles.activo=false deja al usuario sin datos.
+
+alter table public.perfiles add column if not exists activo boolean not null default true;
+
+create table if not exists public.acceso_control (
+  email text primary key,
+  intentos int not null default 0,
+  ultimo_intento timestamptz,
+  bloqueado_hasta timestamptz,
+  bloqueos_total int not null default 0,
+  ultimo_ok timestamptz
+);
+alter table public.acceso_control enable row level security;
+-- Nadie escribe esta tabla desde el cliente: se toca solo por las RPC de abajo
+-- (security definer). Los analistas la LEEN para mostrar el estado en el panel.
+create policy acceso_control_select on public.acceso_control
+  for select to authenticated using (public.es_analista());
+
+-- Parámetros de la política de bloqueo (cambiar acá afecta a toda la app).
+create or replace function public.acceso_max_intentos()    returns int language sql immutable as $$ select 5 $$;
+create or replace function public.acceso_minutos_bloqueo() returns int language sql immutable as $$ select 15 $$;
+
+-- Estado de un email. La app la llama ANTES de intentar la contraseña.
+create or replace function public.estado_acceso(p_email text)
+returns table(bloqueado boolean, segundos_restantes int, intentos int, max_intentos int)
+language sql security definer set search_path = public as $$
+  select
+    coalesce(a.bloqueado_hasta > now(), false),
+    greatest(0, coalesce(extract(epoch from (a.bloqueado_hasta - now()))::int, 0)),
+    coalesce(a.intentos, 0),
+    public.acceso_max_intentos()
+  from (select lower(btrim(p_email)) as e) k
+  left join public.acceso_control a on a.email = k.e;
+$$;
+
+-- Registra el resultado del intento. Éxito → limpia el contador.
+-- OJO: los nombres de las columnas de RETURNS TABLE son variables PL/pgSQL, así
+-- que las columnas de la tabla van calificadas con el alias `ac.` (si no, da
+-- "column reference is ambiguous").
+create or replace function public.registrar_intento_login(p_email text, p_exito boolean)
+returns table(bloqueado boolean, segundos_restantes int, intentos int, max_intentos int)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_email text := lower(btrim(p_email));
+  v_max int := public.acceso_max_intentos();
+  v_min int := public.acceso_minutos_bloqueo();
+begin
+  if v_email is null or v_email = '' then
+    return query select false, 0, 0, v_max; return;
+  end if;
+
+  insert into public.acceso_control (email, intentos, ultimo_intento)
+  values (v_email, 0, now())
+  on conflict (email) do nothing;
+
+  if p_exito then
+    update public.acceso_control ac
+       set intentos = 0, bloqueado_hasta = null, ultimo_ok = now(), ultimo_intento = now()
+     where ac.email = v_email;
+  else
+    -- Ya bloqueado: no sigue sumando. Si no, suma uno.
+    update public.acceso_control ac
+       set intentos = case when coalesce(ac.bloqueado_hasta, now()) > now() then ac.intentos else ac.intentos + 1 end,
+           ultimo_intento = now()
+     where ac.email = v_email;
+    -- Al llegar al máximo bloquea y reinicia el contador.
+    update public.acceso_control ac
+       set bloqueado_hasta = now() + (v_min || ' minutes')::interval,
+           bloqueos_total  = ac.bloqueos_total + 1,
+           intentos = 0
+     where ac.email = v_email
+       and ac.intentos >= v_max
+       and coalesce(ac.bloqueado_hasta, to_timestamp(0)) <= now();
+  end if;
+
+  return query select * from public.estado_acceso(v_email);
+end $$;
+
+-- Destrabe manual antes de que venza el tiempo (solo analista).
+create or replace function public.desbloquear_acceso(p_email text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if not public.es_analista() then raise exception 'Solo un analista puede desbloquear accesos'; end if;
+  update public.acceso_control
+     set intentos = 0, bloqueado_hasta = null
+   where email = lower(btrim(p_email));
+  return true;
+end $$;
+
+-- Estas dos se llaman ANTES de iniciar sesión → tienen que correr como anon.
+grant execute on function public.estado_acceso(text)                  to anon, authenticated;
+grant execute on function public.registrar_intento_login(text, boolean) to anon, authenticated;
+grant execute on function public.desbloquear_acceso(text)             to authenticated;
+
+-- ¿El usuario de la sesión está habilitado? Permisiva a propósito: si todavía no
+-- tiene fila en perfiles devuelve true, así nadie queda afuera por falta de dato.
+create or replace function public.es_usuario_activo()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select p.activo from public.perfiles p where p.id = auth.uid()), true);
+$$;
+
+-- La baja se aplica en la BASE: todas las policies `for all` de las tablas de
+-- datos pasaron de `using (true)` a `using (public.es_usuario_activo())` (25
+-- tablas). Se dejaron afuera a propósito:
+--   · perfiles       → el usuario tiene que poder leer su propio estado.
+--   · acceso_control → ya tiene su propia policy de solo-lectura para analistas.
+-- Un usuario deshabilitado autentica pero no lee ni escribe una sola fila.
+-- (Migraciones: seguridad_acceso, seguridad_acceso_fix_ambiguedad, rls_usuario_activo.)

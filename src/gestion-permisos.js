@@ -30,6 +30,7 @@ const GP_ICONOS = {
 };
 
 let gpPerfilesCache = []; // último listado de perfiles cargado (para los selects)
+let gpBloqueosCache = {}; // email → { intentos, bloqueado_hasta } (control de accesos)
 
 function renderGestionPermisos() {
   renderGpCrearRol();
@@ -214,9 +215,17 @@ async function renderGpGrupos() {
 
   try {
     if (!window.sb) throw new Error('offline');
-    const { data, error } = await sb.from('perfiles').select('id,email,nombre,rol,icono').order('nombre');
+    const { data, error } = await sb.from('perfiles').select('id,email,nombre,rol,icono,activo').order('nombre');
     if (error) throw error;
     gpPerfilesCache = data || [];
+    // Estado de bloqueo por intentos fallidos (solo lo ve un analista).
+    gpBloqueosCache = {};
+    if (esAnalista()) {
+      try {
+        const { data: bl } = await sb.from('acceso_control').select('email,intentos,bloqueado_hasta');
+        (bl || []).forEach(b => { gpBloqueosCache[String(b.email).toLowerCase()] = b; });
+      } catch (e) { /* sin permiso o sin conexión: seguimos sin el dato */ }
+    }
   } catch (e) {
     console.warn('renderGpGrupos:', e);
     cont.innerHTML = '<div class="alert alert-info"><i class="ic ic-alert"></i> No se pudieron cargar los usuarios (sin conexión).</div>';
@@ -238,14 +247,29 @@ async function renderGpGrupos() {
           ${roles.map(r => `<option value="${r.rol}" ${r.rol === u.rol ? 'selected' : ''}>${r.emoji} ${r.label}</option>`).join('')}
         </select>`
         : `<span class="tag" style="margin-left:auto;flex-shrink:0;background:${info.color}18;color:${info.color};border:1px solid ${info.color}40;text-transform:uppercase;font-size:9.5px;font-weight:700">${info.rol}</span>`;
+      // Estado de acceso: deshabilitado y/o bloqueado por intentos fallidos.
+      const deshabilitado = u.activo === false;
+      const bl = gpBloqueosCache[String(u.email || '').toLowerCase()];
+      const bloqueado = !!(bl && bl.bloqueado_hasta && new Date(bl.bloqueado_hasta) > new Date());
+      const minRest = bloqueado ? Math.max(1, Math.ceil((new Date(bl.bloqueado_hasta) - new Date()) / 60000)) : 0;
+      const chips =
+        (deshabilitado ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-size:9px">Deshabilitado</span>' : '') +
+        (bloqueado ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:9px" title="Por intentos fallidos">🔒 Bloqueado ' + minRest + ' min</span>' : '');
+      const accesoBtns = analista ? (
+        (bloqueado ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" title="Destrabar ahora" onclick="desbloquearUsuario(\'' + String(u.email).replace(/'/g, "\\'") + '\')">Destrabar</button>' : '') +
+        (deshabilitado
+          ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px;border-color:#86efac;color:#166534" onclick="setUsuarioActivo(\'' + u.id + '\',true)">Habilitar</button>'
+          : '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px;border-color:#fca5a5;color:#b91c1c" onclick="setUsuarioActivo(\'' + u.id + '\',false)" title="Le corta el acceso a la app y a los datos">Deshabilitar</button>')
+      ) : '';
       return `
-        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border)${deshabilitado ? ';opacity:.6' : ''}">
           <div class="conductor-avatar" style="background:${avatarColor(u.nombre || u.email)};width:30px;height:30px;font-size:11px;flex-shrink:0">${u.icono || initials(u.nombre || u.email)}</div>
           <div style="min-width:0">
             <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.nombre || '—'}</div>
             <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.email || ''}</div>
+            ${chips ? '<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">' + chips + '</div>' : ''}
           </div>
-          ${selector}
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">${accesoBtns}${selector}</div>
         </div>`;
     }).join('')
       : '<div class="muted" style="padding:18px;text-align:center;font-size:12px">Nadie en esta sección.</div>';
@@ -273,6 +297,39 @@ async function renderGpGrupos() {
 }
 
 // Reasigna el rol de un usuario (tabla perfiles). Solo analista (UI + RLS).
+// ─── Control de acceso: habilitar/deshabilitar y destrabar bloqueos ─────
+// Deshabilitar corta el acceso de inmediato: la app no lo deja entrar y la base
+// le niega los datos (policies con es_usuario_activo). El usuario y su historial
+// se conservan; se puede volver a habilitar cuando haga falta.
+async function setUsuarioActivo(userId, activo) {
+  if (!esAnalista()) { showToast('⛔ Solo un analista puede cambiar el acceso'); return; }
+  const u = gpPerfilesCache.find(x => String(x.id) === String(userId));
+  const quien = u ? (u.nombre || u.email) : 'este usuario';
+  if (!activo && !confirm('¿Deshabilitar el acceso de ' + quien + '?\n\nNo va a poder entrar ni ver datos hasta que lo habilites de nuevo. No se borra nada.')) return;
+  if (currentUser && String(currentUser.id) === String(userId) && !activo) {
+    alert('No podés deshabilitar tu propio usuario.');
+    return;
+  }
+  try {
+    const { error } = await sb.from('perfiles').update({ activo: !!activo }).eq('id', userId);
+    if (error) throw error;
+    if (u) u.activo = !!activo;
+    renderGpGrupos();
+    showToast(activo ? '✅ Acceso habilitado' : '🚫 Acceso deshabilitado');
+  } catch (e) { console.warn('setUsuarioActivo:', e); alert('No se pudo cambiar el acceso: ' + (e.message || e)); }
+}
+
+async function desbloquearUsuario(email) {
+  if (!esAnalista()) { showToast('⛔ Solo un analista puede desbloquear'); return; }
+  try {
+    const { error } = await sb.rpc('desbloquear_acceso', { p_email: email });
+    if (error) throw error;
+    delete gpBloqueosCache[String(email).toLowerCase()];
+    renderGpGrupos();
+    showToast('🔓 Acceso destrabado — ya puede volver a intentar');
+  } catch (e) { console.warn('desbloquearUsuario:', e); alert('No se pudo destrabar: ' + (e.message || e)); }
+}
+
 async function cambiarRolUsuario(userId, nuevoRol, el) {
   if (!esAnalista()) { showToast('⛔ Solo un analista puede reasignar roles'); renderGpGrupos(); return; }
   const u = gpPerfilesCache.find(x => x.id === userId);
