@@ -46,6 +46,13 @@ function toggleFiltroIncompletos() {
 // Filtro "solo corregidos a mano": envíos con zona definida a mano, precio pisado
 // o cargados a mano. Sirve para revisar rápido lo que se tocó.
 let condSoloCorregidos = false;
+
+// Días plegados en el detalle del conductor. El operador trabaja un día por vez,
+// así que arrancan TODOS CERRADOS: se ve la lista de días con su subtotal y se
+// abre solo el que se va a tocar (antes había que scrollear cientos de filas).
+// Se guarda a qué conductor pertenece para no arrastrar la selección al cambiar.
+let condDiasAbiertos = new Set();
+let condDiasDe = null;
 function toggleFiltroCorregidos() {
   condSoloCorregidos = !condSoloCorregidos;
   renderConductorDetail();
@@ -85,6 +92,8 @@ function indicesConductorFiltrados(cond) {
 
 function renderConductorDetail() {
   const cond = document.getElementById('cond-select').value;
+  // Cambió el conductor: el plegado de días arranca de cero.
+  if (condDiasDe !== cond) { condDiasDe = cond; condDiasAbiertos = new Set(); }
   const wrap = document.getElementById('conductor-detail-wrap');
   if (!cond) {
     wrap.innerHTML = `<div class="empty-state"><div class="empty-icon"><i class="ic ic-truck"></i></div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div></div>`;
@@ -182,12 +191,16 @@ function renderConductorDetail() {
       const rd = resumenDia.get(_dia) || { envios: 0, contab: 0, total: 0 };
       const fd = parseFechaReg(_dia);
       const dow = fd && typeof DIAS_SEM !== 'undefined' ? DIAS_SEM[fd.getDay()] + ' ' : '';
+      const _diaAttr = _dia.replace(/"/g, '&quot;');
+      const _abierto = condDiasAbiertos.has(_dia);
       separador =
-        '<tr style="background:var(--surface-0)">' +
+        '<tr class="cond-dia-head" style="background:var(--surface-0);cursor:pointer" title="Tocá para abrir o cerrar el día" data-dia="' + _diaAttr + '" onclick="toggleDiaConductor(this.dataset.dia)">' +
           '<td colspan="6" style="padding:8px 12px;border-top:2px solid var(--border)">' +
             '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px">' +
+              '<span class="cond-dia-chev' + (_abierto ? ' abierto' : '') + '" data-dia="' + _diaAttr + '"><i class="ic ic-chevrons-down"></i></span>' +
               '<strong style="font-size:13px"><i class="ic ic-calendar"></i> ' + dow + _dia + '</strong>' +
               '<span class="muted">' + rd.contab + ' de ' + rd.envios + ' contabilizan</span>' +
+              '<span class="muted cond-dia-hint"' + (_abierto ? ' style="display:none"' : '') + '>· tocá para ver los ' + rd.envios + '</span>' +
               '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(rd.total) + '</strong>' +
             '</div>' +
           '</td>' +
@@ -199,7 +212,7 @@ function renderConductorDetail() {
     const manual = precioManualDe(r);
     const esCanonico = ['ENTREGADO', 'NO ENTREGADO'].includes(estadoNorm);
     return separador + `
-      <tr style="${contabiliza ? '' : 'background:#fdf6f6;'}${manual !== null ? 'box-shadow:inset 3px 0 0 #f59e0b;' : ''}">
+      <tr class="cond-fila-dia" data-dia="${_dia.replace(/"/g, '&quot;')}" style="${condDiasAbiertos.has(_dia) ? '' : 'display:none;'}${contabiliza ? '' : 'background:#fdf6f6;'}${manual !== null ? 'box-shadow:inset 3px 0 0 #f59e0b;' : ''}">
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
           class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '"><i class="ic ic-user"></i> ' + r.destinatario + '</div>' : ''}</td>
         <td class="muted mono" style="font-size:12px">${r.fecha || '—'}</td>
@@ -245,6 +258,11 @@ function renderConductorDetail() {
           <div style="font-size:24px;font-weight:700">${fmtPeso(total)}</div>
         </div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">
+        <span>Los días arrancan cerrados — tocá uno para ver y corregir sus envíos.</span>
+        <button class="btn btn-sm" style="margin-left:auto;padding:3px 8px;font-size:10.5px" onclick="abrirTodosLosDias(true)">Abrir todos</button>
+        <button class="btn btn-sm" style="padding:3px 8px;font-size:10.5px" onclick="abrirTodosLosDias(false)">Cerrar todos</button>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -261,6 +279,39 @@ function renderConductorDetail() {
         💡 Dejá el precio <strong>vacío</strong> para volver al cálculo automático. Las filas con borde naranja tienen precio corregido a mano.
       </div>
     </div>`;
+}
+
+// ─── Plegado por día ────────────────────────────────────────────────────────
+// Se muestra/oculta sin volver a renderizar: así no se pierde lo que el operador
+// esté tipeando en un input de otra fila.
+function toggleDiaConductor(dia) {
+  if (!dia) return;
+  if (condDiasAbiertos.has(dia)) condDiasAbiertos.delete(dia);
+  else condDiasAbiertos.add(dia);
+  aplicarPlegadoDias();
+}
+
+function aplicarPlegadoDias() {
+  const wrap = document.getElementById('conductor-detail-wrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('tr.cond-fila-dia').forEach(tr => {
+    tr.style.display = condDiasAbiertos.has(tr.dataset.dia) ? '' : 'none';
+  });
+  wrap.querySelectorAll('.cond-dia-chev').forEach(el => {
+    el.classList.toggle('abierto', condDiasAbiertos.has(el.dataset.dia));
+  });
+  wrap.querySelectorAll('tr.cond-dia-head').forEach(tr => {
+    const hint = tr.querySelector('.cond-dia-hint');
+    if (hint) hint.style.display = condDiasAbiertos.has(tr.dataset.dia) ? 'none' : '';
+  });
+}
+
+function abrirTodosLosDias(abrir) {
+  const wrap = document.getElementById('conductor-detail-wrap');
+  if (!wrap) return;
+  condDiasAbiertos = new Set();
+  if (abrir) wrap.querySelectorAll('tr.cond-dia-head').forEach(tr => condDiasAbiertos.add(tr.dataset.dia));
+  aplicarPlegadoDias();
 }
 
 // Limpia los filtros del buscador (cliente / tracking / zona) y re-renderiza.

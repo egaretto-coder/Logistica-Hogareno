@@ -851,3 +851,15 @@
   .switch input:checked + .slider { background: #10b981; }
   .switch input:checked + .slider:before { transform: translateX(19px); }
   .switch input:disabled + .slider { opacity: 0.55; cursor: not-allowed; }
+
+  /* Detalle de conductor: cabecera de día plegable */
+  .cond-dia-head:hover { background: var(--surface-2) !important; }
+  .cond-dia-chev {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; flex-shrink: 0;
+    color: var(--text-muted);
+    transform: rotate(-90deg);            /* cerrado: apunta a la derecha */
+    transition: transform 0.15s ease;
+  }
+  .cond-dia-chev.abierto { transform: rotate(0deg); color: var(--text-secondary); }
+  .cond-dia-hint { font-size: 10.5px; font-style: italic; }
