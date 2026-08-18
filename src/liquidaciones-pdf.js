@@ -177,8 +177,14 @@ function renderCuotasImputables(conductor, rango) {
   });
 
   const wrap = document.getElementById('liq-cuotas-wrap');
-  if (!filas.length) { if (wrap) wrap.style.display = 'none'; cont.innerHTML = ''; return; }
+  // Aunque no haya nada que imputar, la sección se muestra igual y lo dice: si se
+  // ocultara, el operador no sabría si la opción no existe o si no hay deuda.
   if (wrap) wrap.style.display = '';
+  if (!filas.length) {
+    cont.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:6px 0;border-top:1px solid var(--border)">' +
+      'Sin adelantos ni extravíos en cuotas para este conductor.</div>';
+    return;
+  }
   filas.forEach(f => { liqCuotasPend[f.clave] = f.marcado; });
   cont.innerHTML = filas.map(f =>
     '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;cursor:pointer">' +
@@ -338,6 +344,31 @@ function verDetalleDesdeModal() {
   showConductorModal(c);
 }
 
+
+// Guarda las decisiones de imputación SIN generar el PDF.
+// Sirve para el flujo "preparo todas las liquidaciones y después las bajo
+// juntas con Descargar liquidaciones (PDF)": si el único botón fuera
+// "Confirmar y descargar", habría que bajar cada PDF suelto para que las
+// cuotas quedaran aplicadas, y después se bajarían de nuevo todas juntas.
+async function guardarImputacionLiq() {
+  const btn = document.querySelector('#modal-liq-backdrop button[onclick*="guardarImputacionLiq"]');
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  try {
+    // Los checkboxes de combustible/extraviados/proveedores ya se guardan solos
+    // al tildarlos (columna imputar). Acá faltan las cuotas, que se crean o se
+    // borran recién ahora.
+    await aplicarCuotasLiq(getLiqRangoFechasLabel());
+    document.getElementById('modal-liq-backdrop').style.display = 'none';
+    showToast('✅ Imputación guardada — bajalas todas juntas cuando termines');
+    if (typeof renderLiquidaciones === 'function') renderLiquidaciones();
+  } catch (e) {
+    console.error('guardarImputacionLiq:', e);
+    alert('No se pudo guardar la imputación: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+  }
+}
 async function confirmarYDescargarPDF() {
   if (!liqModalConductor || !liqModalData) return;
 
