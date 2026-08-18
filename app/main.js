@@ -137,8 +137,11 @@ async function bootstrap() {
   // 1) Caché local (arranque instantáneo / offline)
   loadSavedConfig();
 
-  // 2) Restaurar sesión de Supabase (hidrata datos frescos en entrarConUsuario)
-  restoreSession().then(ok => {
+  // 2) ¿Volvemos del mail de "olvidé mi contraseña"? Entonces no se restaura la
+  //    sesión: primero tiene que elegir la contraseña nueva.
+  detectarRecoveryEnURL().then(async (esRecovery) => {
+    if (esRecovery) return;
+    const ok = await restoreSession();
     if (!ok) setTimeout(() => document.getElementById('login-user')?.focus(), 100);
   });
 }

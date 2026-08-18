@@ -81,6 +81,9 @@ async function attemptLogin() {
   const errorEl = document.getElementById('login-error');
   const btn = document.querySelector('#login-overlay button[onclick*="attemptLogin"]');
 
+  const okEl = document.getElementById('login-ok');
+  if (okEl) okEl.classList.remove('visible');   // limpia el aviso verde de una recuperación
+
   if (!email || !password) {
     errorEl.classList.add('visible');
     errorEl.textContent = 'Ingresá usuario y contraseña';
@@ -177,6 +180,180 @@ async function leerPerfil(userId) {
     const { data } = await sb.from('perfiles').select('*').eq('id', userId).single();
     return data;
   } catch (e) { console.warn('No se pudo leer el perfil:', e); return null; }
+}
+
+// ── Recuperar la contraseña por mail ────────────────────────────────────────
+// El usuario pide el enlace → Supabase le manda un mail → al volver, la URL
+// trae una sesión de recuperación → elige la contraseña nueva. No hace falta
+// que nadie entre al panel de Supabase.
+
+// La tarjeta de login tiene 3 vistas: 'form' | 'reset' | 'nueva'.
+function loginMostrarVista(cual) {
+  const vistas = { form: 'Sistema de Liquidaciones', reset: 'Recuperar contraseña', nueva: 'Elegí tu contraseña nueva' };
+  Object.keys(vistas).forEach(v => {
+    const el = document.getElementById('login-vista-' + v);
+    if (el) el.style.display = (v === cual) ? '' : 'none';
+  });
+  const sub = document.getElementById('login-sub');
+  if (sub) sub.textContent = vistas[cual] || vistas.form;
+}
+
+// Un solo lugar para los avisos del login: 'error', 'ok' o nada (limpia).
+function loginAviso(texto, tipo) {
+  const err = document.getElementById('login-error');
+  const ok = document.getElementById('login-ok');
+  if (err) { err.classList.toggle('visible', tipo === 'error'); if (tipo === 'error') err.textContent = texto; }
+  if (ok) { ok.classList.toggle('visible', tipo === 'ok'); if (tipo === 'ok') ok.textContent = texto; }
+}
+
+function abrirResetPass() {
+  const escrito = document.getElementById('login-user');
+  const campo = document.getElementById('reset-user');
+  if (campo) campo.value = (escrito && escrito.value) || '';
+  loginAviso('', null);
+  loginMostrarVista('reset');
+  setTimeout(() => document.getElementById('reset-user')?.focus(), 50);
+}
+
+function volverAlLogin() {
+  loginAviso('', null);
+  loginMostrarVista('form');
+  setTimeout(() => document.getElementById('login-user')?.focus(), 50);
+}
+
+async function enviarResetPass() {
+  const email = normalizarEmail(document.getElementById('reset-user').value);
+  const btn = document.querySelector('#login-vista-reset .login-btn');
+  if (!email) { loginAviso('Escribí tu usuario', 'error'); return; }
+  if (!sb) { loginAviso('Sin conexión con el servidor. Revisá tu internet e intentá de nuevo.', 'error'); return; }
+
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    // Volver a esta misma app: el enlace del mail trae la sesión de recuperación.
+    const redirectTo = location.origin + location.pathname;
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) {
+      // Supabase limita cuántos mails se pueden mandar por hora.
+      if (/rate|limit|seconds|too many/i.test(error.message || '')) {
+        loginAviso('Ya se mandaron varios mails seguidos. Esperá unos minutos y probá de nuevo.', 'error');
+      } else {
+        loginAviso('No se pudo enviar el mail: ' + (error.message || error), 'error');
+      }
+      return;
+    }
+    // Mensaje igual para todos: no confirmamos si ese usuario existe o no.
+    loginAviso('Si ese usuario existe, te llega un mail con el enlace. Revisá también el correo no deseado.', 'ok');
+  } catch (e) {
+    loginAviso('No se pudo enviar el mail: ' + (e.message || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+  }
+}
+
+// Los tokens no tienen que quedar en la barra de direcciones ni en el historial.
+function limpiarURLAuth() {
+  try { history.replaceState({}, document.title, location.pathname + location.search.replace(/[?&](code|type)=[^&]*/g, '').replace(/^&/, '?')); } catch (e) {}
+  try { if (location.hash) history.replaceState({}, document.title, location.pathname); } catch (e) {}
+}
+
+// ¿Volvimos del mail de recuperación? Devuelve true si hay que pedir la
+// contraseña nueva (y entonces NO se restaura la sesión normal).
+async function detectarRecoveryEnURL() {
+  if (!sb) return false;
+  const hp = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  const qs = new URLSearchParams(location.search || '');
+
+  const errDesc = hp.get('error_description') || qs.get('error_description');
+  const tipo    = hp.get('type') || qs.get('type');
+  const access  = hp.get('access_token');
+  const refresh = hp.get('refresh_token');
+  const code    = qs.get('code');
+
+  if (!errDesc && !access && !code) return false;   // arranque normal
+  limpiarURLAuth();
+
+  if (errDesc) {
+    loginAviso(/expired|invalid/i.test(errDesc)
+      ? 'El enlace ya venció o se usó. Pedí uno nuevo.'
+      : decodeURIComponent(errDesc.replace(/\+/g, ' ')), 'error');
+    loginMostrarVista('form');
+    return false;
+  }
+  if (tipo && tipo !== 'recovery') return false;    // no es recuperación: seguimos normal
+
+  try {
+    if (access && refresh) {
+      const { error } = await sb.auth.setSession({ access_token: access, refresh_token: refresh });
+      if (error) throw error;
+    } else if (code && typeof sb.auth.exchangeCodeForSession === 'function') {
+      const { error } = await sb.auth.exchangeCodeForSession(code);
+      if (error) throw error;
+    } else {
+      return false;
+    }
+    const { data } = await sb.auth.getUser();
+    const user = data && data.user;
+    if (!user) throw new Error('sin usuario');
+
+    // Un usuario dado de baja no cambia su contraseña ni entra.
+    const perfil = await leerPerfil(user.id);
+    if (perfil && perfil.activo === false) {
+      try { await sb.auth.signOut(); } catch (e) {}
+      loginAviso('Tu usuario está deshabilitado. Contactá a un analista.', 'error');
+      loginMostrarVista('form');
+      return false;
+    }
+
+    const cartel = document.getElementById('nueva-email');
+    if (cartel) cartel.textContent = user.email || '';
+    loginAviso('', null);
+    loginMostrarVista('nueva');
+    setTimeout(() => document.getElementById('nueva-pass')?.focus(), 50);
+    return true;
+  } catch (e) {
+    console.warn('detectarRecoveryEnURL:', e);
+    loginAviso('El enlace ya venció o se usó. Pedí uno nuevo.', 'error');
+    loginMostrarVista('form');
+    return false;
+  }
+}
+
+async function guardarNuevaPass() {
+  const p1 = document.getElementById('nueva-pass').value;
+  const p2 = document.getElementById('nueva-pass2').value;
+  const btn = document.querySelector('#login-vista-nueva .login-btn');
+
+  if (p1.length < 8) { loginAviso('La contraseña tiene que tener al menos 8 caracteres', 'error'); return; }
+  if (p1 !== p2) { loginAviso('Las dos contraseñas no coinciden', 'error'); return; }
+
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  try {
+    const { data, error } = await sb.auth.updateUser({ password: p1 });
+    if (error) {
+      loginAviso(/same|different from the old/i.test(error.message || '')
+        ? 'Elegí una contraseña distinta de la anterior.'
+        : 'No se pudo cambiar la contraseña: ' + (error.message || error), 'error');
+      return;
+    }
+    const user = (data && data.user) || (await sb.auth.getUser()).data?.user;
+    // Si venía bloqueado por intentos fallidos, el cambio lo destraba.
+    if (user && user.email) await registrarIntentoAcceso(user.email, true);
+    loginAviso('', null);
+    loginMostrarVista('form');
+    if (user) await entrarConUsuario(user);
+  } catch (e) {
+    loginAviso('No se pudo cambiar la contraseña: ' + (e.message || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+  }
+}
+
+// Si se arrepiente, cerramos la sesión de recuperación (si no, quedaría abierta).
+async function cancelarNuevaPass() {
+  try { await sb.auth.signOut(); } catch (e) {}
+  volverAlLogin();
 }
 
 // Carga el perfil (rol/nombre/icono) del usuario autenticado, hidrata los datos

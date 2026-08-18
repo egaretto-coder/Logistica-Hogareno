@@ -499,6 +499,26 @@
     display: none;
   }
   .login-error.visible { display: block; }
+  /* Aviso en verde (mail enviado, contraseña cambiada). */
+  .login-ok {
+    background: #ecfdf5; color: #047857; padding: 10px 12px;
+    border-radius: 8px; font-size: 12px;
+    margin-bottom: 14px; text-align: center;
+    display: none;
+  }
+  .login-ok.visible { display: block; }
+  /* Acción secundaria con forma de enlace (recuperar contraseña, volver). */
+  .login-link {
+    display: block; width: 100%; margin-top: 12px;
+    background: none; border: 0; padding: 4px;
+    color: #2d4fa1; font-size: 12px; font-weight: 600;
+    cursor: pointer; text-align: center;
+  }
+  .login-link:hover { text-decoration: underline; }
+  .login-nota {
+    font-size: 12px; color: #6b7280; line-height: 1.5;
+    margin: 0 0 16px; text-align: center;
+  }
   .login-footer {
     text-align: center; font-size: 11px;
     color: #9ca3af; margin-top: 20px;
