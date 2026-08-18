@@ -34,6 +34,7 @@ let gpBloqueosCache = {}; // email → { intentos, bloqueado_hasta } (control de
 
 function renderGestionPermisos() {
   renderGpCrearRol();
+  renderGpAltaUsuario();
   renderGpMatriz();
   renderGpGrupos();
 }
@@ -57,6 +58,72 @@ function renderGpCrearRol() {
         <span style="font-size:11px;color:var(--text-muted)">Arranca sin pantallas: prendé las que corresponda en la matriz y asignale usuarios abajo.</span>
       </div>
     </div>`;
+}
+
+// ─── Alta de usuarios ───────────────────────────────────────────────────
+// Crear un usuario necesita la clave service_role, que NO puede vivir en un
+// sitio estático: la hace la Edge Function "crear-usuario", que verifica del
+// lado del servidor que quien llama sea analista. Acá solo se arma el pedido.
+function renderGpAltaUsuario() {
+  const cont = document.getElementById('gp-alta-usuario');
+  if (!cont) return;
+  if (!esAnalista()) { cont.innerHTML = ''; return; }
+  const roles = gpRoles();
+  cont.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:600"><i class="ic ic-user"></i> Agregar usuario</span>
+        <input type="text" id="gp-alta-nombre" placeholder="Nombre y apellido" maxlength="60"
+          style="width:190px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+        <input type="email" id="gp-alta-email" placeholder="usuario@logisticahogar.com" maxlength="80"
+          onkeydown="if(event.key==='Enter') crearUsuarioNuevo()"
+          style="width:240px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+        <select id="gp-alta-rol"
+          style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
+          ${roles.map(r => `<option value="${r.rol}" ${r.rol === 'administrativo' ? 'selected' : ''}>${r.emoji} ${r.label}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm btn-primary" id="gp-alta-btn" onclick="crearUsuarioNuevo()">Invitar</button>
+        <span style="font-size:11px;color:var(--text-muted)">Le llega un mail para que elija su propia contraseña. Queda habilitado al aceptar.</span>
+      </div>
+    </div>`;
+}
+
+async function crearUsuarioNuevo() {
+  if (!esAnalista()) { showToast('⛔ Solo un analista puede dar de alta usuarios'); return; }
+  const nombre = (document.getElementById('gp-alta-nombre').value || '').trim();
+  const emailIn = (document.getElementById('gp-alta-email').value || '').trim();
+  const rol = document.getElementById('gp-alta-rol').value;
+  const btn = document.getElementById('gp-alta-btn');
+
+  // Igual que en el login: se puede escribir solo el usuario y se completa el dominio.
+  const email = typeof normalizarEmail === 'function' ? normalizarEmail(emailIn) : emailIn.toLowerCase();
+  if (!email || !email.includes('@')) { alert('Escribí el email del usuario nuevo'); return; }
+  if (!nombre) { alert('Escribí el nombre para saber quién es en el listado'); return; }
+  if (!confirm('Se le va a mandar una invitación a ' + email + ' con el rol "' + rol + '".\n\nAl aceptarla elige su contraseña y queda habilitado.')) return;
+
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Invitando…'; }
+  try {
+    const { data, error } = await sb.functions.invoke('crear-usuario', {
+      body: { email, nombre, rol, redirectTo: location.origin + location.pathname }
+    });
+    // Los errores de la function vienen con el detalle en el cuerpo de la respuesta.
+    let detalle = (data && data.error) || null;
+    if (error && !detalle) {
+      try { detalle = (await error.context.json()).error; } catch (e) { detalle = error.message; }
+    }
+    if (detalle) { alert('No se pudo dar de alta: ' + detalle); return; }
+
+    document.getElementById('gp-alta-nombre').value = '';
+    document.getElementById('gp-alta-email').value = '';
+    showToast('✅ Invitación enviada a ' + email);
+    renderGpGrupos();
+  } catch (e) {
+    console.warn('crearUsuarioNuevo:', e);
+    alert('No se pudo dar de alta: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+  }
 }
 
 async function crearRolNuevo() {

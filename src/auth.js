@@ -280,7 +280,8 @@ async function detectarRecoveryEnURL() {
     loginMostrarVista('form');
     return false;
   }
-  if (tipo && tipo !== 'recovery') return false;    // no es recuperación: seguimos normal
+  // Recuperación e invitación se tratan igual: en los dos casos elige su contraseña.
+  if (tipo && tipo !== 'recovery' && tipo !== 'invite') return false;
 
   try {
     if (access && refresh) {
@@ -305,6 +306,10 @@ async function detectarRecoveryEnURL() {
       return false;
     }
 
+    const intro = document.getElementById('nueva-intro');
+    if (intro) intro.textContent = (tipo === 'invite')
+      ? 'Elegí la contraseña de'
+      : 'Estás cambiando la contraseña de';
     const cartel = document.getElementById('nueva-email');
     if (cartel) cartel.textContent = user.email || '';
     loginAviso('', null);

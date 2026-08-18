@@ -17,26 +17,16 @@ create table if not exists public.perfiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
   nombre text not null default '',
-  rol text not null default 'administrativo' check (rol in ('analista','administrativo')),
+  rol text not null default 'administrativo',   -- sin check: los roles son dinámicos (tabla roles)
   icono text default '👤',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- Crea el perfil automáticamente al registrarse un usuario.
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  insert into public.perfiles (id, email, nombre, rol, icono)
-  values (
-    new.id, new.email,
-    coalesce(new.raw_user_meta_data->>'nombre', split_part(new.email,'@',1)),
-    coalesce(new.raw_user_meta_data->>'rol', 'administrativo'),
-    coalesce(new.raw_user_meta_data->>'icono', '👤')
-  ) on conflict (id) do nothing;
-  return new;
-end;
-$$;
+-- Crea el perfil automáticamente al aparecer un usuario en auth.users.
+-- OJO: la versión VIGENTE está al final, en "ALTA DE USUARIOS" — el rol dejó de
+-- salir de raw_user_meta_data (era escalada de privilegios) y el perfil nace
+-- deshabilitado. Este bloque queda solo como referencia histórica.
 
 -- ---------- TARIFAS ----------
 create table if not exists public.tarifas (
@@ -748,3 +738,33 @@ $$;
 --   · acceso_control → ya tiene su propia policy de solo-lectura para analistas.
 -- Un usuario deshabilitado autentica pero no lee ni escribe una sola fila.
 -- (Migraciones: seguridad_acceso, seguridad_acceso_fix_ambiguedad, rls_usuario_activo.)
+
+-- ---------- ALTA DE USUARIOS ----------
+-- El perfil se crea solo cuando aparece un usuario en auth.users, PERO el rol
+-- no puede salir de raw_user_meta_data: quien pueda registrarse elegiría su
+-- propio rol (incluido analista). Queda fijo en 'administrativo' y activo=false;
+-- el rol y la habilitación los pone un analista desde "Gestión de permisos".
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path to 'public'
+as $$
+begin
+  insert into public.perfiles (id, email, nombre, rol, icono, activo)
+  values (
+    new.id,
+    new.email,
+    coalesce(nullif(btrim(new.raw_user_meta_data->>'nombre'), ''), split_part(new.email, '@', 1)),
+    'administrativo',   -- fijo a propósito: NUNCA del metadata (sería escalada)
+    coalesce(nullif(btrim(new.raw_user_meta_data->>'icono'), ''), '👤'),
+    false               -- nace SIN acceso; se habilita desde el panel
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+-- (trigger on_auth_user_created after insert on auth.users, ya existente)
+
+-- El alta en sí la hace la Edge Function `crear-usuario`
+-- (supabase/functions/crear-usuario/index.ts): necesita la clave service_role,
+-- que no puede vivir en un sitio estático. Verifica contra el JWT que quien
+-- llama sea analista activo, invita por mail (el usuario elige su contraseña) y
+-- deja el perfil con el rol elegido y activo=true.

@@ -34,11 +34,11 @@
       <button class="login-link" onclick="volverAlLogin()">Volver al ingreso</button>
     </div>
 
-    <!-- ── VISTA 3: elegir la contraseña nueva (se vuelve del mail) ── -->
+    <!-- ── VISTA 3: elegir contraseña (se vuelve del mail: recuperación o invitación) ── -->
     <div id="login-vista-nueva" style="display:none">
       <p class="login-nota">
-        Estás cambiando la contraseña de <strong id="nueva-email">—</strong>.
-        Mínimo 8 caracteres.
+        <span id="nueva-intro">Estás cambiando la contraseña de</span>
+        <strong id="nueva-email">—</strong>. Mínimo 8 caracteres.
       </p>
       <div class="login-field">
         <label>Contraseña nueva</label>
