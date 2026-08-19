@@ -28,22 +28,30 @@
         <!-- ══════════ TAB: AJUSTES ══════════ -->
         <div id="emp-tab-ajustes" style="display:none">
           <div class="alert alert-info" style="margin-bottom:14px">
-            <i class="ic ic-alert"></i> El ajuste corre <strong>cada 3 meses desde la fecha de ingreso de cada empleado</strong>, así que a cada uno le toca en un mes distinto. Acá aparecen solo los que tienen el ajuste <strong>pendiente o vencido</strong>: cargás el aumento, destildás a quien no corresponda y lo aplicás. Queda registrado en su historial.
+            <i class="ic ic-alert"></i><div>Cada empleado se ajusta <strong>3 meses después de su último aumento</strong> (si nunca tuvo, 3 meses desde el ingreso), así que a cada uno le toca en un mes distinto.
+            Elegí el mes y vas a ver quiénes ajustan hasta ahí, cuánto cobran hoy y cuánto pasaría a costar la nómina.</div>
+          </div>
+
+          <!-- Calendario: en qué mes le toca a cada uno -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-header"><span class="card-title">Cuándo le toca a cada uno</span>
+              <span style="font-size:11px;color:var(--text-muted)">tocá un mes para trabajar sobre él</span></div>
+            <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap" id="emp-ajuste-meses"></div>
           </div>
 
           <div class="card" style="margin-bottom:14px;padding:14px 18px">
             <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
               <div>
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes del ajuste</label>
-                <input type="month" id="emp-ajuste-periodo" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <input type="month" id="emp-ajuste-periodo" onchange="renderAjustesPanel()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
               </div>
               <div>
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Aumento %</label>
-                <input type="number" id="emp-ajuste-pct" placeholder="10" min="0" step="0.5" style="width:100px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right" oninput="_actualizarPreviewAjuste()">
+                <input type="number" id="emp-ajuste-pct" placeholder="ej. 10" min="0" step="0.5" style="width:110px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right" oninput="_actualizarPreviewAjuste()">
               </div>
               <div>
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">o monto fijo ($)</label>
-                <input type="number" id="emp-ajuste-monto" placeholder="0" min="0" step="1000" style="width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right" oninput="_actualizarPreviewAjuste()">
+                <input type="number" id="emp-ajuste-monto" placeholder="ej. 50000" min="0" step="1000" style="width:130px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right" oninput="_actualizarPreviewAjuste()">
               </div>
               <div style="flex:1;min-width:160px">
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Motivo (opcional)</label>
@@ -51,19 +59,21 @@
               </div>
               <button class="btn btn-sm btn-primary" onclick="aplicarAjusteSueldos()"><i class="ic ic-check"></i> Aplicar ajuste</button>
             </div>
-            <div id="emp-ajuste-resumen" style="margin-top:10px;font-size:12px;color:var(--text-secondary)"></div>
+            <div id="emp-ajuste-aviso" style="margin-top:8px;font-size:11px;color:#b45309;display:none"></div>
           </div>
+
+          <!-- Costo de la nómina: hoy y con el ajuste proyectado -->
+          <div class="metrics" style="margin-bottom:14px" id="emp-ajuste-totales"></div>
 
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px" id="emp-ajuste-info"></div>
           <div class="card"><div class="table-wrap"><table>
             <thead><tr>
-              <th>Empleado</th><th>Puesto</th><th>Ingreso</th><th>Ajuste</th>
+              <th>Empleado</th><th>Ingreso</th><th>Último aumento</th><th>Próximo ajuste</th>
               <th style="text-align:right">Sueldo actual</th><th style="text-align:right">Quedaría en</th>
             </tr></thead>
             <tbody id="emp-ajustes-rows"></tbody>
           </table></div></div>
         </div>
-
         <!-- ══════════ TAB: LIQUIDACIÓN MENSUAL ══════════ -->
         <div id="emp-tab-sueldos" style="display:none">
           <div class="card" style="margin-bottom:14px;padding:14px 18px">

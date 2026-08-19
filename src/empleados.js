@@ -50,14 +50,14 @@ function ultimoAjusteDe(empId) {
 }
 
 function proximoAjuste(emp) {
-  const ing = _empFecha(emp.fecha_ingreso);
-  if (!ing) return null;
+  // Se ajusta 3 meses DESPUÉS del último aumento. Si nunca tuvo uno, se cuenta
+  // desde el ingreso. (Antes se contaba siempre desde el ingreso, así que a
+  // quien recibía un aumento fuera de ciclo le quedaba la fecha corrida.)
   const ult = ultimoAjusteDe(emp.id);
-  const base = ult ? _empFecha(ult.fecha) : ing;
-  // Avanzamos de a 3 meses desde el ingreso hasta pasar la última referencia.
-  const prox = new Date(ing);
-  let guard = 0;
-  while (prox <= base && guard < 400) { prox.setMonth(prox.getMonth() + RRHH_MESES_AJUSTE); guard++; }
+  const base = ult ? _empFecha(ult.fecha) : _empFecha(emp.fecha_ingreso);
+  if (!base) return null;
+  const prox = new Date(base);
+  prox.setMonth(prox.getMonth() + RRHH_MESES_AJUSTE);
   return prox;
 }
 
@@ -287,35 +287,57 @@ function renderAjustesPanel() {
   const cont = document.getElementById('emp-ajustes-rows');
   if (!cont) return;
   const mesEl = document.getElementById('emp-ajuste-periodo');
-  if (mesEl && !mesEl.value) mesEl.value = (typeof mesActualYYYYMM === 'function') ? mesActualYYYYMM() : new Date().toISOString().slice(0, 7);
+  if (mesEl && !mesEl.value) mesEl.value = new Date().toISOString().slice(0, 7);
+  const mesSel = (mesEl && mesEl.value) || new Date().toISOString().slice(0, 7);
 
-  const todos = (AppData.empleados || []).filter(e => e.activo !== false);
-  const pendientes = todos.filter(leTocaAjuste)
-    .sort((a, b) => (estadoAjuste(a).dias) - (estadoAjuste(b).dias));
+  const activos = (AppData.empleados || []).filter(e => e.activo !== false);
+  // Le toca en el mes elegido o antes (los vencidos arrastran).
+  const alcanzados = activos.filter(e => {
+    const p = proximoAjuste(e);
+    return p && _yyyymm(p) <= mesSel;
+  }).sort((a, b) => {
+    const pa = proximoAjuste(a), pb = proximoAjuste(b);
+    return (pa ? pa.getTime() : 0) - (pb ? pb.getTime() : 0);
+  });
+
+  _renderMesesAjuste(activos, mesSel);
 
   const info = document.getElementById('emp-ajuste-info');
-  if (info) info.textContent = pendientes.length
-    ? pendientes.length + ' empleado(s) con ajuste pendiente'
-    : 'Ningún empleado tiene ajuste pendiente';
+  if (info) info.textContent = alcanzados.length
+    ? alcanzados.length + ' empleado(s) ajustan en ' + _mesTexto(mesSel) + ' o antes'
+    : 'Nadie tiene ajuste pendiente hasta ' + _mesTexto(mesSel);
 
-  if (!pendientes.length) {
-    cont.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✓</div><div class="empty-title">Todos al día</div><div class="empty-sub">El ajuste corre cada ' + RRHH_MESES_AJUSTE + ' meses desde la fecha de ingreso de cada uno</div></div></td></tr>';
+  if (!alcanzados.length) {
+    cont.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✓</div>' +
+      '<div class="empty-title">Nadie ajusta en ' + _mesTexto(mesSel) + '</div>' +
+      '<div class="empty-sub">Cada uno ajusta 3 meses después de su último aumento — probá con otro mes</div></div></td></tr>';
     _actualizarPreviewAjuste();
     return;
   }
-  cont.innerHTML = pendientes.map(e => {
+
+  cont.innerHTML = alcanzados.map(e => {
     const est = estadoAjuste(e);
+    const ult = ultimoAjusteDe(e.id);
+    const prox = proximoAjuste(e);
+    const ultTxt = ult
+      ? '<div style="font-weight:600">' + _empFmt(ult.fecha) + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted)">' +
+          (_num(ult.sueldo_anterior) > 0
+            ? fmtPeso(_num(ult.sueldo_anterior)) + ' → ' + fmtPeso(_num(ult.sueldo_nuevo))
+            : (ult.pct ? '+' + ult.pct + '%' : 'sin detalle')) + '</div>'
+      : '<span class="muted" style="font-size:11px">Nunca ajustado</span>';
+    const vencido = est.estado === 'vencido';
     return '<tr>' +
       '<td><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
         '<input type="checkbox" class="emp-ajuste-chk" data-id="' + e.id + '" checked onchange="_actualizarPreviewAjuste()">' +
         '<div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div>' +
-        '<strong>' + e.nombre + '</strong></label></td>' +
-      '<td class="muted" style="font-size:12px">' + (e.puesto || '—') + '</td>' +
+        '<div><strong>' + e.nombre + '</strong>' +
+        '<div style="font-size:10px;color:var(--text-muted)">' + (e.puesto || '') + (e.area ? ' · ' + e.area : '') + '</div></div></label></td>' +
       '<td class="muted" style="font-size:12px">' + _empFmt(e.fecha_ingreso) + '</td>' +
-      '<td style="font-size:12px">' + (est.estado === 'vencido'
-        ? '<span style="color:#b91c1c;font-weight:600">Vencido hace ' + Math.abs(est.dias) + ' días</span>'
-        : '<span style="color:#854d0e;font-weight:600">' + (est.dias === 0 ? 'Hoy' : 'En ' + est.dias + ' días') + '</span>') +
-        '<div style="font-size:10px;color:var(--text-muted)">' + _empFmt(est.fecha ? est.fecha.toISOString() : '') + '</div></td>' +
+      '<td style="font-size:12px">' + ultTxt + '</td>' +
+      '<td style="font-size:12px">' +
+        '<div style="font-weight:600;color:' + (vencido ? '#b91c1c' : '#854d0e') + '">' + (prox ? _mesTexto(_yyyymm(prox)) : '—') + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted)">' + (vencido ? 'vencido hace ' + Math.abs(est.dias) + ' días' : 'en ' + est.dias + ' días') + '</div></td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(_num(e.sueldo)) + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700" id="emp-prev-' + e.id + '">—</td>' +
     '</tr>';
@@ -323,25 +345,95 @@ function renderAjustesPanel() {
   _actualizarPreviewAjuste();
 }
 
-// Vista previa del sueldo nuevo según el % o monto cargado.
+// AAAA-MM de una fecha.
+function _yyyymm(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+
+const _MESES_TXT = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function _mesTexto(yyyymm) {
+  const p = String(yyyymm || '').split('-');
+  if (p.length < 2) return yyyymm || '—';
+  return _MESES_TXT[(+p[1]) - 1] + ' ' + p[0];
+}
+
+// Chips por mes: cuántos ajustan y cuánto suman. Sirve para ver de un vistazo
+// cómo se reparte el año y planificar el costo.
+function _renderMesesAjuste(activos, mesSel) {
+  const cont = document.getElementById('emp-ajuste-meses');
+  if (!cont) return;
+  const hoy = new Date();
+  const meses = [];
+  for (let i = -1; i <= 5; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() + i, 1);
+    meses.push(_yyyymm(d));
+  }
+  // Los vencidos (de meses anteriores) se muestran aparte, al principio.
+  let vencidos = 0, vencidosMonto = 0;
+  const porMes = {};
+  activos.forEach(e => {
+    const p = proximoAjuste(e);
+    if (!p) return;
+    const m = _yyyymm(p);
+    if (m < meses[0]) { vencidos++; vencidosMonto += _num(e.sueldo); return; }
+    if (!porMes[m]) porMes[m] = { n: 0, masa: 0 };
+    porMes[m].n++; porMes[m].masa += _num(e.sueldo);
+  });
+
+  const chip = (etiqueta, n, masa, valor, activo) =>
+    '<button class="btn btn-sm" onclick="_elegirMesAjuste(\'' + valor + '\')" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:7px 11px;' +
+      (activo ? 'border-color:#6366f1;background:#eef2ff;color:#3730a3;font-weight:700' : '') + '">' +
+      '<span style="font-size:11px">' + etiqueta + '</span>' +
+      '<span style="font-size:10px;opacity:.75">' + (n ? n + ' pers. · ' + fmtPeso(masa) : 'nadie') + '</span></button>';
+
+  let html = '';
+  if (vencidos) html += chip('⚠ Vencidos', vencidos, vencidosMonto, meses[0], mesSel <= meses[0]);
+  html += meses.map(m => chip(_mesTexto(m), (porMes[m] || {}).n || 0, (porMes[m] || {}).masa || 0, m, m === mesSel)).join('');
+  cont.innerHTML = html;
+}
+
+function _elegirMesAjuste(m) {
+  const el = document.getElementById('emp-ajuste-periodo');
+  if (el) el.value = m;
+  renderAjustesPanel();
+}
+
+// Vista previa: sueldo nuevo por persona y costo total de la nómina.
 function _actualizarPreviewAjuste() {
   const pct = parseFloat(document.getElementById('emp-ajuste-pct')?.value) || 0;
   const monto = parseFloat(document.getElementById('emp-ajuste-monto')?.value) || 0;
-  let n = 0, totalViejo = 0, totalNuevo = 0;
+  let n = 0, sube = 0;
   document.querySelectorAll('.emp-ajuste-chk').forEach(chk => {
     const id = parseInt(chk.dataset.id);
-    const e = AppData.empleados.find(x => x.id === id); if (!e) return;
+    const e = (AppData.empleados || []).find(x => x.id === id); if (!e) return;
     const nuevo = _nuevoSueldo(_num(e.sueldo), pct, monto);
     const cell = document.getElementById('emp-prev-' + id);
     if (cell) cell.innerHTML = chk.checked
-      ? '<span style="color:#166534">' + fmtPeso(nuevo) + '</span>'
+      ? '<span style="color:#166534">' + fmtPeso(nuevo) + '</span>' +
+        (nuevo > _num(e.sueldo) ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400">+' + fmtPeso(nuevo - _num(e.sueldo)) + '</div>' : '')
       : '<span class="muted">sin cambio</span>';
-    if (chk.checked) { n++; totalViejo += _num(e.sueldo); totalNuevo += nuevo; }
+    if (chk.checked) { n++; sube += (nuevo - _num(e.sueldo)); }
   });
-  const resumen = document.getElementById('emp-ajuste-resumen');
-  if (resumen) resumen.innerHTML = n
-    ? '<strong>' + n + '</strong> empleado(s) · masa ' + fmtPeso(totalViejo) + ' → <strong>' + fmtPeso(totalNuevo) + '</strong> (+' + fmtPeso(totalNuevo - totalViejo) + ')'
-    : 'Ningún empleado seleccionado';
+
+  // El costo se mide sobre TODA la nómina activa, no solo sobre los que ajustan.
+  const activos = (AppData.empleados || []).filter(e => e.activo !== false);
+  const masaHoy = activos.reduce((a, e) => a + _num(e.sueldo), 0);
+  const tot = document.getElementById('emp-ajuste-totales');
+  if (tot) tot.innerHTML =
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
+      '<div class="metric-label">Costo actual de sueldos</div><div class="metric-value">' + fmtPeso(masaHoy) + '</div>' +
+      '<div class="metric-sub">' + activos.length + ' empleado(s) activos</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
+      '<div class="metric-label">Con el ajuste proyectado</div><div class="metric-value">' + fmtPeso(masaHoy + sube) + '</div>' +
+      '<div class="metric-sub">' + n + ' ajuste(s) tildado(s)</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
+      '<div class="metric-label">Aumento mensual</div><div class="metric-value" style="color:' + (sube ? '#b45309' : 'inherit') + '">+' + fmtPeso(sube) + '</div>' +
+      '<div class="metric-sub">' + (masaHoy ? (sube * 100 / masaHoy).toFixed(1) : 0) + '% sobre la nómina</div></div>';
+
+  const aviso = document.getElementById('emp-ajuste-aviso');
+  if (aviso) {
+    const falta = n > 0 && !pct && !monto;
+    aviso.style.display = falta ? '' : 'none';
+    aviso.textContent = falta ? 'Cargá un porcentaje o un monto: por ahora el ajuste no cambia ningún sueldo.' : '';
+  }
 }
 function _nuevoSueldo(actual, pct, monto) {
   let n = actual;
@@ -363,7 +455,10 @@ async function aplicarAjusteSueldos() {
   if (!confirm('¿Aplicar el ajuste a ' + ids.length + ' empleado(s)?\n\n' + detalle + '\n\nQueda registrado en el historial de cada uno.')) return;
 
   const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
-  const hoyIso = new Date().toISOString().slice(0, 10);
+  // El ajuste se fecha en el MES ELEGIDO, no en el día en que se aplica: si se
+  // adelanta el aumento de septiembre, el ciclo de 3 meses tiene que arrancar
+  // en septiembre igual.
+  const hoyIso = periodo ? (periodo + '-01') : new Date().toISOString().slice(0, 10);
   let ok = 0;
   for (const id of ids) {
     const e = AppData.empleados.find(x => x.id === id); if (!e) continue;
