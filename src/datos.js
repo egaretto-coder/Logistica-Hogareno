@@ -258,7 +258,8 @@ async function _hydrateFromSupabaseReal(opts) {
   // Recursos Humanos.
   AppData.empleados = (data.empleados || []).map(e => ({
     id: e.id, nombre: e.nombre, dni: e.dni || '', telefono: e.telefono || '', email: e.email || '',
-    direccion: e.direccion || '', puesto: e.puesto || '', registrado: e.registrado !== false,
+    direccion: e.direccion || '', puesto: e.puesto || '', area: e.area || '',
+    registrado: e.registrado !== false,
     fecha_ingreso: e.fecha_ingreso || '', sueldo: _num(e.sueldo),
     pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),
     activo: e.activo !== false, obs: e.obs || ''

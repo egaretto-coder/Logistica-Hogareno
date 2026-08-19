@@ -794,3 +794,9 @@ alter table public.registros_historico
   add column if not exists motivo_contab text not null default '';
 create index if not exists idx_registros_contab_manual
   on public.registros (contabiliza_manual) where contabiliza_manual;
+
+-- empleados.area: área de la empresa (Gerencia / Administracion / Coordinacion /
+-- Logistica / Asesoria Comercial / Ventas). Texto libre a propósito: la lista
+-- vive en RRHH_AREAS (src/empleados.js), así sumar un área no exige migrar.
+alter table public.empleados add column if not exists area text not null default '';
+create index if not exists idx_empleados_area on public.empleados (area);

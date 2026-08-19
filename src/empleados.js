@@ -14,6 +14,10 @@
 
 const RRHH_MESES_AJUSTE = 3;
 
+// Áreas de la empresa. La columna empleados.area es texto libre a propósito:
+// sumar un área acá no necesita tocar la base.
+const RRHH_AREAS = ['Gerencia', 'Administracion', 'Coordinacion', 'Logistica', 'Asesoria Comercial', 'Ventas'];
+
 // ── Helpers de fecha ────────────────────────────────────────────────────────
 function _empFecha(iso) { return iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00') : null; }
 function _empFmt(iso) {
@@ -106,7 +110,7 @@ function renderEmpleados() {
   const q = (document.getElementById('emp-search')?.value || '').toLowerCase().trim();
   const todos = (AppData.empleados || []).filter(e => e.activo !== false);
   const lista = todos
-    .filter(e => !q || String(e.nombre).toLowerCase().includes(q) || String(e.puesto || '').toLowerCase().includes(q) || String(e.dni || '').includes(q))
+    .filter(e => !q || String(e.nombre).toLowerCase().includes(q) || String(e.puesto || '').toLowerCase().includes(q) || String(e.area || '').toLowerCase().includes(q) || String(e.dni || '').includes(q))
     .filter(e => !empSoloAjuste || leTocaAjuste(e))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
@@ -157,6 +161,7 @@ function renderEmpleados() {
         '<div style="flex:1;min-width:0">' +
           '<div style="font-size:14px;font-weight:700">' + e.nombre + '</div>' +
           '<div style="font-size:11px;color:var(--text-muted)">' + (e.puesto || 'Sin puesto') + (e.dni ? ' · DNI ' + e.dni : '') + '</div>' +
+          (e.area ? '<span class="tag" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:9.5px;margin-top:3px;display:inline-block">' + e.area + '</span>' : '') +
         '</div>' +
         '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-sm" onclick="editEmpleado(' + e.id + ')" title="Editar datos"><i class="ic ic-edit"></i></button>' +
@@ -180,10 +185,20 @@ function renderEmpleados() {
 
 // ── ABM empleado ─────────────────────────────────────────────────────────────
 let empleadoEditId = null;
+// Carga las opciones del selector de área (vacío = sin asignar).
+function poblarAreasEmpleado(sel) {
+  const el = document.getElementById('memp-area');
+  if (!el) return;
+  el.innerHTML = '<option value="">— Sin asignar —</option>' +
+    RRHH_AREAS.map(a => '<option value="' + a + '">' + a + '</option>').join('');
+  el.value = sel || '';
+}
+
 function openAddEmpleadoModal() {
   empleadoEditId = null;
   document.getElementById('modal-emp-title').textContent = 'Nuevo empleado';
   ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto','memp-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  poblarAreasEmpleado('');
   document.getElementById('memp-registrado').value = 'si';
   document.getElementById('memp-ingreso').value = '';
   document.getElementById('memp-sueldo').value = '';
@@ -201,6 +216,7 @@ function editEmpleado(id) {
   document.getElementById('memp-email').value = e.email || '';
   document.getElementById('memp-direccion').value = e.direccion || '';
   document.getElementById('memp-puesto').value = e.puesto || '';
+  poblarAreasEmpleado(e.area || '');
   document.getElementById('memp-obs').value = e.obs || '';
   document.getElementById('memp-registrado').value = e.registrado === false ? 'no' : 'si';
   document.getElementById('memp-ingreso').value = e.fecha_ingreso ? String(e.fecha_ingreso).slice(0, 10) : '';
@@ -223,6 +239,7 @@ async function guardarEmpleadoModal() {
     email: (document.getElementById('memp-email').value || '').trim(),
     direccion: (document.getElementById('memp-direccion').value || '').trim(),
     puesto: (document.getElementById('memp-puesto').value || '').trim(),
+    area: (document.getElementById('memp-area') || {}).value || '',
     obs: (document.getElementById('memp-obs').value || '').trim(),
     registrado: document.getElementById('memp-registrado').value === 'si',
     fecha_ingreso: document.getElementById('memp-ingreso').value || null,
