@@ -309,14 +309,15 @@ function findKmDesvio(conductor) {
 // Suma los km y montos de los desvíos cuya fecha cae dentro del período; así la
 // liquidación semanal contempla solo los km de esa semana. Cada monto ya está
 // congelado a la tarifa vigente cuando se cargó (no se recalcula).
-function kmAdicionalConductor(conductor, rango) {
+function kmAdicionalConductor(conductor, rango, incluirExcluidos) {
   const key = conductorKey(conductor);
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
   if (desde) desde.setHours(0, 0, 0, 0);
   if (hasta) hasta.setHours(23, 59, 59, 999);
   let km = 0, monto = 0, n = 0;
-  AppData.kmDesvio.forEach(d => {
+  const detalle = [];   // con incluirExcluidos=true vienen también los destildados
+  AppData.kmDesvio.forEach((d, idx) => {
     if (conductorKey(d.conductor) !== key) return;
     if (desde || hasta) {
       const f = parseFechaReg(d.fecha);
@@ -324,9 +325,14 @@ function kmAdicionalConductor(conductor, rango) {
       if (desde && f < desde) return;
       if (hasta && f > hasta) return;
     }
-    km += _num(d.km); monto += _num(d.monto); n++;
+    const imputa = d.imputar !== false;
+    if (imputa) { km += _num(d.km); monto += _num(d.monto); n++; }
+    if (incluirExcluidos || imputa) {
+      detalle.push({ idx, id: d.id, fecha: d.fecha || '', km: _num(d.km), monto: _num(d.monto),
+                     obs: d.obs || '', imputar: imputa });
+    }
   });
-  return { km, monto, n };
+  return { km, monto, n, detalle };
 }
 
 // ── Adelantos (préstamos en cuotas) ─────────────────────────────────────────
@@ -450,9 +456,10 @@ function descItemSaldado(item) { return descItemCuotasPagadas(item.id) >= _num(i
 // Devuelve { monto, detalle: [{ nro, total, monto }] }.
 function extravioCuotaDescuento(conductor, rango) {
   const key = conductorKey(conductor);
-  const itemsTotal = {}; // item_id → cuotas_total (solo extravíos cuoteados del conductor)
+  const itemsTotal = {}; // item_id → cuotas_total (saldos cuoteados del conductor)
+  // Se cuotean extravíos y servicios de proveedores; combustible y km van enteros.
   AppData.descItems.forEach(x => {
-    if (x.tipo === 'extraviados' && _num(x.cuotas_total) > 1 &&
+    if ((x.tipo === 'extraviados' || x.tipo === 'proveedores') && _num(x.cuotas_total) > 1 &&
         conductorKey(x.conductor) === key && esAutorizado(x)) itemsTotal[x.id] = _num(x.cuotas_total);
   });
   const setIds = new Set(Object.keys(itemsTotal).map(Number));

@@ -187,8 +187,9 @@ async function _hydrateFromSupabaseReal(opts) {
     id: c.id, item_id: c.item_id, nro: _num(c.nro), monto: _num(c.monto), fecha: c.fecha || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
-    conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
-    valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || ''
+    id: d.id, conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
+    valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || '',
+    imputar: d.imputar !== false   // las filas viejas (sin el campo) cuentan como imputadas
   }));
   // Historial de tarifas de km (ascendente por vigencia)
   AppData.kmTarifas = (data.km_tarifas || [])
@@ -475,7 +476,8 @@ function dbPush(table) {
     })).filter(d => d.cliente && d.nombre && d.zona),
     km_desvio: () => AppData.kmDesvio.map(d => ({
       conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
-      valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || ''
+      valor_km: _num(d.valor_km), monto: _num(d.monto), obs: d.obs || '',
+      imputar: d.imputar !== false
     })).filter(d => d.conductor),
   };
   const rows = builders[table] ? builders[table]() : [];

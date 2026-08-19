@@ -35,7 +35,11 @@ const DESC_ITEMS = {
   },
 };
 
-let descItemModalTipo = null;   // tipo del ítem que se está creando/editando
+let descItemModalTipo = null;
+
+// Tipos que admiten cuotear el saldo (los demás se imputan enteros).
+const TIPOS_CUOTEABLES = ['extraviados', 'proveedores'];
+function esTipoCuoteable(tipo) { return TIPOS_CUOTEABLES.includes(tipo); }   // tipo del ítem que se está creando/editando
 let descItemEditId = null;      // id del registro en edición (null = alta)
 let descItemCandidatos = [];    // recorridos sugeridos para autocompletar el tracking (extravíos)
 
@@ -47,7 +51,7 @@ function renderDescItems(tipo) {
   const cont = document.getElementById('descitem-' + tipo + '-rows');
   if (!cfg || !cont) return;
   const conRef = !!cfg.refLabel;
-  const conCuotas = (tipo === 'extraviados'); // columna de cuotas/progreso
+  const conCuotas = esTipoCuoteable(tipo); // columna de cuotas/progreso
   const ncols = 5 + (conRef ? 1 : 0) + (conCuotas ? 1 : 0);
 
   const fInput = document.getElementById('descitem-' + tipo + '-fecha-nuevo');
@@ -75,7 +79,7 @@ function renderDescItems(tipo) {
     return;
   }
 
-  const esExtravioTipo = (tipo === 'extraviados');
+  const esExtravioTipo = esTipoCuoteable(tipo);
   const puedeAut = puedeAutorizar();
   cont.innerHTML = lista.map(x => {
     const cuoteado = _num(x.cuotas_total) > 1;
@@ -224,7 +228,7 @@ function configDescItemModal(tipo) {
   const extra = document.getElementById('mditem-extravio-extra');
   if (extra) extra.style.display = esExtravio ? 'flex' : 'none';
   const cuoteBlock = document.getElementById('mditem-cuotear-block');
-  if (cuoteBlock) cuoteBlock.style.display = esExtravio ? '' : 'none';
+  if (cuoteBlock) cuoteBlock.style.display = esTipoCuoteable(tipo) ? '' : 'none';
 }
 
 function openAddDescItemModal(tipo) {
@@ -295,7 +299,7 @@ async function guardarDescItemModal() {
 
   // Cuotear: solo extravíos y solo en el alta (los cuoteados no se editan por acá).
   let cuotas_total = 1, monto_cuota = 0;
-  if (tipo === 'extraviados' && descItemEditId == null) {
+  if (esTipoCuoteable(tipo) && descItemEditId == null) {
     const chk = document.getElementById('mditem-cuotear');
     if (chk && chk.checked) {
       cuotas_total = parseInt(document.getElementById('mditem-cuotas').value) || 0;
@@ -403,24 +407,27 @@ function actualizarPreviewCuotaExtravio() {
     : '';
 }
 
-// ── Extravíos: registro de cuotas (imputadas a la liquidación de su semana) ──
+// ── Cuotas (imputadas a la liquidación de su semana) ────────────────────────
+// Se pueden cuotear los saldos que el conductor devuelve de a poco: extravíos y
+// servicios de proveedores. Combustible y km se imputan enteros.
+
 function fechaSemanaExtravio() {
   const iso = document.getElementById('extravios-fecha')?.value || hoyISO();
   return isoToDMY(iso);
 }
 
 async function descontarCuotaExtravio(itemId) {
-  const it = AppData.descItems.find(x => x.id === itemId && x.tipo === 'extraviados');
+  const it = AppData.descItems.find(x => x.id === itemId && esTipoCuoteable(x.tipo));
   if (!it) return;
-  if (!esAutorizado(it)) { showToast('⏳ Extravío pendiente de autorización — no se puede imputar todavía'); return; }
-  if (descItemSaldado(it)) { showToast('Ese extravío ya está saldado'); return; }
+  if (!esAutorizado(it)) { showToast('⏳ Pendiente de autorización — no se puede imputar todavía'); return; }
+  if (descItemSaldado(it)) { showToast('Ese saldo ya está saldado'); return; }
   const nro = descItemCuotasPagadas(it.id) + 1;
   const fecha = fechaSemanaExtravio();
   if (!confirm('¿Descontar la cuota ' + nro + '/' + it.cuotas_total + ' (' + fmtPeso(it.monto_cuota) + ') de ' + it.conductor + ' en la semana del ' + fecha + '?\nAparecerá en su liquidación de esa fecha.')) return;
   try {
     const row = await DB.insertRow('descuento_cuotas', { item_id: itemId, nro, monto: it.monto_cuota, fecha, fecha_date: fechaISOde(fecha) });
     AppData.descItemCuotas.push({ id: row.id, item_id: itemId, nro, monto: it.monto_cuota, fecha });
-    renderDescItems('extraviados');
+    renderDescItems(it.tipo);
     showToast('✅ Cuota ' + nro + '/' + it.cuotas_total + ' de ' + it.conductor + ' descontada (' + fecha + ')');
   } catch (e) { console.warn('descontarCuotaExtravio:', e); showToast('⛔ No se pudo registrar la cuota'); }
 }

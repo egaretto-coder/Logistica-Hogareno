@@ -77,7 +77,8 @@ function openLiqModal(conductor) {
     // incluirExcluidos: traemos también los marcados "no imputar" para poder
     // mostrarlos destildados (y que el operador los reincorpore si quiere).
     const r = descItemDescuentoConductor(tipo, conductor, rangoImp, true);
-    document.getElementById('liq-desc-' + campo).value = r.monto ? r.monto : '';
+    const totEl = document.getElementById('liq-desc-' + campo + '-total');
+    if (totEl) totEl.textContent = fmtPeso(r.monto);
     const info = document.getElementById('liq-desc-' + campo + '-info');
     const nImp = r.detalle.filter(x => x.imputar).length;
     if (info) info.textContent = r.detalle.length
@@ -94,6 +95,7 @@ function openLiqModal(conductor) {
   if (origenEl) origenEl.textContent = totalItemsPre > 0 ? 'Imputado por fecha del período · destildá lo que no quieras descontar' : '';
 
   renderCuotasImputables(conductor, rangoImp);
+  renderKmImputable(conductor, rangoImp);
   recalcLiqModal();
   document.getElementById('modal-liq-backdrop').style.display = 'flex';
 }
@@ -136,10 +138,12 @@ async function toggleImputarDesdeLiq(id, tipo, campo, marcado) {
   } catch (e) { console.warn('toggleImputarDesdeLiq:', e); showToast('⛔ No se pudo guardar; se descuenta igual que lo que ves'); }
   // Recalcular el monto del campo con lo que quedó tildado.
   const r = descItemDescuentoConductor(tipo, liqModalConductor, getLiqRangoFechasLabel(), true);
-  document.getElementById('liq-desc-' + campo).value = r.monto ? r.monto : '';
+  const totEl = document.getElementById('liq-desc-' + campo + '-total');
+  if (totEl) totEl.textContent = fmtPeso(r.monto);
   const info = document.getElementById('liq-desc-' + campo + '-info');
   const nImp = r.detalle.filter(x => x.imputar).length;
   if (info) info.textContent = nImp + ' de ' + r.detalle.length + ' registros imputados';
+  renderDetalleImputable(campo, tipo, r.detalle);
   recalcLiqModal();
 }
 
@@ -164,16 +168,20 @@ function renderCuotasImputables(conductor, rango) {
       sub: fmtPeso(_num(a.monto_total)) + ' en ' + _num(a.cuotas_total) + ' cuotas', monto: _num(a.monto_cuota) });
   });
 
-  // — Extravíos cuoteados con saldo —
+  // — Saldos cuoteados con deuda: extravíos y servicios de proveedores —
   (AppData.descItems || []).forEach(x => {
-    if (x.tipo !== 'extraviados' || _num(x.cuotas_total) <= 1) return;
+    const cuoteable = (x.tipo === 'extraviados' || x.tipo === 'proveedores');
+    if (!cuoteable || _num(x.cuotas_total) <= 1) return;
     if (conductorKey(x.conductor) !== key || !esAutorizado(x)) return;
     if (descItemSaldado(x)) return;
     const yaEnPeriodo = (AppData.descItemCuotas || []).some(c => c.item_id === x.id && _fechaEnRango(c.fecha, rango));
     const pagadas = descItemCuotasPagadas(x.id);
+    const esProv = x.tipo === 'proveedores';
     filas.push({ clave: 'extravio:' + x.id, tipo: 'extravio', id: x.id, marcado: yaEnPeriodo,
-      label: 'Cuota de extravío ' + Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(x.cuotas_total)) + '/' + _num(x.cuotas_total),
-      sub: (x.referencia || x.detalle || 'Extravío') + ' · ' + fmtPeso(_num(x.monto)), monto: _num(x.monto_cuota) });
+      label: (esProv ? 'Cuota de servicio proveedores ' : 'Cuota de extravío ') +
+        Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(x.cuotas_total)) + '/' + _num(x.cuotas_total),
+      sub: (x.referencia || x.detalle || (esProv ? 'Proveedor' : 'Extravío')) + ' · ' + fmtPeso(_num(x.monto)),
+      monto: _num(x.monto_cuota) });
   });
 
   const wrap = document.getElementById('liq-cuotas-wrap');
@@ -182,7 +190,7 @@ function renderCuotasImputables(conductor, rango) {
   if (wrap) wrap.style.display = '';
   if (!filas.length) {
     cont.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:6px 0;border-top:1px solid var(--border)">' +
-      'Sin adelantos ni extravíos en cuotas para este conductor.</div>';
+      'Sin adelantos ni saldos en cuotas para este conductor.</div>';
     return;
   }
   filas.forEach(f => { liqCuotasPend[f.clave] = f.marcado; });
@@ -192,6 +200,41 @@ function renderCuotasImputables(conductor, rango) {
       '<span style="flex:1"><strong>' + f.label + '</strong><div style="font-size:10px;color:var(--text-muted)">' + f.sub + '</div></span>' +
       '<strong style="white-space:nowrap">-' + fmtPeso(f.monto) + '</strong>' +
     '</label>').join('');
+}
+
+// Km de desvío del período: se imputa ENTERO o no se imputa (no se cuotea).
+// El tilde escribe km_desvio.imputar, así que la decisión queda en el registro.
+function renderKmImputable(conductor, rango) {
+  const wrap = document.getElementById('liq-km-wrap');
+  const cont = document.getElementById('liq-km-detalle');
+  const info = document.getElementById('liq-km-info');
+  if (!wrap || !cont) return;
+  const r = kmAdicionalConductor(conductor, rango, true);   // incluye los destildados
+  if (!r.detalle.length) { wrap.style.display = 'none'; cont.innerHTML = ''; return; }
+  wrap.style.display = '';
+  const nImp = r.detalle.filter(x => x.imputar).length;
+  if (info) info.textContent = nImp + ' de ' + r.detalle.length +
+    (r.detalle.length === 1 ? ' registro imputado' : ' registros imputados');
+  cont.innerHTML = r.detalle.map(x =>
+    '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;cursor:pointer' + (x.imputar ? '' : ';opacity:.55') + '">' +
+      '<input type="checkbox" ' + (x.imputar ? 'checked' : '') + ' onchange="toggleImputarKmDesdeLiq(' + x.idx + ',this.checked)">' +
+      '<span style="color:var(--text-muted);white-space:nowrap">' + (x.fecha || '—') + '</span>' +
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (x.km || 0) + ' km' + (x.obs ? ' · ' + x.obs : '') + '</span>' +
+      '<strong>+' + fmtPeso(x.monto) + '</strong>' +
+    '</label>').join('');
+}
+
+async function toggleImputarKmDesdeLiq(idx, marcado) {
+  const d = AppData.kmDesvio[idx];
+  if (!d) return;
+  d.imputar = !!marcado;
+  try {
+    // km_desvio se guarda por reemplazo completo (tabla chica), igual que su panel.
+    await dbPush('km_desvio');
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+  } catch (e) { console.warn('toggleImputarKmDesdeLiq:', e); showToast('⚠️ No se pudo guardar la imputación del km'); }
+  renderKmImputable(liqModalConductor, getLiqRangoFechasLabel());
+  recalcLiqModal();
 }
 
 function _fechaEnRango(fechaStr, rango) {
@@ -274,14 +317,22 @@ function recalcLiqModal() {
   const d = liqModalData[liqModalConductor];
   if (!d) return;
 
-  const combustible = parseFloat(document.getElementById('liq-desc-combustible').value) || 0;
-  const extraviados = parseFloat(document.getElementById('liq-desc-extraviados').value) || 0;
-  const proveedores = parseFloat(document.getElementById('liq-desc-proveedores').value) || 0;
+  // El monto de cada ítem es la suma de sus registros TILDADOS (descItemDescuentoConductor
+  // ya excluye los que tienen imputar=false). No hay número escrito a mano: si algo
+  // no está cargado en su panel, no se descuenta.
+  const rangoAct = getLiqRangoFechasLabel();
+  const combustible = descItemDescuentoConductor('combustible', liqModalConductor, rangoAct).monto;
+  const extraviados = descItemDescuentoConductor('extraviados', liqModalConductor, rangoAct).monto;
+  const proveedores = descItemDescuentoConductor('proveedores', liqModalConductor, rangoAct).monto;
   const totalDesc = combustible + extraviados + proveedores;
+  const pinta = (campo, monto) => { const el = document.getElementById('liq-desc-' + campo + '-total'); if (el) el.textContent = fmtPeso(monto); };
+  pinta('combustible', combustible); pinta('extraviados', extraviados); pinta('proveedores', proveedores);
 
   // Adicional por km de desvío del período filtrado (suma al neto, igual que el PDF)
   const kmAd = kmAdicionalConductor(liqModalConductor, getLiqRangoFechasLabel());
-  const kmMonto = kmAd.monto;
+  const kmMonto = kmAd.monto;   // ya excluye los km destildados
+  const kmTotEl = document.getElementById('liq-km-total');
+  if (kmTotEl) kmTotEl.textContent = '+' + fmtPeso(kmMonto);
   const kmWrap = document.getElementById('liq-modal-linea-km-wrap');
   if (kmWrap) {
     kmWrap.style.display = kmMonto > 0 ? 'flex' : 'none';
@@ -317,7 +368,7 @@ function recalcLiqModal() {
     if (extMonto > 0) {
       const cuotasTxt = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
       document.getElementById('liq-modal-linea-extravio-label').textContent =
-        'Cuota de extravío' + (cuotasTxt ? ' (' + cuotasTxt + ')' : '');
+        'Cuota de saldo (extravío / proveedores)' + (cuotasTxt ? ' (' + cuotasTxt + ')' : '');
       document.getElementById('liq-modal-linea-extravio').textContent = '-' + fmtPeso(extMonto);
     }
   }
@@ -373,9 +424,9 @@ async function confirmarYDescargarPDF() {
   if (!liqModalConductor || !liqModalData) return;
 
   const descuentos = {
-    combustible: parseFloat(document.getElementById('liq-desc-combustible').value) || 0,
-    extraviados: parseFloat(document.getElementById('liq-desc-extraviados').value) || 0,
-    proveedores: parseFloat(document.getElementById('liq-desc-proveedores').value) || 0,
+    combustible: descItemDescuentoConductor('combustible', liqModalConductor, getLiqRangoFechasLabel()).monto,
+    extraviados: descItemDescuentoConductor('extraviados', liqModalConductor, getLiqRangoFechasLabel()).monto,
+    proveedores: descItemDescuentoConductor('proveedores', liqModalConductor, getLiqRangoFechasLabel()).monto,
     obs:         document.getElementById('liq-desc-obs').value || ''
   };
 
@@ -848,7 +899,7 @@ function exportPDF(conductor, opts) {
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxtE = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
-    doc.text('Cuota de extravío' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + advOffset);
+    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + advOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
     doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + advOffset, { align: 'right' });

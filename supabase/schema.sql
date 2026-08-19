@@ -774,3 +774,8 @@ $$;
 -- planilla se descarga desde la app, se le agregan las dimensiones nuevas y se
 -- vuelve a subir: si no se guardara, cada vuelta borraría las notas.
 alter table public.dimensiones_catalogo add column if not exists detalle text not null default '';
+
+-- km_desvio.imputar: mismo criterio que descuentos_items.imputar. El operador
+-- decide desde el panel o desde el modal de Liquidaciones si ese km entra.
+-- Los km no se cuotean: se imputan enteros o no se imputan.
+alter table public.km_desvio add column if not exists imputar boolean not null default true;

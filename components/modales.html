@@ -136,14 +136,14 @@
           <span><i class="ic ic-ticket"></i> Descuentos del período (imputados por fecha)</span>
           <span id="liq-desc-origen" style="font-size:10px;font-weight:500;color:#059669;text-transform:none;letter-spacing:normal"></span>
         </div>
-        <div style="font-size:10px;color:#9ca3af;margin-bottom:10px">Se cargan solos desde los registros de cada solapa que caen en el período. Podés ajustarlos o ponerlos en 0 antes de generar el PDF. Adelantos y km de desvío se aplican automáticamente abajo.</div>
+        <div style="font-size:10px;color:#9ca3af;margin-bottom:10px">Cada monto es la suma de los registros tildados abajo, cargados en su panel. Destildá lo que no se descuenta en esta liquidación: se guarda en el registro, igual que si lo hicieras desde su panel.</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
             <div>
               <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-fuel"></i> Combustible</label>
               <span id="liq-desc-combustible-info" style="font-size:10px;color:#6b7280"></span>
             </div>
-            <input type="number" id="liq-desc-combustible" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+            <div id="liq-desc-combustible-total" style="text-align:right;font-family:monospace;font-weight:700;font-size:15px;padding:8px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px">$0</div>
           </div>
           <div id="liq-desc-combustible-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
 
@@ -152,7 +152,7 @@
               <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-box"></i> Envíos extraviados / rotos</label>
               <span id="liq-desc-extraviados-info" style="font-size:10px;color:#6b7280"></span>
             </div>
-            <input type="number" id="liq-desc-extraviados" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+            <div id="liq-desc-extraviados-total" style="text-align:right;font-family:monospace;font-weight:700;font-size:15px;padding:8px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px">$0</div>
           </div>
           <div id="liq-desc-extraviados-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
 
@@ -161,9 +161,21 @@
               <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-receipt"></i> Servicio proveedores</label>
               <span id="liq-desc-proveedores-info" style="font-size:10px;color:#6b7280"></span>
             </div>
-            <input type="number" id="liq-desc-proveedores" class="form-input" placeholder="0" min="0" step="1" style="text-align:right;font-family:monospace;font-weight:600" oninput="recalcLiqModal()">
+            <div id="liq-desc-proveedores-total" style="text-align:right;font-family:monospace;font-weight:700;font-size:15px;padding:8px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px">$0</div>
           </div>
           <div id="liq-desc-proveedores-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
+
+          <!-- Km de desvío: SUMA al neto. No se cuotea: cada registro se imputa entero o no se imputa. -->
+          <div id="liq-km-wrap" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
+              <div>
+                <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-route"></i> Km de desvío <span style="font-size:10px;color:#059669;font-weight:600">(suma)</span></label>
+                <span id="liq-km-info" style="font-size:10px;color:#6b7280"></span>
+              </div>
+              <div id="liq-km-total" style="text-align:right;font-family:monospace;font-weight:700;font-size:15px;padding:8px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px">$0</div>
+            </div>
+            <div id="liq-km-detalle" style="margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
+          </div>
         </div>
       </div>
 
@@ -198,7 +210,7 @@
           <span id="liq-modal-linea-adelanto" style="font-family:monospace;color:#fca5a5">$0</span>
         </div>
         <div id="liq-modal-linea-extravio-wrap" style="display:none;justify-content:space-between;font-size:12px;margin-bottom:4px;opacity:0.85">
-          <span id="liq-modal-linea-extravio-label">Cuota de extravío</span>
+          <span id="liq-modal-linea-extravio-label">Cuota de saldo</span>
           <span id="liq-modal-linea-extravio" style="font-family:monospace;color:#fca5a5">$0</span>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;opacity:0.85">
