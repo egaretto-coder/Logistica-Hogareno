@@ -77,6 +77,32 @@ function _dimDatalists() {
   }
 }
 
+// Zonas del tarifario (mismo criterio que Super SLA).
+function _dimZonasTarifario() {
+  if (typeof zonasDelTarifario === 'function') return zonasDelTarifario();
+  return Array.from(new Set(
+    (AppData.tarifas || []).map(t => String(t.zona || '').trim().toUpperCase()).filter(Boolean)
+  )).sort();
+}
+
+// "Mismo precio en todas las zonas": el campo Zona deja de aplicar.
+function toggleDimTodasZonas() {
+  const chk = document.getElementById('md-todas-zonas');
+  const todas = !!(chk && chk.checked);
+  const zonaWrap = document.getElementById('md-zona-wrap');
+  const zonaInput = document.getElementById('md-zona');
+  const label = document.getElementById('md-precio-label');
+  if (zonaWrap) zonaWrap.style.display = todas ? 'none' : '';
+  if (zonaInput) zonaInput.disabled = todas;
+  if (label) label.innerHTML = todas
+    ? '<i class="ic ic-dollar"></i> Precio para TODAS las zonas ($) *'
+    : '<i class="ic ic-dollar"></i> Precio en esa zona ($) *';
+  const hint = document.getElementById('md-todas-hint');
+  if (hint) hint.textContent = todas
+    ? '— se carga una fila por cada una de las ' + _dimZonasTarifario().length + ' zonas del tarifario'
+    : '— si el cliente cerró un valor fijo (' + _dimZonasTarifario().length + ' zonas)';
+}
+
 function openAddDimensionModal() {
   dimEditIdx = -1;
   document.getElementById('modal-dim-title').textContent = 'Nueva dimensión (catálogo)';
@@ -84,6 +110,11 @@ function openAddDimensionModal() {
   document.getElementById('md-nombre').value = '';
   document.getElementById('md-zona').value = '';
   document.getElementById('md-precio').value = '';
+  const chk = document.getElementById('md-todas-zonas');
+  if (chk) chk.checked = false;
+  const wrap = document.getElementById('md-todas-wrap');
+  if (wrap) wrap.style.display = '';      // solo tiene sentido al dar de alta
+  toggleDimTodasZonas();
   _dimDatalists();
   document.getElementById('modal-dim-backdrop').style.display = 'flex';
 }
@@ -97,6 +128,11 @@ function editDimension(idx) {
   document.getElementById('md-nombre').value = d.nombre || '';
   document.getElementById('md-zona').value = d.zona || '';
   document.getElementById('md-precio').value = _num(d.precio) || '';
+  const chkE = document.getElementById('md-todas-zonas');
+  if (chkE) chkE.checked = false;
+  const wrapE = document.getElementById('md-todas-wrap');
+  if (wrapE) wrapE.style.display = 'none';   // editar es de UNA zona
+  toggleDimTodasZonas();
   _dimDatalists();
   document.getElementById('modal-dim-backdrop').style.display = 'flex';
 }
@@ -111,10 +147,42 @@ function guardarDimensionModal() {
     const nombre = document.getElementById('md-nombre').value.trim().toUpperCase();
     const zona = document.getElementById('md-zona').value.trim().toUpperCase();
     const precio = parseFloat(document.getElementById('md-precio').value);
+    const todasZonas = !!(document.getElementById('md-todas-zonas') || {}).checked && dimEditIdx < 0;
     if (!cliente) { alert('Elegí el cliente.'); return; }
     if (!nombre) { alert('Ingresá el nombre de la dimensión.'); return; }
-    if (!zona) { alert('Elegí la zona.'); return; }
+    if (!todasZonas && !zona) { alert('Elegí la zona.'); return; }
     if (isNaN(precio) || precio < 0) { alert('Ingresá un precio válido.'); return; }
+
+    // Precio único cerrado con el cliente: una fila por cada zona del tarifario.
+    if (todasZonas) {
+      const zonas = _dimZonasTarifario();
+      if (!zonas.length) { alert('El tarifario no tiene zonas cargadas: no se puede aplicar a todas.'); return; }
+      const yaCargadas = zonas.filter(z => AppData.dimCatalogo.some(x =>
+        normNombre(x.cliente) === normNombre(cliente) &&
+        normNombre(x.nombre) === normNombre(nombre) &&
+        normNombre(x.zona) === normNombre(z)));
+      const nuevas = zonas.length - yaCargadas.length;
+      const salto = String.fromCharCode(10);
+      if (!confirm('"' + nombre + '" de ' + cliente + ' a ' + fmtPeso(precio) + ' en las ' + zonas.length + ' zonas del tarifario.' + salto + salto +
+                   '· ' + nuevas + ' zona(s) nueva(s)' + salto +
+                   '· ' + yaCargadas.length + ' con el precio actualizado' + salto + salto + '¿Confirmás?')) return;
+
+      zonas.forEach(z => {
+        const i = AppData.dimCatalogo.findIndex(x =>
+          normNombre(x.cliente) === normNombre(cliente) &&
+          normNombre(x.nombre) === normNombre(nombre) &&
+          normNombre(x.zona) === normNombre(z));
+        if (i >= 0) AppData.dimCatalogo[i].precio = precio;
+        else AppData.dimCatalogo.push({ cliente, nombre, zona: z, precio });
+      });
+
+      saveDimCatalogo();
+      dimEditIdx = -1;
+      document.getElementById('modal-dim-backdrop').style.display = 'none';
+      renderDimensionesEspeciales();
+      showToast('✅ ' + nombre + ' cargada en ' + zonas.length + ' zonas a ' + fmtPeso(precio));
+      return;
+    }
 
     const entry = { cliente, nombre, zona, precio };
     const dupIdx = AppData.dimCatalogo.findIndex((x, i) => i !== dimEditIdx &&

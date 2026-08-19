@@ -386,14 +386,21 @@
         <input type="text" id="md-nombre" class="form-input" placeholder="Ej: HELADERA, COLCHON KING…" style="width:100%;text-transform:uppercase" list="md-nombres-list" oninput="this.value=this.value.toUpperCase()" />
         <datalist id="md-nombres-list"></datalist>
       </div>
+      <!-- Muchos clientes cierran un precio único para todas las zonas: así no hay
+           que cargar la misma dimensión 47 veces a mano. -->
+      <label id="md-todas-wrap" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12.5px">
+        <input type="checkbox" id="md-todas-zonas" onchange="toggleDimTodasZonas()" />
+        <span><strong>Mismo precio en todas las zonas</strong>
+          <span id="md-todas-hint" style="color:var(--text-muted)"></span></span>
+      </label>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px" id="md-zona-wrap">
           <label class="form-label">Zona *</label>
           <input type="text" id="md-zona" class="form-input" placeholder="Ej: LA PLATA" style="width:100%;text-transform:uppercase" list="md-zonas-list" oninput="this.value=this.value.toUpperCase()" />
           <datalist id="md-zonas-list"></datalist>
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:130px">
-          <label class="form-label"><i class="ic ic-dollar"></i> Precio en esa zona ($) *</label>
+          <label class="form-label" id="md-precio-label"><i class="ic ic-dollar"></i> Precio en esa zona ($) *</label>
           <input type="number" id="md-precio" class="form-input" placeholder="6500" style="width:100%" min="0" step="1" />
         </div>
       </div>
