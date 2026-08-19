@@ -208,6 +208,9 @@ async function _hydrateFromSupabaseReal(opts) {
     cobro_destino: _num(r.cobro_destino), // monto que el conductor cobra al destinatario y debe rendir
     estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
     manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
+    // Visita hecha sin entrega: se paga igual, pero el estado del envío NO cambia.
+    contabiliza_manual: !!r.contabiliza_manual,
+    motivo_contab: r.motivo_contab || '',
     zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
@@ -407,6 +410,7 @@ async function _hydrateRegistrosReal() {
       cliente: r.cliente || '', dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
+      contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     }));
     invalidarLiquidaciones();   // base nueva en memoria: recalcular totales
@@ -528,6 +532,8 @@ function filaRegistroNube(r) {
     clave: claveRegistro(r),
     manual: !!r.manual,
     zona_manual: !!r.zona_manual,
+    contabiliza_manual: !!r.contabiliza_manual,
+    motivo_contab: r.motivo_contab || '',
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : _num(r.precio_manual)
   };
 }
@@ -596,6 +602,7 @@ async function cargarHistorialCompleto(btn) {
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
+      contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
     const mapHist = r => ({
@@ -606,6 +613,7 @@ async function cargarHistorialCompleto(btn) {
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
+      contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
     AppData.records = historico.map(mapHist).concat(vivos.map(mapVivo));

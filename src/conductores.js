@@ -171,7 +171,7 @@ function renderConductorDetail() {
   idxs.forEach(i => {
     const r = AppData.records[i];
     const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
+    const contabiliza = contabilizaRegistro(r);
     const manual = precioManualDe(r);
     if (esCorregidoRegistro(r)) corregidos++;
     if (contabiliza) { entregados++; total += manual !== null ? manual : precioAutoDe(r).precio; }
@@ -233,7 +233,7 @@ function renderConductorDetail() {
     if (!x) { x = { envios: 0, contab: 0, total: 0 }; resumenDia.set(dia, x); }
     x.envios++;
     const est = (r.estado || '').toUpperCase().trim();
-    if (est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est)) {
+    if (contabilizaRegistro(r)) {
       x.contab++;
       const m = precioManualDe(r);
       x.total += (m !== null ? m : precioAutoDe(r).precio);
@@ -268,7 +268,7 @@ function renderConductorDetail() {
         '</tr>';
     }
     const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
+    const contabiliza = contabilizaRegistro(r);
     const auto = precioAutoDe(r);
     const manual = precioManualDe(r);
     const esCanonico = ['ENTREGADO', 'NO ENTREGADO'].includes(estadoNorm);
@@ -285,6 +285,7 @@ function renderConductorDetail() {
             <option value="Entregado" ${estadoNorm === 'ENTREGADO' ? 'selected' : ''}><i class="ic ic-check"></i> Entregado (contabiliza)</option>
             <option value="No entregado" ${estadoNorm === 'NO ENTREGADO' ? 'selected' : ''}><i class="ic ic-x"></i> No entregado (no suma)</option>
           </select>
+          ${visitaPagaHTML(i, r)}
         </td>
         <td>
           <div style="display:flex;align-items:center;gap:4px">
@@ -340,6 +341,91 @@ function renderConductorDetail() {
         💡 Dejá el precio <strong>vacío</strong> para volver al cálculo automático. Las filas con borde naranja tienen precio corregido a mano.
       </div>
     </div>`;
+}
+
+// ─── Visita hecha sin entrega ───────────────────────────────────────────────
+// El conductor fue al domicilio y no pudo entregar por una causa ajena a él. Se
+// le paga la visita, pero el ESTADO del envío no se toca: sigue diciendo "no
+// entregado", que es la verdad. Distinto de corregir el estado a "Entregado",
+// que es para cuando el conductor se olvidó de marcarlo.
+function visitaPagaHTML(i, r) {
+  const entregado = esEstadoEntregado(r.estado);
+  if (entregado) return '';   // ya contabiliza por estado: no hace falta
+  if (r.contabiliza_manual) {
+    return '<div style="margin-top:5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
+      '<span class="tag" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:9.5px" title="Visita paga — ' +
+        String(r.motivo_contab || '').replace(/"/g, '&quot;') + '"><i class="ic ic-check"></i> Se paga la visita</span>' +
+      '<button class="btn btn-sm" style="padding:1px 5px;font-size:9.5px" onclick="abrirMotivoVisita(' + i + ')" title="Cambiar el motivo">' +
+        (r.motivo_contab ? String(r.motivo_contab).slice(0, 22) + (String(r.motivo_contab).length > 22 ? '…' : '') : 'sin motivo') + '</button>' +
+      '<button class="btn btn-sm" style="padding:1px 5px;font-size:9.5px;border-color:#fca5a5;color:#b91c1c" onclick="quitarVisitaPaga(' + i + ')" title="Dejar de pagar esta visita">✕</button>' +
+    '</div>';
+  }
+  return '<div style="margin-top:5px">' +
+    '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="abrirMotivoVisita(' + i + ')" ' +
+      'title="El conductor fue al domicilio pero no pudo entregar: se le paga la visita sin cambiar el estado del envío">' +
+      '<i class="ic ic-truck"></i> Pagar visita</button>' +
+  '</div>';
+}
+
+// Índice del registro que se está marcando (el modal vive en components/modales.html).
+let visitaPagaIdx = -1;
+
+function abrirMotivoVisita(i) {
+  const r = AppData.records[i];
+  if (!r) return;
+  if (r._historico) { showToast('🗄️ Registro archivado (solo lectura)'); return; }
+  visitaPagaIdx = i;
+  const sel = document.getElementById('mvisita-motivo');
+  if (sel) {
+    sel.innerHTML = MOTIVOS_CONTAB.map(m => '<option value="' + m.replace(/"/g, '&quot;') + '">' + m + '</option>').join('');
+    if (r.motivo_contab && MOTIVOS_CONTAB.includes(r.motivo_contab)) sel.value = r.motivo_contab;
+  }
+  const det = document.getElementById('mvisita-detalle');
+  if (det) det.value = (r.motivo_contab && !MOTIVOS_CONTAB.includes(r.motivo_contab)) ? r.motivo_contab : '';
+  const info = document.getElementById('mvisita-envio');
+  if (info) info.textContent = (r.tracking || 's/tracking') + ' · ' + (r.destinatario || '') + ' · ' + (r.zona || '');
+  const est = document.getElementById('mvisita-estado');
+  if (est) est.textContent = r.estado || '—';
+  document.getElementById('modal-visita-backdrop').style.display = 'flex';
+}
+
+function cerrarMotivoVisita(e) {
+  if (!e || e.target.id === 'modal-visita-backdrop') {
+    document.getElementById('modal-visita-backdrop').style.display = 'none';
+    visitaPagaIdx = -1;
+  }
+}
+
+function guardarMotivoVisita() {
+  const i = visitaPagaIdx;
+  const r = AppData.records[i];
+  if (!r) return;
+  const sel = document.getElementById('mvisita-motivo');
+  const det = document.getElementById('mvisita-detalle');
+  let motivo = (sel && sel.value) || '';
+  const libre = (det && det.value || '').trim();
+  if (motivo === 'Otro') {
+    if (!libre) { alert('Escribí el motivo.'); return; }
+    motivo = libre;
+  } else if (libre) {
+    motivo = motivo + ' — ' + libre;
+  }
+  r.contabiliza_manual = true;
+  r.motivo_contab = motivo;
+  editarRegistroConductor(i, '_visitaPaga', true);   // marca sucio y programa el autosave
+  document.getElementById('modal-visita-backdrop').style.display = 'none';
+  visitaPagaIdx = -1;
+  showToast('✅ Se paga la visita — el envío sigue como "' + (r.estado || 'no entregado') + '"');
+}
+
+function quitarVisitaPaga(i) {
+  const r = AppData.records[i];
+  if (!r) return;
+  if (!confirm('¿Dejar de pagar esta visita? El envío deja de contabilizar en la liquidación.')) return;
+  r.contabiliza_manual = false;
+  r.motivo_contab = '';
+  editarRegistroConductor(i, '_visitaPaga', false);
+  showToast('Visita quitada de la liquidación');
 }
 
 // ─── Plegado por día ────────────────────────────────────────────────────────
@@ -554,6 +640,7 @@ async function guardarEdicionConductores() {
         tracking: r.tracking || '', zona: r.zona || '', estado: r.estado || '',
         fecha_date: fechaISOde(r.fecha), clave: claveRegistro(r),
         zona_manual: !!r.zona_manual,
+        contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
         dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
         precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : parseFloat(r.precio_manual)
       });

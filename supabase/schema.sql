@@ -779,3 +779,18 @@ alter table public.dimensiones_catalogo add column if not exists detalle text no
 -- decide desde el panel o desde el modal de Liquidaciones si ese km entra.
 -- Los km no se cuotean: se imputan enteros o no se imputan.
 alter table public.km_desvio add column if not exists imputar boolean not null default true;
+
+-- registros.contabiliza_manual / motivo_contab: visita hecha sin entrega. El
+-- conductor fue al domicilio y no pudo entregar por causa ajena (rechazo o
+-- cancelación en la puerta, nadie tras reintentos, dirección inexistente). Se
+-- paga, pero el ESTADO del envío no se toca: sigue diciendo la verdad. Ver
+-- contabilizaRegistro() en src/core.js. Las mismas columnas van en
+-- registros_historico porque archivar_registros copia fila a fila.
+alter table public.registros
+  add column if not exists contabiliza_manual boolean not null default false,
+  add column if not exists motivo_contab text not null default '';
+alter table public.registros_historico
+  add column if not exists contabiliza_manual boolean not null default false,
+  add column if not exists motivo_contab text not null default '';
+create index if not exists idx_registros_contab_manual
+  on public.registros (contabiliza_manual) where contabiliza_manual;

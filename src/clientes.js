@@ -39,7 +39,7 @@ function calcLiquidacionCliente(cliente, rango) {
   AppData.records.forEach(r => {
     if (!cKey || normCliente(r.cliente) !== cKey) return;
     const estadoNorm = (r.estado || '').toUpperCase().trim();
-    if (!(estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm))) return;
+    if (!contabilizaRegistro(r)) return;   // la visita fallida también se le factura al cliente
     if (desde || hasta) { const f = parseFechaReg(r.fecha); if (!f) return; if (desde && f < desde) return; if (hasta && f > hasta) return; }
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() || '(sin zona)';
     if (!porZona[zona]) porZona[zona] = { zona, count: 0, precio: clienteTarifaEnZona(cliente, zona), subtotal: 0 };

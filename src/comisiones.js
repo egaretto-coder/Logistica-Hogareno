@@ -45,8 +45,7 @@ function primeraFechaCliente(cliente) {
   let min = null;
   AppData.records.forEach(r => {
     if (normCliente(r.cliente) !== cKey) return;
-    const est = (r.estado || '').toUpperCase().trim();
-    if (!(est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est))) return;
+    if (!contabilizaRegistro(r)) return;
     const f = parseFechaReg(r.fecha);
     if (!f) return;
     if (!min || f < min) min = f;
@@ -85,8 +84,7 @@ const _comisionRecords = new Map();      // normCliente -> [registros contabiliz
 const _comisionCargando = new Set();
 
 function _esContab(r) {
-  const est = (r.estado || '').toUpperCase().trim();
-  return est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est);
+  return contabilizaRegistro(r);
 }
 
 // Recorridos contabilizables de un cliente: los traídos bajo demanda si están,
@@ -131,8 +129,7 @@ async function asegurarRecorridosParaEvaluar() {
 function _indexRecordsContabPorCliente() {
   const idx = new Map();
   AppData.records.forEach(r => {
-    const est = (r.estado || '').toUpperCase().trim();
-    if (!(est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est))) return;
+    if (!contabilizaRegistro(r)) return;
     const k = normCliente(r.cliente);
     if (!k) return;
     let b = idx.get(k); if (!b) { b = []; idx.set(k, b); }

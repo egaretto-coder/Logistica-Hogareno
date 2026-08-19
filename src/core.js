@@ -708,7 +708,7 @@ function calcLiquidaciones(records) {
 
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
+    const contabiliza = contabilizaRegistro(r);
     const fecha = r.fecha || '';
     const tracking = r.tracking || '';
     const zona_precio = r.zona_precio || '';
@@ -881,6 +881,29 @@ function tipoLabel(t) {
   if (t === 'manual') return 'Corregido manual';
   return t || '—';
 }
+
+// ¿Este envío se le paga al conductor?
+// Dos vías: el estado dice que se entregó, O el operador lo contabilizó a mano
+// desde el panel Conductores (MOTIVOS_CONTAB): el conductor fue al domicilio y
+// no pudo entregar por una causa ajena (rechazo o cancelación en la puerta,
+// nadie tras varios reintentos, dirección inexistente). El trabajo se hizo, así
+// que se paga; el ESTADO del envío no se toca, sigue diciendo la verdad.
+// OJO: rendiciones NO usa este helper — un envío no entregado no cobró nada al
+// destinatario, así que no puede generar una rendición para reclamarle.
+function contabilizaRegistro(r) {
+  if (!r) return false;
+  if (r.contabiliza_manual) return true;
+  return esEstadoEntregado(r.estado);
+}
+
+// Motivos por los que una visita sin entrega igual se paga.
+const MOTIVOS_CONTAB = [
+  'Rechazado por el comprador en la puerta',
+  'Cancelado en la puerta',
+  'Reintentos sin éxito (nadie en el domicilio)',
+  'Dirección inexistente o desconocida',
+  'Otro'
+];
 
 // "Entregado" = estado que CONTABILIZA en la liquidación (incluye "2da visita"),
 // para que los conteos (dashboard, resumen de import) coincidan con la plata.

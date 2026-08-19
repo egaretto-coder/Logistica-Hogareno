@@ -58,7 +58,7 @@ function calcLiquidacionesFiltradas() {
     const cond = conductorCanonico(r.cadete); if (!cond) return;
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
+    const contabiliza = contabilizaRegistro(r);
     if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond };
     if (contabiliza) {
       // Dimensión especial ASIGNADA a mano al envío (catálogo por cliente; el
@@ -119,7 +119,7 @@ function renderLiquidaciones() {
     const cond = conductorCanonico(r.cadete); if (!cond) return;
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = estadoNorm === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(estadoNorm);
+    const contabiliza = contabilizaRegistro(r);
     if (!liqBase[cond]) liqBase[cond] = { total:0, filas:[], filas_excluidas:[], conductor: cond, corregidos: 0, dias: new Set() };
     if (esCorregidoRegistro(r)) liqBase[cond].corregidos++;
     if (contabiliza) {
