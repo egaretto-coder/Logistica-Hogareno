@@ -14,10 +14,15 @@ function saveDimCatalogo() {
 function renderDimensionesEspeciales() {
   const search = (document.getElementById('dim-search')?.value || '').toLowerCase().trim();
   const cat = AppData.dimCatalogo || [];
-  const list = cat.filter(d => !search ||
-    String(d.cliente || '').toLowerCase().includes(search) ||
-    String(d.nombre || '').toLowerCase().includes(search) ||
-    String(d.zona || '').toLowerCase().includes(search));
+  // Nos guardamos el índice real acá: buscarlo con indexOf() dentro del map era
+  // O(n²) y con un catálogo completo (~2.700 precios) trababa el panel entero.
+  const list = [];
+  cat.forEach((d, i) => {
+    if (!search ||
+      String(d.cliente || '').toLowerCase().includes(search) ||
+      String(d.nombre || '').toLowerCase().includes(search) ||
+      String(d.zona || '').toLowerCase().includes(search)) list.push({ d, i });
+  });
 
   const countEl = document.getElementById('dim-count');
   if (countEl) {
@@ -36,13 +41,22 @@ function renderDimensionesEspeciales() {
   }
 
   // Orden: cliente, dimensión, zona.
-  const ordenada = list.slice().sort((a, b) =>
-    String(a.cliente).localeCompare(String(b.cliente)) ||
-    String(a.nombre).localeCompare(String(b.nombre)) ||
-    String(a.zona).localeCompare(String(b.zona)));
+  const ordenada = list.slice().sort((x, y) =>
+    String(x.d.cliente).localeCompare(String(y.d.cliente)) ||
+    String(x.d.nombre).localeCompare(String(y.d.nombre)) ||
+    String(x.d.zona).localeCompare(String(y.d.zona)));
 
-  body.innerHTML = ordenada.map(d => {
-    const realIdx = AppData.dimCatalogo.indexOf(d);
+  // El catálogo completo son miles de precios: pintarlos todos no sirve para
+  // leerlos y hace lento cada render. Se muestran los primeros y el resto se
+  // encuentra con el buscador.
+  const TOPE = 500;
+  const recortada = ordenada.slice(0, TOPE);
+  const avisoEl = document.getElementById('dim-recorte');
+  if (avisoEl) avisoEl.textContent = ordenada.length > TOPE
+    ? 'Mostrando ' + TOPE + ' de ' + ordenada.length + ' — usá el buscador para encontrar una dimensión puntual'
+    : '';
+
+  body.innerHTML = recortada.map(({ d, i: realIdx }) => {
     return '<tr>' +
       '<td><strong>' + (d.cliente || '—') + '</strong></td>' +
       '<td><span class="tag" style="background:#fef3c7;color:#92400e"><i class="ic ic-box"></i> ' + (d.nombre || '—') + '</span></td>' +
@@ -264,10 +278,18 @@ function importDimensionesEspeciales(event) {
       const esZona   = c => c.includes('zona') || c.includes('localidad');
       const esDim    = c => c.includes('dimension') || c.includes('dimensin') || c.includes('condicion') || c.includes('condicin') || c.includes('nombre');
       const esPrecio = c => c.includes('precio') || c.includes('valor') || c.includes('monto') || c.includes('tarifa');
-      let h = -1;
+      // Cada concepto tiene que caer en una columna DISTINTA. Sin esa condición,
+      // la fila 1 de la plantilla (el aviso "…una fila por Cliente + Condición
+      // especial + Zona…") matcheaba las tres palabras en una sola celda: se la
+      // tomaba como encabezado, las 4 columnas apuntaban a la A y se importaba
+      // el nombre del cliente en cliente, dimensión y zona, con precio 0.
+      let h = -1, cols = null;
       for (let r = 0; r < Math.min(rows.length, 15); r++) {
         const cells = (rows[r] || []).map(x => String(x).toLowerCase().replace(/[^a-z]/g, ''));
-        if (cells.some(esCli) && cells.some(esZona) && cells.some(esDim)) { h = r; break; }
+        const iC = cells.findIndex(esCli), iZ = cells.findIndex(esZona), iD = cells.findIndex(esDim);
+        if (iC >= 0 && iZ >= 0 && iD >= 0 && iC !== iZ && iC !== iD && iZ !== iD) {
+          h = r; cols = { iC, iZ, iD }; break;
+        }
       }
       if (h < 0) {
         alert('No se encontró la fila de encabezados.\n\nSe esperan columnas de Cliente, Zona y Condición especial (o Dimensión).\nFunciona con la planilla de la empresa ("HOJA DE CARGA") o con la plantilla que descarga la app.');
@@ -275,9 +297,9 @@ function importDimensionesEspeciales(event) {
       }
       const header = (rows[h] || []).map(x => String(x).toLowerCase().trim());
       const norm = x => String(x).toLowerCase().replace(/[^a-z]/g, '');
-      const iCli    = header.findIndex(x => esCli(norm(x)));
-      const iNom    = header.findIndex(x => esDim(norm(x)));
-      const iZona   = header.findIndex(x => esZona(norm(x)));
+      const iCli    = cols.iC;
+      const iNom    = cols.iD;
+      const iZona   = cols.iZ;
       const iPrecio = header.findIndex(x => esPrecio(norm(x)));
       if (iCli < 0 || iNom < 0 || iZona < 0 || iPrecio < 0) {
         alert('Faltan columnas. Se necesitan: Cliente, Zona, Condición especial (o Dimensión) y Precio.');
