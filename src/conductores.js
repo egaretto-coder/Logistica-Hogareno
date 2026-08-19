@@ -1,13 +1,74 @@
+// Condiciones tildadas para acotar el listado de conductores (vacío = todas).
+let condFiltroCondiciones = new Set();
+const CONDICIONES = [
+  { valor: 'Titular',      id: 'Titular' },
+  { valor: 'Semi Titular', id: 'SemiTitular' },
+  { valor: 'Suplente',     id: 'Suplente' },
+  { valor: '',             id: 'Sin' }   // los que todavía no tienen condición cargada
+];
+
+function condicionDe(conductor) {
+  const p = panelConductorDe(conductor);
+  return String((p && p.condicion) || '').trim();
+}
+
+function toggleFiltroCondicion(cond) {
+  if (condFiltroCondiciones.has(cond)) condFiltroCondiciones.delete(cond);
+  else condFiltroCondiciones.add(cond);
+  renderConductorSelect();
+}
+
 function renderConductorSelect() {
   // Lista de conductores (canónicos) con recorridos. Evitamos calcLiquidaciones()
   // completo (que recorre precios de las ~10k filas) solo para listar nombres.
   const set = new Set();
   AppData.records.forEach(r => { const c = conductorCanonico(r.cadete); if (c) set.add(c); });
-  const conductores = Array.from(set).sort();
+  const todos = Array.from(set).sort();
+  // Filtro por condición (día de pago): titular / semi titular / suplente.
+  const conductores = condFiltroCondiciones.size
+    ? todos.filter(c => condFiltroCondiciones.has(condicionDe(c)))
+    : todos;
+
   const sel = document.getElementById('cond-select');
   if (!sel) return;
+
+  // OJO: esta función se vuelve a llamar cada vez que entra un cambio por
+  // realtime (propio o de otro usuario). Si no guardáramos el elegido, el
+  // operador perdería el conductor que está corrigiendo a mitad de trabajo.
+  const elegido = sel.value;
+
   sel.innerHTML = '<option value="">Seleccionar conductor...</option>' +
     conductores.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">${c}</option>`).join('');
+
+  if (elegido) {
+    const estaEnLista = conductores.some(c => c === elegido);
+    if (!estaEnLista) {
+      // Quedó fuera por el filtro de condición (o se fue del período): lo
+      // agregamos igual para no sacarlo de la pantalla mientras trabaja.
+      const motivo = todos.some(c => c === elegido) ? ' (fuera del filtro)' : ' (sin recorridos)';
+      sel.insertAdjacentHTML('beforeend',
+        `<option value="${String(elegido).replace(/"/g, '&quot;')}">${elegido}${motivo}</option>`);
+    }
+    sel.value = elegido;
+  }
+
+  // Chips de condición: marcados y con el total de cada una.
+  CONDICIONES.forEach(({ valor, id }) => {
+    const btn = document.getElementById('cond-cond-' + id);
+    if (!btn) return;
+    const activo = condFiltroCondiciones.has(valor);
+    const cuantos = todos.filter(c => condicionDe(c) === valor).length;
+    btn.style.borderColor = activo ? '#0ea5e9' : '';
+    btn.style.background = activo ? '#e0f2fe' : '';
+    btn.style.color = activo ? '#075985' : '';
+    btn.style.fontWeight = activo ? '700' : '';
+    const badge = btn.querySelector('.cond-cond-count');
+    if (badge) badge.textContent = cuantos ? (' · ' + cuantos) : '';
+  });
+  const info = document.getElementById('cond-select-count');
+  if (info) info.textContent = condFiltroCondiciones.size
+    ? (conductores.length + ' de ' + todos.length + ' conductores')
+    : '';
 }
 
 // ════════════════════════════════════════════════════════════════════════

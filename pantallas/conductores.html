@@ -20,6 +20,15 @@
               <select id="cond-select" onchange="limpiarFiltrosConductor()" style="width:220px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                 <option value="">Seleccionar conductor...</option>
               </select>
+              <span id="cond-select-count" style="font-size:11px;color:var(--text-muted)"></span>
+            </div>
+            <!-- Filtro por condición (día de pago): acota el listado de conductores -->
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-user"></i> Condición</span>
+              <button class="btn btn-sm" id="cond-cond-Titular" onclick="toggleFiltroCondicion('Titular')" title="Mostrar solo los titulares (pago viernes)">Titular<span class="cond-cond-count"></span></button>
+              <button class="btn btn-sm" id="cond-cond-SemiTitular" onclick="toggleFiltroCondicion('Semi Titular')" title="Mostrar solo los semi titulares (pago lunes)">Semi Titular<span class="cond-cond-count"></span></button>
+              <button class="btn btn-sm" id="cond-cond-Suplente" onclick="toggleFiltroCondicion('Suplente')" title="Mostrar solo los suplentes (pago martes)">Suplente<span class="cond-cond-count"></span></button>
+              <button class="btn btn-sm" id="cond-cond-Sin" onclick="toggleFiltroCondicion('')" title="Conductores que todavía no tienen condición cargada en el Panel de conductores">Sin condición<span class="cond-cond-count"></span></button>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
               <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Desde</span>

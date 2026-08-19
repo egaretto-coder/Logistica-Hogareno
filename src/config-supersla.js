@@ -59,7 +59,7 @@ function renderSuperSLA() {
           const precio = _num(r.precio || r.sla || 0);
           // ZONA: editable solo para autorizados.
           const zonaCell = editable
-            ? `<input type="text" value="${r.zona}" data-idx="${realIdx}" data-field="zona" placeholder="Ej: PILAR" style="border:none;background:none;font-size:13px;font-weight:500;width:100%;outline:none;color:var(--text-primary)" onchange="updateSuperSLA(this)" />`
+            ? zonaSelectSuperSLA(realIdx, r.zona, nombre)
             : `<span style="font-size:13px;font-weight:500">${r.zona || '<span style="color:var(--text-muted)">(sin zona)</span>'}</span>`;
           // PRECIO: input editable, o valor con candado.
           let precioCell, accionCell;
@@ -122,6 +122,45 @@ function renderSuperSLA() {
   }).join('');
 }
 
+// Zonas válidas = las del tarifario. Se elige de una lista en vez de escribirla:
+// una zona tipeada a mano que no exista en el tarifario no matchea ningún envío,
+// y el conductor terminaría cobrando la tarifa estándar sin que nadie lo note.
+function zonasDelTarifario() {
+  return Array.from(new Set(
+    (AppData.tarifas || []).map(t => String(t.zona || '').trim().toUpperCase()).filter(Boolean)
+  )).sort();
+}
+
+function zonaSelectSuperSLA(realIdx, zonaActual, conductor) {
+  const actual = String(zonaActual || '').trim().toUpperCase();
+  // No ofrecemos las zonas que ese conductor ya tiene cargadas (evita duplicados),
+  // pero sí la de esta misma fila.
+  const yaUsadas = new Set(
+    (AppData.superSLA || [])
+      .filter(r => normNombre(r.conductor) === normNombre(conductor) && normNombre(r.zona) !== normNombre(actual))
+      .map(r => normNombre(r.zona))
+  );
+  const disponibles = zonasDelTarifario().filter(z => !yaUsadas.has(normNombre(z)));
+  // Una zona vieja que no esté en el tarifario (import antiguo) no se pierde:
+  // se agrega como opción para que se vea y se pueda corregir.
+  const fueraDeCatalogo = actual && !disponibles.some(z => normNombre(z) === normNombre(actual));
+
+  const opciones =
+    '<option value="" ' + (actual ? '' : 'selected') + '>— Elegí una zona —</option>' +
+    (fueraDeCatalogo ? '<option value="' + actual.replace(/"/g, '&quot;') + '" selected>' + actual + ' (fuera del tarifario)</option>' : '') +
+    disponibles.map(z =>
+      '<option value="' + z.replace(/"/g, '&quot;') + '"' + (normNombre(z) === normNombre(actual) ? ' selected' : '') + '>' + z + '</option>'
+    ).join('');
+
+  const sinOpciones = !disponibles.length && !fueraDeCatalogo;
+  return '<select data-idx="' + realIdx + '" data-field="zona" onchange="updateSuperSLA(this)"' +
+    (sinOpciones ? ' disabled' : '') +
+    ' title="' + (sinOpciones ? 'Este conductor ya tiene todas las zonas del tarifario' : 'Zonas del tarifario') + '"' +
+    ' style="border:none;background:none;font-size:13px;font-weight:500;width:100%;outline:none;color:' + (actual ? 'var(--text-primary)' : 'var(--text-muted)') + ';cursor:pointer">' +
+    (sinOpciones ? '<option value="">Sin zonas disponibles</option>' : opciones) +
+    '</select>';
+}
+
 function addZonaSuperSLA(conductor) {
   if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
   AppData.superSLA.push({ conductor: conductor.toUpperCase(), zona: '', precio: 3500 });
@@ -149,6 +188,17 @@ function deleteSuperSLA(i) {
 
 function saveSuperSLA() {
   if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
+
+  // Una fila sin zona no se aplica a ningún envío: el conductor cobraría la
+  // tarifa estándar y el error pasaría desapercibido hasta la liquidación.
+  const sinZona = (AppData.superSLA || []).filter(r => !String(r.zona || '').trim());
+  if (sinZona.length) {
+    const quienes = Array.from(new Set(sinZona.map(r => r.conductor))).join(', ');
+    const salto = String.fromCharCode(10);
+    if (!confirm('Hay ' + sinZona.length + ' fila(s) sin zona elegida (' + quienes + ').' + salto + salto +
+                 'Esas filas no le aplican precio especial a ningún envío. ¿Guardar igual?')) return;
+  }
+
   localStorage.setItem('liq_supersla', JSON.stringify(AppData.superSLA));
   dbPush('super_sla');
   showToast('Tarifas Super SLA guardadas');
