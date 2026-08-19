@@ -262,7 +262,8 @@ async function _hydrateFromSupabaseReal(opts) {
     registrado: e.registrado !== false,
     fecha_ingreso: e.fecha_ingreso || '', sueldo: _num(e.sueldo),
     pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),
-    activo: e.activo !== false, obs: e.obs || ''
+    activo: e.activo !== false, obs: e.obs || '',
+    fecha_baja: e.fecha_baja || null, motivo_baja: e.motivo_baja || ''
   }));
   AppData.empleadoAjustes = (data.empleado_ajustes || []).map(a => ({
     id: a.id, empleado_id: a.empleado_id, fecha: a.fecha || '', periodo: a.periodo || '',

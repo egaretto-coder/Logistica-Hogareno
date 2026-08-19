@@ -9,6 +9,7 @@
           <button class="tab active" id="emp-btn-plantel" onclick="switchEmpleadosTab('plantel')"><i class="ic ic-user"></i> Plantel</button>
           <button class="tab" id="emp-btn-ajustes" onclick="switchEmpleadosTab('ajustes')"><i class="ic ic-alert"></i> Ajustes de sueldo</button>
           <button class="tab" id="emp-btn-sueldos" onclick="switchEmpleadosTab('sueldos')"><i class="ic ic-dollar"></i> Liquidación mensual</button>
+          <button class="tab" id="emp-btn-bajas" onclick="switchEmpleadosTab('bajas')"><i class="ic ic-user"></i> Bajas <span id="emp-bajas-count"></span></button>
         </div>
 
         <!-- ══════════ TAB: PLANTEL ══════════ -->
@@ -87,4 +88,17 @@
           </table></div></div>
         </div>
 
+
+        <!-- TAB 4 — BAJAS: personal que salió de la empresa. La baja es lógica,
+             así que su historial de sueldos y ajustes se conserva entero. -->
+        <div id="emp-tab-bajas" style="display:none">
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <input type="search" id="emp-bajas-search" placeholder="🔍 Buscar por nombre, puesto o área..." oninput="renderBajas()"
+                style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <span id="emp-bajas-info" style="font-size:12px;color:var(--text-muted)"></span>
+            </div>
+          </div>
+          <div id="emp-bajas-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
+        </div>
       </div>

@@ -800,3 +800,10 @@ create index if not exists idx_registros_contab_manual
 -- vive en RRHH_AREAS (src/empleados.js), así sumar un área no exige migrar.
 alter table public.empleados add column if not exists area text not null default '';
 create index if not exists idx_empleados_area on public.empleados (area);
+
+-- empleados.fecha_baja / motivo_baja: la baja es LÓGICA (activo=false) para no
+-- perder el historial de sueldos y ajustes. Estos campos dejan asentado desde
+-- cuándo y por qué; se ven en la solapa "Bajas" del panel Empleados.
+alter table public.empleados
+  add column if not exists fecha_baja date,
+  add column if not exists motivo_baja text not null default '';

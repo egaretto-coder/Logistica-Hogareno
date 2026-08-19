@@ -86,7 +86,7 @@ function persistirEmpleadosLocal() {
 //  SOLAPAS
 // ════════════════════════════════════════════════════════════════════════
 function switchEmpleadosTab(tab) {
-  ['plantel', 'ajustes', 'sueldos'].forEach(t => {
+  ['plantel', 'ajustes', 'sueldos', 'bajas'].forEach(t => {
     const panel = document.getElementById('emp-tab-' + t);
     const btn = document.getElementById('emp-btn-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
@@ -94,6 +94,7 @@ function switchEmpleadosTab(tab) {
   });
   if (tab === 'plantel') renderEmpleados();
   else if (tab === 'ajustes') renderAjustesPanel();
+  else if (tab === 'bajas') renderBajas();
   else renderSueldosPanel();
 }
 function renderEmpleadosPagina() { switchEmpleadosTab('plantel'); }
@@ -266,13 +267,16 @@ async function guardarEmpleadoModal() {
 async function eliminarEmpleado(id) {
   const e = AppData.empleados.find(x => x.id === id);
   if (!e) return;
-  if (!confirm('¿Dar de baja a ' + e.nombre + '?\nDeja de aparecer en el plantel; su historial de sueldos se conserva.')) return;
+  const motivo = prompt('Dar de baja a ' + e.nombre + '.\n\n¿Motivo? (renuncia, despido, fin de contrato…)\n\nPasa a la solapa Bajas; su historial de sueldos se conserva.', '');
+  if (motivo === null) return;   // canceló
+  const hoy = new Date().toISOString().slice(0, 10);
   try {
-    await DB.updateWhere('empleados', 'id', id, { activo: false });
-    e.activo = false;
+    await DB.updateWhere('empleados', 'id', id, { activo: false, fecha_baja: hoy, motivo_baja: motivo.trim() });
+    e.activo = false; e.fecha_baja = hoy; e.motivo_baja = motivo.trim();
     persistirEmpleadosLocal();
     renderEmpleados();
-    showToast('🗑 Empleado dado de baja');
+    if (typeof renderBajas === 'function') renderBajas();
+    showToast('Empleado dado de baja — quedó en la solapa Bajas');
   } catch (err) { console.warn('eliminarEmpleado', err); showToast('⛔ No se pudo dar de baja'); }
 }
 
@@ -552,4 +556,81 @@ function exportSueldosPDF() {
   });
   doc.save('Sueldos_' + periodo + '.pdf');
   showToast('📥 Sueldos de ' + periodo + ' descargados');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  TAB 4 — BAJAS
+//  Personal que salió de la empresa. No se borra: la baja es lógica, así que
+//  su historial de sueldos y ajustes queda disponible para consultar.
+// ════════════════════════════════════════════════════════════════════════
+function renderBajas() {
+  const cont = document.getElementById('emp-bajas-cards');
+  if (!cont) return;
+  const q = (document.getElementById('emp-bajas-search')?.value || '').toLowerCase().trim();
+  const bajas = (AppData.empleados || []).filter(e => e.activo === false);
+  const lista = bajas
+    .filter(e => !q || String(e.nombre).toLowerCase().includes(q) ||
+                 String(e.puesto || '').toLowerCase().includes(q) ||
+                 String(e.area || '').toLowerCase().includes(q))
+    .sort((a, b) => String(b.fecha_baja || '').localeCompare(String(a.fecha_baja || '')) ||
+                    String(a.nombre).localeCompare(String(b.nombre)));
+
+  const badge = document.getElementById('emp-bajas-count');
+  if (badge) badge.textContent = bajas.length ? '· ' + bajas.length : '';
+  const info = document.getElementById('emp-bajas-info');
+  if (info) info.textContent = bajas.length
+    ? (lista.length === bajas.length ? bajas.length + ' baja(s)' : lista.length + ' de ' + bajas.length + ' baja(s)')
+    : '';
+
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon"><i class="ic ic-user"></i></div>' +
+      '<div class="empty-title">' + (bajas.length ? 'Ninguna baja coincide con la búsqueda' : 'Sin bajas registradas') + '</div>' +
+      '<div class="empty-sub">' + (bajas.length ? 'Probá con otro texto' : 'El personal dado de baja aparece acá, con su historial intacto') + '</div></div>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(e => {
+    const fIng = e.fecha_ingreso ? _empFecha(e.fecha_ingreso) : null;
+    const fBaja = e.fecha_baja ? _empFecha(e.fecha_baja) : null;
+    let anti = "—";
+    if (fIng) {
+      const hasta = fBaja || new Date();
+      const meses = Math.max(0, (hasta.getFullYear() - fIng.getFullYear()) * 12 + (hasta.getMonth() - fIng.getMonth()));
+      const a = Math.floor(meses / 12), m = meses % 12;
+      anti = (a ? a + (a === 1 ? ' año' : ' años') : '') + (a && m ? ' ' : '') + (m || !a ? m + (m === 1 ? ' mes' : ' meses') : '');
+    }
+    const fmtF = d => d ? String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() : '—';
+    return '<div class="card" style="opacity:.9">' +
+      '<div class="card-body">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+          '<div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:38px;height:38px;font-size:13px;filter:grayscale(.5)">' + initials(e.nombre) + '</div>' +
+          '<div style="min-width:0;flex:1">' +
+            '<div style="font-size:14px;font-weight:700">' + e.nombre + '</div>' +
+            '<div style="font-size:11px;color:var(--text-muted)">' + (e.puesto || 'Sin puesto') + '</div>' +
+            (e.area ? '<span class="tag" style="background:#f3f4f6;color:#4b5563;border:1px solid #e5e7eb;font-size:9.5px;margin-top:3px;display:inline-block">' + e.area + '</span>' : '') +
+          '</div>' +
+          '<button class="btn btn-sm" title="Volver a incorporarlo al plantel" onclick="reincorporarEmpleado(' + e.id + ')"><i class="ic ic-check"></i> Reincorporar</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;padding-top:8px;border-top:1px solid var(--border)">' +
+          '<div><span style="color:var(--text-muted)">Ingreso</span><div style="font-weight:600">' + fmtF(fIng) + '</div></div>' +
+          '<div><span style="color:var(--text-muted)">Baja</span><div style="font-weight:600">' + fmtF(fBaja) + '</div></div>' +
+          '<div><span style="color:var(--text-muted)">Antigüedad</span><div style="font-weight:600">' + anti + '</div></div>' +
+          '<div><span style="color:var(--text-muted)">Último sueldo</span><div style="font-weight:600">' + fmtPeso(_num(e.sueldo)) + '</div></div>' +
+        '</div>' +
+        (e.motivo_baja ? '<div style="margin-top:8px;font-size:11px;color:var(--text-muted)"><i class="ic ic-alert"></i> ' + e.motivo_baja + '</div>' : '') +
+      '</div></div>';
+  }).join("");
+}
+
+async function reincorporarEmpleado(id) {
+  const e = AppData.empleados.find(x => x.id === id);
+  if (!e) return;
+  if (!confirm('¿Reincorporar a ' + e.nombre + ' al plantel?\nVuelve a contar en la masa salarial y en los ajustes trimestrales.')) return;
+  try {
+    await DB.updateWhere('empleados', 'id', id, { activo: true, fecha_baja: null, motivo_baja: '' });
+    e.activo = true; e.fecha_baja = null; e.motivo_baja = '';
+    persistirEmpleadosLocal();
+    renderBajas();
+    showToast('✅ ' + e.nombre + ' volvió al plantel');
+  } catch (err) { console.warn('reincorporarEmpleado', err); showToast('⛔ No se pudo reincorporar'); }
 }
