@@ -50,27 +50,31 @@ function ultimoAjusteDe(empId) {
 }
 
 function proximoAjuste(emp) {
-  // Se ajusta 3 meses DESPUÉS del último aumento. Si nunca tuvo uno, se cuenta
-  // desde el ingreso. (Antes se contaba siempre desde el ingreso, así que a
-  // quien recibía un aumento fuera de ciclo le quedaba la fecha corrida.)
+  // Se ajusta 3 meses DESPUÉS del último aumento; si nunca tuvo uno, desde el
+  // ingreso. El ciclo se cuenta POR MES: el día no importa, así que siempre
+  // cae el 1º del mes que corresponde y dos personas del mismo mes ajustan
+  // juntas (antes, quien entró un día 18 arrastraba ese día para siempre).
   const ult = ultimoAjusteDe(emp.id);
   const base = ult ? _empFecha(ult.fecha) : _empFecha(emp.fecha_ingreso);
   if (!base) return null;
-  const prox = new Date(base);
-  prox.setMonth(prox.getMonth() + RRHH_MESES_AJUSTE);
-  return prox;
+  return new Date(base.getFullYear(), base.getMonth() + RRHH_MESES_AJUSTE, 1);
 }
 
 // { estado: 'vencido' | 'toca' | 'al_dia', dias, fecha }
+// { estado, meses, fecha } — meses < 0 vencido, 0 le toca este mes, > 0 futuro.
 function estadoAjuste(emp) {
   const prox = proximoAjuste(emp);
-  if (!prox) return { estado: 'sin_fecha', dias: 0, fecha: null };
-  const hoy = new Date(); hoy.setHours(12, 0, 0, 0);
-  const dias = Math.round((prox - hoy) / 86400000);
-  if (dias < 0) return { estado: 'vencido', dias, fecha: prox };
-  if (dias <= 15) return { estado: 'toca', dias, fecha: prox };   // ventana de aviso
-  return { estado: 'al_dia', dias, fecha: prox };
+  if (!prox) return { estado: 'sin_fecha', meses: 0, fecha: null };
+  const hoy = new Date();
+  // La comparación es de MES a MES: dentro del mes que le toca, le toca.
+  const meses = (prox.getFullYear() * 12 + prox.getMonth()) - (hoy.getFullYear() * 12 + hoy.getMonth());
+  if (meses < 0) return { estado: 'vencido', meses, fecha: prox };
+  if (meses === 0) return { estado: 'toca', meses, fecha: prox };
+  return { estado: 'al_dia', meses, fecha: prox };
 }
+
+// "1 mes" / "3 meses"
+function _mesesTexto(n) { const a = Math.abs(n); return a + (a === 1 ? ' mes' : ' meses'); }
 function leTocaAjuste(emp) { const e = estadoAjuste(emp).estado; return e === 'vencido' || e === 'toca'; }
 
 // ── Persistencia local ──────────────────────────────────────────────────────
@@ -145,11 +149,11 @@ function renderEmpleados() {
   cont.innerHTML = lista.map(e => {
     const est = estadoAjuste(e);
     const badgeAjuste = est.estado === 'vencido'
-      ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5"><i class="ic ic-alert"></i> Ajuste vencido (' + Math.abs(est.dias) + ' d)</span>'
+      ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5"><i class="ic ic-alert"></i> Ajuste vencido — ' + _mesTexto(_yyyymm(est.fecha)) + '</span>'
       : est.estado === 'toca'
-        ? '<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fde68a"><i class="ic ic-alert"></i> Le toca ' + (est.dias === 0 ? 'hoy' : 'en ' + est.dias + ' d') + '</span>'
+        ? '<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fde68a"><i class="ic ic-alert"></i> Le toca este mes</span>'
         : est.estado === 'al_dia'
-          ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Al día · próx. ' + _empFmt(est.fecha ? est.fecha.toISOString() : '') + '</span>'
+          ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Al día · próx. ' + _mesTexto(_yyyymm(est.fecha)) + '</span>'
           : '<span class="badge badge-gray">Sin fecha de ingreso</span>';
     const badgeReg = e.registrado === false
       ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74">No registrado</span>'
@@ -337,7 +341,7 @@ function renderAjustesPanel() {
       '<td style="font-size:12px">' + ultTxt + '</td>' +
       '<td style="font-size:12px">' +
         '<div style="font-weight:600;color:' + (vencido ? '#b91c1c' : '#854d0e') + '">' + (prox ? _mesTexto(_yyyymm(prox)) : '—') + '</div>' +
-        '<div style="font-size:10px;color:var(--text-muted)">' + (vencido ? 'vencido hace ' + Math.abs(est.dias) + ' días' : 'en ' + est.dias + ' días') + '</div></td>' +
+        '<div style="font-size:10px;color:var(--text-muted)">' + (vencido ? 'atrasado ' + _mesesTexto(est.meses) : (est.meses === 0 ? 'le toca este mes' : 'en ' + _mesesTexto(est.meses))) + '</div></td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(_num(e.sueldo)) + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700" id="emp-prev-' + e.id + '">—</td>' +
     '</tr>';
