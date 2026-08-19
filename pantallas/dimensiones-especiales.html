@@ -7,7 +7,7 @@
               <i class="ic ic-folder"></i> Importar Excel
               <input type="file" id="dim-file-input" accept=".xlsx,.xls,.csv" onchange="importDimensionesEspeciales(event)" style="display:none">
             </label>
-            <button class="btn btn-sm" onclick="descargarPlantillaDimensiones()"><i class="ic ic-download"></i> Plantilla Excel</button>
+            <button class="btn btn-sm" onclick="descargarPlantillaDimensiones()" title="Baja el catálogo completo en el formato de la planilla: agregale las condiciones nuevas y volvé a subirlo"><i class="ic ic-download"></i> Descargar catálogo (Excel)</button>
             <button class="btn btn-sm btn-primary" onclick="openAddDimensionModal()">+ Nueva dimensión</button>
             <button class="btn btn-sm" onclick="limpiarDimensiones()" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Vaciar</button>
           </div>

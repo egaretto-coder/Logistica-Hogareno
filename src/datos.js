@@ -285,7 +285,8 @@ async function _hydrateFromSupabaseReal(opts) {
 
   // Catálogo de dimensiones especiales (cliente · dimensión · zona · precio).
   AppData.dimCatalogo = (data.dimensiones_catalogo || []).map(d => ({
-    id: d.id, cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio)
+    id: d.id, cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio),
+    detalle: d.detalle || ''   // nota del acuerdo; no entra en el cálculo pero viaja en la planilla
   }));
 
   // Solicitudes de cambio de precio de Super SLA.
@@ -469,7 +470,8 @@ function dbPush(table) {
       zona: d.zona || '', valor: _num(d.valor), condicion: d.condicion || ''
     })),
     dimensiones_catalogo: () => AppData.dimCatalogo.map(d => ({
-      cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio)
+      cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio),
+      detalle: d.detalle || ''
     })).filter(d => d.cliente && d.nombre && d.zona),
     km_desvio: () => AppData.kmDesvio.map(d => ({
       conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',

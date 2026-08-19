@@ -240,23 +240,38 @@ function limpiarDimensiones() {
 }
 
 function descargarPlantillaDimensiones() {
-  // Mismo vocabulario que la planilla de la empresa ("HOJA DE CARGA"), para que
-  // ambos archivos sean intercambiables al importar.
+  // La planilla NO es una plantilla vacía: baja con TODO el catálogo cargado.
+  // El circuito real es descargar → agregar las condiciones nuevas → volver a
+  // subir. Con una plantilla en blanco habría que recargar todo de cero.
+  const cat = (AppData.dimCatalogo || []).slice().sort((a, b) =>
+    String(a.cliente).localeCompare(String(b.cliente)) ||
+    String(a.nombre).localeCompare(String(b.nombre)) ||
+    String(a.zona).localeCompare(String(b.zona)));
+
   const aoa = [
-    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Cliente + Condición especial + Zona. El precio es lo que se le paga al conductor por ESA condición en ESA zona. La columna Detalle es informativa: la app no la usa.'],
+    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Cliente + Condición especial + Zona. El precio es lo que se le paga al conductor por ESA condición en ESA zona. Agregá abajo las filas nuevas y volvé a subir el archivo.'],
     ['CLIENTE', 'ZONA', 'CONDICION ESPECIAL', 'PRECIO A PAGAR AL CONDUCTOR', 'DETALLE'],
-    ['ACONCAGUA', 'CABA', '3 Y 4 BULTOS', 5040, '3 Y 4 BULTOS X2'],
-    ['ACONCAGUA', 'MERLO', '3 Y 4 BULTOS', 5600, '3 Y 4 BULTOS X2'],
-    ['FERRETERIA MARTIN', 'ZARATE', 'CARRETILLA', 10000, 'LAS CARRETILLAS VALEN $10000'],
   ];
+  if (cat.length) {
+    cat.forEach(d => aoa.push([d.cliente || '', d.zona || '', d.nombre || '', _num(d.precio), d.detalle || '']));
+  } else {
+    // Catálogo vacío: dejamos ejemplos para que se vea el formato esperado.
+    aoa.push(['ACONCAGUA', 'CABA', '3 Y 4 BULTOS', 5040, '3 Y 4 BULTOS X2']);
+    aoa.push(['ACONCAGUA', 'MERLO', '3 Y 4 BULTOS', 5600, '3 Y 4 BULTOS X2']);
+    aoa.push(['FERRETERIA MARTIN', 'ZARATE', 'CARRETILLA', 10000, 'LAS CARRETILLAS VALEN $10000']);
+  }
+
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [{ wch: 24 }, { wch: 20 }, { wch: 30 }, { wch: 28 }, { wch: 32 }];
   ws['!rows'] = [{ hpx: 34 }];
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'HOJA DE CARGA');
-  XLSX.writeFile(wb, 'Plantilla_Dimensiones_Catalogo.xlsx');
-  showToast('📥 Plantilla descargada — completá y volvé a subirla sin tocar los encabezados');
+  const hoy = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, 'Dimensiones_Catalogo_' + hoy + '.xlsx');
+  showToast(cat.length
+    ? '📥 Catálogo descargado: ' + cat.length + ' precio(s) — agregá las filas nuevas y volvé a subirlo'
+    : '📥 Plantilla descargada (el catálogo está vacío) — completala y subila');
 }
 
 function importDimensionesEspeciales(event) {
@@ -301,6 +316,7 @@ function importDimensionesEspeciales(event) {
       const iNom    = cols.iD;
       const iZona   = cols.iZ;
       const iPrecio = header.findIndex(x => esPrecio(norm(x)));
+      const iDet    = header.findIndex(x => norm(x).includes('detalle') || norm(x).includes('observacion') || norm(x).includes('nota'));
       if (iCli < 0 || iNom < 0 || iZona < 0 || iPrecio < 0) {
         alert('Faltan columnas. Se necesitan: Cliente, Zona, Condición especial (o Dimensión) y Precio.');
         return;
@@ -323,6 +339,7 @@ function importDimensionesEspeciales(event) {
         const nombre  = String(r[iNom] || '').trim().toUpperCase();
         const zona    = String(r[iZona] || '').trim().toUpperCase();
         const precio  = parseNum(r[iPrecio]);
+        const detalle = iDet >= 0 ? String(r[iDet] || '').trim() : '';
         if (!cliente || !nombre || !zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
         const k = claveDe(cliente, nombre, zona);
         vistas.add(k);
@@ -330,9 +347,10 @@ function importDimensionesEspeciales(event) {
         if (pos !== undefined) {
           if (_num(AppData.dimCatalogo[pos].precio) !== precio) { AppData.dimCatalogo[pos].precio = precio; actualizadas++; }
           else sinCambio++;
+          if (detalle) AppData.dimCatalogo[pos].detalle = detalle;
         } else {
           idxActual.set(k, AppData.dimCatalogo.length);
-          AppData.dimCatalogo.push({ cliente, nombre, zona, precio });
+          AppData.dimCatalogo.push({ cliente, nombre, zona, precio, detalle });
           nuevas++;
         }
       }

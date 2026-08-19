@@ -768,3 +768,9 @@ $$;
 -- que no puede vivir en un sitio estático. Verifica contra el JWT que quien
 -- llama sea analista activo, invita por mail (el usuario elige su contraseña) y
 -- deja el perfil con el rol elegido y activo=true.
+
+-- dimensiones_catalogo.detalle: nota del acuerdo con el cliente (ej. "LAS
+-- CARRETILLAS VALEN $10000"). No entra en el cálculo, pero se guarda porque la
+-- planilla se descarga desde la app, se le agregan las dimensiones nuevas y se
+-- vuelve a subir: si no se guardara, cada vuelta borraría las notas.
+alter table public.dimensiones_catalogo add column if not exists detalle text not null default '';
