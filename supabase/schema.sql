@@ -807,3 +807,15 @@ create index if not exists idx_empleados_area on public.empleados (area);
 alter table public.empleados
   add column if not exists fecha_baja date,
   add column if not exists motivo_baja text not null default '';
+
+-- registros.cliente_cod: IDENTIDAD del cliente que factura (columna Cod.Cliente
+-- del listado). El nombre de fantasía va en registros.cliente y sirve solo para
+-- mostrar: tiene variantes ("Bluemail" / "BLUEMAIL") que partirían al cliente en
+-- dos si se usaran como clave. clientes.codigo y cliente_tarifas.cliente_cod
+-- atan el tarifario a ese mismo código.
+alter table public.registros            add column if not exists cliente_cod text not null default '';
+alter table public.registros_historico  add column if not exists cliente_cod text not null default '';
+alter table public.cliente_tarifas      add column if not exists cliente_cod text not null default '';
+alter table public.clientes             add column if not exists codigo      text not null default '';
+create index if not exists idx_registros_cliente_cod on public.registros (cliente_cod) where cliente_cod <> '';
+create index if not exists idx_cliente_tarifas_cod on public.cliente_tarifas (cliente_cod);

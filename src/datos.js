@@ -202,7 +202,8 @@ async function _hydrateFromSupabaseReal(opts) {
     cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
     zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '',
-    cliente: r.cliente || '', // empresa/cliente de facturación (viene del Excel)
+    cliente: r.cliente || '', // nombre de fantasía (para mostrar)
+    cliente_cod: r.cliente_cod || '', // IDENTIDAD del cliente que factura
     dim_especial: r.dim_especial || '', // dimensión especial asignada (nombre) — vacío = ninguna
     dim_cliente: r.dim_cliente || '',   // cliente de esa dimensión (para resolver el precio por zona)
     cobro_destino: _num(r.cobro_destino), // monto que el conductor cobra al destinatario y debe rendir
@@ -528,6 +529,7 @@ function filaRegistroNube(r) {
     fecha_date: fechaISOde(r.fecha),
     localidad: r.localidad || '', zona: r.zona || '', zona_precio: r.zona_precio || '',
     direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
+    cliente_cod: r.cliente_cod || '',
     dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
     cobro_destino: _num(r.cobro_destino),  // cobro en destino a rendir
     estado: r.estado || '', precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
@@ -601,6 +603,7 @@ async function cargarHistorialCompleto(btn) {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
+      cliente_cod: r.cliente_cod || '',
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
@@ -612,6 +615,7 @@ async function cargarHistorialCompleto(btn) {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
+      cliente_cod: r.cliente_cod || '',
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,

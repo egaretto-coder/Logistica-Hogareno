@@ -145,7 +145,18 @@ const BD_FIELDS = [
   { key: 'estado', label: 'Estado', expectedCol: 'X', required: true, keywords: ['estado'] },
   { key: 'zona', label: 'Zona', expectedCol: 'AA', required: true, keywords: ['zona'] },
   { key: 'cadete', label: 'Cadete', expectedCol: 'AD', required: true, keywords: ['cadete', 'conductor', 'chofer'] },
-  { key: 'cliente', label: 'Cliente (empresa que factura)', expectedCol: 'BZ', required: false, keywords: ['empresa', 'remitente', 'vendedor', 'seller', 'tienda', 'razon social', 'razón social'] },
+  // CLIENTE que factura. El listado trae tres columnas y solo dos sirven:
+  //   Cod.Cliente (I)     → siempre presente y único: es la IDENTIDAD.
+  //   Nombre Fantasia (K) → siempre presente, pero con variantes de mayúsculas
+  //                         ("Bluemail" / "BLUEMAIL"): sirve para mostrar.
+  //   Razon Social (J)    → viene vacía en la enorme mayoría de las filas.
+  // Antes se apuntaba a la columna BZ (que no existe en el listado): el
+  // automatch caía en "Razon Social" y por eso casi ningún envío quedaba con
+  // cliente. Se buscan por NOMBRE de encabezado, que es lo estable.
+  { key: 'cliente_cod', label: 'Código de cliente (identidad para facturar)', expectedCol: 'I', required: false,
+    preferKeywords: true, keywords: ['cod.cliente', 'cod cliente', 'codigo cliente', 'codigo de cliente', 'cód.cliente'] },
+  { key: 'cliente', label: 'Cliente (nombre de fantasía)', expectedCol: 'K', required: false,
+    preferKeywords: true, keywords: ['nombre fantasia', 'nombre fantasía', 'fantasia', 'fantasía', 'nombre comercial'] },
   // Cobro en destino: el conductor cobra al destinatario y lo rinde al día
   // siguiente (panel Rendición de envíos). En el listado es "Total a cobrar".
   { key: 'cobro_destino', label: 'Cobro en destino ("Total a cobrar")', expectedCol: 'AI', required: false,
