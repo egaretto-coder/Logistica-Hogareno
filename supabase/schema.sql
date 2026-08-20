@@ -830,3 +830,22 @@ alter table public.clientes
   add column if not exists obs      text not null default '';
 create unique index if not exists idx_clientes_codigo
   on public.clientes (upper(btrim(codigo))) where btrim(codigo) <> '';
+
+-- ---------- PROVEEDORES DE SERVICIO ----------
+-- Lista cerrada para cargar los servicios de proveedores (descuentos_items con
+-- tipo='proveedores'): el nombre se elige, no se escribe. Escrito a mano, el
+-- mismo proveedor entra con varias grafías y no se puede saber cuánto se le
+-- pagó. La baja es lógica: deja de ofrecerse, lo ya cargado se conserva.
+create table if not exists public.proveedores (
+  id bigint generated always as identity primary key,
+  nombre text not null,
+  rubro text not null default '',
+  telefono text not null default '',
+  obs text not null default '',
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_proveedores_nombre on public.proveedores (upper(btrim(nombre)));
+alter table public.proveedores enable row level security;
+create policy proveedores_all on public.proveedores for all to authenticated
+  using (public.es_usuario_activo()) with check (public.es_usuario_activo());

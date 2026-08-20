@@ -223,12 +223,50 @@ function configDescItemModal(tipo) {
   } else {
     refWrap.style.display = 'none';
   }
+  // En proveedores la referencia se ELIGE de la lista cargada; en extravíos
+  // sigue siendo texto libre (es el tracking del envío).
+  const esProv = (tipo === 'proveedores');
+  const inp = document.getElementById('mditem-ref');
+  const sel = document.getElementById('mditem-ref-select');
+  const ayuda = document.getElementById('mditem-ref-ayuda');
+  if (inp) inp.style.display = esProv ? 'none' : '';
+  if (sel) { sel.style.display = esProv ? '' : 'none'; if (esProv) poblarProveedoresSelect(inp ? inp.value : ''); }
+  if (ayuda) ayuda.style.display = esProv ? '' : 'none';
   // Secciones extra solo para extravíos (cliente + buscar tracking arriba, cuotear abajo)
   const esExtravio = (tipo === 'extraviados');
   const extra = document.getElementById('mditem-extravio-extra');
   if (extra) extra.style.display = esExtravio ? 'flex' : 'none';
   const cuoteBlock = document.getElementById('mditem-cuotear-block');
   if (cuoteBlock) cuoteBlock.style.display = esTipoCuoteable(tipo) ? '' : 'none';
+}
+
+// Llena el desplegable de proveedores. Si el registro trae uno que ya no está
+// en la lista (se dio de baja), se agrega marcado para no perderlo.
+function poblarProveedoresSelect(actual) {
+  const sel = document.getElementById('mditem-ref-select');
+  if (!sel) return;
+  const activos = (AppData.proveedores || []).filter(p => p.activo !== false)
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  const act = String(actual || '').trim();
+  const estaEnLista = activos.some(p => normNombre(p.nombre) === normNombre(act));
+  sel.innerHTML = '<option value="">— Elegí el proveedor —</option>' +
+    activos.map(p => '<option value="' + String(p.nombre).replace(/"/g, '&quot;') + '">' +
+      p.nombre + (p.rubro ? ' · ' + p.rubro : '') + '</option>').join('') +
+    (act && !estaEnLista ? '<option value="' + act.replace(/"/g, '&quot;') + '">' + act + ' (dado de baja)</option>' : '');
+  sel.value = act;
+  if (!activos.length) {
+    sel.innerHTML = '<option value="">No hay proveedores cargados</option>';
+  }
+}
+
+// El valor de la referencia: del select en proveedores, del input en el resto.
+function _valorReferenciaModal(tipo) {
+  if (tipo === 'proveedores') {
+    const sel = document.getElementById('mditem-ref-select');
+    return sel ? String(sel.value || '').trim() : '';
+  }
+  const inp = document.getElementById('mditem-ref');
+  return inp ? String(inp.value || '').trim() : '';
 }
 
 function openAddDescItemModal(tipo) {
@@ -270,6 +308,7 @@ function editDescItem(tipo, id) {
   document.getElementById('mditem-fecha').value = dmyToISO(x.fecha) || hoyISO();
   document.getElementById('mditem-monto').value = x.monto || '';
   document.getElementById('mditem-ref').value = x.referencia || '';
+  if (x.tipo === 'proveedores') poblarProveedoresSelect(x.referencia || '');
   document.getElementById('mditem-detalle').value = x.detalle || '';
   resetExtravioModalExtra(); // los cuoteados no se editan por acá (pago único)
   configDescItemModal(tipo);
@@ -290,12 +329,14 @@ async function guardarDescItemModal() {
   const conductor = document.getElementById('mditem-conductor').value.trim().toUpperCase();
   const iso = document.getElementById('mditem-fecha').value;
   const monto = parseFloat(document.getElementById('mditem-monto').value) || 0;
-  const referencia = cfg.refLabel ? document.getElementById('mditem-ref').value.trim() : '';
+  const referencia = cfg.refLabel ? _valorReferenciaModal(tipo) : '';
   const detalle = document.getElementById('mditem-detalle').value.trim();
 
   if (!conductor) { alert('El conductor es obligatorio.'); return; }
   if (!iso) { alert('La fecha es obligatoria (define a qué liquidación se imputa).'); return; }
   if (monto <= 0) { alert('Ingresá un monto mayor a 0.'); return; }
+  // El proveedor sale de la lista: sin elegirlo no se sabe a quién se le pagó.
+  if (tipo === 'proveedores' && !referencia) { alert('Elegí el proveedor de la lista.'); return; }
 
   // Cuotear: solo extravíos y solo en el alta (los cuoteados no se editan por acá).
   let cuotas_total = 1, monto_cuota = 0;
@@ -630,4 +671,100 @@ function importDescItems(tipo, event) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  PROVEEDORES DE SERVICIO (lista cerrada)
+//  El proveedor se elige, no se escribe: escrito a mano el mismo proveedor
+//  entra como "Ruedas Bojanich", "ruedas bojanich" y "R. Bojanich", y después
+//  no hay forma de saber cuánto se le pagó a cada uno.
+// ════════════════════════════════════════════════════════════════════════
+function abrirGestionProveedores() {
+  document.getElementById('modal-prov-backdrop').style.display = 'flex';
+  renderProveedores();
+  setTimeout(() => document.getElementById('mprov-nombre')?.focus(), 60);
+}
+
+function cerrarGestionProveedores(e) {
+  if (!e || e.target.id === 'modal-prov-backdrop') {
+    document.getElementById('modal-prov-backdrop').style.display = 'none';
+    // Al volver, el desplegable del alta refleja los cambios.
+    if (descItemModalTipo === 'proveedores') poblarProveedoresSelect(_valorReferenciaModal('proveedores'));
+  }
+}
+
+function renderProveedores() {
+  const cont = document.getElementById('mprov-lista');
+  if (!cont) return;
+  const lista = (AppData.proveedores || []).slice()
+    .sort((a, b) => (a.activo === b.activo ? String(a.nombre).localeCompare(String(b.nombre)) : (a.activo === false ? 1 : -1)));
+  if (!lista.length) {
+    cont.innerHTML = '<div class="muted" style="text-align:center;padding:18px;font-size:12px">Todavía no hay proveedores cargados</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(p => {
+    // Cuánto se le pagó: sirve para decidir si conviene darlo de baja.
+    const items = (AppData.descItems || []).filter(x => x.tipo === 'proveedores' && normNombre(x.referencia) === normNombre(p.nombre));
+    const total = items.reduce((s, x) => s + _num(x.monto), 0);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)' +
+        (p.activo === false ? ';opacity:.55' : '') + '">' +
+      '<div class="conductor-avatar" style="background:' + avatarColor(p.nombre) + ';width:28px;height:28px;font-size:10px">' + initials(p.nombre) + '</div>' +
+      '<div style="min-width:0;flex:1">' +
+        '<div style="font-size:13px;font-weight:600">' + p.nombre +
+          (p.activo === false ? ' <span class="badge" style="background:#fee2e2;color:#b91c1c;font-size:9px">dado de baja</span>' : '') + '</div>' +
+        '<div style="font-size:10.5px;color:var(--text-muted)">' +
+          [p.rubro, p.telefono].filter(Boolean).join(' · ') +
+          (items.length ? (p.rubro || p.telefono ? ' · ' : '') + items.length + ' servicio(s) · ' + fmtPeso(total) : '') +
+        '</div>' +
+      '</div>' +
+      (p.activo === false
+        ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="reactivarProveedor(' + p.id + ')">Reactivar</button>'
+        : '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px;border-color:#fca5a5;color:#b91c1c" onclick="bajaProveedor(' + p.id + ')" title="Deja de ofrecerse al cargar servicios; los ya cargados se conservan">Dar de baja</button>') +
+    '</div>';
+  }).join('');
+}
+
+async function agregarProveedor() {
+  const nombre = (document.getElementById('mprov-nombre').value || '').trim();
+  const rubro = (document.getElementById('mprov-rubro').value || '').trim();
+  const telefono = (document.getElementById('mprov-telefono').value || '').trim();
+  if (!nombre) { alert('Escribí el nombre del proveedor.'); return; }
+  const dup = (AppData.proveedores || []).find(p => normNombre(p.nombre) === normNombre(nombre));
+  if (dup) {
+    if (dup.activo === false) { await reactivarProveedor(dup.id); return; }
+    alert('"' + dup.nombre + '" ya está en la lista.');
+    return;
+  }
+  try {
+    const row = await DB.insertRow('proveedores', { nombre, rubro, telefono, obs: '', activo: true });
+    AppData.proveedores.push({ id: row.id, nombre, rubro, telefono, obs: '', activo: true });
+    ['mprov-nombre', 'mprov-rubro', 'mprov-telefono'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    renderProveedores();
+    showToast('✅ ' + nombre + ' agregado');
+    document.getElementById('mprov-nombre')?.focus();
+  } catch (e) { console.warn('agregarProveedor:', e); alert('No se pudo agregar: ' + (e.message || e)); }
+}
+
+// Baja lógica: los servicios ya cargados a ese proveedor se conservan.
+async function bajaProveedor(id) {
+  const p = (AppData.proveedores || []).find(x => x.id === id);
+  if (!p) return;
+  if (!confirm('¿Dar de baja a ' + p.nombre + '?\nDeja de aparecer al cargar servicios nuevos; los ya cargados se conservan.')) return;
+  try {
+    await DB.updateWhere('proveedores', 'id', id, { activo: false });
+    p.activo = false;
+    renderProveedores();
+    showToast('Proveedor dado de baja');
+  } catch (e) { console.warn('bajaProveedor:', e); showToast('⛔ No se pudo dar de baja'); }
+}
+
+async function reactivarProveedor(id) {
+  const p = (AppData.proveedores || []).find(x => x.id === id);
+  if (!p) return;
+  try {
+    await DB.updateWhere('proveedores', 'id', id, { activo: true });
+    p.activo = true;
+    renderProveedores();
+    showToast('✅ ' + p.nombre + ' reactivado');
+  } catch (e) { console.warn('reactivarProveedor:', e); showToast('⛔ No se pudo reactivar'); }
 }

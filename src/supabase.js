@@ -122,7 +122,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, rendiciones] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, rendiciones] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -138,6 +138,7 @@ const DB = {
         this.selectAll('descuentos_items', 'id'),
         this.selectAll('descuento_cuotas', 'id'),
         this.selectAll('clientes', 'nombre'),
+        this.selectAll('proveedores', 'nombre'),
         this.selectAll('cliente_tarifas', 'id'),
         this.selectAll('vendedores', 'nombre'),
         this.selectAll('comision_categorias', 'fact_desde'),
@@ -157,7 +158,8 @@ const DB = {
         km_desvio: km, km_tarifas: kmTar, registros, config,
         rol_permisos: rolPerm, roles, adelantos, adelanto_cuotas: adelantoCuotas,
         descuentos_items: descItems, descuento_cuotas: descItemCuotas,
-        clientes, cliente_tarifas: clienteTarifas,
+        clientes,
+        proveedores, cliente_tarifas: clienteTarifas,
         vendedores, comision_categorias: comisionCategorias,
         comision_clientes: comisionClientes, comision_pagos: comisionPagos,
         importaciones, supersla_solicitudes: superSlaSolic,

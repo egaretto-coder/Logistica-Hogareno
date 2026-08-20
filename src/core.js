@@ -241,6 +241,7 @@ let AppData = {
   // clienteTarifas: [{ id, cliente, zona, precio }]
   'detalle-cliente': { titulo: 'Detalle de cliente', sub: 'Control y margen antes de facturar' },
   clientes: [],
+  proveedores: [],   // proveedores de servicio (lista cerrada para cargar gastos)
   clienteTarifas: [],
 
   // Comisiones de vendedores.

@@ -49,6 +49,7 @@
               <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
                 <input type="file" id="descitem-proveedores-file" accept=".xlsx,.xls,.csv" onchange="importDescItems('proveedores', event)" style="display:none">
               </label>
+              <button class="btn btn-sm" onclick="abrirGestionProveedores()" title="Alta y baja de los proveedores que se pueden elegir"><i class="ic ic-building"></i> Proveedores</button>
               <button class="btn btn-sm" onclick="openAddDescItemModal('proveedores')">+ Agregar manual</button>
               <button class="btn btn-sm" onclick="descargarPlantillaDescItems('proveedores')"><i class="ic ic-download"></i> Plantilla Excel</button>
               <button class="btn btn-sm" onclick="limpiarDescItems('proveedores')" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Limpiar todo</button>

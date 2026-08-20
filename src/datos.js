@@ -218,6 +218,10 @@ async function _hydrateFromSupabaseReal(opts) {
   }));
 
   // Clientes (facturación) + su tarifario de venta por zona.
+  AppData.proveedores = (data.proveedores || []).map(p => ({
+    id: p.id, nombre: p.nombre, rubro: p.rubro || '', telefono: p.telefono || '',
+    obs: p.obs || '', activo: p.activo !== false
+  }));
   AppData.clientes = (data.clientes || []).map(c => ({
     id: c.id, nombre: c.nombre, codigo: (c.codigo || '').toUpperCase(),
     razon_social: c.razon_social || '', cuit: c.cuit || '',
