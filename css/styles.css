@@ -863,3 +863,109 @@
   }
   .cond-dia-chev.abierto { transform: rotate(0deg); color: var(--text-secondary); }
   .cond-dia-hint { font-size: 10.5px; font-style: italic; }
+
+  /* ── CAMPOS DE FECHA ──────────────────────────────────────────────────────
+     Los input[type=date|month] nativos ignoran la tipografía de la página y
+     usan la del sistema: quedaban con otra fuente, otro tamaño y otro alto que
+     el resto de los controles. Acá se los alinea con el diseño de la app.     */
+  input[type="date"],
+  input[type="month"] {
+    font-family: inherit;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;   /* los números no bailan al cambiar */
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 7px 10px;
+    min-height: 36px;
+    line-height: 1.25;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input[type="date"]:hover,
+  input[type="month"]:hover { border-color: var(--border-strong); }
+  input[type="date"]:focus,
+  input[type="month"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.14);
+  }
+  input[type="date"]:disabled,
+  input[type="month"]:disabled { background: var(--surface-2); color: var(--text-muted); }
+
+  /* El separador "/" y el texto guía, más suaves que el valor */
+  input[type="date"]::-webkit-datetime-edit-text { color: var(--text-muted); padding: 0 2px; }
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+  input[type="month"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
+  input[type="date"]::-webkit-datetime-edit-day-field:focus,
+  input[type="date"]::-webkit-datetime-edit-month-field:focus,
+  input[type="date"]::-webkit-datetime-edit-year-field:focus,
+  input[type="month"]::-webkit-datetime-edit-month-field:focus,
+  input[type="month"]::-webkit-datetime-edit-year-field:focus {
+    background: var(--accent-light);
+    color: var(--accent);
+    border-radius: 4px;
+    outline: none;
+  }
+
+  /* Ícono del calendario: es del navegador, pero se puede atenuar y resaltar */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="month"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: .5;
+    padding: 3px;
+    margin-left: 4px;
+    border-radius: 5px;
+    transition: opacity .15s ease, background .15s ease;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  input[type="month"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    background: var(--accent-light);
+  }
+  /* En oscuro el ícono nativo viene negro y se pierde contra el fondo */
+  :root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+  :root[data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.6);
+  }
+
+  /* Rango "Desde / Hasta": los dos campos como un solo control */
+  .date-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px 3px 10px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .date-range:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.12);
+  }
+  .date-range > .ic { color: var(--text-muted); flex-shrink: 0; }
+  .date-range .date-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: .01em;
+    padding: 0 2px;
+    white-space: nowrap;
+  }
+  /* Adentro del grupo, los campos pierden su propio marco */
+  .date-range input[type="date"],
+  .date-range input[type="month"] {
+    border: 0;
+    background: transparent;
+    padding: 5px 4px;
+    min-height: 30px;
+    border-radius: 7px;
+  }
+  .date-range input[type="date"]:hover,
+  .date-range input[type="month"]:hover { background: var(--surface-2); }
+  .date-range input[type="date"]:focus,
+  .date-range input[type="month"]:focus { box-shadow: none; background: var(--accent-light); }
+  .date-range .date-sep { color: var(--text-muted); font-size: 11px; padding: 0 2px; }

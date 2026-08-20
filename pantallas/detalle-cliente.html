@@ -19,9 +19,12 @@
                 <option value="">Seleccionar cliente...</option>
               </select>
             </div>
+            <div class="date-range">
+              <i class="ic ic-calendar"></i>
+              <span class="date-label">Semana</span>
+              <input type="date" id="dcli-semana" onchange="renderDetalleCliente()" aria-label="Semana">
+            </div>
             <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Semana</span>
-              <input type="date" id="dcli-semana" onchange="renderDetalleCliente()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
               <span id="dcli-rango" style="font-size:11px;color:var(--text-muted)"></span>
             </div>
             <button class="btn btn-sm" onclick="dcliSemanaAnterior()" title="Semana anterior">◀</button>

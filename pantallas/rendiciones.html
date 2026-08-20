@@ -20,10 +20,13 @@
              para poder cerrar un mes como en la planilla. Vacío = todas las fechas. -->
         <div class="card" style="margin-bottom:14px">
           <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Entregas</span>
-            <input type="date" id="rend-desde" onchange="setRendFechas()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
-            <span style="font-size:11px;color:var(--text-muted)">hasta</span>
-            <input type="date" id="rend-hasta" onchange="setRendFechas()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+            <div class="date-range">
+              <i class="ic ic-calendar"></i>
+              <span class="date-label">Entregas</span>
+              <input type="date" id="rend-desde" onchange="setRendFechas()" aria-label="Desde">
+              <span class="date-sep">→</span>
+              <input type="date" id="rend-hasta" onchange="setRendFechas()" aria-label="Hasta">
+            </div>
             <button class="btn btn-sm" onclick="setRendPreset('semana')">Últimos 7 días</button>
             <button class="btn btn-sm" onclick="setRendPreset('mes')">Este mes</button>
             <button class="btn btn-sm" onclick="setRendPreset('mespasado')">Mes pasado</button>

@@ -4,7 +4,7 @@
           <span class="section-title"><i class="ic ic-card"></i> Adelantos</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Semana</span>
-            <input type="date" id="adelantos-fecha" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" title="Semana a la que se imputan las cuotas que descuentes">
+            <input type="date" id="adelantos-fecha" title="Semana a la que se imputan las cuotas que descuentes">
             <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos en la semana elegida"><i class="ic ic-chevrons-down"></i> Descontar cuota semanal (todos)</button>
             <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
               <input type="file" id="adelantos-file-input" accept=".xlsx,.xls,.csv" onchange="importAdelantos(event)" style="display:none">

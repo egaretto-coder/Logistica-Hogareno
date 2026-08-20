@@ -15,7 +15,7 @@
             <!-- FECHA DE CARGA: cada importación queda asociada a este día -->
             <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px">
               <span style="font-size:13px;font-weight:600"><i class="ic ic-calendar"></i> Fecha de carga</span>
-              <input type="date" id="upload-fecha-carga" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <input type="date" id="upload-fecha-carga">
               <span style="font-size:11px;color:var(--text-muted)">La importación queda registrada con este día. Si un tracking ya existía, la información nueva <strong>reemplaza</strong> a la anterior. Al procesar, la base se <strong>guarda sola en la nube</strong>.</span>
             </div>
 
@@ -69,9 +69,9 @@
               <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Elegí un rango de fechas para ver los recorridos que ya fueron archivados (solo lectura, se traen de la nube).</div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span style="font-size:12px;color:var(--text-secondary)">Desde</span>
-                <input type="date" id="arch-desde" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+                <input type="date" id="arch-desde">
                 <span style="font-size:12px;color:var(--text-secondary)">Hasta</span>
-                <input type="date" id="arch-hasta" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+                <input type="date" id="arch-hasta">
                 <button class="btn btn-sm btn-primary" onclick="consultarArchivados()"><i class="ic ic-search"></i> Consultar</button>
               </div>
               <div id="arch-consulta-result" style="margin-top:12px"></div>
@@ -83,7 +83,7 @@
               <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Mové los recorridos ya liquidados y antiguos al archivo para mantener la app rápida. <strong>No se borran</strong> (siguen consultables acá arriba). Operación segura y transaccional.</div>
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <span style="font-size:13px;font-weight:600">Archivar anteriores a</span>
-                <input type="date" id="arch-fecha" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <input type="date" id="arch-fecha">
                 <button class="btn btn-sm btn-primary" onclick="ejecutarArchivado()">🗄️ Archivar</button>
                 <span id="arch-estado" style="font-size:11px;color:var(--text-muted)"></span>
               </div>
@@ -123,7 +123,7 @@
               <!-- CALENDARIO: ver la información cargada un día puntual -->
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
                 <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-search"></i> Ver información del día</span>
-                <input type="date" id="upload-ver-fecha" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" onchange="verRegistrosDelDia()">
+                <input type="date" id="upload-ver-fecha" onchange="verRegistrosDelDia()">
                 <button class="btn btn-sm" onclick="document.getElementById('upload-ver-fecha').value=''; verRegistrosDelDia()">Ver toda la base</button>
               </div>
             </div>

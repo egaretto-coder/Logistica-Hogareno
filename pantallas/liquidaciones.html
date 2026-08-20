@@ -12,13 +12,12 @@
               <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'personalizado')">Personalizado</button>
             </div>
             <div id="liq-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
-              <div style="display:flex;align-items:center;gap:4px">
-                <label style="font-size:11px;color:var(--text-muted)">Desde</label>
-                <input type="date" id="liq-fecha-desde" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()">
-              </div>
-              <div style="display:flex;align-items:center;gap:4px">
-                <label style="font-size:11px;color:var(--text-muted)">Hasta</label>
-                <input type="date" id="liq-fecha-hasta" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()">
+              <div class="date-range">
+                <i class="ic ic-calendar"></i>
+                <span class="date-label">Período</span>
+                <input type="date" id="liq-fecha-desde" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()" aria-label="Desde">
+                <span class="date-sep">→</span>
+                <input type="date" id="liq-fecha-hasta" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()" aria-label="Hasta">
               </div>
             </div>
             <span id="liq-fecha-label" style="font-size:11px;color:var(--text-muted);margin-left:4px"></span>

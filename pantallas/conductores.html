@@ -30,11 +30,14 @@
               <button class="btn btn-sm" id="cond-cond-Suplente" onclick="toggleFiltroCondicion('Suplente')" title="Mostrar solo los suplentes (pago martes)">Suplente<span class="cond-cond-count"></span></button>
               <button class="btn btn-sm" id="cond-cond-Sin" onclick="toggleFiltroCondicion('')" title="Conductores que todavía no tienen condición cargada en el Panel de conductores">Sin condición<span class="cond-cond-count"></span></button>
             </div>
+            <div class="date-range">
+              <i class="ic ic-calendar"></i>
+              <span class="date-label">Período</span>
+              <input type="date" id="cond-fecha-desde" onchange="renderConductorDetail()" aria-label="Desde">
+              <span class="date-sep">→</span>
+              <input type="date" id="cond-fecha-hasta" onchange="renderConductorDetail()" aria-label="Hasta">
+            </div>
             <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Desde</span>
-              <input type="date" id="cond-fecha-desde" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Hasta</span>
-              <input type="date" id="cond-fecha-hasta" onchange="renderConductorDetail()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
               <button class="btn btn-sm" onclick="document.getElementById('cond-fecha-desde').value='';document.getElementById('cond-fecha-hasta').value='';renderConductorDetail()">Todas las fechas</button>
             </div>
           </div>

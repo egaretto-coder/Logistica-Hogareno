@@ -12,13 +12,12 @@
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'personalizado')">Personalizado</button>
             </div>
             <div id="dash-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
-              <div style="display:flex;align-items:center;gap:4px">
-                <label style="font-size:11px;color:var(--text-muted)">Desde</label>
-                <input type="date" id="dash-fecha-desde" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderDashboard()" oninput="renderDashboard()">
-              </div>
-              <div style="display:flex;align-items:center;gap:4px">
-                <label style="font-size:11px;color:var(--text-muted)">Hasta</label>
-                <input type="date" id="dash-fecha-hasta" class="form-input" style="width:140px;font-size:12px;padding:4px 8px" onchange="renderDashboard()" oninput="renderDashboard()">
+              <div class="date-range">
+                <i class="ic ic-calendar"></i>
+                <span class="date-label">Período</span>
+                <input type="date" id="dash-fecha-desde" onchange="renderDashboard()" oninput="renderDashboard()" aria-label="Desde">
+                <span class="date-sep">→</span>
+                <input type="date" id="dash-fecha-hasta" onchange="renderDashboard()" oninput="renderDashboard()" aria-label="Hasta">
               </div>
             </div>
             <span id="dash-fecha-label" style="font-size:11px;color:var(--text-muted);margin-left:4px"></span>

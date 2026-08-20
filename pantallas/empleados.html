@@ -43,7 +43,7 @@
             <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
               <div>
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes del ajuste</label>
-                <input type="month" id="emp-ajuste-periodo" onchange="renderAjustesPanel()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <input type="month" id="emp-ajuste-periodo" onchange="renderAjustesPanel()">
               </div>
               <div>
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Aumento %</label>
@@ -80,7 +80,7 @@
             <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
               <div>
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes a liquidar</label>
-                <input type="month" id="emp-sueldo-periodo" onchange="renderSueldosPanel()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <input type="month" id="emp-sueldo-periodo" onchange="renderSueldosPanel()">
               </div>
               <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="exportSueldosPDF()"><i class="ic ic-download"></i> Descargar PDF</button>
             </div>
