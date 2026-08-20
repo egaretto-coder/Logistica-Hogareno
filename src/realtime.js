@@ -49,6 +49,7 @@ const RT_PANTALLA_TABLAS = {
   'beneficios':             ['descuentos_items'],
   'km-desvio':              ['km_desvio', 'km_tarifas'],
   'adelantos':              ['adelantos', 'adelanto_cuotas'],
+  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'tarifas', 'super_sla', 'panel_conductores'],
   'clientes':               ['clientes', 'cliente_tarifas', 'registros'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
                              'clientes', 'cliente_tarifas', 'registros', 'config'],

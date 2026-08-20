@@ -2,20 +2,75 @@
 //  CLIENTES — facturación por cliente.
 //  Cada cliente tiene un tarifario de VENTA por zona (lo que se le cobra por
 //  envío entregado). La liquidación es semanal Viernes→Jueves (el jueves es el
-//  corte). Se descarga en PDF. El cliente viene en el Excel de recorridos
-//  (columna 'cliente' en registros) y se matchea por nombre normalizado.
+//  corte). Se descarga en PDF.
+//
+//  IDENTIDAD = el CÓDIGO de cliente (registros.cliente_cod, columna
+//  "Cod.Cliente" del listado). Viene en todas las filas y es único. El nombre
+//  de fantasía (registros.cliente) es solo para mostrar: trae variantes
+//  ("Bluemail" / "BLUEMAIL") que, usadas como clave, partirían al cliente en
+//  dos — el mismo problema que resolvimos con los alias de conductores.
 // ════════════════════════════════════════════════════════════════════════
 
 let clienteEditId = null;
 
-// ── Helpers de cálculo ──────────────────────────────────────────────────────
+// ── Identidad ───────────────────────────────────────────────────────────────
 function normCliente(s) { return normNombre(s); }
 
-// Tarifa de venta de un cliente para una zona (0 si no está cargada).
-function clienteTarifaEnZona(cliente, zona) {
-  const c = normCliente(cliente), z = normNombre(zona);
-  const t = AppData.clienteTarifas.find(x => normCliente(x.cliente) === c && normNombre(x.zona) === z);
+// Código de un registro. Si el envío es viejo y no lo trae, cae al nombre para
+// no perderlo (esos envíos no se pueden facturar por código).
+function clienteCodDeRegistro(r) {
+  return String((r && r.cliente_cod) || '').trim().toUpperCase();
+}
+function clienteKey(cod) { return String(cod || '').trim().toUpperCase(); }
+
+// Nombre para mostrar de un código: el del maestro si está cargado, si no el
+// último nombre de fantasía visto en los envíos.
+function clienteNombreDe(cod) {
+  const k = clienteKey(cod);
+  if (!k) return '(sin cliente)';
+  const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
+  if (c && c.nombre) return c.nombre;
+  const r = (AppData.records || []).find(x => clienteCodDeRegistro(x) === k && String(x.cliente || '').trim());
+  return r ? String(r.cliente).trim() : k;
+}
+
+// Códigos de cliente presentes en los envíos (con su nombre y cuántos envíos).
+function clientesDeRegistros(rango) {
+  const m = new Map();
+  (AppData.records || []).forEach(r => {
+    const k = clienteCodDeRegistro(r);
+    if (!k) return;
+    if (rango && (rango.desdeD || rango.hastaD)) {
+      const f = parseFechaReg(r.fecha);
+      if (!f) return;
+      if (rango.desdeD && f < rango.desdeD) return;
+      if (rango.hastaD && f > rango.hastaD) return;
+    }
+    let x = m.get(k);
+    if (!x) { x = { cod: k, nombre: String(r.cliente || '').trim() || k, envios: 0 }; m.set(k, x); }
+    x.envios++;
+    if (!x.nombre && r.cliente) x.nombre = String(r.cliente).trim();
+  });
+  return Array.from(m.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+// Tarifa de venta de un cliente (por CÓDIGO) para una zona. 0 = sin cargar.
+function clienteTarifaEnZona(cod, zona) {
+  const k = clienteKey(cod), z = normNombre(zona);
+  const t = (AppData.clienteTarifas || []).find(x =>
+    (clienteKey(x.cliente_cod) === k || (!x.cliente_cod && normCliente(x.cliente) === normCliente(k))) &&
+    normNombre(x.zona) === z);
   return t ? _num(t.precio) : 0;
+}
+
+// Lo que se le PAGA al conductor por ese envío (para el margen).
+function precioPagadoConductor(r) {
+  if (typeof precioManualDe === 'function') {
+    const m = precioManualDe(r);
+    if (m !== null && m !== undefined) return _num(m);
+  }
+  if (typeof precioAutoDe === 'function') return _num(precioAutoDe(r).precio);
+  return 0;
 }
 
 // Semana de facturación Viernes→Jueves que CONTIENE la fecha dada (ISO o Date).
@@ -31,31 +86,37 @@ function semanaClienteRango(iso) {
 // Liquidación de un cliente en un rango { desdeD, hastaD }: envíos ENTREGADOS
 // agrupados por zona × tarifa de venta de esa zona.
 function calcLiquidacionCliente(cliente, rango) {
-  const cKey = normCliente(cliente);
+  const cKey = clienteKey(cliente);
   const desde = rango && rango.desdeD ? rango.desdeD : null;
   const hasta = rango && rango.hastaD ? rango.hastaD : null;
   const porZona = {};
   let totalEnvios = 0, total = 0, sinTarifa = 0;
   AppData.records.forEach(r => {
-    if (!cKey || normCliente(r.cliente) !== cKey) return;
+    if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     if (!contabilizaRegistro(r)) return;   // la visita fallida también se le factura al cliente
     if (desde || hasta) { const f = parseFechaReg(r.fecha); if (!f) return; if (desde && f < desde) return; if (hasta && f > hasta) return; }
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() || '(sin zona)';
-    if (!porZona[zona]) porZona[zona] = { zona, count: 0, precio: clienteTarifaEnZona(cliente, zona), subtotal: 0 };
+    if (!porZona[zona]) porZona[zona] = { zona, count: 0, precio: clienteTarifaEnZona(cKey, zona), subtotal: 0, pagado: 0 };
+    porZona[zona].pagado += precioPagadoConductor(r);   // para el margen
     porZona[zona].count++;
     porZona[zona].subtotal += porZona[zona].precio;
     if (porZona[zona].precio <= 0) sinTarifa++;
     totalEnvios++; total += porZona[zona].precio;
   });
   const filas = Object.values(porZona).sort((a, b) => b.subtotal - a.subtotal);
-  return { filas, totalEnvios, total, sinTarifa };
+  const pagado = filas.reduce((s, f) => s + _num(f.pagado), 0);
+  // Margen = lo que se le cobra al cliente menos lo que se le paga al conductor
+  // por esos mismos envíos. Es el número que conecta las dos liquidaciones.
+  return { filas, totalEnvios, total, sinTarifa, pagado, margen: total - pagado };
 }
 
 // Cantidad de zonas con tarifa cargada de un cliente.
-function clienteNZonas(cliente) {
-  const c = normCliente(cliente);
-  return AppData.clienteTarifas.filter(t => normCliente(t.cliente) === c && _num(t.precio) > 0).length;
+function clienteNZonas(cod) {
+  const k = clienteKey(cod);
+  return (AppData.clienteTarifas || []).filter(t =>
+    (clienteKey(t.cliente_cod) === k || (!t.cliente_cod && normCliente(t.cliente) === normCliente(k))) &&
+    _num(t.precio) > 0).length;
 }
 
 // ── Persistencia ────────────────────────────────────────────────────────────

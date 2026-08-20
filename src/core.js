@@ -239,6 +239,7 @@ let AppData = {
   // Clientes (facturación) y su tarifario de venta por zona.
   // clientes: [{ id, nombre, razon_social, cuit, activo }]
   // clienteTarifas: [{ id, cliente, zona, precio }]
+  'detalle-cliente': { titulo: 'Detalle de cliente', sub: 'Control y margen antes de facturar' },
   clientes: [],
   clienteTarifas: [],
 

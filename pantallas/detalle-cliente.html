@@ -1,0 +1,44 @@
+      <div id="page-detalle-cliente" class="page">
+
+        <div class="section-head">
+          <span class="section-title"><i class="ic ic-building"></i> Control y edición de cliente</span>
+          <span id="dcli-estado" style="font-size:11px;color:var(--text-muted)"></span>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          <i class="ic ic-edit"></i><div>Acá se revisan los envíos <strong>antes de facturarle al cliente</strong>: zona, estado y si contabiliza.
+          Es la misma base de envíos que usa el detalle de conductor, así que <strong>una corrección acá se ve allá</strong> y al revés.
+          La columna <strong>Margen</strong> compara lo que se le cobra al cliente con lo que se le paga al conductor por ese mismo envío.</div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-building"></i> Cliente</span>
+              <select id="dcli-select" onchange="renderDetalleCliente()" style="width:260px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <option value="">Seleccionar cliente...</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Semana</span>
+              <input type="date" id="dcli-semana" onchange="renderDetalleCliente()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+              <span id="dcli-rango" style="font-size:11px;color:var(--text-muted)"></span>
+            </div>
+            <button class="btn btn-sm" onclick="dcliSemanaAnterior()" title="Semana anterior">◀</button>
+            <button class="btn btn-sm" onclick="dcliSemanaSiguiente()" title="Semana siguiente">▶</button>
+            <button class="btn btn-sm" id="dcli-btn-sinzona" onclick="toggleDcliSinTarifa()" title="Mostrar solo los envíos cuya zona no tiene tarifa de venta cargada">
+              <i class="ic ic-alert"></i> Sin tarifa<span id="dcli-sintarifa-count"></span></button>
+            <span id="dcli-count" style="font-size:11px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+
+        <div id="dcli-detalle-wrap">
+          <div class="empty-state">
+            <div class="empty-icon"><i class="ic ic-building"></i></div>
+            <div class="empty-title">Seleccioná un cliente</div>
+            <div class="empty-sub">Vas a poder revisar sus envíos y el margen antes de facturar</div>
+          </div>
+        </div>
+
+      </div>
+      <!-- FIN DETALLE DE CLIENTE -->
