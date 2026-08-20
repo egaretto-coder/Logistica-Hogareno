@@ -219,10 +219,14 @@ async function _hydrateFromSupabaseReal(opts) {
 
   // Clientes (facturación) + su tarifario de venta por zona.
   AppData.clientes = (data.clientes || []).map(c => ({
-    id: c.id, nombre: c.nombre, razon_social: c.razon_social || '', cuit: c.cuit || '', activo: c.activo !== false
+    id: c.id, nombre: c.nombre, codigo: (c.codigo || '').toUpperCase(),
+    razon_social: c.razon_social || '', cuit: c.cuit || '',
+    contacto: c.contacto || '', telefono: c.telefono || '', email: c.email || '', obs: c.obs || '',
+    activo: c.activo !== false
   }));
   AppData.clienteTarifas = (data.cliente_tarifas || []).map(t => ({
-    id: t.id, cliente: t.cliente, zona: t.zona, precio: _num(t.precio)
+    id: t.id, cliente: t.cliente, cliente_cod: (t.cliente_cod || '').toUpperCase(),
+    zona: t.zona, precio: _num(t.precio)
   }));
 
   // Comisiones: vendedores, escala de categorización, clientes en comisión y pagos.

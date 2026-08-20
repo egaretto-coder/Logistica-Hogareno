@@ -140,43 +140,142 @@ function switchClientesTab(tab) {
 }
 
 // ── Render lista de clientes ────────────────────────────────────────────────
+// Ficha de cada cliente: identificación, contacto y cómo viene facturando.
+// El administrativo necesita cotejar sin salir del panel: con quién hablar, con
+// qué razón social se factura y —sobre todo— si hay zonas SIN TARIFA, que se
+// facturan en $0 y se comen el margen sin avisar.
 function renderClientes() {
-  const cont = document.getElementById('cli-rows');
+  const cont = document.getElementById('cli-cards');
   if (!cont) return;
   const q = (document.getElementById('cli-search')?.value || '').toLowerCase().trim();
-  const lista = AppData.clientes
-    .filter(c => !q || String(c.nombre).toLowerCase().includes(q) || String(c.razon_social || '').toLowerCase().includes(q))
+
+  // Semana en curso, para mostrar actividad reciente.
+  const rango = semanaClienteRango();
+  const conEnvios = clientesDeRegistros(rango);
+  const porCod = new Map(conEnvios.map(c => [c.cod, c]));
+
+  const lista = (AppData.clientes || [])
+    .filter(c => !q || String(c.nombre).toLowerCase().includes(q) ||
+                 String(c.codigo || '').toLowerCase().includes(q) ||
+                 String(c.razon_social || '').toLowerCase().includes(q))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
   const countEl = document.getElementById('cli-count');
-  if (countEl) countEl.textContent = AppData.clientes.length + ' cliente' + (AppData.clientes.length !== 1 ? 's' : '');
+  if (countEl) {
+    const sinTarifa = (AppData.clientes || []).filter(c => clienteNZonas(c.codigo) === 0).length;
+    countEl.textContent = (AppData.clientes || []).length + ' cliente(s)' +
+      (sinTarifa ? ' · ' + sinTarifa + ' sin tarifario' : '');
+  }
+
+  // Clientes que aparecen en los envíos pero no están dados de alta.
+  const faltantes = conEnvios.filter(c => !(AppData.clientes || []).some(x => clienteKey(x.codigo) === c.cod));
+  const avisoEl = document.getElementById('cli-faltantes');
+  if (avisoEl) {
+    avisoEl.innerHTML = faltantes.length
+      ? '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
+        '<strong>' + faltantes.length + ' cliente(s) con envíos esta semana no están dados de alta:</strong> ' +
+        faltantes.slice(0, 8).map(f => f.nombre + ' (' + f.cod + ')').join(', ') +
+        (faltantes.length > 8 ? ' y ' + (faltantes.length - 8) + ' más' : '') + '. ' +
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="altaClientesFaltantes()">Darlos de alta</button></div></div>'
+      : '';
+  }
 
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div><div class="empty-title">Sin clientes</div><div class="empty-sub">Agregá uno con "+ Nuevo cliente" o subí el tarifario</div></div></td></tr>';
+    cont.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
+      '<div class="empty-title">' + (q ? 'Ningún cliente coincide' : 'Sin clientes') + '</div>' +
+      '<div class="empty-sub">' + (q ? 'Probá con otro texto' : 'Agregá uno con "+ Nuevo cliente" o importá el tarifario') + '</div></div>';
     return;
   }
 
   cont.innerHTML = lista.map(c => {
-    const nz = clienteNZonas(c.nombre);
-    return '<tr' + (c.activo === false ? ' style="opacity:0.55"' : '') + '>' +
-      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:28px;height:28px;font-size:10px">' + initials(c.nombre) + '</div><strong>' + c.nombre + '</strong></div></td>' +
-      '<td class="muted" style="font-size:12px">' + (c.razon_social || '—') + (c.cuit ? ' · CUIT ' + c.cuit : '') + '</td>' +
-      '<td class="mono" style="text-align:right">' + (nz ? nz + ' zona' + (nz !== 1 ? 's' : '') : '<span style="color:#b45309">sin tarifas</span>') + '</td>' +
-      '<td><div style="display:flex;gap:4px">' +
-        '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="openTarifasCliente(' + c.id + ')" title="Editar tarifario por zona"><i class="ic ic-tag"></i> Tarifas</button>' +
-        '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')" title="Editar datos"><i class="ic ic-edit"></i></button>' +
-        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarCliente(' + c.id + ')"><i class="ic ic-trash"></i></button>' +
-      '</div></td>' +
-    '</tr>';
+    const cod = clienteKey(c.codigo);
+    const nz = clienteNZonas(cod);
+    const act = porCod.get(cod);
+    const liq = act ? calcLiquidacionCliente(cod, rango) : null;
+    const margenPct = liq && liq.total > 0 ? (liq.margen * 100 / liq.total) : 0;
+    const dato = (etq, val) =>
+      '<div><span style="font-size:10px;color:var(--text-muted);display:block">' + etq + '</span>' +
+      '<span style="font-size:12px;font-weight:600">' + val + '</span></div>';
+
+    return '<div class="card"' + (c.activo === false ? ' style="opacity:.6"' : '') + '>' +
+      '<div class="card-body">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
+          '<div class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:38px;height:38px;font-size:13px">' + initials(c.nombre) + '</div>' +
+          '<div style="min-width:0;flex:1">' +
+            '<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + c.nombre + '</div>' +
+            '<div style="font-size:11px;color:var(--text-muted)">' +
+              (cod ? '<span class="tag" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:9.5px">' + cod + '</span> ' : '<span style="color:#b91c1c">sin código</span> ') +
+              (c.cuit ? 'CUIT ' + c.cuit : '') + '</div>' +
+          '</div>' +
+        '</div>' +
+
+        (c.razon_social || c.contacto || c.telefono || c.email
+          ? '<div style="font-size:11px;color:var(--text-secondary);padding:8px 0;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:2px">' +
+            (c.razon_social ? '<div><i class="ic ic-building"></i> ' + c.razon_social + '</div>' : '') +
+            (c.contacto ? '<div><i class="ic ic-user"></i> ' + c.contacto + '</div>' : '') +
+            (c.telefono ? '<div><i class="ic ic-phone"></i> ' + c.telefono + '</div>' : '') +
+            (c.email ? '<div style="overflow:hidden;text-overflow:ellipsis"><i class="ic ic-mail"></i> ' + c.email + '</div>' : '') +
+            '</div>'
+          : '') +
+
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border)">' +
+          dato('Zonas con tarifa', nz ? nz : '<span style="color:#b45309">ninguna</span>') +
+          dato('Envíos esta semana', act ? act.envios : '—') +
+          (liq ? dato('Se factura', fmtPeso(liq.total)) : '') +
+          (liq ? dato('Margen', '<span style="color:' + (liq.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(liq.margen) + ' · ' + margenPct.toFixed(0) + '%</span>') : '') +
+        '</div>' +
+
+        (liq && liq.sinTarifa
+          ? '<div style="font-size:11px;color:#b45309;padding:6px 0"><i class="ic ic-alert"></i> ' + liq.sinTarifa + ' envío(s) en zonas sin tarifa — se facturan en $0</div>'
+          : '') +
+        (c.obs ? '<div style="font-size:10.5px;color:var(--text-muted);padding:4px 0;font-style:italic">' + c.obs + '</div>' : '') +
+
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border)">' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifas' + (nz ? ' (' + nz + ')' : '') + '</button>' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verDetalleDeCliente(\'' + cod + '\')" title="Ver sus envíos y el margen"><i class="ic ic-list"></i> Detalle</button>' +
+          '<button class="btn btn-sm" style="margin-left:auto" onclick="editCliente(' + c.id + ')" title="Editar datos"><i class="ic ic-edit"></i></button>' +
+          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarCliente(' + c.id + ')" title="Dar de baja"><i class="ic ic-trash"></i></button>' +
+        '</div>' +
+      '</div></div>';
   }).join('');
 }
 
-// ── ABM cliente ──────────────────────────────────────────────────────────────
+// Salta al detalle del cliente con el cliente ya elegido.
+function verDetalleDeCliente(cod) {
+  showPage('detalle-cliente');
+  setTimeout(() => {
+    const sel = document.getElementById('dcli-select');
+    if (sel) { sel.value = cod; renderDetalleCliente(); }
+  }, 80);
+}
+
+// Da de alta los clientes que aparecen en los envíos y no están en el maestro.
+async function altaClientesFaltantes() {
+  const rango = semanaClienteRango();
+  const faltantes = clientesDeRegistros(rango)
+    .filter(c => !(AppData.clientes || []).some(x => clienteKey(x.codigo) === c.cod));
+  if (!faltantes.length) { showToast('No hay clientes nuevos'); return; }
+  if (!confirm('¿Dar de alta ' + faltantes.length + ' cliente(s)?\n\n' +
+    faltantes.slice(0, 12).map(f => '· ' + f.nombre + ' (' + f.cod + ')').join('\n') +
+    (faltantes.length > 12 ? '\n…y ' + (faltantes.length - 12) + ' más' : '') +
+    '\n\nDespués hay que cargarles el tarifario por zona.')) return;
+  let ok = 0;
+  for (const f of faltantes) {
+    try {
+      const row = await DB.insertRow('clientes', { nombre: f.nombre, codigo: f.cod, razon_social: '', cuit: '', activo: true });
+      AppData.clientes.push({ id: row.id, nombre: f.nombre, codigo: f.cod, razon_social: '', cuit: '', contacto: '', telefono: '', email: '', obs: '', activo: true });
+      ok++;
+    } catch (e) { console.warn('alta cliente ' + f.cod, e); }
+  }
+  persistirClientesLocal();
+  renderClientes();
+  showToast('✅ ' + ok + ' cliente(s) dados de alta — cargales el tarifario');
+}
 function openAddClienteModal() {
   clienteEditId = null;
   document.getElementById('modal-cliente-title').textContent = 'Nuevo cliente';
   document.getElementById('mcli-nombre').value = '';
-  document.getElementById('mcli-razon').value = '';
+  ['mcli-codigo','mcli-razon','mcli-contacto','mcli-telefono','mcli-email','mcli-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('mcli-cuit').value = '';
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
 }
@@ -186,7 +285,10 @@ function editCliente(id) {
   clienteEditId = id;
   document.getElementById('modal-cliente-title').textContent = 'Editar cliente';
   document.getElementById('mcli-nombre').value = c.nombre || '';
-  document.getElementById('mcli-razon').value = c.razon_social || '';
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('mcli-codigo', c.codigo); set('mcli-razon', c.razon_social);
+  set('mcli-contacto', c.contacto); set('mcli-telefono', c.telefono);
+  set('mcli-email', c.email); set('mcli-obs', c.obs);
   document.getElementById('mcli-cuit').value = c.cuit || '';
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
 }
@@ -195,20 +297,28 @@ function closeClienteModal(e) {
 }
 async function guardarClienteModal() {
   const nombre = document.getElementById('mcli-nombre').value.trim().toUpperCase();
+  const codigo = (document.getElementById('mcli-codigo')?.value || '').trim().toUpperCase();
   const razon_social = document.getElementById('mcli-razon').value.trim();
   const cuit = document.getElementById('mcli-cuit').value.trim();
+  const contacto = (document.getElementById('mcli-contacto')?.value || '').trim();
+  const telefono = (document.getElementById('mcli-telefono')?.value || '').trim();
+  const email = (document.getElementById('mcli-email')?.value || '').trim();
+  const obs = (document.getElementById('mcli-obs')?.value || '').trim();
   if (!nombre) { alert('El nombre del cliente es obligatorio.'); return; }
+  if (!codigo) { alert('El código es obligatorio: es lo que une al cliente con sus envíos (columna Cod.Cliente del listado).'); return; }
+  const dupCod = AppData.clientes.find(c => clienteKey(c.codigo) === clienteKey(codigo) && c.id !== clienteEditId);
+  if (dupCod) { alert('El código "' + codigo + '" ya lo usa ' + dupCod.nombre + '.'); return; }
   // Nombre único (por normalizado)
   const dup = AppData.clientes.find(c => normCliente(c.nombre) === normCliente(nombre) && c.id !== clienteEditId);
   if (dup) { alert('Ya existe un cliente "' + nombre + '".'); return; }
   try {
     if (clienteEditId != null) {
-      await DB.updateWhere('clientes', 'id', clienteEditId, { nombre, razon_social, cuit });
+      await DB.updateWhere('clientes', 'id', clienteEditId, { nombre, codigo, razon_social, cuit, contacto, telefono, email, obs });
       const c = AppData.clientes.find(x => x.id === clienteEditId);
-      if (c) { c.nombre = nombre; c.razon_social = razon_social; c.cuit = cuit; }
+      if (c) Object.assign(c, { nombre, codigo, razon_social, cuit, contacto, telefono, email, obs });
     } else {
-      const row = await DB.insertRow('clientes', { nombre, razon_social, cuit, activo: true });
-      AppData.clientes.push({ id: row.id, nombre, razon_social, cuit, activo: true });
+      const row = await DB.insertRow('clientes', { nombre, codigo, razon_social, cuit, contacto, telefono, email, obs, activo: true });
+      AppData.clientes.push({ id: row.id, nombre, codigo, razon_social, cuit, contacto, telefono, email, obs, activo: true });
     }
     persistirClientesLocal();
     clienteEditId = null;
@@ -280,28 +390,57 @@ async function guardarTarifasCliente() {
 // Inserta filas de cliente_tarifas y devuelve las filas con id.
 async function guardarClienteTarifas(rows) {
   const ids = await DB.insertRows('cliente_tarifas', rows);
-  return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, zona: r.zona, precio: _num(r.precio) }));
+  return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, cliente_cod: (r.cliente_cod || '').toUpperCase(), zona: r.zona, precio: _num(r.precio) }));
 }
 
 // ── Import Excel del tarifario (Cliente · Zona · Precio) ─────────────────────
+// Baja el tarifario COMPLETO (no una plantilla vacía): el circuito real es
+// descargar → actualizar precios / sumar zonas → volver a subir. Con una
+// plantilla en blanco habría que recargar todo de cero cada vez.
 function descargarPlantillaTarifario() {
   const aoa = [
-    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Cliente+Zona. El precio es lo que le COBRÁS al cliente por envío entregado en esa zona.'],
-    ['Cliente', 'Zona', 'Precio'],
-    ['MERCADO LIBRE', 'LA PLATA', 3200],
-    ['MERCADO LIBRE', 'CABA', 2100],
-    ['EMPRESA XYZ', 'QUILMES', 2600],
+    ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Cod.Cliente + Zona. El precio es lo que le COBRÁS al cliente por envío entregado en esa zona. El código es el que trae el listado de envíos (Cod.Cliente).'],
+    ['Cod.Cliente', 'Cliente', 'Zona', 'Precio']
   ];
+
+  const filas = [];
+  (AppData.clienteTarifas || []).forEach(t => {
+    const cod = clienteKey(t.cliente_cod);
+    filas.push([cod, cod ? clienteNombreDe(cod) : (t.cliente || ''), t.zona || '', _num(t.precio)]);
+  });
+  // Clientes sin ninguna tarifa: van igual, con las zonas del tarifario en 0,
+  // así se completan en el mismo archivo en vez de tener que agregarlos a mano.
+  const zonas = (typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : [];
+  (AppData.clientes || []).forEach(c => {
+    const cod = clienteKey(c.codigo);
+    if (!cod || clienteNZonas(cod) > 0) return;
+    if (zonas.length) zonas.forEach(z => filas.push([cod, c.nombre, z, 0]));
+    else filas.push([cod, c.nombre, '', 0]);
+  });
+
+  if (filas.length) {
+    filas.sort((a, b) => String(a[1]).localeCompare(String(b[1])) || String(a[2]).localeCompare(String(b[2])));
+    filas.forEach(f => aoa.push(f));
+  } else {
+    aoa.push(['BLUE', 'BLUEMAIL', 'QUILMES', 5000]);
+    aoa.push(['BLUE', 'BLUEMAIL', 'LA PLATA', 6200]);
+    aoa.push(['ART', 'ARTEC', 'CABA', 4800]);
+  }
+
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 26 }, { wch: 22 }, { wch: 12 }];
+  ws['!cols'] = [{ wch: 14 }, { wch: 26 }, { wch: 22 }, { wch: 12 }];
   ws['!rows'] = [{ hpx: 34 }];
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Tarifario');
-  XLSX.writeFile(wb, 'Plantilla_Tarifario_Clientes.xlsx');
-  showToast('📥 Plantilla descargada — completá y volvé a subirla sin tocar los encabezados');
+  const hoy = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, 'Tarifario_Clientes_' + hoy + '.xlsx');
+  showToast(filas.length
+    ? '📥 Tarifario descargado: ' + filas.length + ' fila(s) — actualizalo y volvé a subirlo'
+    : '📥 Plantilla descargada (todavía no hay tarifas) — completala y subila');
 }
-
+// Importa el tarifario de TODOS los clientes de una. La identidad es el
+// Cod.Cliente: el nombre es solo para mostrar y crear al que falte.
 function importTarifarioClientes(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -310,61 +449,99 @@ function importTarifarioClientes(event) {
     try {
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, { type: 'array' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
       if (rows.length < 2) { alert('El archivo está vacío.'); return; }
 
-      let headerRowIdx = -1;
-      for (let r = 0; r < Math.min(rows.length, 5); r++) {
-        const cells = rows[r].map(h => String(h).toLowerCase().replace(/[^a-z]/g, ''));
-        if (cells.includes('cliente') && (cells.includes('zona') || cells.includes('localidad'))) { headerRowIdx = r; break; }
+      const norm = x => String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+      const esCod    = c => c.includes('codcliente') || c.includes('codigocliente') || c === 'codigo' || c === 'cod';
+      const esCli    = c => (c.includes('cliente') || c.includes('empresa')) && !esCod(c);
+      const esZona   = c => c.includes('zona') || c.includes('localidad');
+      const esPrecio = c => c.includes('precio') || c.includes('tarifa') || c.includes('monto') || c.includes('valor');
+
+      // Cada concepto en una columna DISTINTA. Sin esa condición, la fila 1 (el
+      // aviso, que nombra "Cod.Cliente" y "Zona") se toma como encabezado y todo
+      // se importa desde la misma columna — el bug que ya tuvimos en dimensiones.
+      let h = -1, cols = null;
+      for (let r = 0; r < Math.min(rows.length, 12); r++) {
+        const cells = (rows[r] || []).map(norm);
+        const iCod = cells.findIndex(esCod);
+        const iZona = cells.findIndex(esZona);
+        const iPrecio = cells.findIndex(esPrecio);
+        if (iCod >= 0 && iZona >= 0 && iPrecio >= 0 && iCod !== iZona && iZona !== iPrecio && iCod !== iPrecio) {
+          h = r; cols = { iCod, iZona, iPrecio, iCli: cells.findIndex(esCli) };
+          break;
+        }
       }
-      if (headerRowIdx < 0) { alert('No se encontraron las columnas "Cliente" y "Zona". Descargá la plantilla oficial.'); return; }
-      const header = rows[headerRowIdx].map(h => String(h).toLowerCase().trim());
-      const iCli = header.findIndex(h => h.includes('cliente') || h.includes('empresa'));
-      const iZona = header.findIndex(h => h.includes('zona') || h.includes('localidad'));
-      const iPrecio = header.findIndex(h => h.includes('precio') || h.includes('tarifa') || h.includes('monto') || h.includes('valor'));
-      if (iCli < 0 || iZona < 0 || iPrecio < 0) { alert('Faltan columnas Cliente / Zona / Precio.'); return; }
+      if (h < 0) {
+        alert('No se encontró la fila de encabezados.\n\nSe esperan columnas: Cod.Cliente · Cliente · Zona · Precio.\nDescargá el tarifario con el botón "Descargar tarifario" y usá ese formato.');
+        return;
+      }
 
       const parseNum = v => { if (typeof v === 'number') return v; const n = parseFloat(String(v || '').replace(/[^0-9.-]/g, '')); return isNaN(n) ? 0 : n; };
-      // Agrupar por cliente
-      const porCliente = {};
-      for (let i = headerRowIdx + 1; i < rows.length; i++) {
-        const r = rows[i];
-        const cliente = String(r[iCli] || '').trim().toUpperCase();
-        const zona = String(r[iZona] || '').trim().toUpperCase();
-        const precio = parseNum(r[iPrecio]);
-        if (!cliente || !zona || precio <= 0) continue;
-        if (!porCliente[cliente]) porCliente[cliente] = {};
-        porCliente[cliente][zona] = precio; // última gana
+
+      // Zonas válidas: las del tarifario de costos. Una zona inventada no matchea
+      // ningún envío y esa tarifa no se aplicaría nunca.
+      const zonasOk = new Set(((typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : []).map(z => normNombre(z)));
+
+      const porCod = {};
+      let ignoradas = 0, zonasDesconocidas = new Set();
+      for (let i = h + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const cod = String(r[cols.iCod] || '').trim().toUpperCase();
+        const nombre = cols.iCli >= 0 ? String(r[cols.iCli] || '').trim().toUpperCase() : '';
+        const zona = String(r[cols.iZona] || '').trim().toUpperCase();
+        const precio = parseNum(r[cols.iPrecio]);
+        if (!cod || !zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
+        if (precio <= 0) continue;   // sin precio no se carga (así se puede dejar en 0 lo no acordado)
+        if (zonasOk.size && !zonasOk.has(normNombre(zona))) zonasDesconocidas.add(zona);
+        if (!porCod[cod]) porCod[cod] = { nombre: nombre || cod, zonas: {} };
+        if (nombre) porCod[cod].nombre = nombre;
+        porCod[cod].zonas[zona] = precio;   // la última gana
       }
-      const nombresCli = Object.keys(porCliente);
-      if (!nombresCli.length) { alert('No se importó ninguna tarifa válida (Cliente, Zona y Precio > 0).'); return; }
+
+      const codigos = Object.keys(porCod);
+      if (!codigos.length) { alert('No se importó ninguna tarifa válida (hacen falta Cod.Cliente, Zona y Precio > 0).'); return; }
+
+      if (zonasDesconocidas.size) {
+        const lista = Array.from(zonasDesconocidas).slice(0, 10).join(', ');
+        if (!confirm('Hay ' + zonasDesconocidas.size + ' zona(s) que no están en el tarifario de costos:\n' + lista +
+          '\n\nEsas tarifas no se van a aplicar a ningún envío hasta que la zona exista. ¿Importar igual?')) return;
+      }
 
       let clientesNuevos = 0, zonasTotal = 0;
-      for (const nombre of nombresCli) {
-        // Crear el cliente si no existe
-        let cli = AppData.clientes.find(c => normCliente(c.nombre) === normCliente(nombre));
+      for (const cod of codigos) {
+        const info = porCod[cod];
+        let cli = (AppData.clientes || []).find(c => clienteKey(c.codigo) === cod);
+        if (!cli) {
+          // Si ya existe por nombre pero sin código, se le completa el código.
+          cli = (AppData.clientes || []).find(c => !clienteKey(c.codigo) && normCliente(c.nombre) === normCliente(info.nombre));
+          if (cli) {
+            try { await DB.updateWhere('clientes', 'id', cli.id, { codigo: cod }); cli.codigo = cod; }
+            catch (err) { console.warn('completar codigo', cod, err); }
+          }
+        }
         if (!cli) {
           try {
-            const row = await DB.insertRow('clientes', { nombre, razon_social: '', cuit: '', activo: true });
-            cli = { id: row.id, nombre, razon_social: '', cuit: '', activo: true };
+            const row = await DB.insertRow('clientes', { nombre: info.nombre, codigo: cod, razon_social: '', cuit: '', activo: true });
+            cli = { id: row.id, nombre: info.nombre, codigo: cod, razon_social: '', cuit: '', contacto: '', telefono: '', email: '', obs: '', activo: true };
             AppData.clientes.push(cli);
             clientesNuevos++;
-          } catch (err) { console.warn('crear cliente import', nombre, err); continue; }
+          } catch (err) { console.warn('crear cliente import', cod, err); continue; }
         }
-        // Reemplazar sus tarifas
-        const filas = Object.entries(porCliente[nombre]).map(([zona, precio]) => ({ cliente: nombre, zona, precio }));
+        // Reemplaza las tarifas de ESE cliente (por código).
+        const filas = Object.entries(info.zonas).map(([zona, precio]) => ({ cliente: cli.nombre, cliente_cod: cod, zona, precio }));
         try {
-          await DB.deleteWhere('cliente_tarifas', 'cliente', nombre);
+          await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);
           const inserted = await guardarClienteTarifas(filas);
-          AppData.clienteTarifas = AppData.clienteTarifas.filter(t => normCliente(t.cliente) !== normCliente(nombre)).concat(inserted);
+          AppData.clienteTarifas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) !== cod).concat(inserted);
           zonasTotal += filas.length;
-        } catch (err) { console.warn('tarifas import', nombre, err); }
+        } catch (err) { console.warn('tarifas import', cod, err); }
       }
       persistirClientesLocal();
       renderClientes();
-      showToast('✅ Tarifario importado: ' + nombresCli.length + ' cliente(s) · ' + zonasTotal + ' tarifas' + (clientesNuevos ? ' · ' + clientesNuevos + ' nuevo(s)' : ''));
+      showToast('✅ Tarifario importado: ' + codigos.length + ' cliente(s) · ' + zonasTotal + ' tarifa(s)' +
+        (clientesNuevos ? ' · ' + clientesNuevos + ' cliente(s) nuevo(s)' : '') +
+        (ignoradas ? ' · ' + ignoradas + ' fila(s) ignoradas' : ''));
     } catch (err) {
       console.error(err);
       alert('Error al importar el tarifario: ' + err.message);

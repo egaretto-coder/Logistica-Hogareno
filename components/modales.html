@@ -494,7 +494,12 @@
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="margin:0">
         <label class="form-label">Nombre del cliente *</label>
-        <input type="text" id="mcli-nombre" class="form-input" placeholder="Ej: MERCADO LIBRE" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+        <input type="text" id="mcli-nombre" class="form-input" placeholder="Ej: BLUEMAIL" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Código de cliente *</label>
+        <input type="text" id="mcli-codigo" class="form-input" placeholder="Ej: BLUE (el Cod.Cliente del listado)" maxlength="20" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">Es la identidad: con esto se le atan las tarifas y los envíos.</div>
         <span style="font-size:11px;color:var(--text-muted)">Debe coincidir con el nombre del cliente que viene en el Excel de recorridos.</span>
       </div>
       <div class="form-group" style="margin:0">
@@ -504,6 +509,24 @@
       <div class="form-group" style="margin:0">
         <label class="form-label">CUIT (opcional)</label>
         <input type="text" id="mcli-cuit" class="form-input" placeholder="30-XXXXXXXX-X" style="width:100%" />
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:130px">
+          <label class="form-label">Contacto</label>
+          <input type="text" id="mcli-contacto" class="form-input" placeholder="Nombre y apellido" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px">
+          <label class="form-label">Teléfono</label>
+          <input type="text" id="mcli-telefono" class="form-input" placeholder="11 5555-5555" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Email</label>
+          <input type="email" id="mcli-email" class="form-input" placeholder="facturacion@cliente.com" style="width:100%" />
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Notas del acuerdo</label>
+        <textarea id="mcli-obs" class="form-input" rows="2" placeholder="Condiciones, forma de pago, lo que convenga recordar" style="width:100%;resize:vertical"></textarea>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button class="btn" onclick="closeClienteModal()">Cancelar</button>

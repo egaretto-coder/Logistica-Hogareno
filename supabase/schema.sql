@@ -819,3 +819,14 @@ alter table public.cliente_tarifas      add column if not exists cliente_cod tex
 alter table public.clientes             add column if not exists codigo      text not null default '';
 create index if not exists idx_registros_cliente_cod on public.registros (cliente_cod) where cliente_cod <> '';
 create index if not exists idx_cliente_tarifas_cod on public.cliente_tarifas (cliente_cod);
+
+-- clientes: codigo (identidad, = Cod.Cliente del listado) + datos de contacto
+-- para que el administrativo pueda cotejar sin salir del panel.
+alter table public.clientes
+  add column if not exists codigo   text not null default '',
+  add column if not exists contacto text not null default '',
+  add column if not exists telefono text not null default '',
+  add column if not exists email    text not null default '',
+  add column if not exists obs      text not null default '';
+create unique index if not exists idx_clientes_codigo
+  on public.clientes (upper(btrim(codigo))) where btrim(codigo) <> '';

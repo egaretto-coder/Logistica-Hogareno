@@ -17,28 +17,24 @@
               <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar tarifario
                 <input type="file" id="cli-tarifario-file" accept=".xlsx,.xls,.csv" onchange="importTarifarioClientes(event)" style="display:none">
               </label>
-              <button class="btn btn-sm" onclick="descargarPlantillaTarifario()"><i class="ic ic-download"></i> Plantilla Excel</button>
+              <button class="btn btn-sm" onclick="descargarPlantillaTarifario()" title="Baja el tarifario completo para editarlo y volver a subirlo"><i class="ic ic-download"></i> Descargar tarifario</button>
               <button class="btn btn-sm btn-primary" onclick="openAddClienteModal()">+ Nuevo cliente</button>
             </div>
           </div>
 
           <div class="alert alert-info" style="margin-bottom:16px">
-            <i class="ic ic-building"></i> Cargá los clientes y su <strong>tarifario de venta por zona</strong> (lo que le cobrás al cliente por cada envío entregado). Subí todo de una con <strong>Importar tarifario</strong> (Excel: Cliente · Zona · Precio). La liquidación semanal <strong>Viernes→Jueves</strong> se calcula sola en la solapa "Liquidación".
+            <i class="ic ic-building"></i><div>Cada cliente se identifica por su <strong>código</strong> (el "Cod.Cliente" del listado de envíos) y tiene un <strong>tarifario de venta por zona</strong>: lo que le cobrás por cada envío entregado.
+            Subí todos los tarifarios de una con <strong>Importar tarifario</strong> (Excel: Cod.Cliente · Cliente · Zona · Precio) y descargalo cuando necesites actualizarlo.</div>
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-            <input type="search" id="cli-search" placeholder="🔍 Buscar cliente..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderClientes()">
+            <input type="search" id="cli-search" placeholder="🔍 Buscar por nombre, código o razón social..." style="width:320px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderClientes()">
             <span id="cli-count" style="font-size:12px;color:var(--text-muted)"></span>
           </div>
 
-          <div class="card"><div class="table-wrap"><table>
-            <thead><tr>
-              <th>Cliente</th><th>Razón social / CUIT</th><th style="text-align:right">Tarifario</th><th style="width:200px">Acciones</th>
-            </tr></thead>
-            <tbody id="cli-rows">
-              <tr><td colspan="4"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div><div class="empty-title">Sin clientes</div><div class="empty-sub">Agregá uno con "+ Nuevo cliente" o subí el tarifario</div></div></td></tr>
-            </tbody>
-          </table></div></div>
+          <div id="cli-faltantes"></div>
+
+          <div id="cli-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
         </div><!-- /cli lista -->
 
         <!-- ══════════ TAB: LIQUIDACIÓN ══════════ -->
