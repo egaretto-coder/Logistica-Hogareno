@@ -498,6 +498,13 @@ function exportPDF(conductor, opts) {
   // más abajo, una vez determinado el rango.
   let descuentos = opts.descuentos || null;
   let rangoFechas = opts.rangoFechas || null; // { desde: 'DD/MM/YYYY', hasta: 'DD/MM/YYYY' } — si no se pasa, se calcula a partir de los registros liquidados
+  // OJO: el rango que se MUESTRA puede acotarse a los envíos liquidados (más
+  // abajo), pero la IMPUTACIÓN de descuentos y cuotas usa el rango del panel
+  // TAL CUAL, incluso null (= sin filtro). Con el recalculado, una cuota
+  // imputada hoy sobre un período sin filtro quedaba FUERA del rango de los
+  // envíos y el PDF salía sin ese descuento, aunque el modal sí lo mostraba:
+  // el neto del papel no coincidía con el de la pantalla.
+  const rangoImput = opts.rangoFechas || null;
 
   const { jsPDF } = window.jspdf;
   // compress:true achica el PDF (los streams van comprimidos con flate)
@@ -528,9 +535,9 @@ function exportPDF(conductor, opts) {
   // Fallback (exportación masiva sin modal): imputar los 3 ítems por fecha del período.
   if (!descuentos) {
     descuentos = {
-      combustible: descItemDescuentoConductor('combustible', conductor, rangoFechas).monto,
-      extraviados: descItemDescuentoConductor('extraviados', conductor, rangoFechas).monto,
-      proveedores: descItemDescuentoConductor('proveedores', conductor, rangoFechas).monto,
+      combustible: descItemDescuentoConductor('combustible', conductor, rangoImput).monto,
+      extraviados: descItemDescuentoConductor('extraviados', conductor, rangoImput).monto,
+      proveedores: descItemDescuentoConductor('proveedores', conductor, rangoImput).monto,
       obs: ''
     };
   }
@@ -839,7 +846,7 @@ function exportPDF(conductor, opts) {
   // Adicional por km de desvío del período liquidado: compensación por retiros
   // de mercadería fuera de ruta. SUMA al total. Cada desvío ya tiene su monto
   // congelado a la tarifa vigente cuando se cargó.
-  const kmAd = kmAdicionalConductor(conductor, rangoFechas);
+  const kmAd = kmAdicionalConductor(conductor, rangoImput);
   const kmMonto = kmAd.monto;
   const kmKms = kmAd.km;
   const kmOffset = kmMonto > 0 ? 6 : 0; // renglón extra en la caja si hay adicional
@@ -847,13 +854,13 @@ function exportPDF(conductor, opts) {
   // Cuota(s) de adelanto imputadas al período liquidado: préstamo que el conductor
   // devuelve en cuotas. RESTA al total. Cada cuota fue registrada explícitamente en
   // el panel Adelantos con su fecha de imputación (misma lógica que el modal en pantalla).
-  const advAd = adelantoDescuentoConductor(conductor, rangoFechas);
+  const advAd = adelantoDescuentoConductor(conductor, rangoImput);
   const advMonto = advAd.monto;
   const advOffset = advMonto > 0 ? 6 : 0; // renglón extra en la caja si hay cuota
 
   // Cuota(s) de extravío cuoteado imputadas al período. RESTA al total (igual que
   // la cuota de adelanto). Cada cuota se registró en la solapa Extravíos con su fecha.
-  const extAd = extravioCuotaDescuento(conductor, rangoFechas);
+  const extAd = extravioCuotaDescuento(conductor, rangoImput);
   const extMonto = extAd.monto;
   const extOffset = extMonto > 0 ? 6 : 0;
 
@@ -924,7 +931,7 @@ function exportPDF(conductor, opts) {
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxtE = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
-    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoFechas), MARGIN + 13, descY + 14 + kmOffset + advOffset);
+    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoImput), MARGIN + 13, descY + 14 + kmOffset + advOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
     doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + advOffset, { align: 'right' });
@@ -939,7 +946,7 @@ function exportPDF(conductor, opts) {
   const descItems = [
     { letter: 'C', color: LH_ORANGE,  label: 'Combustible', val: descuentos.combustible || 0 },
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
-    { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores' + _refsDeItems('proveedores', conductor, rangoFechas), val: descuentos.proveedores || 0 },
+    { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores' + _refsDeItems('proveedores', conductor, rangoImput), val: descuentos.proveedores || 0 },
   ];
   let dY = descY + 17 + kmOffset + advOffset + extOffset;
   descItems.forEach(item => {
