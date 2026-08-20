@@ -938,3 +938,53 @@
     </div>
   </div>
 </div>
+
+<!-- MODAL DEVOLUCIÓN AL CLIENTE (paso 2: la empresa le devuelve la plata) -->
+<div class="modal-backdrop" id="modal-devolucion-backdrop" onclick="cerrarDevolucion(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:520px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-building"></i> Devolver al cliente</span>
+      <button class="modal-close" onclick="cerrarDevolucion()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-alert"></i><div>Se cierran <strong>todos los cobros</strong> de este cliente que ya están en la empresa, con un único pago por el total.</div>
+      </div>
+      <div>
+        <div style="font-size:15px;font-weight:700" id="mdev-cliente">—</div>
+        <div style="font-size:12px;color:var(--text-muted)" id="mdev-resumen">—</div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:130px">
+          <label class="form-label">Fecha de la devolución</label>
+          <input type="date" id="mdev-fecha" class="form-input" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:130px">
+          <label class="form-label">Medio</label>
+          <select id="mdev-medio" class="form-input" style="width:100%">
+            <option value="transferencia">Transferencia</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="cheque">Cheque</option>
+            <option value="compensacion">Compensación en factura</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:130px">
+          <label class="form-label">Comprobante</label>
+          <input type="text" id="mdev-comprobante" class="form-input" placeholder="N° de operación" style="width:100%" />
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observación (opcional)</label>
+        <input type="text" id="mdev-obs" class="form-input" placeholder="Notas de la devolución" style="width:100%" />
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:2px">Cobros incluidos</div>
+        <div id="mdev-detalle" style="max-height:190px;overflow-y:auto"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="cerrarDevolucion()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarDevolucionCliente()"><i class="ic ic-check"></i> Registrar devolución</button>
+      </div>
+    </div>
+  </div>
+</div>

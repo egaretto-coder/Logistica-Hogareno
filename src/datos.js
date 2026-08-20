@@ -295,7 +295,11 @@ async function _hydrateFromSupabaseReal(opts) {
     monto: _num(r.monto), fecha_entrega: r.fecha_entrega || '', fecha_limite: r.fecha_limite || '',
     estado: r.estado || 'pendiente', fecha_rendicion: r.fecha_rendicion || '',
     medio: r.medio || '', obs: r.obs || '', origen: r.origen || 'manual',
-    registrado_por: r.registrado_por || '', recibido_por: r.recibido_por || ''
+    registrado_por: r.registrado_por || '', recibido_por: r.recibido_por || '',
+    // Etapa 1: el chofer trajo la plata. Etapa 2: se le devolvió al cliente.
+    fecha_recibido: r.fecha_recibido || '', medio_recibido: r.medio_recibido || '',
+    rendido_por: r.rendido_por || '', comprobante: r.comprobante || '',
+    lote_id: r.lote_id || null
   }));
 
   // Catálogo de dimensiones especiales (cliente · dimensión · zona · precio).

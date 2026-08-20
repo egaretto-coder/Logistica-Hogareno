@@ -849,3 +849,29 @@ create unique index if not exists idx_proveedores_nombre on public.proveedores (
 alter table public.proveedores enable row level security;
 create policy proveedores_all on public.proveedores for all to authenticated
   using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- Rendiciones: DOS ETAPAS (ver src/rendiciones.js).
+--   1) el chofer trae la plata  → estado 'recibido' + fecha_recibido
+--   2) se le devuelve al cliente → estado 'rendido' + lote_id
+alter table public.rendiciones
+  add column if not exists fecha_recibido      text not null default '',
+  add column if not exists fecha_recibido_date date,
+  add column if not exists medio_recibido      text not null default '',
+  add column if not exists rendido_por         text not null default '',
+  add column if not exists comprobante         text not null default '',
+  add column if not exists lote_id             bigint references public.rendicion_lotes(id) on delete set null;
+
+-- Lote de devolución: un pago por cliente que cierra varios cobros de una,
+-- aunque vengan de choferes distintos.
+create table if not exists public.rendicion_lotes (
+  id bigint generated always as identity primary key,
+  cliente text not null, cliente_cod text not null default '',
+  fecha text not null default '', fecha_date date,
+  monto numeric not null default 0, cantidad int not null default 0,
+  medio text not null default '', comprobante text not null default '',
+  obs text not null default '', registrado_por text not null default '',
+  created_at timestamptz not null default now()
+);
+alter table public.rendicion_lotes enable row level security;
+create policy rendicion_lotes_all on public.rendicion_lotes for all to authenticated
+  using (public.es_usuario_activo()) with check (public.es_usuario_activo());
