@@ -4,7 +4,7 @@
           <span class="section-title"><i class="ic ic-dollar"></i> Rendición de envíos</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-sm" onclick="generarRendicionesDesdeEnvios()" title="Busca en los envíos importados los que tienen cobro en destino"><i class="ic ic-upload"></i> Traer de los envíos</button>
-            <button class="btn btn-sm" onclick="exportRendicionesPDF()"><i class="ic ic-download"></i> PDF pendientes</button>
+            <button class="btn btn-sm" onclick="exportRendicionesPDF()" title="Por chofer, por cliente y el detalle — respeta el filtro de fechas"><i class="ic ic-download"></i> PDF de control</button>
             <button class="btn btn-sm btn-primary" onclick="openAddRendicionModal()">+ Nuevo cobro</button>
           </div>
         </div>
@@ -14,6 +14,21 @@
           el conductor sale a la tarde, cobra al destinatario y al día siguiente cerca de las <strong>14 h</strong> vuelve y <strong>rinde la plata a la empresa</strong>;
           después la empresa <strong>se la devuelve al cliente</strong>, normalmente con un solo pago por el total.
           Cada cobro muestra en cuál de las dos etapas está: en la calle, en la empresa o devuelto.</div>
+        </div>
+
+        <!-- Filtro por fecha de ENTREGA: afecta los totales, las dos listas y la tabla,
+             para poder cerrar un mes como en la planilla. Vacío = todas las fechas. -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Entregas</span>
+            <input type="date" id="rend-desde" onchange="setRendFechas()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+            <span style="font-size:11px;color:var(--text-muted)">hasta</span>
+            <input type="date" id="rend-hasta" onchange="setRendFechas()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+            <button class="btn btn-sm" onclick="setRendPreset('semana')">Últimos 7 días</button>
+            <button class="btn btn-sm" onclick="setRendPreset('mes')">Este mes</button>
+            <button class="btn btn-sm" onclick="setRendPreset('mespasado')">Mes pasado</button>
+            <button class="btn btn-sm" onclick="setRendPreset('todo')"><i class="ic ic-x"></i> Todas</button>
+          </div>
         </div>
 
         <div class="metrics" id="rend-metrics" style="margin-bottom:16px"></div>

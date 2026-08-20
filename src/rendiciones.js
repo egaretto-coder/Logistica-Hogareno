@@ -82,7 +82,7 @@ function persistirRendicionesLocal() {
 // Deuda de cada conductor: lo que cobró y todavía no trajo.
 function deudaPorConductor() {
   const m = new Map();
-  (AppData.rendiciones || []).forEach(r => {
+  rendicionesDelRango().forEach(r => {
     if (!enLaCalle(r)) return;
     const k = conductorCanonico(r.conductor) || r.conductor;
     let x = m.get(k);
@@ -97,7 +97,7 @@ function deudaPorConductor() {
 // Lo que hay que devolverle a cada cliente: cobros que ya están en la empresa.
 function aDevolverPorCliente() {
   const m = new Map();
-  (AppData.rendiciones || []).forEach(r => {
+  rendicionesDelRango().forEach(r => {
     if (!enLaEmpresa(r)) return;
     const k = String(r.cliente || '(sin cliente)').trim();
     let x = m.get(k);
@@ -110,12 +110,62 @@ function aDevolverPorCliente() {
 // ════════════════════════════════════════════════════════════════════════
 //  RENDER
 // ════════════════════════════════════════════════════════════════════════
-let rendFiltroEstado = 'abiertas';   // abiertas | vencido | pendiente | rendido | todas
+let rendFiltroEstado = 'abiertas';   // abiertas | calle | vencido | recibido | rendido | todas
+
+// Rango por fecha de ENTREGA. Vacío = todo, para no esconder deuda vieja sin
+// querer: si arrancara filtrado por el mes, un cobro atrasado de hace dos meses
+// no aparecería en ningún lado.
+let rendDesde = '';
+let rendHasta = '';
+
+// ¿Cae el cobro en el rango elegido?
+function _rendEnRango(r) {
+  if (!rendDesde && !rendHasta) return true;
+  const f = parseFechaReg(r.fecha_entrega);
+  if (!f) return false;
+  if (rendDesde) { const d = new Date(rendDesde + 'T00:00:00'); if (f < d) return false; }
+  if (rendHasta) { const h = new Date(rendHasta + 'T23:59:59'); if (f > h) return false; }
+  return true;
+}
+
+// Los cobros del rango: es la base de TODO el panel (totales, listas y tabla),
+// así se puede cerrar un mes como en la planilla.
+function rendicionesDelRango() {
+  return (AppData.rendiciones || []).filter(_rendEnRango);
+}
+
+function setRendFechas() {
+  rendDesde = document.getElementById('rend-desde')?.value || '';
+  rendHasta = document.getElementById('rend-hasta')?.value || '';
+  renderRendiciones();
+}
+
+// Atajo: mes en curso, mes pasado o todo.
+function setRendPreset(cual) {
+  const hoy = new Date();
+  let d = '', h = '';
+  if (cual === 'mes') {
+    d = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10);
+    h = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().slice(0, 10);
+  } else if (cual === 'mespasado') {
+    d = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 10);
+    h = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().slice(0, 10);
+  } else if (cual === 'semana') {
+    const ini = new Date(hoy); ini.setDate(hoy.getDate() - 6);
+    d = ini.toISOString().slice(0, 10);
+    h = hoy.toISOString().slice(0, 10);
+  }
+  const elD = document.getElementById('rend-desde'), elH = document.getElementById('rend-hasta');
+  if (elD) elD.value = d;
+  if (elH) elH.value = h;
+  rendDesde = d; rendHasta = h;
+  renderRendiciones();
+}
 
 function renderRendiciones() {
   const cont = document.getElementById('rend-rows');
   if (!cont) return;
-  const lista = (AppData.rendiciones || []);
+  const lista = rendicionesDelRango();
 
   // ── Resumen: dónde está la plata ──
   const enCalle = lista.filter(enLaCalle);
@@ -195,7 +245,12 @@ function renderRendiciones() {
   });
 
   const info = document.getElementById('rend-info');
-  if (info) info.textContent = filtradas.length + ' de ' + lista.length + ' cobro(s)';
+  if (info) {
+    const rango = (rendDesde || rendHasta)
+      ? ' · entregas del ' + (rendDesde ? isoToDMY(rendDesde) : '…') + ' al ' + (rendHasta ? isoToDMY(rendHasta) : '…')
+      : '';
+    info.textContent = filtradas.length + ' de ' + lista.length + ' cobro(s)' + rango;
+  }
 
   if (!filtradas.length) {
     cont.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-card"></i></div>' +
@@ -531,37 +586,95 @@ async function generarRendicionesDesdeEnvios() {
 }
 
 // ── PDF / export ─────────────────────────────────────────────────────────────
+// PDF de control: los dos cortes que se miran todos los días —
+//   1) lo que cada CHOFER tiene que traer (para reclamarle)
+//   2) lo que hay que DEVOLVERLE a cada cliente (para pagarle)
+// más el detalle de los cobros abiertos. Respeta el filtro de fechas.
 function exportRendicionesPDF() {
-  const lista = (AppData.rendiciones || []).filter(r => {
-    const e = estadoRendicion(r);
-    return e === 'pendiente' || e === 'vencido';
-  });
-  if (!lista.length) { alert('No hay cobros pendientes de rendir.'); return; }
-  lista.sort((a, b) => String(a.conductor).localeCompare(String(b.conductor)));
+  const lista = rendicionesDelRango();
+  const enCalle = lista.filter(enLaCalle);
+  const enEmpresa = lista.filter(enLaEmpresa);
+  if (!enCalle.length && !enEmpresa.length) { alert('No hay cobros abiertos en el período elegido.'); return; }
+
+  const suma = arr => arr.reduce((a, r) => a + _num(r.monto), 0);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-  doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
-  doc.text('Rendiciones pendientes', 14, 18);
-  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
-  doc.text('Cobros en destino a rendir · generado ' + new Date().toLocaleString('es-AR'), 14, 25);
 
-  const total = lista.reduce((s, r) => s + _num(r.monto), 0);
-  const body = lista.map(r => [r.conductor, r.cliente || '—', r.tracking || '—',
-    r.fecha_entrega || '—', estadoRendicion(r) === 'vencido' ? 'Vencido ' + diasAtraso(r) + ' d' : 'Pendiente',
-    fmtPeso(_num(r.monto))]);
+  doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
+  doc.text('Cobros en destino', 14, 18);
+  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
+  const rangoTxt = (rendDesde || rendHasta)
+    ? 'Entregas del ' + (rendDesde ? isoToDMY(rendDesde) : '…') + ' al ' + (rendHasta ? isoToDMY(rendHasta) : '…')
+    : 'Todas las fechas';
+  doc.text(rangoTxt + ' · generado ' + new Date().toLocaleString('es-AR'), 14, 25);
+
+  // Resumen: dónde está la plata
+  doc.setFontSize(9); doc.setTextColor(40, 50, 70); doc.setFont(undefined, 'bold');
+  doc.text('En la calle: ' + fmtPeso(suma(enCalle)) + '  (' + enCalle.length + ')', 14, 33);
+  doc.text('En la empresa: ' + fmtPeso(suma(enEmpresa)) + '  (' + enEmpresa.length + ')', 80, 33);
+
+  let y = 40;
+
+  // ── CORTE 1: lo que debe cada chofer ──
+  if (enCalle.length) {
+    const porCond = deudaPorConductor();
+    doc.autoTable({
+      startY: y,
+      head: [['Chofer', 'Cobros', 'Atraso', 'Debe traer']],
+      body: porCond.map(d => [d.conductor, d.cobros, d.atraso ? d.atraso + ' día(s)' : 'al día', fmtPeso(d.monto)]),
+      foot: [[{ content: 'TOTAL EN LA CALLE', colSpan: 3, styles: { halign: 'right' } }, fmtPeso(suma(enCalle))]],
+      theme: 'striped',
+      headStyles: { fillColor: [180, 83, 9], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+      footStyles: { fillColor: [120, 53, 15], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
+      columnStyles: { 1: { halign: 'center' }, 3: { halign: 'right' } },
+      margin: { left: 14, right: 14 },
+      didDrawPage: () => {},
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── CORTE 2: lo que hay que devolverle a cada cliente ──
+  if (enEmpresa.length) {
+    const porCli = aDevolverPorCliente();
+    doc.autoTable({
+      startY: y,
+      head: [['Cliente', 'Cobros', 'A devolver']],
+      body: porCli.map(c => [c.cliente, c.cobros, fmtPeso(c.monto)]),
+      foot: [[{ content: 'TOTAL A DEVOLVER', colSpan: 2, styles: { halign: 'right' } }, fmtPeso(suma(enEmpresa))]],
+      theme: 'striped',
+      headStyles: { fillColor: [29, 78, 216], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+      footStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
+      columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' } },
+      margin: { left: 14, right: 14 }
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── Detalle de los cobros abiertos ──
+  const abiertos = enCalle.concat(enEmpresa)
+    .sort((a, b) => String(a.conductor).localeCompare(String(b.conductor)) ||
+                    String(a.cliente).localeCompare(String(b.cliente)));
   doc.autoTable({
-    startY: 31,
-    head: [['Conductor', 'Cliente', 'Tracking', 'Entrega', 'Estado', 'Monto']],
-    body,
-    foot: [[{ content: 'TOTAL A RENDIR (' + lista.length + ')', colSpan: 5, styles: { halign: 'right' } }, fmtPeso(total)]],
+    startY: y,
+    head: [['Chofer', 'Cliente', 'Tracking', 'Entrega', 'Situación', 'Monto']],
+    body: abiertos.map(r => {
+      const e = estadoRendicion(r);
+      const sit = e === 'vencido' ? 'Atrasado ' + diasAtraso(r) + ' d'
+                : e === 'recibido' ? 'En la empresa' : 'En la calle';
+      return [r.conductor, r.cliente || '—', r.tracking || '—', r.fecha_entrega || '—', sit, fmtPeso(_num(r.monto))];
+    }),
     theme: 'striped',
     headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
-    footStyles: { fillColor: [37, 79, 161], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
+    bodyStyles: { fontSize: 7.5, textColor: [40, 50, 70] },
     alternateRowStyles: { fillColor: [244, 247, 252] },
     columnStyles: { 5: { halign: 'right' } },
     margin: { left: 14, right: 14 }
   });
-  doc.save('Rendiciones_pendientes.pdf');
-  showToast('📥 Listado de rendiciones descargado');
+
+  const sufijo = (rendDesde || rendHasta) ? '_' + (rendDesde || 'inicio') + '_a_' + (rendHasta || 'hoy') : '';
+  doc.save('Cobros_en_destino' + sufijo + '.pdf');
+  showToast('📥 Listado descargado: por chofer, por cliente y el detalle');
 }
+
