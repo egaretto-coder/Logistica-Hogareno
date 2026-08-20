@@ -285,17 +285,17 @@
         <textarea id="mditem-detalle" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
       </div>
 
-      <!-- EXTRAVÍOS: cuotear (solo extraviados) -->
+      <!-- Cuotear: extravíos y servicios de proveedores (TIPOS_CUOTEABLES) -->
       <div id="mditem-cuotear-block" style="display:none;padding:10px;border:1px solid var(--border);border-radius:8px">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:600">
-          <input type="checkbox" id="mditem-cuotear" onchange="toggleCuotearExtravio()" style="width:16px;height:16px"> <i class="ic ic-card"></i> Cuotear este extravío (pagarlo en cuotas)
+          <input type="checkbox" id="mditem-cuotear" onchange="toggleCuotearExtravio()" style="width:16px;height:16px"> <i class="ic ic-card"></i> <span id="mditem-cuotear-label">Cuotearlo (pagarlo en cuotas)</span>
         </label>
         <div id="mditem-cuotas-wrap" style="display:none;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
           <label class="form-label" style="margin:0">Cantidad de cuotas</label>
           <input type="number" id="mditem-cuotas" class="form-input" min="2" step="1" placeholder="Ej. 3" style="width:100px" oninput="actualizarPreviewCuotaExtravio()">
           <span id="mditem-cuota-preview" style="font-size:12px;color:var(--text-secondary);font-weight:600"></span>
         </div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Las cuotas se descuentan después, semana a semana, con el botón "− Cuota" en la solapa Extravíos.</div>
+        <div id="mditem-cuotear-ayuda" style="font-size:10px;color:var(--text-muted);margin-top:6px"></div>
       </div>
 
       <div style="font-size:11px;color:var(--text-muted)"><i class="ic ic-clip"></i> La <strong>fecha</strong> define a qué liquidación se imputa (o, si cuoteás, la de cada cuota que descuentes).</div>

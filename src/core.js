@@ -459,10 +459,14 @@ function descItemSaldado(item) { return descItemCuotasPagadas(item.id) >= _num(i
 function extravioCuotaDescuento(conductor, rango) {
   const key = conductorKey(conductor);
   const itemsTotal = {}; // item_id → cuotas_total (saldos cuoteados del conductor)
+  const itemsRef = {};   // item_id → de qué es (proveedor / tracking), para el PDF
   // Se cuotean extravíos y servicios de proveedores; combustible y km van enteros.
   AppData.descItems.forEach(x => {
     if ((x.tipo === 'extraviados' || x.tipo === 'proveedores') && _num(x.cuotas_total) > 1 &&
-        conductorKey(x.conductor) === key && esAutorizado(x)) itemsTotal[x.id] = _num(x.cuotas_total);
+        conductorKey(x.conductor) === key && esAutorizado(x)) {
+      itemsTotal[x.id] = _num(x.cuotas_total);
+      itemsRef[x.id] = String(x.referencia || x.detalle || '').trim();
+    }
   });
   const setIds = new Set(Object.keys(itemsTotal).map(Number));
   if (!setIds.size) return { monto: 0, detalle: [] };
@@ -480,7 +484,7 @@ function extravioCuotaDescuento(conductor, rango) {
       if (hasta && f > hasta) return;
     }
     monto += _num(c.monto);
-    detalle.push({ nro: c.nro, total: itemsTotal[c.item_id] || 0, monto: _num(c.monto) });
+    detalle.push({ nro: c.nro, total: itemsTotal[c.item_id] || 0, monto: _num(c.monto), ref: itemsRef[c.item_id] || '' });
   });
   detalle.sort((x, y) => x.nro - y.nro);
   return { monto, detalle };

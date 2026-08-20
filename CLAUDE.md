@@ -76,7 +76,7 @@ Nav en `components/sidebar.html`; títulos en `PAGE_TITLES` (`src/core.js`).
 - **Iconos**: `css/icons.css` (CSS mask), usar `<i class="ic ic-NOMBRE"></i>`. **No** agregar emojis nuevos en la UI (los toasts/textos existentes sí los usan). Los iconos se generan con el script `gen_icons.js` del scratchpad.
 - **Cada despliegue**: subir `CACHE` en `sw.js` (`liq-cache-vNN`) para disparar el banner "Actualizar". Si se agrega un archivo servido, sumarlo a `APP_SHELL`.
 - **Modo oscuro**: tokens en `:root[data-theme="dark"]` (`css/styles.css`), toggle en el sidebar, preferencia en `localStorage.liq_tema`, script anti-flash en `index.html`. Los colores hardcodeados inline no se pueden tematizar; preferir clases/tokens.
-- **PDF de liquidación**: es **cara al conductor** — no exponer info interna (tipo de tarifa, marcadores de corrección).
+- **PDF de liquidación**: es **cara al conductor** — no exponer info interna (tipo de tarifa, marcadores de corrección). Sí se nombra **de qué es cada descuento**: "Servicio proveedores (Ruedas Bojanich, Mica Lubricantes)" y "Cuota de saldo (1/3) — NyS Suspension" (`_refsDeItems` / `_refsDeCuotas`). El conductor tiene derecho a saber qué se le descuenta y por qué, no solo el total.
 
 ## Flujo de despliegue (IMPORTANTE)
 1. Implementar el cambio.

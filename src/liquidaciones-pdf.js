@@ -466,6 +466,31 @@ function exportPDFConductor(conductor) {
   });
 }
 
+// Nombres que aparecen en los ítems imputados de un tipo (p. ej. de qué
+// proveedor fue el servicio). El conductor tiene derecho a saber qué se le
+// descuenta y por qué, no solo el total.
+// De qué son las cuotas de saldo que se están descontando (proveedor o envío).
+function _refsDeCuotas(conductor, rango) {
+  try {
+    const r = extravioCuotaDescuento(conductor, rango);
+    const refs = Array.from(new Set((r.detalle || []).map(x => String(x.ref || '').trim()).filter(Boolean)));
+    if (!refs.length) return '';
+    return ' — ' + refs.slice(0, 2).join(', ') + (refs.length > 2 ? '…' : '');
+  } catch (e) { return ''; }
+}
+
+function _refsDeItems(tipo, conductor, rango) {
+  try {
+    const r = descItemDescuentoConductor(tipo, conductor, rango);
+    const refs = Array.from(new Set((r.detalle || [])
+      .map(x => String(x.referencia || '').trim())
+      .filter(Boolean)));
+    if (!refs.length) return '';
+    const txt = refs.slice(0, 3).join(', ') + (refs.length > 3 ? ' y ' + (refs.length - 3) + ' más' : '');
+    return ' (' + txt + ')';
+  } catch (e) { return ''; }
+}
+
 function exportPDF(conductor, opts) {
   opts = opts || {};
   // Descuentos: si el operador editó en el modal, vienen en opts.descuentos.
@@ -899,7 +924,7 @@ function exportPDF(conductor, opts) {
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxtE = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
-    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + advOffset);
+    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoFechas), MARGIN + 13, descY + 14 + kmOffset + advOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
     doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + advOffset, { align: 'right' });
@@ -914,7 +939,7 @@ function exportPDF(conductor, opts) {
   const descItems = [
     { letter: 'C', color: LH_ORANGE,  label: 'Combustible', val: descuentos.combustible || 0 },
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
-    { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores', val: descuentos.proveedores || 0 },
+    { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores' + _refsDeItems('proveedores', conductor, rangoFechas), val: descuentos.proveedores || 0 },
   ];
   let dY = descY + 17 + kmOffset + advOffset + extOffset;
   descItems.forEach(item => {

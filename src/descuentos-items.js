@@ -238,6 +238,13 @@ function configDescItemModal(tipo) {
   if (extra) extra.style.display = esExtravio ? 'flex' : 'none';
   const cuoteBlock = document.getElementById('mditem-cuotear-block');
   if (cuoteBlock) cuoteBlock.style.display = esTipoCuoteable(tipo) ? '' : 'none';
+  // El texto nombra lo que se está cargando: "este extravío" en un servicio de
+  // proveedor no dice nada.
+  const cuoteLbl = document.getElementById('mditem-cuotear-label');
+  const cuoteAyuda = document.getElementById('mditem-cuotear-ayuda');
+  const comoSeLlama = (tipo === 'proveedores') ? 'este servicio' : (tipo === 'extraviados' ? 'este extravío' : 'este descuento');
+  if (cuoteLbl) cuoteLbl.textContent = 'Cuotear ' + comoSeLlama + ' (pagarlo en cuotas)';
+  if (cuoteAyuda) cuoteAyuda.textContent = 'Las cuotas se descuentan de a una en las liquidaciones siguientes: se tildan en el modal de Liquidaciones, o con el botón "− Cuota" de esta misma solapa.';
 }
 
 // Llena el desplegable de proveedores. Si el registro trae uno que ya no está
