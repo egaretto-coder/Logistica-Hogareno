@@ -537,6 +537,33 @@ function extravioCuotaDescuento(conductor, rango) {
   return { monto, detalle };
 }
 
+// ── Neto real de una liquidación ────────────────────────────────────────────
+// Todo lo que mueve el bruto en un período: el adicional por km (suma) y los
+// descuentos imputados (restan). ES LA MISMA CUENTA QUE HACE EL PDF: el panel
+// mostraba el bruto pelado, así que el número de la pantalla no era el que se
+// le terminaba pagando al conductor.
+// descuentosOverride: los montos que el operador dejó tildados en el modal;
+// sin él se calculan por fecha, igual que en la descarga masiva.
+function imputacionesConductor(conductor, rango, descuentosOverride) {
+  const d = descuentosOverride || {
+    combustible: descItemDescuentoConductor('combustible', conductor, rango).monto,
+    extraviados: descItemDescuentoConductor('extraviados', conductor, rango).monto,
+    proveedores: descItemDescuentoConductor('proveedores', conductor, rango).monto
+  };
+  const items = _num(d.combustible) + _num(d.extraviados) + _num(d.proveedores);
+  const km  = kmAdicionalConductor(conductor, rango).monto;
+  const adelanto = adelantoDescuentoConductor(conductor, rango).monto;
+  const extravioCuota = extravioCuotaDescuento(conductor, rango).monto;
+  const descuentos = items + adelanto + extravioCuota;
+  return { km, items, adelanto, extravioCuota, descuentos, hay: km > 0 || descuentos > 0 };
+}
+// bruto + adicionales − descuentos. Nunca baja de 0: un neto negativo en el
+// papel sería plata que el conductor le debe a la empresa, y eso se arrastra
+// como saldo, no se paga en negativo.
+function netoLiquidacion(bruto, imp) {
+  return Math.max(0, _num(bruto) + _num(imp && imp.km) - _num(imp && imp.descuentos));
+}
+
 // Tarifa de km VIGENTE HOY (la más reciente del historial). 0 si no hay ninguna.
 function kmValorActual() {
   if (!AppData.kmTarifas.length) return 0;

@@ -222,11 +222,30 @@ function renderLiquidaciones() {
     return;
   }
 
-  conductores.sort((a, b) => liq[b].total - liq[a].total);
+  // Neto de cada conductor: el bruto no es lo que se le paga si tiene
+  // imputaciones. Se calcula ANTES de ordenar para poder ordenar por lo que
+  // realmente se cobra, y con el mismo rango que usa la descarga del PDF.
+  const rangoImput = (typeof getLiqRangoFechasLabel === 'function') ? getLiqRangoFechasLabel() : null;
+  const netos = {};
+  conductores.forEach(c => {
+    const imp = imputacionesConductor(c, rangoImput);
+    netos[c] = { imp, neto: netoLiquidacion(liq[c].total, imp) };
+  });
+
+  conductores.sort((a, b) => netos[b].neto - netos[a].neto);
   actualizarBotonDescargaLiq(conductores);
   body.innerHTML = conductores.map(c => {
     const d = liq[c];
     const cEsc = String(c).replace(/'/g, "\\'");
+    const { imp, neto } = netos[c];
+    // Debajo del neto se dice qué lo movió: sin esa línea, un total distinto al
+    // bruto parece un error de cálculo en vez de un descuento aplicado.
+    const partes = [];
+    if (imp.km > 0) partes.push('<span style="color:#059669">+' + fmtPeso(imp.km) + ' km</span>');
+    if (imp.descuentos > 0) partes.push('<span style="color:#b91c1c">−' + fmtPeso(imp.descuentos) + '</span>');
+    const subTotal = imp.hay
+      ? '<div style="font-size:10px;color:var(--text-muted);white-space:nowrap">bruto ' + fmtPeso(d.total) + ' · ' + partes.join(' ') + '</div>'
+      : '<div style="font-size:10px;color:var(--text-muted)">sin imputaciones</div>';
     const sSin = d.filas.filter(f => f.tipo === 's_colecta');
     const sCon = d.filas.filter(f => f.tipo === 'c_colecta');
     const sSLA = d.filas.filter(f => f.tipo === 'sla');
@@ -250,7 +269,7 @@ function renderLiquidaciones() {
       <td class="mono">${sCon.length} — ${fmtPeso(sCon.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sSLA.length} — ${fmtPeso(sSLA.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sSuper.length ? `<span class="tag super-sla"><i class="ic ic-star"></i> ${sSuper.length} recorridos</span>` : '<span class="muted">—</span>'}</td>
-      <td class="mono"><strong>${fmtPeso(d.total)}</strong></td>
+      <td class="mono"><strong style="font-size:14px">${fmtPeso(neto)}</strong>${subTotal}</td>
       <td>
         <div style="display:flex;gap:4px">
           <button class="btn btn-sm" onclick="showConductorModal('${c}')">Ver detalle</button>
