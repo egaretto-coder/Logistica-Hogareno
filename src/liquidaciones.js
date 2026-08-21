@@ -159,6 +159,9 @@ function seleccionParaDescargar(liq) {
 }
 
 function actualizarBotonDescargaLiq(conductores) {
+  // Con una descarga en curso el botón muestra el avance: un re-render del
+  // realtime en el medio le borraría el "Descargando 12 de 44".
+  if (window._liqDescargando) return;
   const filtrados = conductores || conductoresFiltradosLiq();
   const nSel = filtrados.filter(c => liqSeleccion.has(c)).length;
   const btn = document.getElementById('liq-btn-descargar');

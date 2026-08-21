@@ -1110,30 +1110,89 @@ function _liqADescargar() {
   return { liq, rangoFechas: getLiqRangoFechasLabel(), ...sel };
 }
 
+// Milisegundos entre una descarga y la siguiente. El navegador DESCARTA en
+// silencio las descargas que llegan muy seguidas: disparando 44 de golpe en el
+// mismo tick bajaban solo las primeras ~10, siempre las mismas, sin ningún
+// error. Espaciarlas es lo que las deja pasar a todas.
+const LIQ_MS_ENTRE_DESCARGAS = 800;
+const _esperar = ms => new Promise(r => setTimeout(r, ms));
+
+// Muestra el avance en el botón: con 44 archivos la descarga tarda, y sin
+// progreso parece colgada (y el operador vuelve a apretar, duplicando todo).
+function _progresoDescargaLiq(texto) {
+  const btn = document.getElementById('liq-btn-descargar');
+  if (btn) btn.innerHTML = texto;
+}
+function _finDescargaLiq() {
+  window._liqDescargando = false;
+  const btn = document.getElementById('liq-btn-descargar');
+  const unico = document.getElementById('liq-btn-unpdf');
+  if (btn) btn.disabled = false;
+  if (unico) unico.disabled = false;
+  if (typeof actualizarBotonDescargaLiq === 'function') actualizarBotonDescargaLiq();
+}
+
 // Un archivo por conductor (para repartir a cada uno el suyo).
-function exportAllPDFs() {
+async function exportAllPDFs() {
   const { liq, rangoFechas, conductores, haySeleccion } = _liqADescargar();
   if (!conductores.length) { alert('Sin datos para exportar con el filtro actual.'); return; }
-  // El navegador pide permiso para bajar varios archivos de una y, si alguien
-  // lo denegó alguna vez, no se descarga ninguno sin que la app se entere. Por
-  // eso se avisa cuántos son y se ofrece la salida del archivo único.
-  if (conductores.length > 1 && !confirm(
-      'Se van a descargar ' + conductores.length + ' archivos' +
+  const n = conductores.length;
+  if (n > 1) {
+    const segs = Math.ceil(n * LIQ_MS_ENTRE_DESCARGAS / 1000);
+    if (!confirm(
+      'Se van a descargar ' + n + ' archivos' +
       (haySeleccion ? ' (los que tildaste)' : ' (todos los del filtro)') + '.\n\n' +
-      'Si el navegador te pregunta, permitile descargar varios archivos.\n' +
-      'Si no aparece ninguno, usá "En un solo PDF".')) return;
-  conductores.forEach(c => exportPDF(c, { rangoFechas, liqData: liq }));
+      'Van de a uno para que el navegador no descarte ninguno: tarda unos ' + segs + ' segundos.\n' +
+      'No cierres ni cambies de pantalla hasta que termine.\n\n' +
+      'Si preferís un único archivo, cancelá y usá "En un solo PDF".')) return;
+  }
+
+  const btn = document.getElementById('liq-btn-descargar');
+  const unico = document.getElementById('liq-btn-unpdf');
+  window._liqDescargando = true;
+  if (btn) btn.disabled = true;
+  if (unico) unico.disabled = true;
+  let ok = 0, fallaron = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      const c = conductores[i];
+      _progresoDescargaLiq('<i class="ic ic-download"></i> Descargando ' + (i + 1) + ' de ' + n + '…');
+      try { exportPDF(c, { rangoFechas, liqData: liq }); ok++; }
+      catch (e) { console.warn('exportAllPDFs:', c, e); fallaron.push(c); }
+      if (i < n - 1) await _esperar(LIQ_MS_ENTRE_DESCARGAS);
+    }
+  } finally {
+    _finDescargaLiq();
+  }
+  showToast(fallaron.length
+    ? '⚠️ ' + ok + ' de ' + n + ' descargadas · fallaron: ' + fallaron.join(', ')
+    : '✅ ' + ok + ' liquidacion' + (ok === 1 ? '' : 'es') + ' descargada' + (ok === 1 ? '' : 's'));
 }
 
 // Todas en UN archivo, una liquidación por página. Además de ser cómodo para
 // imprimir de una, es la salida cuando el navegador bloquea la descarga
 // múltiple: un solo archivo nunca dispara ese permiso.
-function exportLiqCombinado() {
+async function exportLiqCombinado() {
   const { liq, rangoFechas, conductores } = _liqADescargar();
   if (!conductores.length) { alert('Sin datos para exportar con el filtro actual.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-  conductores.forEach((c, i) => exportPDF(c, { rangoFechas, liqData: liq, doc, nuevaPagina: i > 0 }));
+  const btn = document.getElementById('liq-btn-descargar');
+  const unico = document.getElementById('liq-btn-unpdf');
+  window._liqDescargando = true;
+  if (btn) btn.disabled = true;
+  if (unico) unico.disabled = true;
+  try {
+    for (let i = 0; i < conductores.length; i++) {
+      _progresoDescargaLiq('<i class="ic ic-file"></i> Armando ' + (i + 1) + ' de ' + conductores.length + '…');
+      exportPDF(conductores[i], { rangoFechas, liqData: liq, doc, nuevaPagina: i > 0 });
+      // Ceder el hilo para que el avance se vea; armar 44 seguidas congela la
+      // pantalla y parece que la app se colgó.
+      await _esperar(0);
+    }
+  } finally {
+    _finDescargaLiq();
+  }
   // El pie lo deja pintado la ultima pasada de exportPDF, con el total de
   // hojas ya definitivo.
   doc.save('LH_Liquidaciones_' + conductores.length + '_' +
