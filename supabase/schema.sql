@@ -875,3 +875,36 @@ create table if not exists public.rendicion_lotes (
 alter table public.rendicion_lotes enable row level security;
 create policy rendicion_lotes_all on public.rendicion_lotes for all to authenticated
   using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- ADELANTOS: beneficiario (conductor / empleado) + moneda ----------
+-- BENEFICIARIO. Un adelanto puede ser a un conductor (se descuenta en su
+-- liquidación semanal) o a un empleado de la empresa (se descuenta en su sueldo
+-- mensual). La columna `conductor` se conserva como NOMBRE del beneficiario en
+-- los dos casos, así el buscador y el historial siguen sirviendo, y
+-- `empleado_id` lo ata al legajo. adelantoDescuentoConductor() FILTRA por
+-- beneficiario_tipo: sin ese filtro, un empleado homónimo de un cadete le
+-- descontaría plata al cadete.
+alter table public.adelantos
+  add column if not exists beneficiario_tipo text not null default 'conductor',
+  add column if not exists empleado_id bigint references public.empleados(id) on delete set null;
+
+-- MONEDA. monto_total y monto_cuota quedan expresados en `moneda` ('ARS'|'USD')
+-- y el saldo se lleva en esa moneda: quien debe dólares debe dólares.
+-- tipo_cambio = pesos por USD pactados (referencia para convertir las cuotas).
+alter table public.adelantos
+  add column if not exists moneda text not null default 'ARS',
+  add column if not exists tipo_cambio numeric not null default 0;
+
+-- CUOTAS. `monto` sigue en la moneda del adelanto (para descontar del saldo);
+-- `monto_ars` es lo que efectivamente baja de la liquidación, que siempre se
+-- paga en pesos. Sin esta columna una cuota en dólares descontaría su número
+-- como si fueran pesos. `tipo_cambio` guarda a qué cotización se abonó, que es
+-- lo que explica por qué dos cuotas del mismo préstamo costaron distinto.
+alter table public.adelanto_cuotas
+  add column if not exists moneda text not null default 'ARS',
+  add column if not exists tipo_cambio numeric not null default 0,
+  add column if not exists monto_ars numeric not null default 0;
+update public.adelanto_cuotas set monto_ars = monto where monto_ars = 0;
+
+create index if not exists idx_adelantos_beneficiario on public.adelantos (beneficiario_tipo);
+create index if not exists idx_adelantos_empleado on public.adelantos (empleado_id);

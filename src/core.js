@@ -230,9 +230,11 @@ let AppData = {
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
 
-  // Adelantos (préstamos a conductores devueltos en cuotas).
-  // adelantos:      [{ id, conductor, monto_total, cuotas_total, monto_cuota, fecha, obs }]
-  // adelantoCuotas: [{ id, adelanto_id, nro, monto, fecha }] — cuotas ya descontadas
+  // Adelantos (préstamos devueltos en cuotas) a conductores o a empleados.
+  // adelantos:      [{ id, conductor, beneficiario_tipo, empleado_id, moneda, tipo_cambio,
+  //                    monto_total, cuotas_total, monto_cuota, fecha, obs }]
+  // adelantoCuotas: [{ id, adelanto_id, nro, monto, moneda, tipo_cambio, monto_ars, fecha }]
+  //                 monto = en la moneda del adelanto; monto_ars = lo que descuenta en pesos
   adelantos: [],
   adelantoCuotas: [],
 
@@ -348,11 +350,50 @@ function saldoAdelanto(a) {
 }
 function adelantoSaldado(a) { return cuotasPagadasDe(a.id) >= _num(a.cuotas_total); }
 
+// ── Moneda del adelanto (ARS / USD) ─────────────────────────────────────────
+// monto_total y monto_cuota están expresados en la moneda del adelanto, y el
+// saldo se lleva en esa misma moneda: un préstamo en dólares se debe en dólares.
+// La LIQUIDACIÓN, en cambio, siempre es en pesos, así que cada cuota guarda
+// además su equivalente (monto_ars) al tipo de cambio con el que se abonó.
+function adelantoEsUSD(a) { return String((a && a.moneda) || 'ARS').toUpperCase() === 'USD'; }
+function fmtUSD(n) { return 'USD ' + Math.round(_num(n)).toLocaleString('es-AR'); }
+// Importe en la moneda que corresponda ("$1.000.000" o "USD 1.000").
+function fmtMoneda(n, moneda) {
+  return String(moneda || 'ARS').toUpperCase() === 'USD' ? fmtUSD(n) : fmtPeso(n);
+}
+// Lo que una cuota descuenta EN PESOS. Las cuotas viejas (anteriores al USD) no
+// tienen monto_ars, y eran todas en pesos: ahí el monto ya es el equivalente.
+function cuotaAdelantoARS(c) { return _num(c && c.monto_ars) || _num(c && c.monto); }
+// Equivalente en pesos de un importe del adelanto, al tipo de cambio pactado.
+// Sin tipo de cambio no se puede convertir y devuelve null: preferimos que la
+// UI diga "falta el TC" antes que descontar $0 sin que nadie lo note.
+function adelantoARS(a, monto) {
+  if (!adelantoEsUSD(a)) return _num(monto);
+  const tc = _num(a && a.tipo_cambio);
+  return tc > 0 ? Math.round(_num(monto) * tc) : null;
+}
+
+// ── Beneficiario del adelanto: conductor o empleado ─────────────────────────
+// `conductor` guarda el NOMBRE del beneficiario en los dos casos (así el
+// buscador y el histórico siguen sirviendo); `beneficiario_tipo` distingue el
+// grupo y `empleado_id` ata la fila al legajo.
+function adelantoEsEmpleado(a) { return String((a && a.beneficiario_tipo) || 'conductor') === 'empleado'; }
+function adelantosDeGrupo(grupo) {
+  return (AppData.adelantos || []).filter(a => (adelantoEsEmpleado(a) ? 'empleado' : 'conductor') === grupo);
+}
+// Adelantos vigentes (autorizados y con saldo) de un empleado.
+function adelantosActivosEmpleado(empId) {
+  return (AppData.adelantos || [])
+    .filter(a => adelantoEsEmpleado(a) && a.empleado_id === empId && esAutorizado(a) && !adelantoSaldado(a))
+    .sort((x, y) => x.id - y.id);
+}
+
 // Adelanto ACTIVO (con cuotas pendientes) de un conductor. Si hay varios, el más viejo.
+// Excluye los de empleados: un empleado homónimo de un cadete no es el cadete.
 function adelantoActivoDe(conductor) {
   const key = conductorKey(conductor);
   return AppData.adelantos
-    .filter(a => conductorKey(a.conductor) === key && !adelantoSaldado(a))
+    .filter(a => !adelantoEsEmpleado(a) && conductorKey(a.conductor) === key && !adelantoSaldado(a))
     .sort((x, y) => x.id - y.id)[0] || null;
 }
 
@@ -377,8 +418,10 @@ function estadoNuevaOperacion() {
 // Solo cuenta adelantos AUTORIZADOS. Devuelve { monto, detalle: [{ nro, total, monto }] }.
 function adelantoDescuentoConductor(conductor, rango) {
   const key = conductorKey(conductor);
+  // Solo adelantos a CONDUCTORES: los de empleados se cobran en su sueldo, y si
+  // un empleado se llamara igual que un cadete le descontaría plata al cadete.
   const setIds = new Set(AppData.adelantos
-    .filter(a => conductorKey(a.conductor) === key && esAutorizado(a)).map(a => a.id));
+    .filter(a => !adelantoEsEmpleado(a) && conductorKey(a.conductor) === key && esAutorizado(a)).map(a => a.id));
   if (!setIds.size) return { monto: 0, detalle: [] };
   const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
   let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
@@ -394,8 +437,12 @@ function adelantoDescuentoConductor(conductor, rango) {
       if (hasta && f > hasta) return;
     }
     const a = AppData.adelantos.find(x => x.id === c.adelanto_id);
-    monto += _num(c.monto);
-    detalle.push({ nro: c.nro, total: a ? _num(a.cuotas_total) : 0, monto: _num(c.monto) });
+    // La liquidación es en pesos: de una cuota en dólares se descuenta su
+    // equivalente al tipo de cambio con el que se abonó, no el número en USD.
+    const enPesos = cuotaAdelantoARS(c);
+    monto += enPesos;
+    detalle.push({ nro: c.nro, total: a ? _num(a.cuotas_total) : 0, monto: enPesos,
+                   moneda: (c.moneda || (a && a.moneda) || 'ARS'), origen: _num(c.monto), tc: _num(c.tipo_cambio) });
   });
   detalle.sort((x, y) => x.nro - y.nro);
   return { monto, detalle };

@@ -542,6 +542,104 @@ function renderSueldosPanel() {
     '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-file"></i></div><div class="metric-label">Total del mes</div><div class="metric-value">' + fmtPeso(totG) + '</div></div>';
 }
 
+// ── Adelantos del empleado dentro de la liquidación de sueldo ───────────────
+// Un adelanto al personal se cobra acá, igual que el del conductor se cobra en
+// su liquidación semanal. Tildar una cuota la imputa al mes que se está
+// liquidando; destildarla la deshace. Se aplica al guardar.
+let sueldoCuotasPend = {};   // { adelantoId: true|false }
+
+// Las cuotas del mes se imputan al último día del período (YYYY-MM → DD/MM/YYYY),
+// que es cuando se paga el sueldo.
+function _finDeMesDMY(periodo) {
+  const [y, m] = String(periodo || '').split('-').map(Number);
+  if (!y || !m) return isoToDMY(hoyISO());
+  const ult = new Date(y, m, 0).getDate();
+  return String(ult).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + y;
+}
+function _cuotaDelPeriodo(adelantoId, periodo) {
+  const pref = '/' + String(periodo || '').slice(5, 7) + '/' + String(periodo || '').slice(0, 4);
+  return (AppData.adelantoCuotas || []).find(c => c.adelanto_id === adelantoId && String(c.fecha).endsWith(pref));
+}
+
+function renderAdelantosSueldoModal(empId, periodo) {
+  const wrap = document.getElementById('msld-adelantos-wrap');
+  const cont = document.getElementById('msld-adelantos-lista');
+  if (!wrap || !cont) return;
+  sueldoCuotasPend = {};
+  // Además de los vigentes, los que ya tienen una cuota imputada a este mes
+  // (si no, al reabrir la liquidación de un adelanto saldado desaparecería la
+  // línea que explica el descuento).
+  const vigentes = adelantosActivosEmpleado(empId);
+  const conCuotaDelMes = (AppData.adelantos || []).filter(a =>
+    adelantoEsEmpleado(a) && a.empleado_id === empId && esAutorizado(a) &&
+    !vigentes.some(v => v.id === a.id) && _cuotaDelPeriodo(a.id, periodo));
+  const lista = vigentes.concat(conCuotaDelMes);
+
+  if (!lista.length) { wrap.style.display = 'none'; cont.innerHTML = ''; return; }
+  wrap.style.display = '';
+  cont.innerHTML = lista.map(a => {
+    const ya = _cuotaDelPeriodo(a.id, periodo);
+    const usd = adelantoEsUSD(a);
+    const enPesos = ya ? cuotaAdelantoARS(ya) : (usd ? adelantoARS(a, a.monto_cuota) : _num(a.monto_cuota));
+    const bloqueado = enPesos == null;   // dólares sin tipo de cambio pactado
+    const pagadas = cuotasPagadasDe(a.id);
+    const nro = Math.min(pagadas + (ya ? 0 : 1), _num(a.cuotas_total));
+    sueldoCuotasPend[a.id] = !!ya;
+    return '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;' +
+        (bloqueado ? 'opacity:0.6;cursor:not-allowed' : 'cursor:pointer') + '">' +
+      '<input type="checkbox" ' + (ya ? 'checked' : '') + (bloqueado ? ' disabled' : '') +
+        ' onchange="marcarCuotaSueldo(' + a.id + ',this.checked)">' +
+      '<span style="flex:1"><strong>Cuota ' + nro + '/' + _num(a.cuotas_total) + '</strong>' +
+        '<div style="font-size:10px;color:' + (bloqueado ? '#b45309' : 'var(--text-muted)') + '">' +
+          fmtMoneda(_num(a.monto_total), a.moneda) + ' en ' + _num(a.cuotas_total) + ' cuotas' +
+          (usd ? ' · ' + fmtUSD(a.monto_cuota) + (bloqueado ? ' — falta el tipo de cambio (cargalo en Adelantos)' : ' a $' + _num(a.tipo_cambio).toLocaleString('es-AR')) : '') +
+        '</div></span>' +
+      '<strong style="white-space:nowrap">' + (bloqueado ? '—' : '-' + fmtPeso(enPesos)) + '</strong>' +
+    '</label>';
+  }).join('');
+}
+function marcarCuotaSueldo(adelantoId, marcado) {
+  sueldoCuotasPend[adelantoId] = !!marcado;
+  recalcSueldoModal();
+}
+// Suma en pesos de las cuotas tildadas en el modal.
+function _totalCuotasSueldo(periodo) {
+  let tot = 0;
+  Object.keys(sueldoCuotasPend).forEach(idTxt => {
+    if (!sueldoCuotasPend[idTxt]) return;
+    const a = (AppData.adelantos || []).find(x => x.id === parseInt(idTxt));
+    if (!a) return;
+    const ya = _cuotaDelPeriodo(a.id, periodo);
+    const enPesos = ya ? cuotaAdelantoARS(ya) : (adelantoEsUSD(a) ? adelantoARS(a, a.monto_cuota) : _num(a.monto_cuota));
+    tot += _num(enPesos);
+  });
+  return tot;
+}
+// Crea o borra las cuotas según lo tildado. Se llama al guardar el sueldo.
+async function aplicarCuotasSueldo(periodo) {
+  const fecha = _finDeMesDMY(periodo);
+  for (const idTxt of Object.keys(sueldoCuotasPend)) {
+    const id = parseInt(idTxt);
+    const a = (AppData.adelantos || []).find(x => x.id === id);
+    if (!a) continue;
+    const quiere = !!sueldoCuotasPend[idTxt];
+    const ya = _cuotaDelPeriodo(id, periodo);
+    if (quiere && !ya) {
+      const usd = adelantoEsUSD(a);
+      const enPesos = usd ? adelantoARS(a, a.monto_cuota) : _num(a.monto_cuota);
+      if (enPesos == null) continue;
+      const nro = cuotasPagadasDe(id) + 1;
+      const rec = { adelanto_id: id, nro, monto: _num(a.monto_cuota), fecha, fecha_date: fechaISOde(fecha),
+                    moneda: usd ? 'USD' : 'ARS', tipo_cambio: usd ? _num(a.tipo_cambio) : 0, monto_ars: enPesos };
+      try { const row = await DB.insertRow('adelanto_cuotas', rec); AppData.adelantoCuotas.push(Object.assign({ id: row && row.id }, rec)); }
+      catch (e) { console.warn('imputar cuota adelanto empleado:', e); }
+    } else if (!quiere && ya) {
+      try { await DB.deleteWhere('adelanto_cuotas', 'id', ya.id); AppData.adelantoCuotas = AppData.adelantoCuotas.filter(c => c.id !== ya.id); }
+      catch (e) { console.warn('deshacer cuota adelanto empleado:', e); }
+    }
+  }
+}
+
 // ── Modal de liquidación de sueldo ──────────────────────────────────────────
 let sueldoModalEmpId = null;
 function openSueldoModal(empId) {
@@ -561,6 +659,7 @@ function openSueldoModal(empId) {
   document.getElementById('msld-adelanto').value = s ? _num(s.monto_adelanto) : '';
   document.getElementById('msld-pct-transf').value = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
   document.getElementById('msld-obs').value = s ? (s.obs || '') : '';
+  renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
@@ -573,7 +672,11 @@ function recalcSueldoModal() {
   const vh = parseFloat(document.getElementById('msld-valor-hora').value) || 0;
   const bono = parseFloat(document.getElementById('msld-bono').value) || 0;
   const descAd = document.getElementById('msld-desc-adelanto').checked;
-  const adel = descAd ? (parseFloat(document.getElementById('msld-adelanto').value) || 0) : 0;
+  const adelManual = descAd ? (parseFloat(document.getElementById('msld-adelanto').value) || 0) : 0;
+  // Al descuento escrito a mano se le suman las cuotas de adelanto tildadas.
+  const periodoMod = document.getElementById('emp-sueldo-periodo')?.value || '';
+  const adelCuotas = _totalCuotasSueldo(periodoMod);
+  const adel = adelManual + adelCuotas;
   let pct = parseFloat(document.getElementById('msld-pct-transf').value); if (isNaN(pct)) pct = 100;
   pct = Math.max(0, Math.min(100, pct));
   const extras = Math.round(horas * vh);
@@ -585,11 +688,14 @@ function recalcSueldoModal() {
   document.getElementById('msld-split').innerHTML =
     '<span><i class="ic ic-card"></i> Transferencia (' + pct + '%): <strong>' + fmtPeso(mT) + '</strong></span>' +
     '<span style="margin-left:14px"><i class="ic ic-dollar"></i> Efectivo (' + (100 - pct) + '%): <strong>' + fmtPeso(mE) + '</strong></span>';
-  return { base, horas, vh, extras, bono, descAd, adel, pct, total, mT, mE };
+  return { base, horas, vh, extras, bono, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE };
 }
 async function guardarSueldo(marcarPagado) {
   if (sueldoModalEmpId == null) return;
   const periodo = document.getElementById('emp-sueldo-periodo').value;
+  // Primero se imputan/deshacen las cuotas, así el registro del sueldo se
+  // guarda con el mismo descuento que muestra la pantalla.
+  await aplicarCuotasSueldo(periodo);
   const c = recalcSueldoModal();
   const rec = {
     empleado_id: sueldoModalEmpId, periodo,

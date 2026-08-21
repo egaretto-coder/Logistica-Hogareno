@@ -147,6 +147,17 @@ async function toggleImputarDesdeLiq(id, tipo, campo, marcado) {
   recalcLiqModal();
 }
 
+// Texto de las cuotas de adelanto imputadas: "1/5" y, si el préstamo fue en
+// dólares, con qué cotización se convirtió ("1/5 · USD 200 a $1.200"). El PDF es
+// cara al conductor: tiene derecho a saber por qué esa cuota costó esos pesos.
+function _txtCuotasAdelanto(detalle) {
+  return (detalle || []).map(x => {
+    const base = x.nro + '/' + x.total;
+    if (String(x.moneda || 'ARS').toUpperCase() !== 'USD') return base;
+    return base + ' · ' + fmtUSD(x.origen) + (_num(x.tc) > 0 ? ' a $' + Math.round(x.tc).toLocaleString('es-AR') : '');
+  }).join(', ');
+}
+
 // Cuotas que se PUEDEN imputar en esta liquidación: adelantos con saldo y
 // extravíos cuoteados con saldo. Si ya tienen una cuota registrada en el
 // período, aparecen tildadas (destildar = deshacer esa cuota).
@@ -157,15 +168,25 @@ function renderCuotasImputables(conductor, rango) {
   const key = conductorKey(conductor);
   const filas = [];
 
-  // — Adelantos con saldo —
+  // — Adelantos con saldo (solo los del conductor; los de empleados se cobran
+  //   en su sueldo, no acá) —
   (AppData.adelantos || []).forEach(a => {
+    if (adelantoEsEmpleado(a)) return;
     if (conductorKey(a.conductor) !== key || !esAutorizado(a)) return;
     if (typeof saldoAdelanto === 'function' && saldoAdelanto(a) <= 0) return;
     const yaEnPeriodo = (AppData.adelantoCuotas || []).some(c => c.adelanto_id === a.id && _fechaEnRango(c.fecha, rango));
     const pagadas = (AppData.adelantoCuotas || []).filter(c => c.adelanto_id === a.id).length;
+    const usd = adelantoEsUSD(a);
+    // Una cuota en dólares se descuenta por su equivalente en pesos. Si el
+    // adelanto no tiene tipo de cambio pactado no hay forma de saber cuánto es,
+    // así que la fila se muestra bloqueada en vez de imputar $0 en silencio.
+    const enPesos = usd ? adelantoARS(a, a.monto_cuota) : _num(a.monto_cuota);
     filas.push({ clave: 'adelanto:' + a.id, tipo: 'adelanto', id: a.id, marcado: yaEnPeriodo,
+      bloqueado: usd && enPesos == null,
       label: 'Cuota de adelanto ' + Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(a.cuotas_total)) + '/' + _num(a.cuotas_total),
-      sub: fmtPeso(_num(a.monto_total)) + ' en ' + _num(a.cuotas_total) + ' cuotas', monto: _num(a.monto_cuota) });
+      sub: fmtMoneda(_num(a.monto_total), a.moneda) + ' en ' + _num(a.cuotas_total) + ' cuotas' +
+        (usd ? ' · ' + fmtUSD(a.monto_cuota) + (enPesos == null ? ' — falta el tipo de cambio (cargalo en Adelantos)' : ' a $' + _num(a.tipo_cambio).toLocaleString('es-AR')) : ''),
+      monto: enPesos || 0 });
   });
 
   // — Saldos cuoteados con deuda: extravíos y servicios de proveedores —
@@ -195,10 +216,12 @@ function renderCuotasImputables(conductor, rango) {
   }
   filas.forEach(f => { liqCuotasPend[f.clave] = f.marcado; });
   cont.innerHTML = filas.map(f =>
-    '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;cursor:pointer">' +
-      '<input type="checkbox" ' + (f.marcado ? 'checked' : '') + ' onchange="marcarCuotaLiq(\'' + f.clave + '\',this.checked)">' +
-      '<span style="flex:1"><strong>' + f.label + '</strong><div style="font-size:10px;color:var(--text-muted)">' + f.sub + '</div></span>' +
-      '<strong style="white-space:nowrap">-' + fmtPeso(f.monto) + '</strong>' +
+    '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;' +
+      (f.bloqueado ? 'opacity:0.6;cursor:not-allowed' : 'cursor:pointer') + '">' +
+      '<input type="checkbox" ' + (f.marcado ? 'checked' : '') + (f.bloqueado ? ' disabled' : '') +
+        ' onchange="marcarCuotaLiq(\'' + f.clave + '\',this.checked)">' +
+      '<span style="flex:1"><strong>' + f.label + '</strong><div style="font-size:10px;color:' + (f.bloqueado ? '#b45309' : 'var(--text-muted)') + '">' + f.sub + '</div></span>' +
+      '<strong style="white-space:nowrap">' + (f.bloqueado ? '—' : '-' + fmtPeso(f.monto)) + '</strong>' +
     '</label>').join('');
 }
 
@@ -259,8 +282,9 @@ function _ajusteCuotasPend(tipo, rango) {
     if (tipo === 'adelanto') {
       const reg = (AppData.adelantoCuotas || []).find(c => c.adelanto_id === id && _fechaEnRango(c.fecha, rango));
       const a = (AppData.adelantos || []).find(x => x.id === id); if (!a) return;
-      if (quiere && !reg) delta += _num(a.monto_cuota);
-      if (!quiere && reg) delta -= _num(reg.monto);
+      // Siempre en pesos: de una cuota en dólares se mueve su equivalente.
+      if (quiere && !reg) delta += _num(adelantoARS(a, a.monto_cuota));
+      if (!quiere && reg) delta -= cuotaAdelantoARS(reg);
     } else {
       const reg = (AppData.descItemCuotas || []).find(c => c.item_id === id && _fechaEnRango(c.fecha, rango));
       const it = (AppData.descItems || []).find(x => x.id === id); if (!it) return;
@@ -289,7 +313,13 @@ async function aplicarCuotasLiq(rango) {
       if (quiere && !yaId) {
         const a = AppData.adelantos.find(x => x.id === id); if (!a) continue;
         const nro = (AppData.adelantoCuotas || []).filter(c => c.adelanto_id === id).length + 1;
-        const rec = { adelanto_id: id, nro, monto: _num(a.monto_cuota), fecha: fechaImp, fecha_date: fechaISOde(fechaImp) };
+        // En dólares se imputa con el TC pactado del adelanto (la fila queda
+        // bloqueada si no lo tiene, así que acá siempre hay cotización).
+        const usd = adelantoEsUSD(a);
+        const enPesos = usd ? adelantoARS(a, a.monto_cuota) : _num(a.monto_cuota);
+        if (enPesos == null) continue;
+        const rec = { adelanto_id: id, nro, monto: _num(a.monto_cuota), fecha: fechaImp, fecha_date: fechaISOde(fechaImp),
+                      moneda: usd ? 'USD' : 'ARS', tipo_cambio: usd ? _num(a.tipo_cambio) : 0, monto_ars: enPesos };
         try { const row = await DB.insertRow('adelanto_cuotas', rec); AppData.adelantoCuotas.push(Object.assign({ id: row && row.id }, rec)); }
         catch (e) { console.warn('imputar cuota adelanto:', e); }
       } else if (!quiere && yaId) {
@@ -352,7 +382,7 @@ function recalcLiqModal() {
   if (advWrap) {
     advWrap.style.display = advMonto > 0 ? 'flex' : 'none';
     if (advMonto > 0) {
-      const cuotasTxt = advAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
+      const cuotasTxt = _txtCuotasAdelanto(advAd.detalle);
       document.getElementById('liq-modal-linea-adelanto-label').textContent =
         'Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : '');
       document.getElementById('liq-modal-linea-adelanto').textContent = '-' + fmtPeso(advMonto);
@@ -917,7 +947,7 @@ function exportPDF(conductor, opts) {
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
-    const cuotasTxt = advAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
+    const cuotasTxt = _txtCuotasAdelanto(advAd.detalle);
     doc.text('Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);

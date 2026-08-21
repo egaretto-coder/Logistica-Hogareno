@@ -3,9 +3,12 @@
         <div class="section-head" style="margin-bottom:8px">
           <span class="section-title"><i class="ic ic-card"></i> Adelantos</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Semana</span>
-            <input type="date" id="adelantos-fecha" title="Semana a la que se imputan las cuotas que descuentes">
-            <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos en la semana elegida"><i class="ic ic-chevrons-down"></i> Descontar cuota semanal (todos)</button>
+            <div class="date-range">
+              <i class="ic ic-calendar"></i>
+              <span class="date-label">Semana</span>
+              <input type="date" id="adelantos-fecha" title="Semana a la que se imputan las cuotas que descuentes" aria-label="Semana de imputación">
+            </div>
+            <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos del grupo en la semana elegida"><i class="ic ic-chevrons-down"></i> Descontar cuota semanal (todos)</button>
             <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
               <input type="file" id="adelantos-file-input" accept=".xlsx,.xls,.csv" onchange="importAdelantos(event)" style="display:none">
             </label>
@@ -14,15 +17,20 @@
           </div>
         </div>
 
-        <div class="alert alert-info" style="margin-bottom:16px">
-          <i class="ic ic-card"></i> Registrá un préstamo/adelanto (monto total y cantidad de cuotas) y la app calcula la cuota. Cada vez que <strong>descontás una cuota</strong> (por conductor con "− Cuota", o a todos con "Descontar cuota semanal"), esa cuota se imputa a la <strong>semana elegida</strong> y aparece automáticamente como deducción en la <strong>liquidación de esa semana</strong> (baja el neto del PDF). Elegí primero la semana arriba.
+        <!-- Cada grupo tiene su propio panel: los adelantos a conductores se
+             cobran en la liquidación semanal; los de empleados, en el sueldo. -->
+        <div class="tabs" id="adelantos-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="adel-btn-conductor" onclick="switchAdelantoTab('conductor')"><i class="ic ic-users"></i> Conductores <span id="adel-count-conductor"></span></button>
+          <button class="tab" id="adel-btn-empleado" onclick="switchAdelantoTab('empleado')"><i class="ic ic-user"></i> Empleados <span id="adel-count-empleado"></span></button>
         </div>
 
-        <!-- Resumen de deuda (total + por conductor con el buscador) -->
+        <div class="alert alert-info" style="margin-bottom:16px" id="adelantos-ayuda"></div>
+
+        <!-- Resumen de deuda (total + por beneficiario, respeta el buscador) -->
         <div id="adelantos-resumen"></div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-          <input type="search" id="adelantos-search" placeholder="🔍 Buscar conductor..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderAdelantos()">
+          <input type="search" id="adelantos-search" placeholder="🔍 Buscar..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderAdelantos()">
           <span id="adelantos-count" style="font-size:12px;color:var(--text-muted)"></span>
         </div>
 
@@ -31,7 +39,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Conductor</th>
+                  <th id="adelantos-col-benef">Conductor</th>
                   <th><i class="ic ic-calendar"></i> Fecha</th>
                   <th style="text-align:right">Monto total</th>
                   <th style="text-align:right">Cuota</th>

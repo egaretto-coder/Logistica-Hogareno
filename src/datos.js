@@ -343,11 +343,17 @@ async function _hydrateFromSupabaseReal(opts) {
     id: a.id, conductor: a.conductor, monto_total: _num(a.monto_total),
     cuotas_total: _num(a.cuotas_total), monto_cuota: _num(a.monto_cuota),
     fecha: a.fecha || '', obs: a.obs || '',
+    beneficiario_tipo: a.beneficiario_tipo || 'conductor',
+    empleado_id: a.empleado_id != null ? a.empleado_id : null,
+    moneda: a.moneda || 'ARS', tipo_cambio: _num(a.tipo_cambio),
     estado: a.estado || 'autorizado', autorizado_por: a.autorizado_por || '', autorizado_en: a.autorizado_en || ''
   }));
   AppData.adelantoCuotas = (data.adelanto_cuotas || []).map(c => ({
     id: c.id, adelanto_id: c.adelanto_id, nro: _num(c.nro),
-    monto: _num(c.monto), fecha: c.fecha || ''
+    monto: _num(c.monto), fecha: c.fecha || '',
+    moneda: c.moneda || 'ARS', tipo_cambio: _num(c.tipo_cambio),
+    // Las cuotas viejas no tienen monto_ars y eran todas en pesos.
+    monto_ars: _num(c.monto_ars) || _num(c.monto)
   }));
 
   // Re-aplicar permisos con los datos frescos (sidebar puede cambiar)
