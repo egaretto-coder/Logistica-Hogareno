@@ -36,13 +36,15 @@
                 <option value="Suplente">Suplente</option>
                 <option value="sin_asignar">Sin condición asignada</option>
               </select>
-              <button class="btn btn-sm btn-primary" onclick="exportAllPDFs()" title="Descarga un PDF de liquidación por cada conductor con entregas en el período filtrado"><i class="ic ic-download"></i> Descargar liquidaciones (PDF)</button>
+              <button class="btn btn-sm" id="liq-btn-unpdf" onclick="exportLiqCombinado()" title="Todas las liquidaciones elegidas en UN solo archivo, una por página. Útil para imprimir de una y cuando el navegador bloquea las descargas múltiples."><i class="ic ic-file"></i> En un solo PDF</button>
+              <button class="btn btn-sm btn-primary" id="liq-btn-descargar" onclick="exportAllPDFs()" title="Descarga un PDF por conductor. Respeta el filtro y, si tildaste conductores, baja solo esos."><i class="ic ic-download"></i> Descargar liquidaciones (PDF)</button>
             </div>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th style="width:34px"><input type="checkbox" id="liq-check-all" onchange="toggleLiqSelTodos(this.checked)" title="Seleccionar / desmarcar todas las del filtro"></th>
                   <th>Conductor</th>
                   <th>Categoría</th>
                   <th title="Días distintos con envíos entregados en el período">Días trab.</th>
@@ -56,7 +58,7 @@
                 </tr>
               </thead>
               <tbody id="liq-table-body">
-                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos primero</div></div></td></tr>
+                <tr><td colspan="11"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos primero</div></div></td></tr>
               </tbody>
             </table>
           </div>

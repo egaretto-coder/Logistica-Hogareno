@@ -111,6 +111,70 @@ function diasLista(setDias) {
     .join(' · ');
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  FILTRO Y SELECCIÓN PARA DESCARGAR
+//  La tabla y la descarga masiva salen de ESTA función, no cada una por su
+//  lado: antes el listado aplicaba buscador y condición pero la descarga solo
+//  el período, así que filtrando por "Titular" se bajaban igual las
+//  liquidaciones de todos los conductores (bug real).
+// ═══════════════════════════════════════════════════════════════════════
+function conductoresFiltradosLiq(liq) {
+  const base = liq || calcLiquidacionesFiltradas();
+  const search = (document.getElementById('liq-search')?.value || '').toLowerCase();
+  const filterCondicion = document.getElementById('liq-filter-condicion')?.value || '';
+  let conductores = Object.keys(base).filter(c => c.toLowerCase().includes(search));
+  if (filterCondicion) {
+    conductores = conductores.filter(c => {
+      const panelEntry = panelConductorDe(c);
+      if (filterCondicion === 'sin_asignar') return !panelEntry || !panelEntry.condicion;
+      return panelEntry && panelEntry.condicion === filterCondicion;
+    });
+  }
+  return conductores;
+}
+
+// Conductores tildados a mano. Se conserva al re-renderizar (el realtime
+// re-dibuja la tabla y perder la selección a mitad de armado sería un fastidio),
+// pero al descargar SIEMPRE se cruza con el filtro: lo que no está a la vista
+// no se baja, aunque haya quedado tildado de un filtro anterior.
+let liqSeleccion = new Set();
+
+function toggleLiqSel(conductor, marcado) {
+  if (marcado) liqSeleccion.add(conductor); else liqSeleccion.delete(conductor);
+  actualizarBotonDescargaLiq();
+}
+function toggleLiqSelTodos(marcado) {
+  const conductores = conductoresFiltradosLiq();
+  conductores.forEach(c => { if (marcado) liqSeleccion.add(c); else liqSeleccion.delete(c); });
+  document.querySelectorAll('.liq-row-check').forEach(ch => { ch.checked = !!marcado; });
+  actualizarBotonDescargaLiq(conductores);
+}
+
+// Lo que se va a descargar: los tildados que estén dentro del filtro; si no hay
+// ninguno tildado, todo lo que muestra la tabla.
+function seleccionParaDescargar(liq) {
+  const filtrados = conductoresFiltradosLiq(liq).filter(c => !liq || (liq[c] && liq[c].filas.length));
+  const elegidos = filtrados.filter(c => liqSeleccion.has(c));
+  return { filtrados, conductores: elegidos.length ? elegidos : filtrados, haySeleccion: elegidos.length > 0 };
+}
+
+function actualizarBotonDescargaLiq(conductores) {
+  const filtrados = conductores || conductoresFiltradosLiq();
+  const nSel = filtrados.filter(c => liqSeleccion.has(c)).length;
+  const btn = document.getElementById('liq-btn-descargar');
+  if (btn) btn.innerHTML = '<i class="ic ic-download"></i> ' + (nSel
+    ? 'Descargar ' + nSel + ' seleccionada' + (nSel > 1 ? 's' : '') + ' (PDF)'
+    : 'Descargar las ' + filtrados.length + ' (PDF)');
+  const unico = document.getElementById('liq-btn-unpdf');
+  if (unico) unico.style.display = (nSel || filtrados.length) > 1 ? '' : 'none';
+  // El "todas" de la cabecera refleja lo que hay tildado dentro del filtro.
+  const all = document.getElementById('liq-check-all');
+  if (all) {
+    all.checked = filtrados.length > 0 && nSel === filtrados.length;
+    all.indeterminate = nSel > 0 && nSel < filtrados.length;
+  }
+}
+
 function renderLiquidaciones() {
   // Calcular liquidaciones sobre los registros filtrados por fecha
   const recordsFiltrados = filtrarRecordsLiq(AppData.records);
@@ -149,36 +213,27 @@ function renderLiquidaciones() {
   if (labelEl) labelEl.textContent = labelP;
 
   const liq = liqBase;
-  const search = document.getElementById('liq-search').value.toLowerCase();
-  const filterCondicion = document.getElementById('liq-filter-condicion').value;
-  let conductores = Object.keys(liq).filter(c => c.toLowerCase().includes(search));
-
-  // Filtrar por condición del panel de conductores
-  if (filterCondicion) {
-    conductores = conductores.filter(c => {
-      const panelEntry = panelConductorDe(c);
-      if (filterCondicion === 'sin_asignar') {
-        return !panelEntry || !panelEntry.condicion;
-      }
-      return panelEntry && panelEntry.condicion === filterCondicion;
-    });
-  }
+  const conductores = conductoresFiltradosLiq(liq);
 
   const body = document.getElementById('liq-table-body');
   if (!conductores.length) {
-    body.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
+    actualizarBotonDescargaLiq(conductores);
     return;
   }
 
   conductores.sort((a, b) => liq[b].total - liq[a].total);
+  actualizarBotonDescargaLiq(conductores);
   body.innerHTML = conductores.map(c => {
     const d = liq[c];
+    const cEsc = String(c).replace(/'/g, "\\'");
     const sSin = d.filas.filter(f => f.tipo === 's_colecta');
     const sCon = d.filas.filter(f => f.tipo === 'c_colecta');
     const sSLA = d.filas.filter(f => f.tipo === 'sla');
     const sSuper = d.filas.filter(f => f.es_super);
     const cat = panelConductorDe(c);
     return `<tr>
+      <td><input type="checkbox" class="liq-row-check" ${liqSeleccion.has(c) ? 'checked' : ''} onchange="toggleLiqSel('${cEsc}',this.checked)" title="Elegir esta liquidación para descargar"></td>
       <td>
         <div class="conductor-cell">
           <div class="conductor-avatar" style="background:${avatarColor(c)}">${initials(c)}</div>

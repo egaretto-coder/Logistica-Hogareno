@@ -538,7 +538,10 @@ function exportPDF(conductor, opts) {
 
   const { jsPDF } = window.jspdf;
   // compress:true achica el PDF (los streams van comprimidos con flate)
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  // Si viene un doc de afuera es el PDF combinado: cada liquidación arranca
+  // en su propia hoja y el guardado lo hace quien lo armó.
+  const doc = opts.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  if (opts.doc && opts.nuevaPagina) doc.addPage();
 
   // Usar liquidación filtrada por rango si aplica, sino la global
   const liq = opts.liqData || calcLiquidaciones();
@@ -1089,16 +1092,53 @@ function exportPDF(conductor, opts) {
     addPageFooter(i, totalPages);
   }
 
+  // En el PDF combinado guarda exportLiqCombinado(), cuando ya estan todas
+  // adentro. El pie SI se repinta en cada pasada: como arranca con un
+  // rectangulo opaco, la ultima corrige el "Pag X / Y" de todas las hojas.
+  if (opts.doc) return doc;
+
   doc.save(`LH_Liquidacion_${conductor.replace(/\s+/g,'_')}_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.pdf`);
 }
 
-function exportAllPDFs() {
-  // Respeta el período filtrado en el panel Liquidaciones (igual que el modal).
+// Qué liquidaciones se bajan: las tildadas si hay alguna, si no todas las que
+// muestra la tabla. En los dos casos DENTRO del filtro (período + buscador +
+// condición): antes esta descarga solo miraba el período y filtrar por
+// "Titular" bajaba igual las de todos.
+function _liqADescargar() {
   const liq = calcLiquidacionesFiltradas();
-  const rangoFechas = getLiqRangoFechasLabel();
-  const conductores = Object.keys(liq).filter(c => liq[c].filas.length);
-  if (!conductores.length) { alert('Sin datos para exportar en el período seleccionado.'); return; }
+  const sel = seleccionParaDescargar(liq);
+  return { liq, rangoFechas: getLiqRangoFechasLabel(), ...sel };
+}
+
+// Un archivo por conductor (para repartir a cada uno el suyo).
+function exportAllPDFs() {
+  const { liq, rangoFechas, conductores, haySeleccion } = _liqADescargar();
+  if (!conductores.length) { alert('Sin datos para exportar con el filtro actual.'); return; }
+  // El navegador pide permiso para bajar varios archivos de una y, si alguien
+  // lo denegó alguna vez, no se descarga ninguno sin que la app se entere. Por
+  // eso se avisa cuántos son y se ofrece la salida del archivo único.
+  if (conductores.length > 1 && !confirm(
+      'Se van a descargar ' + conductores.length + ' archivos' +
+      (haySeleccion ? ' (los que tildaste)' : ' (todos los del filtro)') + '.\n\n' +
+      'Si el navegador te pregunta, permitile descargar varios archivos.\n' +
+      'Si no aparece ninguno, usá "En un solo PDF".')) return;
   conductores.forEach(c => exportPDF(c, { rangoFechas, liqData: liq }));
+}
+
+// Todas en UN archivo, una liquidación por página. Además de ser cómodo para
+// imprimir de una, es la salida cuando el navegador bloquea la descarga
+// múltiple: un solo archivo nunca dispara ese permiso.
+function exportLiqCombinado() {
+  const { liq, rangoFechas, conductores } = _liqADescargar();
+  if (!conductores.length) { alert('Sin datos para exportar con el filtro actual.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  conductores.forEach((c, i) => exportPDF(c, { rangoFechas, liqData: liq, doc, nuevaPagina: i > 0 }));
+  // El pie lo deja pintado la ultima pasada de exportPDF, con el total de
+  // hojas ya definitivo.
+  doc.save('LH_Liquidaciones_' + conductores.length + '_' +
+    new Date().toLocaleDateString('es-AR').replace(/\//g, '-') + '.pdf');
+  showToast('📄 ' + conductores.length + ' liquidaciones en un solo PDF');
 }
 
 
