@@ -472,8 +472,42 @@ function importTarifarioClientes(event) {
           break;
         }
       }
+
+      // ── Formato POR CLIENTE ──────────────────────────────────────────────
+      // Una planilla por cliente: el nombre arriba (título) y debajo dos
+      // columnas, ZONA y PRECIO. Es como vienen los tarifarios que cierra
+      // Comercial, así que se acepta tal cual en vez de pedir que los
+      // reescriban en el formato de varias columnas.
+      let unico = null;
       if (h < 0) {
-        alert('No se encontró la fila de encabezados.\n\nSe esperan columnas: Cod.Cliente · Cliente · Zona · Precio.\nDescargá el tarifario con el botón "Descargar tarifario" y usá ese formato.');
+        for (let r = 0; r < Math.min(rows.length, 12); r++) {
+          const cells = (rows[r] || []).map(norm);
+          const iZona = cells.findIndex(esZona);
+          const iPrecio = cells.findIndex(esPrecio);
+          const iCod = cells.findIndex(esCod);
+          if (iZona >= 0 && iPrecio >= 0 && iZona !== iPrecio && iCod < 0) {
+            // El nombre del cliente es el primer texto que haya ARRIBA del
+            // encabezado (el título de la planilla).
+            let nombre = '';
+            for (let k = r - 1; k >= 0 && !nombre; k--) {
+              const fila = rows[k] || [];
+              for (const celda of fila) {
+                const txt = String(celda || '').trim();
+                if (txt) { nombre = txt; break; }
+              }
+            }
+            if (!nombre) nombre = String(wb.SheetNames[0] || '').trim();
+            unico = { h: r, iZona, iPrecio, nombre: nombre.toUpperCase() };
+            break;
+          }
+        }
+      }
+
+      if (h < 0 && !unico) {
+        alert('No se encontró la fila de encabezados.\n\nSe aceptan dos formatos:\n' +
+          '· Tarifario completo: Cod.Cliente · Cliente · Zona · Precio\n' +
+          '· Un cliente por planilla: el nombre del cliente arriba y debajo las columnas ZONA y PRECIO\n\n' +
+          'Descargá el tarifario con el botón "Descargar tarifario" si querés el formato completo.');
         return;
       }
 
@@ -484,19 +518,68 @@ function importTarifarioClientes(event) {
       const zonasOk = new Set(((typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : []).map(z => normNombre(z)));
 
       const porCod = {};
-      let ignoradas = 0, zonasDesconocidas = new Set();
-      for (let i = h + 1; i < rows.length; i++) {
-        const r = rows[i] || [];
-        const cod = String(r[cols.iCod] || '').trim().toUpperCase();
-        const nombre = cols.iCli >= 0 ? String(r[cols.iCli] || '').trim().toUpperCase() : '';
-        const zona = String(r[cols.iZona] || '').trim().toUpperCase();
-        const precio = parseNum(r[cols.iPrecio]);
-        if (!cod || !zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
-        if (precio <= 0) continue;   // sin precio no se carga (así se puede dejar en 0 lo no acordado)
-        if (zonasOk.size && !zonasOk.has(normNombre(zona))) zonasDesconocidas.add(zona);
-        if (!porCod[cod]) porCod[cod] = { nombre: nombre || cod, zonas: {} };
-        if (nombre) porCod[cod].nombre = nombre;
-        porCod[cod].zonas[zona] = precio;   // la última gana
+      let ignoradas = 0, zonasDesconocidas = new Set(), repetidas = 0;
+
+      if (unico) {
+        // El archivo trae el NOMBRE, pero las tarifas se atan al CÓDIGO del
+        // cliente (el nombre de fantasía viene con variantes y partiría al
+        // cliente en dos). Se busca el código en el maestro y, si no está, en
+        // los envíos ya importados, que es de donde sale la identidad real.
+        const clave = normCliente(unico.nombre);
+        let cod = '', deDonde = '';
+        const enMaestro = (AppData.clientes || []).find(c => normCliente(c.nombre) === clave && clienteKey(c.codigo));
+        if (enMaestro) { cod = clienteKey(enMaestro.codigo); deDonde = 'del maestro de clientes'; }
+        if (!cod) {
+          const enEnvios = (typeof clientesDeRegistros === 'function' ? clientesDeRegistros() : [])
+            .find(c => normCliente(c.nombre) === clave);
+          if (enEnvios) { cod = clienteKey(enEnvios.cod); deDonde = 'de los envíos importados'; }
+        }
+        if (!cod) {
+          // Inventarle un código sería peor que no cargarlo: no matchearía
+          // ningún envío y ese cliente se facturaría en $0 sin que nadie lo note.
+          const tecleado = prompt('No encontramos a "' + unico.nombre + '" ni en el maestro de clientes ni en los envíos.\n\n' +
+            'Escribí su Cod.Cliente (la columna "Cod.Cliente" del listado de recorridos).\n' +
+            'Sin el código la tarifa no se aplicaría a ningún envío.', '');
+          cod = clienteKey(tecleado || '');
+          if (!cod) { alert('Importación cancelada: sin código no se puede atar la tarifa al cliente.'); return; }
+          deDonde = 'tecleado a mano';
+        }
+
+        const zonas = {};
+        for (let i = unico.h + 1; i < rows.length; i++) {
+          const r = rows[i] || [];
+          const zona = String(r[unico.iZona] || '').trim().toUpperCase();
+          const precio = parseNum(r[unico.iPrecio]);
+          if (!zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
+          if (precio <= 0) continue;
+          if (zonasOk.size && !zonasOk.has(normNombre(zona))) zonasDesconocidas.add(zona);
+          if (zonas[zona] !== undefined) repetidas++;   // la última gana
+          zonas[zona] = precio;
+        }
+        const nZonas = Object.keys(zonas).length;
+        if (!nZonas) { alert('No se encontró ninguna zona con precio en la planilla.'); return; }
+
+        const yaTenia = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) === cod).length;
+        if (!confirm('Tarifario de ' + unico.nombre + ' (código ' + cod + ', ' + deDonde + ')\n\n' +
+          nZonas + ' zonas con precio' + (repetidas ? ' · ' + repetidas + ' fila(s) repetidas: queda el último precio' : '') + '\n' +
+          (yaTenia ? 'REEMPLAZA las ' + yaTenia + ' tarifas que ya tenía cargadas.' : 'Es su primer tarifario.') +
+          '\n\n¿Confirmás?')) return;
+
+        porCod[cod] = { nombre: unico.nombre, zonas };
+      } else {
+        for (let i = h + 1; i < rows.length; i++) {
+          const r = rows[i] || [];
+          const cod = String(r[cols.iCod] || '').trim().toUpperCase();
+          const nombre = cols.iCli >= 0 ? String(r[cols.iCli] || '').trim().toUpperCase() : '';
+          const zona = String(r[cols.iZona] || '').trim().toUpperCase();
+          const precio = parseNum(r[cols.iPrecio]);
+          if (!cod || !zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
+          if (precio <= 0) continue;   // sin precio no se carga (así se puede dejar en 0 lo no acordado)
+          if (zonasOk.size && !zonasOk.has(normNombre(zona))) zonasDesconocidas.add(zona);
+          if (!porCod[cod]) porCod[cod] = { nombre: nombre || cod, zonas: {} };
+          if (nombre) porCod[cod].nombre = nombre;
+          porCod[cod].zonas[zona] = precio;   // la última gana
+        }
       }
 
       const codigos = Object.keys(porCod);
