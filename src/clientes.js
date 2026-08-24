@@ -199,18 +199,10 @@ function renderClientes() {
       (sinTarifa ? ' · ' + sinTarifa + ' sin tarifario' : '');
   }
 
-  // Dos situaciones DISTINTAS que antes se mezclaban en un solo aviso:
-  //  1) el cliente ya está cargado pero con un código que no matchea sus envíos
-  //     (el provisional del import) → hay que RE-CODIFICARLO, no darlo de alta;
-  //  2) el cliente no existe en el maestro ni por código ni por nombre → alta.
-  // Ofrecer "darlos de alta" para el caso 1 duplicaba el cliente y dejaba el
-  // tarifario colgado del código viejo, sin facturar nada.
-  const porVincular = clientesPorVincular();
-  const nombresPorVincular = new Set(porVincular.map(x => normCliente(x.nombre)));
-  const faltantes = conEnvios.filter(c =>
-    !(AppData.clientes || []).some(x => clienteKey(x.codigo) === c.cod) &&
-    !nombresPorVincular.has(normCliente(c.nombre)));
-
+  // Un solo aviso para lo que hay que decidir: los clientes que aparecen en los
+  // envíos y no están en el maestro, cada uno con sus dos salidas (vincular como
+  // otra cuenta / agregar como nuevo) y el atajo para las que son obviamente
+  // cuentas de un mismo cliente.
   const avisoEl = document.getElementById('cli-faltantes');
   if (avisoEl) {
     let html = '';
@@ -237,37 +229,17 @@ function renderClientes() {
     // Los que quedan pendientes de código, matcheen por nombre o no.
     const pendientes = clientesPendientesCodigo();
     if (pendientes.length) {
-      const nAuto = porVincular.length;
       html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
         '<i class="ic ic-alert"></i><div><strong>' + pendientes.length + ' de ' + (AppData.clientes || []).length +
-        ' cliente(s) tienen un código que no coincide con ningún envío</strong> — su tarifario no se está aplicando y esos envíos se facturan en $0. ' +
-        (nAuto ? '<strong>' + nAuto + '</strong> se pueden resolver solos; el resto hay que corregirlos a mano con el Cod.Cliente del listado. ' : 'Hay que corregirlos a mano con el Cod.Cliente del listado. ') +
+        (pendientes.length === 1 ? ' cliente no tiene' : ' clientes no tienen') + ' ningún envío con ese nombre</strong> — su tarifario no se está aplicando. ' +
+        'Puede ser que no hayan operado en el período cargado, o que en el listado figuren con otro nombre: ' +
+        'en ese caso abrí su ficha (<strong>Card</strong>) y sumale esa cuenta. ' +
         '<button class="btn btn-sm" style="margin-left:6px" onclick="toggleSoloPendientes()">' +
-        (cliSoloPendientes ? 'Ver todos' : 'Ver los ' + pendientes.length + ' pendientes') + '</button>' +
+        (cliSoloPendientes ? 'Ver todos' : (pendientes.length === 1 ? 'Ver el pendiente' : 'Ver los ' + pendientes.length + ' pendientes')) + '</button>' +
         '</div></div>';
     }
-    // Varias cuentas del mismo cliente: si no se unen, hay que cargarle el
-    // tarifario una vez por cuenta y su facturación sale partida.
-    const sugeridas = cuentasSugeridas();
-    if (sugeridas.length) {
-      html += '<div class="alert" style="margin:0 0 12px;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe">' +
-        '<i class="ic ic-building"></i><div><strong>' + sugeridas.length +
-        ' cliente(s) parecen tener más de una cuenta.</strong> Son el mismo cliente con la misma lista de precios: ' +
-        sugeridas.slice(0, 4).map(g => g.principal.nombre + ' (' + [g.principal.cod].concat(g.otras.map(o => o.cod)).join(' + ') + ')').join(', ') +
-        (sugeridas.length > 4 ? ' y ' + (sugeridas.length - 4) + ' más' : '') + '. ' +
-        '<button class="btn btn-sm" style="margin-left:6px" onclick="unirCuentasSugeridas()">Unir cuentas</button>' +
-        '</div></div>';
-    }
-    if (porVincular.length) {
-      html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
-        '<i class="ic ic-alert"></i><div><strong>' + porVincular.length +
-        ' cliente(s) están cargados con un código que no coincide con sus envíos.</strong> ' +
-        'Mientras no coincida, esos envíos se facturan en $0. ' +
-        porVincular.slice(0, 6).map(x => x.nombre + ' (' + x.codViejo + ' → <strong>' + x.codNuevo + '</strong>)').join(', ') +
-        (porVincular.length > 6 ? ' y ' + (porVincular.length - 6) + ' más' : '') + '. ' +
-        '<button class="btn btn-sm" style="margin-left:6px" onclick="vincularClientesConEnvios()">Vincular con los envíos</button>' +
-        '</div></div>';
-    }
+    // (El aviso de "re-codificar" quedó sin sentido: desde que la identidad es
+    //  el nombre, el código de la ficha y el de los envíos son lo mismo.)
     // Los reconocidos en los envíos que no están en el maestro: cada uno con
     // su decisión (vincular como otra cuenta, o agregar como cliente nuevo).
     html += _chipsNuevosClientes();
@@ -468,24 +440,44 @@ function _chipsNuevosClientes() {
   _cliNuevosReconocidos = clientesNuevosReconocidos();
   if (!_cliNuevosReconocidos.length) return '';
   const n = _cliNuevosReconocidos.length;
+
+  // De los que faltan, cuáles parecen cuentas de un mismo cliente (BOIRATECNO3,
+  // BOIRATECNO5, …). Se ofrece como ATAJO dentro del mismo aviso, no como otro
+  // cartel aparte: es la misma decisión —vincular— hecha de a muchas.
+  const grupos = cuentasSugeridas();
+  const nAgrupables = grupos.reduce((s, g) => s + g.otras.length, 0);
+
   const chips = _cliNuevosReconocidos.slice(0, 40).map((c, i) =>
-    '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px">' +
-      '<span style="display:inline-flex;align-items:center;gap:6px">' +
-        '<span class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:22px;height:22px;font-size:9px">' + initials(c.nombre) + '</span>' +
-        c.nombre + ' <span style="color:#8a6d00">· ' + c.envios + '</span></span>' +
-      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es otra cuenta de un cliente que ya está cargado" onclick="vincularClienteReconocido(' + i + ')"><i class="ic ic-clip"></i> Vincular</button>' +
-      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente nuevo" onclick="agregarClienteReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
+    '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px;white-space:nowrap">' +
+      '<span class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:22px;height:22px;font-size:9px">' + initials(c.nombre) + '</span>' +
+      '<span>' + c.nombre + ' <span style="color:#8a6d00">· ' + c.envios + '</span></span>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es otra cuenta de un cliente que ya está cargado: comparte su tarifario" onclick="vincularClienteReconocido(' + i + ')"><i class="ic ic-clip"></i> Vincular</button>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente nuevo: se le carga su propio tarifario" onclick="agregarClienteReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
     '</span>').join('');
+
+  // El contenido va TODO dentro de un solo hijo: .alert es flex y cada hijo
+  // suelto se convertía en una columna (el texto quedaba en una tira vertical).
   return '<div class="alert" style="background:#fff8e1;border:1px solid #f5d97a;color:#7a5c00;margin:0 0 12px;padding:12px 16px">' +
-    '<div style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px"><i class="ic ic-alert"></i> ' +
-      n + ' cliente' + (n !== 1 ? 's' : '') + ' de los envíos ' + (n !== 1 ? 'no están' : 'no está') + ' en el maestro</div>' +
-    '<div style="font-size:12px;margin-bottom:10px;color:#8a6d00">' +
-      '<strong>Vincular</strong>: si es otra cuenta de un cliente que ya tenés (así comparte su tarifario). ' +
-      '<strong>Agregar</strong>: si es un cliente nuevo, para cargarle su tarifario.</div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:200px;overflow-y:auto">' + chips +
-      (n > 40 ? '<span style="align-self:center;font-size:11px">…y ' + (n - 40) + ' más</span>' : '') + '</div>' +
-    (n > 1 ? '<div style="margin-top:10px"><button class="btn btn-sm" onclick="altaClientesFaltantes()">Agregar todos como nuevos</button></div>' : '') +
-    '</div>';
+    '<i class="ic ic-alert"></i>' +
+    '<div style="min-width:0;flex:1">' +
+      '<div style="font-weight:600;margin-bottom:4px">' +
+        n + ' cliente' + (n !== 1 ? 's' : '') + ' de los envíos ' + (n !== 1 ? 'no están' : 'no está') + ' en el maestro</div>' +
+      '<div style="font-size:12px;margin-bottom:10px">' +
+        'Decidí uno por uno: <strong>Vincular</strong> si es otra cuenta de un cliente que ya tenés (comparte su tarifario y factura junto), ' +
+        '<strong>Agregar</strong> si es un cliente nuevo al que le vas a cargar su tarifario.</div>' +
+      (nAgrupables
+        ? '<div style="font-size:12px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:8px 10px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+            '<span><strong>Atajo:</strong> ' + nAgrupables + ' de estas parecen cuentas de clientes que ya tenés ' +
+            '(' + grupos.slice(0, 2).map(g => g.principal.nombre + ' + ' + g.otras.length).join(', ') +
+            (grupos.length > 2 ? ', …' : '') + '). Las vincula todas juntas.</span>' +
+            '<button class="btn btn-sm" style="margin-left:auto" onclick="unirCuentasSugeridas()"><i class="ic ic-clip"></i> Vincular las ' + nAgrupables + '</button>' +
+          '</div>'
+        : '') +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto">' + chips +
+        (n > 40 ? '<span style="align-self:center;font-size:11px">…y ' + (n - 40) + ' más</span>' : '') + '</div>' +
+      (n > 1 ? '<div style="margin-top:10px"><button class="btn btn-sm" onclick="altaClientesFaltantes()">Agregar las ' + n + ' como clientes nuevos</button></div>' : '') +
+    '</div>' +
+  '</div>';
 }
 
 // Alta: abre el modal de cliente nuevo con el nombre y el código ya puestos.
