@@ -218,11 +218,19 @@ function renderClientes() {
     // Sin recorridos no se puede resolver ningún código ni detectar cuentas: si
     // no se dijera, el panel parecería estar diciendo "no hay nada que hacer".
     if (!hayEnviosConCodigo()) {
+      // Con los números a la vista: sin ellos, "no hay clientes" no distingue
+      // entre que no cargaron los envíos, que el listado no traía la columna, o
+      // que la sesión quedó con datos viejos.
+      const nRec = (AppData.records || []).length;
       html += '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
         (AppData._cargandoRegistros
           ? '<strong>Cargando los recorridos…</strong> Los avisos de códigos y de cuentas aparecen cuando terminen.'
-          : '<strong>No hay recorridos con Cod.Cliente cargados.</strong> Sin ellos no se puede saber qué código le corresponde a cada cliente ' +
-            'ni detectar las cuentas de un mismo cliente. Importá el listado y volvé a este panel.') +
+          : '<strong>Ninguno de los ' + nRec.toLocaleString('es-AR') + ' envíos en memoria trae cliente.</strong> ' +
+            'La identidad del cliente sale de la <strong>columna K</strong> del listado. ' +
+            (nRec
+              ? 'Si acabás de importar o de cambiar algo, <strong>recargá la página</strong> para traer los datos frescos; ' +
+                'si el listado importado no tenía esa columna, hay que reimportarlo.'
+              : 'Todavía no hay recorridos cargados.')) +
         '</div></div>';
     }
 
