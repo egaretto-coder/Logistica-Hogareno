@@ -41,6 +41,8 @@ function loadSavedConfig() {
   if (advc) { try { AppData.adelantoCuotas = JSON.parse(advc) || []; } catch(e) {} }
   const cli = localStorage.getItem('liq_clientes');
   if (cli) { try { AppData.clientes = JSON.parse(cli) || []; } catch(e) {} }
+  const zal = localStorage.getItem('liq_zona_alias');
+  if (zal) { try { AppData.zonaAlias = JSON.parse(zal) || []; } catch(e) {} }
   const clit = localStorage.getItem('liq_cliente_tarifas');
   if (clit) { try { AppData.clienteTarifas = JSON.parse(clit) || []; } catch(e) {} }
   const ven = localStorage.getItem('liq_vendedores');
@@ -338,6 +340,12 @@ async function _hydrateFromSupabaseReal(opts) {
       color: r.color || '#6366f1', es_sistema: !!r.es_sistema
     }));
   }
+  // Alias de zona: cómo viene escrita la zona en el tarifario de un cliente
+  // → la zona canónica del tarifario de costos.
+  AppData.zonaAlias = (data.zona_alias || []).map(z => ({
+    id: z.id, alias: String(z.alias || '').toUpperCase(), zona: String(z.zona || '').toUpperCase()
+  }));
+
   // Adelantos (préstamos en cuotas) y sus cuotas descontadas
   AppData.adelantos = (data.adelantos || []).map(a => ({
     id: a.id, conductor: a.conductor, monto_total: _num(a.monto_total),
@@ -376,6 +384,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_adelanto_cuotas', JSON.stringify(AppData.adelantoCuotas));
     localStorage.setItem('liq_clientes', JSON.stringify(AppData.clientes));
     localStorage.setItem('liq_cliente_tarifas', JSON.stringify(AppData.clienteTarifas));
+    localStorage.setItem('liq_zona_alias', JSON.stringify(AppData.zonaAlias || []));
     localStorage.setItem('liq_vendedores', JSON.stringify(AppData.vendedores));
     localStorage.setItem('liq_comision_categorias', JSON.stringify(AppData.comisionCategorias));
     localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));

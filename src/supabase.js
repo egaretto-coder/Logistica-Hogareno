@@ -122,7 +122,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, rendiciones] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, rendiciones, zonaAlias] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -151,6 +151,7 @@ const DB = {
         this.selectAll('empleado_ajustes', 'id'),
         this.selectAll('empleado_sueldos', 'id'),
         this.selectAll('rendiciones', 'id'),
+        this.selectAll('zona_alias', 'alias'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
@@ -165,7 +166,7 @@ const DB = {
         importaciones, supersla_solicitudes: superSlaSolic,
         dimensiones_catalogo: dimCatalogo,
         empleados, empleado_ajustes: empleadoAjustes, empleado_sueldos: empleadoSueldos,
-        rendiciones,
+        rendiciones, zona_alias: zonaAlias,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);

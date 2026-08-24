@@ -389,6 +389,9 @@ async function guardarTarifasCliente() {
 }
 // Inserta filas de cliente_tarifas y devuelve las filas con id.
 async function guardarClienteTarifas(rows) {
+  // Se canoniza acá también: es el único punto por el que pasan TODAS las
+  // tarifas que se guardan, venga del import o de una edición a mano.
+  rows = rows.map(r => Object.assign({}, r, { zona: zonaCanonica(r.zona) }));
   const ids = await DB.insertRows('cliente_tarifas', rows);
   return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, cliente_cod: (r.cliente_cod || '').toUpperCase(), zona: r.zona, precio: _num(r.precio) }));
 }
@@ -563,7 +566,7 @@ async function _aplicarTarifario(nombreArchivo, bytes) {
     const zonas = {};
     for (let i = unico.h + 1; i < rows.length; i++) {
       const r = rows[i] || [];
-      const zona = String(r[unico.iZona] || '').trim().toUpperCase();
+      const zona = zonaCanonica(r[unico.iZona]);
       const precio = parseNum(r[unico.iPrecio]);
       if (!zona) { if (r.some(c => String(c).trim())) res.ignoradas++; continue; }
       if (precio <= 0) continue;
@@ -594,7 +597,7 @@ async function _aplicarTarifario(nombreArchivo, bytes) {
       const r = rows[i] || [];
       const cod = String(r[cols.iCod] || '').trim().toUpperCase();
       const nombre = cols.iCli >= 0 ? String(r[cols.iCli] || '').trim().toUpperCase() : '';
-      const zona = String(r[cols.iZona] || '').trim().toUpperCase();
+      const zona = zonaCanonica(r[cols.iZona]);
       const precio = parseNum(r[cols.iPrecio]);
       if (!cod || !zona) { if (r.some(c => String(c).trim())) res.ignoradas++; continue; }
       if (precio <= 0) continue;   // sin precio no se carga (así se puede dejar en 0 lo no acordado)
@@ -643,6 +646,81 @@ async function _aplicarTarifario(nombreArchivo, bytes) {
   return res;
 }
 
+// Zonas del tarifario del cliente que no existen del lado del costo. Casi
+// siempre son la misma zona escrita distinta o partida en sub-zonas ("LA PLATA
+// NORTE" cuando el envío siempre dice "LA PLATA"). Se ofrecen para vincular ahí
+// mismo: si quedan sueltas, esas tarifas no se aplican a ningún envío y el
+// cliente se factura en $0 sin que nadie lo note.
+function _bloqueVincularZonas(desconocidas) {
+  const zonas = (typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : [];
+  if (!zonas.length) {
+    return '<div style="font-size:11px;color:#9a3412;margin-top:10px"><strong>' + desconocidas.length +
+      ' zona(s) no están en el tarifario de costos</strong> (' + desconocidas.join(', ') + ').</div>';
+  }
+  const opciones = zonas.slice().sort().map(z => '<option value="' + z + '">' + z + '</option>').join('');
+  const filas = desconocidas.map(z =>
+    '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">' +
+      '<span style="flex:1;font-weight:600">' + z + '</span>' +
+      '<span style="color:var(--text-muted)">→</span>' +
+      '<select class="zona-vincular" data-zona="' + String(z).replace(/"/g, '&quot;') + '" style="width:220px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">' +
+        '<option value="">— dejar como está —</option>' + opciones +
+      '</select>' +
+    '</div>').join('');
+  return '<div style="margin-top:12px;padding:10px 12px;border:1px solid #fdba74;background:#fff7ed;border-radius:8px">' +
+    '<div style="font-size:12px;color:#9a3412;margin-bottom:6px"><strong>' + desconocidas.length +
+    ' zona(s) no están en el tarifario de costos.</strong> Mientras no coincidan con la zona que traen los envíos, ' +
+    'esas tarifas no se aplican y esos envíos se facturan en $0. Vinculalas con la zona que corresponda:</div>' +
+    filas +
+    '<div style="text-align:right;margin-top:8px">' +
+      '<button class="btn btn-sm btn-primary" onclick="vincularZonasDesconocidas()">Vincular zonas</button>' +
+    '</div></div>';
+}
+
+// Guarda los alias elegidos y corrige las tarifas YA cargadas con esa grafía.
+async function vincularZonasDesconocidas() {
+  const pares = Array.from(document.querySelectorAll('.zona-vincular'))
+    .map(s => ({ alias: s.dataset.zona, zona: s.value }))
+    .filter(p => p.zona && normNombre(p.zona) !== normNombre(p.alias));
+  if (!pares.length) { showToast('Elegí con qué zona vincular al menos una'); return; }
+
+  let renombradas = 0, quitadas = 0; const conflictos = [];
+  for (const { alias, zona } of pares) {
+    try { await DB.insertRow('zona_alias', { alias, zona }); }
+    catch (e) { console.warn('zona_alias', alias, e); }
+    AppData.zonaAlias = (AppData.zonaAlias || [])
+      .filter(x => normNombre(x.alias) !== normNombre(alias)).concat([{ alias, zona }]);
+
+    // Las tarifas que ya se guardaron con la grafía vieja pasan a la canónica.
+    const afectadas = (AppData.clienteTarifas || []).filter(t => normNombre(t.zona) === normNombre(alias));
+    for (const t of afectadas) {
+      const gemela = (AppData.clienteTarifas || []).find(x =>
+        x.id !== t.id && clienteKey(x.cliente_cod) === clienteKey(t.cliente_cod) && normNombre(x.zona) === normNombre(zona));
+      if (gemela && _num(gemela.precio) !== _num(t.precio)) {
+        // Dos precios para la misma zona: no se elige por el operador.
+        conflictos.push(clienteNombreDe(t.cliente_cod) + ': ' + zona + ' ' + fmtPeso(gemela.precio) + ' vs ' + fmtPeso(t.precio));
+        continue;
+      }
+      if (gemela) {
+        try { await DB.deleteWhere('cliente_tarifas', 'id', t.id); AppData.clienteTarifas = AppData.clienteTarifas.filter(x => x.id !== t.id); quitadas++; }
+        catch (e) { console.warn('quitar tarifa duplicada', e); }
+      } else {
+        try { await DB.updateWhere('cliente_tarifas', 'id', t.id, { zona }); t.zona = zona; renombradas++; }
+        catch (e) { console.warn('renombrar tarifa', e); }
+      }
+    }
+  }
+  persistirClientesLocal();
+  renderClientes();
+  document.getElementById('modal-backdrop').classList.remove('open');
+  showToast('✅ ' + pares.length + ' zona(s) vinculadas' +
+    (renombradas ? ' · ' + renombradas + ' tarifas actualizadas' : '') +
+    (quitadas ? ' · ' + quitadas + ' duplicadas quitadas' : ''));
+  if (conflictos.length) {
+    alert('Estas tarifas quedaron sin tocar porque el cliente ya tenía esa zona con OTRO precio.\n' +
+      'Revisá cuál corresponde y borrá la que sobra:\n\n' + conflictos.join('\n'));
+  }
+}
+
 // Resumen de toda la tanda. Va en el modal y no en un alert porque con varios
 // archivos hay que poder leerlo y saber cuáles quedaron para revisar.
 function _resumenImportTarifarios(resultados) {
@@ -685,9 +763,7 @@ function _resumenImportTarifarios(resultados) {
       '</tr></thead><tbody>' + filas + '</tbody></table></div>' : '') +
     (repetidas ? '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">' + repetidas +
       ' fila(s) con la zona repetida: quedó el último precio.</div>' : '') +
-    (desconocidas.length ? '<div style="font-size:11px;color:#9a3412;margin-top:8px"><strong>' + desconocidas.length +
-      ' zona(s) no están en el tarifario de costos</strong> (' + desconocidas.slice(0, 8).join(', ') +
-      (desconocidas.length > 8 ? '…' : '') + '): esas tarifas no se aplican a ningún envío hasta que la zona exista.</div>' : '') +
+    (desconocidas.length ? _bloqueVincularZonas(desconocidas) : '') +
     (conError.length ? '<div style="font-size:11px;color:#b91c1c;margin-top:8px"><strong>No se pudieron leer:</strong><br>' +
       conError.map(r => '· ' + r.archivo + ' — ' + r.error).join('<br>') + '</div>' : '');
   document.getElementById('modal-backdrop').classList.add('open');

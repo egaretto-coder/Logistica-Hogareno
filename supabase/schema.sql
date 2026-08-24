@@ -908,3 +908,25 @@ update public.adelanto_cuotas set monto_ars = monto where monto_ars = 0;
 
 create index if not exists idx_adelantos_beneficiario on public.adelantos (beneficiario_tipo);
 create index if not exists idx_adelantos_empleado on public.adelantos (empleado_id);
+
+-- ---------- ZONA_ALIAS (grafías de zona en los tarifarios de clientes) ----------
+-- Los tarifarios que cierra Comercial traen la zona partida en sub-zonas que en
+-- los envíos NO existen: llega "LA PLATA NORTE" / "LA PLATA OESTE" /
+-- "CORONEL BRANDSEN" cuando la localidad del envío siempre dice "LA PLATA".
+-- Una tarifa con una zona que no aparece en ningún envío no se aplica nunca y
+-- ese envío se factura en $0 sin que nadie lo note. Es el mismo problema que
+-- los alias de conductor, del lado de las zonas: zonaCanonica() (src/core.js)
+-- traduce el alias y se aplica al LEER el import y al GUARDAR cualquier tarifa
+-- (guardarClienteTarifas), así lo persistido queda siempre canónico y el camino
+-- de lectura no paga el costo de resolver alias.
+create table if not exists public.zona_alias (
+  id bigint generated always as identity primary key,
+  alias text not null,          -- como viene escrito en el tarifario del cliente
+  zona text not null,           -- la zona canónica (la del tarifario de costos)
+  created_at timestamptz not null default now(),
+  unique (alias)
+);
+create index if not exists idx_zona_alias_alias on public.zona_alias (alias);
+alter table public.zona_alias enable row level security;
+create policy zona_alias_all on public.zona_alias
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());

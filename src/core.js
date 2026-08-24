@@ -230,6 +230,11 @@ let AppData = {
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
 
+  // Alias de zona: cómo viene escrita la zona en el tarifario de un cliente
+  // → la zona canónica (la del tarifario de costos).
+  // zonaAlias: [{ id, alias, zona }]
+  zonaAlias: [],
+
   // Adelantos (préstamos devueltos en cuotas) a conductores o a empleados.
   // adelantos:      [{ id, conductor, beneficiario_tipo, empleado_id, moneda, tipo_cambio,
   //                    monto_total, cuotas_total, monto_cuota, fecha, obs }]
@@ -337,6 +342,20 @@ function kmAdicionalConductor(conductor, rango, incluirExcluidos) {
     }
   });
   return { km, monto, n, detalle };
+}
+
+// ── Alias de zona ───────────────────────────────────────────────────────────
+// Los tarifarios de los clientes traen la zona partida en sub-zonas que en los
+// envíos no existen: llega "LA PLATA NORTE" cuando la localidad del envío
+// siempre dice "LA PLATA". Una tarifa con una zona que no aparece en ningún
+// envío no se aplica NUNCA, así que ese envío se factura en $0 sin que nadie lo
+// note. Es el mismo problema que los alias de conductor, del lado de las zonas.
+function zonaCanonica(z) {
+  const bruto = String(z == null ? '' : z).trim().toUpperCase();
+  const k = normNombre(bruto);
+  if (!k) return bruto;
+  const a = (AppData.zonaAlias || []).find(x => normNombre(x.alias) === k);
+  return a ? String(a.zona).trim().toUpperCase() : bruto;
 }
 
 // ── Adelantos (préstamos en cuotas) ─────────────────────────────────────────
