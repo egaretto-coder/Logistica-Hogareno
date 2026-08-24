@@ -127,7 +127,7 @@ function renderSuperSLA() {
 // y el conductor terminaría cobrando la tarifa estándar sin que nadie lo note.
 function zonasDelTarifario() {
   return Array.from(new Set(
-    (AppData.tarifas || []).map(t => String(t.zona || '').trim().toUpperCase()).filter(Boolean)
+    (AppData.tarifas || []).map(t => String(t.zona || '').trim().toUpperCase()).filter(esZonaValida)
   )).sort();
 }
 

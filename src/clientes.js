@@ -568,7 +568,8 @@ async function _aplicarTarifario(nombreArchivo, bytes) {
       const r = rows[i] || [];
       const zona = zonaCanonica(r[unico.iZona]);
       const precio = parseNum(r[unico.iPrecio]);
-      if (!zona) { if (r.some(c => String(c).trim())) res.ignoradas++; continue; }
+      // 'ZONA' repetida en el medio de la planilla es el encabezado, no una zona.
+      if (!zona || !esZonaValida(zona)) { if (r.some(c => String(c).trim())) res.ignoradas++; continue; }
       if (precio <= 0) continue;
       if (zonasOk.size && !zonasOk.has(normNombre(zona))) desconocidas.add(zona);
       if (zonas[zona] !== undefined) res.repetidas++;   // la última gana
@@ -599,7 +600,7 @@ async function _aplicarTarifario(nombreArchivo, bytes) {
       const nombre = cols.iCli >= 0 ? String(r[cols.iCli] || '').trim().toUpperCase() : '';
       const zona = zonaCanonica(r[cols.iZona]);
       const precio = parseNum(r[cols.iPrecio]);
-      if (!cod || !zona) { if (r.some(c => String(c).trim())) res.ignoradas++; continue; }
+      if (!cod || !zona || !esZonaValida(zona)) { if (r.some(c => String(c).trim())) res.ignoradas++; continue; }
       if (precio <= 0) continue;   // sin precio no se carga (así se puede dejar en 0 lo no acordado)
       if (zonasOk.size && !zonasOk.has(normNombre(zona))) desconocidas.add(zona);
       if (!porCod[cod]) porCod[cod] = { nombre: nombre || cod, zonas: {}, origen: 'del archivo' };

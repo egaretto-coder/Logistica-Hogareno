@@ -139,7 +139,8 @@ function importTarifas(event) {
       for (let i = hIdx + 1; i < rows.length; i++) {
         const r = rows[i];
         const zona = String(r[col.zona] || '').trim().toUpperCase();
-        if (!zona) continue;
+        // 'ZONA' y compañía son el encabezado repetido, no una zona.
+        if (!zona || !esZonaValida(zona)) continue;
         const s   = col.s   >= 0 ? parseTarifaMoneda(r[col.s])   : null;
         const c   = col.c   >= 0 ? parseTarifaMoneda(r[col.c])   : null;
         const sla = col.sla >= 0 ? parseTarifaMoneda(r[col.sla]) : null;

@@ -344,6 +344,18 @@ function kmAdicionalConductor(conductor, rango, incluirExcluidos) {
   return { km, monto, n, detalle };
 }
 
+// ── Zonas válidas ───────────────────────────────────────────────────────────
+// Palabras que son el ENCABEZADO de la planilla, no una zona. Si una se cuela
+// como zona queda en el tarifario de costos y desde ahí aparece en todos los
+// selectores y en el tarifario de venta de CADA cliente con precio $0 — sin que
+// exista ningún envío en esa "zona" (bug real: "ZONA" era la fila 47 de 47).
+const ZONAS_NO_VALIDAS = ['ZONA', 'ZONAS', 'PRECIO', 'PRECIOS', 'LOCALIDAD',
+  'LOCALIDADES', 'TARIFA', 'TARIFAS', 'CLIENTE', 'TOTAL', 'CATEGORIA'];
+function esZonaValida(z) {
+  const k = String(z == null ? '' : z).trim().toUpperCase();
+  return !!k && ZONAS_NO_VALIDAS.indexOf(k) < 0;
+}
+
 // ── Alias de zona ───────────────────────────────────────────────────────────
 // Los tarifarios de los clientes traen la zona partida en sub-zonas que en los
 // envíos no existen: llega "LA PLATA NORTE" cuando la localidad del envío
