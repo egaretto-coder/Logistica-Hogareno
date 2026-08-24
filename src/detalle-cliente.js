@@ -1,13 +1,15 @@
 // ════════════════════════════════════════════════════════════════════════
-//  DETALLE DE CLIENTE — control y edición antes de facturar.
-//  Espejo del panel Conductores, pero mirando el mismo envío desde el otro
-//  lado del mostrador: qué se le COBRA al cliente (tarifa de venta por zona)
-//  contra qué se le PAGA al conductor (tarifa de costo). La diferencia es el
-//  margen.
+//  DETALLE DE CLIENTE — donde el administrativo ARMA la liquidación.
+//  Se revisan los envíos de la semana (zona, estado, si factura), se corrige
+//  lo que haga falta y se cierra con "Marcar liquidación como lista", que es
+//  lo que habilita al operador a descargarla desde Liquidación de clientes.
 //
-//  Los dos paneles editan LOS MISMOS registros: si el administrativo de
-//  clientes corrige una zona acá, el de conductores la ve corregida allá. Esa
-//  es la sinergia — no hay dos bases de envíos, hay una sola.
+//  A propósito NO se muestra el costo del conductor ni el margen: acá se está
+//  armando lo que se le factura AL CLIENTE, y mezclar el otro lado del
+//  mostrador solo agrega ruido a esa tarea.
+//
+//  Los dos paneles editan LOS MISMOS registros: si se corrige una zona acá, el
+//  detalle de conductor la ve corregida allá — no hay dos bases de envíos.
 // ════════════════════════════════════════════════════════════════════════
 
 let dcliSoloSinTarifa = false;
@@ -109,7 +111,7 @@ function renderDetalleCliente() {
   if (!cod) {
     wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
       '<div class="empty-title">Seleccioná un cliente</div>' +
-      '<div class="empty-sub">Vas a poder revisar sus envíos y el margen antes de facturar</div></div>';
+      '<div class="empty-sub">Vas a poder revisar y corregir sus envíos antes de facturarle</div></div>';
     return;
   }
 
@@ -123,14 +125,13 @@ function renderDetalleCliente() {
     idxs.push(i);
   });
 
-  // Cada envío: cobrado (tarifa de venta) vs pagado (costo del conductor).
+  // Cada envío con lo que se le factura al cliente por su zona.
   const detalle = idxs.map(i => {
     const r = AppData.records[i];
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const contab = contabilizaRegistro(r);
     const cobrado = contab ? clienteTarifaEnZona(cod, zona) : 0;
-    const pagado = contab ? precioPagadoConductor(r) : 0;
-    return { i, r, zona, contab, cobrado, pagado, margen: cobrado - pagado, sinTarifa: contab && cobrado <= 0 };
+    return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0 };
   });
 
   const sinTarifa = detalle.filter(d => d.sinTarifa).length;
@@ -151,9 +152,6 @@ function renderDetalleCliente() {
 
   const contab = detalle.filter(d => d.contab);
   const totCobrado = contab.reduce((s, d) => s + d.cobrado, 0);
-  const totPagado = contab.reduce((s, d) => s + d.pagado, 0);
-  const margen = totCobrado - totPagado;
-  const pctMargen = totCobrado > 0 ? (margen * 100 / totCobrado) : 0;
 
   // Resumen por día (mismo plegado que Conductores: con cientos de filas,
   // scrollear es inmanejable).
@@ -161,9 +159,9 @@ function renderDetalleCliente() {
   vista.forEach(d => {
     const dia = (d.r.fecha || '').trim() || 'Sin fecha';
     let x = porDia.get(dia);
-    if (!x) { x = { envios: 0, contab: 0, cobrado: 0, pagado: 0 }; porDia.set(dia, x); }
+    if (!x) { x = { envios: 0, contab: 0, cobrado: 0 }; porDia.set(dia, x); }
     x.envios++;
-    if (d.contab) { x.contab++; x.cobrado += d.cobrado; x.pagado += d.pagado; }
+    if (d.contab) { x.contab++; x.cobrado += d.cobrado; }
   });
 
   let diaPrev = null;
@@ -172,22 +170,22 @@ function renderDetalleCliente() {
     let sep = '';
     if (dia !== diaPrev) {
       diaPrev = dia;
-      const rd = porDia.get(dia) || { envios: 0, contab: 0, cobrado: 0, pagado: 0 };
-      const abierto = dcliDiasAbiertos.has(dia);
+      const rd = porDia.get(dia) || { envios: 0, contab: 0, cobrado: 0 };
+      // Con el filtro puesto los días van ABIERTOS: si no, el filtro decía
+      // "23 envíos" y no se veía ninguno, porque quedaban dentro de días plegados.
+      const abierto = dcliSoloSinTarifa || dcliDiasAbiertos.has(dia);
       const fd = parseFechaReg(dia);
       const dow = fd && typeof DIAS_SEM !== 'undefined' ? DIAS_SEM[fd.getDay()] + ' ' : '';
       sep = '<tr class="dcli-dia-head" style="background:var(--surface-0);cursor:pointer" data-dia="' + dia.replace(/"/g, '&quot;') + '" onclick="toggleDiaCliente(this.dataset.dia)">' +
-        '<td colspan="7" style="padding:8px 12px;border-top:2px solid var(--border)">' +
+        '<td colspan="5" style="padding:8px 12px;border-top:2px solid var(--border)">' +
           '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px">' +
             '<span class="cond-dia-chev' + (abierto ? ' abierto' : '') + '" data-dia="' + dia.replace(/"/g, '&quot;') + '"><i class="ic ic-chevrons-down"></i></span>' +
             '<strong style="font-size:13px"><i class="ic ic-calendar"></i> ' + dow + dia + '</strong>' +
             '<span class="muted">' + rd.contab + ' de ' + rd.envios + ' facturan</span>' +
             '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(rd.cobrado) + '</strong>' +
-            '<span class="muted" style="font-family:monospace">− ' + fmtPeso(rd.pagado) + '</span>' +
-            '<strong style="font-family:monospace;color:' + (rd.cobrado - rd.pagado >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(rd.cobrado - rd.pagado) + '</strong>' +
           '</div></td></tr>';
     }
-    const oculto = dcliDiasAbiertos.has(dia) ? '' : 'display:none;';
+    const oculto = (dcliSoloSinTarifa || dcliDiasAbiertos.has(dia)) ? '' : 'display:none;';
     const zonaCat = (typeof zonaCatalogoDe === 'function') ? zonaCatalogoDe(d.r.cadete || '') : [];
     return sep +
       '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
@@ -204,8 +202,7 @@ function renderDetalleCliente() {
         '<td class="mono" style="text-align:right">' + (d.sinTarifa
             ? '<span style="color:#b45309" title="La zona no tiene tarifa de venta para este cliente">sin tarifa</span>'
             : fmtPeso(d.cobrado)) + '</td>' +
-        '<td class="mono" style="text-align:right;color:var(--text-muted)">' + fmtPeso(d.pagado) + '</td>' +
-        '<td class="mono" style="text-align:right;font-weight:700;color:' + (d.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(d.margen) + '</td>' +
+
       '</tr>';
   }).join('');
 
@@ -231,13 +228,13 @@ function renderDetalleCliente() {
         '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
           '<div class="metric-label">Se le cobra al cliente</div><div class="metric-value">' + fmtPeso(totCobrado) + '</div>' +
           '<div class="metric-sub">' + contab.length + ' envíos facturables</div></div>' +
-        '<div class="metric-card"><div class="metric-ic"><i class="ic ic-truck"></i></div>' +
-          '<div class="metric-label">Se le paga a los conductores</div><div class="metric-value">' + fmtPeso(totPagado) + '</div>' +
-          '<div class="metric-sub">por esos mismos envíos</div></div>' +
-        '<div class="metric-card"><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
-          '<div class="metric-label">Margen</div>' +
-          '<div class="metric-value" style="color:' + (margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(margen) + '</div>' +
-          '<div class="metric-sub">' + pctMargen.toFixed(1) + '% de lo facturado</div></div>' +
+        '<div class="metric-card"><div class="metric-ic"><i class="ic ic-box"></i></div>' +
+          '<div class="metric-label">Envíos que facturan</div><div class="metric-value">' + contab.length + '</div>' +
+          '<div class="metric-sub">de ' + detalle.length + ' de la semana</div></div>' +
+        '<div class="metric-card"' + (sinTarifa ? ' style="border-color:#f5d97a"' : '') + '><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
+          '<div class="metric-label">En zonas sin tarifa</div>' +
+          '<div class="metric-value"' + (sinTarifa ? ' style="color:#b45309"' : '') + '>' + sinTarifa + '</div>' +
+          '<div class="metric-sub">se facturan en $0 — cargá esas zonas</div></div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
         '<span>Los días arrancan cerrados — tocá uno para ver y corregir sus envíos.</span>' +
@@ -246,12 +243,12 @@ function renderDetalleCliente() {
       '</div>' +
       '<div class="table-wrap"><table>' +
         '<thead><tr><th>Tracking</th><th>Fecha</th><th>Zona</th><th>¿Factura?</th>' +
-          '<th style="text-align:right">Se cobra</th><th style="text-align:right">Se paga</th><th style="text-align:right">Margen</th></tr></thead>' +
-        '<tbody>' + (filas || '<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">' +
+          '<th style="text-align:right">Se factura</th></tr></thead>' +
+        '<tbody>' + (filas || '<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">' +
           (dcliSoloSinTarifa ? '✅ No hay envíos sin tarifa en la semana' : 'Sin envíos de este cliente en la semana') + '</td></tr>') + '</tbody>' +
       '</table></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
-        '💡 Corregir la zona acá también corrige lo que se le paga al conductor: es el mismo envío.' +
+        '💡 Corregí la zona o el estado y el total se recalcula solo. Cuando esté listo, marcá la liquidación como lista para que el operador pueda descargarla.' +
       '</div>' +
     '</div>';
 }
