@@ -167,17 +167,39 @@ function renderClientes() {
       (sinTarifa ? ' · ' + sinTarifa + ' sin tarifario' : '');
   }
 
-  // Clientes que aparecen en los envíos pero no están dados de alta.
-  const faltantes = conEnvios.filter(c => !(AppData.clientes || []).some(x => clienteKey(x.codigo) === c.cod));
+  // Dos situaciones DISTINTAS que antes se mezclaban en un solo aviso:
+  //  1) el cliente ya está cargado pero con un código que no matchea sus envíos
+  //     (el provisional del import) → hay que RE-CODIFICARLO, no darlo de alta;
+  //  2) el cliente no existe en el maestro ni por código ni por nombre → alta.
+  // Ofrecer "darlos de alta" para el caso 1 duplicaba el cliente y dejaba el
+  // tarifario colgado del código viejo, sin facturar nada.
+  const porVincular = clientesPorVincular();
+  const nombresPorVincular = new Set(porVincular.map(x => normCliente(x.nombre)));
+  const faltantes = conEnvios.filter(c =>
+    !(AppData.clientes || []).some(x => clienteKey(x.codigo) === c.cod) &&
+    !nombresPorVincular.has(normCliente(c.nombre)));
+
   const avisoEl = document.getElementById('cli-faltantes');
   if (avisoEl) {
-    avisoEl.innerHTML = faltantes.length
-      ? '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
+    let html = '';
+    if (porVincular.length) {
+      html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+        '<i class="ic ic-alert"></i><div><strong>' + porVincular.length +
+        ' cliente(s) están cargados con un código que no coincide con sus envíos.</strong> ' +
+        'Mientras no coincida, esos envíos se facturan en $0. ' +
+        porVincular.slice(0, 6).map(x => x.nombre + ' (' + x.codViejo + ' → <strong>' + x.codNuevo + '</strong>)').join(', ') +
+        (porVincular.length > 6 ? ' y ' + (porVincular.length - 6) + ' más' : '') + '. ' +
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="vincularClientesConEnvios()">Vincular con los envíos</button>' +
+        '</div></div>';
+    }
+    if (faltantes.length) {
+      html += '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
         '<strong>' + faltantes.length + ' cliente(s) con envíos esta semana no están dados de alta:</strong> ' +
         faltantes.slice(0, 8).map(f => f.nombre + ' (' + f.cod + ')').join(', ') +
         (faltantes.length > 8 ? ' y ' + (faltantes.length - 8) + ' más' : '') + '. ' +
-        '<button class="btn btn-sm" style="margin-left:6px" onclick="altaClientesFaltantes()">Darlos de alta</button></div></div>'
-      : '';
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="altaClientesFaltantes()">Darlos de alta</button></div></div>';
+    }
+    avisoEl.innerHTML = html;
   }
 
   if (!lista.length) {
@@ -250,6 +272,72 @@ function verDetalleDeCliente(cod) {
 }
 
 // Da de alta los clientes que aparecen en los envíos y no están en el maestro.
+// Clientes del maestro cuyo código NO aparece en ningún envío pero cuyo NOMBRE
+// sí. Son los que quedaron con un código que no factura nada: típicamente el
+// provisional que pone el import cuando los envíos todavía no estaban cargados.
+// Darlos de alta otra vez duplicaría el cliente y dejaría el tarifario colgado
+// del código viejo, así que lo que corresponde es RE-CODIFICARLOS.
+function clientesPorVincular() {
+  const deEnvios = clientesDeRegistros();          // todos los envíos cargados, no solo la semana
+  const codsEnvios = new Set(deEnvios.map(c => clienteKey(c.cod)));
+  const porNombre = new Map(deEnvios.map(c => [normCliente(c.nombre), c]));
+  const codsMaestro = new Set((AppData.clientes || []).map(c => clienteKey(c.codigo)).filter(Boolean));
+  const out = [];
+  (AppData.clientes || []).forEach(c => {
+    const cod = clienteKey(c.codigo);
+    if (cod && codsEnvios.has(cod)) return;        // su código ya matchea envíos: no se toca
+    const env = porNombre.get(normCliente(c.nombre));
+    if (!env) return;                              // su nombre no aparece en los envíos
+    const codNuevo = clienteKey(env.cod);
+    if (!codNuevo || codNuevo === cod) return;
+    out.push({ id: c.id, nombre: c.nombre, codViejo: cod, codNuevo, envios: env.envios,
+               conflicto: codsMaestro.has(codNuevo) });
+  });
+  return out;
+}
+
+// Les pone el código real de los envíos y se lleva su tarifario con ellos.
+async function vincularClientesConEnvios() {
+  const todos = clientesPorVincular();
+  const lista = todos.filter(x => !x.conflicto);
+  const conflictos = todos.filter(x => x.conflicto);
+  if (!lista.length) {
+    showToast(conflictos.length ? '⚠️ Solo hay casos con código ya usado por otro cliente' : 'No hay clientes para vincular');
+    if (conflictos.length) alert('Estos no se pueden vincular solos porque su código real ya lo tiene otro cliente del maestro:\n\n' +
+      conflictos.map(x => '· ' + x.nombre + ' → ' + x.codNuevo).join('\n'));
+    return;
+  }
+  if (!confirm('Estos ' + lista.length + ' cliente(s) ya están cargados pero con un código que no coincide con sus envíos.\n' +
+    'Se les pone el código real y su tarifario se mueve con ellos:\n\n' +
+    lista.slice(0, 12).map(x => '· ' + x.nombre + ': ' + x.codViejo + ' → ' + x.codNuevo + '  (' + x.envios + ' envíos)').join('\n') +
+    (lista.length > 12 ? '\n…y ' + (lista.length - 12) + ' más' : '') +
+    '\n\nNo se crea ningún cliente nuevo ni se pierde ninguna tarifa.')) return;
+
+  let ok = 0, tarifas = 0;
+  for (const x of lista) {
+    try {
+      await DB.updateWhere('clientes', 'id', x.id, { codigo: x.codNuevo, obs: '' });
+      const cli = (AppData.clientes || []).find(c => c.id === x.id);
+      if (cli) { cli.codigo = x.codNuevo; cli.obs = ''; }
+      // El tarifario cuelga del código: se mueve entero en una sola operación.
+      if (x.codViejo) {
+        const suyas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) === x.codViejo);
+        if (suyas.length) {
+          await DB.updateWhere('cliente_tarifas', 'cliente_cod', x.codViejo, { cliente_cod: x.codNuevo });
+          suyas.forEach(t => { t.cliente_cod = x.codNuevo; });
+          tarifas += suyas.length;
+        }
+      }
+      ok++;
+    } catch (e) { console.warn('vincular cliente', x.nombre, e); }
+  }
+  persistirClientesLocal();
+  renderClientes();
+  showToast('✅ ' + ok + ' cliente(s) vinculados con sus envíos · ' + tarifas + ' tarifas movidas');
+  if (conflictos.length) alert('Quedaron ' + conflictos.length + ' sin vincular porque su código real ya lo tiene otro cliente:\n\n' +
+    conflictos.map(x => '· ' + x.nombre + ' → ' + x.codNuevo).join('\n') + '\n\nRevisá si están duplicados.');
+}
+
 async function altaClientesFaltantes() {
   const rango = semanaClienteRango();
   const faltantes = clientesDeRegistros(rango)
