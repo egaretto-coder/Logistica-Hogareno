@@ -258,7 +258,6 @@ function renderClientes() {
     const nz = clienteNZonas(cod);
     const act = porCod.get(cod);
     const liq = act ? calcLiquidacionCliente(cod, rango) : null;
-    const margenPct = liq && liq.total > 0 ? (liq.margen * 100 / liq.total) : 0;
     const dato = (etq, val) =>
       '<div><span style="font-size:10px;color:var(--text-muted);display:block">' + etq + '</span>' +
       '<span style="font-size:12px;font-weight:600">' + val + '</span></div>';
@@ -298,7 +297,7 @@ function renderClientes() {
           dato('Zonas con tarifa', nz ? nz : '<span style="color:#b45309">ninguna</span>') +
           dato('Envíos esta semana', act ? act.envios : '—') +
           (liq ? dato('Se factura', fmtPeso(liq.total)) : '') +
-          (liq ? dato('Margen', '<span style="color:' + (liq.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(liq.margen) + ' · ' + margenPct.toFixed(0) + '%</span>') : '') +
+
         '</div>' +
 
         (liq && liq.sinTarifa
@@ -390,7 +389,7 @@ function verCardCliente(cod) {
       dato('Zonas con tarifa', nz ? String(nz) : '<span style="color:#b45309">ninguna</span>') +
       dato('Envíos de la semana', liq.totalEnvios ? String(liq.totalEnvios) : '—') +
       dato('A facturar', fmtPeso(liq.total)) +
-      dato('Margen', '<span style="color:' + (liq.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(liq.margen) + '</span>') +
+
     '</div>' +
     (liq.sinTarifa ? '<div style="font-size:11px;color:#b45309;padding:4px 0"><i class="ic ic-alert"></i> ' + liq.sinTarifa +
       ' envío(s) en zonas sin tarifa — se facturan en $0</div>' : '') +
