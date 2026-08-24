@@ -230,6 +230,10 @@ let AppData = {
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
 
+  // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
+  // clienteCuentas: [{ id, alias_cod, cliente_cod }]
+  clienteCuentas: [],
+
   // Alias de zona: cómo viene escrita la zona en el tarifario de un cliente
   // → la zona canónica (la del tarifario de costos).
   // zonaAlias: [{ id, alias, zona }]

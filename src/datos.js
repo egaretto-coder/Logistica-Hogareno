@@ -41,6 +41,8 @@ function loadSavedConfig() {
   if (advc) { try { AppData.adelantoCuotas = JSON.parse(advc) || []; } catch(e) {} }
   const cli = localStorage.getItem('liq_clientes');
   if (cli) { try { AppData.clientes = JSON.parse(cli) || []; } catch(e) {} }
+  const ccu = localStorage.getItem('liq_cliente_cuentas');
+  if (ccu) { try { AppData.clienteCuentas = JSON.parse(ccu) || []; } catch(e) {} }
   const zal = localStorage.getItem('liq_zona_alias');
   if (zal) { try { AppData.zonaAlias = JSON.parse(zal) || []; } catch(e) {} }
   const clit = localStorage.getItem('liq_cliente_tarifas');
@@ -340,6 +342,12 @@ async function _hydrateFromSupabaseReal(opts) {
       color: r.color || '#6366f1', es_sistema: !!r.es_sistema
     }));
   }
+  // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
+  AppData.clienteCuentas = (data.cliente_cuentas || []).map(c => ({
+    id: c.id, alias_cod: String(c.alias_cod || '').toUpperCase(), cliente_cod: String(c.cliente_cod || '').toUpperCase()
+  }));
+  if (typeof invalidarIndiceCuentas === 'function') invalidarIndiceCuentas();
+
   // Alias de zona: cómo viene escrita la zona en el tarifario de un cliente
   // → la zona canónica del tarifario de costos.
   AppData.zonaAlias = (data.zona_alias || []).map(z => ({
@@ -385,6 +393,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_clientes', JSON.stringify(AppData.clientes));
     localStorage.setItem('liq_cliente_tarifas', JSON.stringify(AppData.clienteTarifas));
     localStorage.setItem('liq_zona_alias', JSON.stringify(AppData.zonaAlias || []));
+    localStorage.setItem('liq_cliente_cuentas', JSON.stringify(AppData.clienteCuentas || []));
     localStorage.setItem('liq_vendedores', JSON.stringify(AppData.vendedores));
     localStorage.setItem('liq_comision_categorias', JSON.stringify(AppData.comisionCategorias));
     localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));

@@ -16,12 +16,45 @@ let clienteEditId = null;
 // ── Identidad ───────────────────────────────────────────────────────────────
 function normCliente(s) { return normNombre(s); }
 
-// Código de un registro. Si el envío es viejo y no lo trae, cae al nombre para
-// no perderlo (esos envíos no se pueden facturar por código).
-function clienteCodDeRegistro(r) {
-  return String((r && r.cliente_cod) || '').trim().toUpperCase();
-}
 function clienteKey(cod) { return String(cod || '').trim().toUpperCase(); }
+
+// ── Cuentas de un mismo cliente ─────────────────────────────────────────────
+// Un cliente real puede operar con VARIAS cuentas, cada una con su Cod.Cliente:
+// LA FERRETERIA factura como FERR y FERR2, PUNTO HERRAMIENTAS como PH1/PH2/PH3,
+// y el mismo nombre puede tener dos códigos (BLUEMAIL = BLUE y BLM). Es el mismo
+// cliente y la misma lista de precios. Sin unificarlos habría que cargar el
+// tarifario una vez por cuenta y la facturación saldría partida en pedazos.
+// El índice se cachea porque esto se resuelve una vez por ENVÍO (decenas de
+// miles) en cada render.
+let _idxCuentas = null;
+function invalidarIndiceCuentas() { _idxCuentas = null; }
+function _indiceCuentas() {
+  if (_idxCuentas) return _idxCuentas;
+  _idxCuentas = new Map();
+  (AppData.clienteCuentas || []).forEach(c => {
+    const a = clienteKey(c.alias_cod), canon = clienteKey(c.cliente_cod);
+    if (a && canon && a !== canon) _idxCuentas.set(a, canon);
+  });
+  return _idxCuentas;
+}
+// Código canónico de una cuenta (o el mismo, si no es alias de nadie).
+function clienteCodCanonico(cod) {
+  const k = clienteKey(cod);
+  return _indiceCuentas().get(k) || k;
+}
+// Cuentas secundarias de un cliente.
+function cuentasDeCliente(cod) {
+  const k = clienteKey(cod);
+  return (AppData.clienteCuentas || []).filter(c => clienteKey(c.cliente_cod) === k)
+    .map(c => clienteKey(c.alias_cod));
+}
+
+// Código de un registro, YA unificado: todas las cuentas del mismo cliente
+// caen en su código canónico, así el tarifario, la liquidación, las cards y el
+// detalle ven un solo cliente.
+function clienteCodDeRegistro(r) {
+  return clienteCodCanonico((r && r.cliente_cod) || '');
+}
 
 // Nombre para mostrar de un código: el del maestro si está cargado, si no el
 // último nombre de fantasía visto en los envíos.
@@ -182,6 +215,18 @@ function renderClientes() {
   const avisoEl = document.getElementById('cli-faltantes');
   if (avisoEl) {
     let html = '';
+    // Varias cuentas del mismo cliente: si no se unen, hay que cargarle el
+    // tarifario una vez por cuenta y su facturación sale partida.
+    const sugeridas = cuentasSugeridas();
+    if (sugeridas.length) {
+      html += '<div class="alert" style="margin:0 0 12px;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe">' +
+        '<i class="ic ic-building"></i><div><strong>' + sugeridas.length +
+        ' cliente(s) parecen tener más de una cuenta.</strong> Son el mismo cliente con la misma lista de precios: ' +
+        sugeridas.slice(0, 4).map(g => g.principal.nombre + ' (' + [g.principal.cod].concat(g.otras.map(o => o.cod)).join(' + ') + ')').join(', ') +
+        (sugeridas.length > 4 ? ' y ' + (sugeridas.length - 4) + ' más' : '') + '. ' +
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="unirCuentasSugeridas()">Unir cuentas</button>' +
+        '</div></div>';
+    }
     if (porVincular.length) {
       html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
         '<i class="ic ic-alert"></i><div><strong>' + porVincular.length +
@@ -227,6 +272,11 @@ function renderClientes() {
             '<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + c.nombre + '</div>' +
             '<div style="font-size:11px;color:var(--text-muted)">' +
               (cod ? '<span class="tag" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:9.5px">' + cod + '</span> ' : '<span style="color:#b91c1c">sin código</span> ') +
+              // Las otras cuentas del mismo cliente, para que se vea que su
+              // tarifario cubre todas y se puedan separar si se unieron mal.
+              cuentasDeCliente(cod).map(a =>
+                '<span class="tag" style="background:var(--surface-0);color:var(--text-secondary);border:1px dashed var(--border);font-size:9.5px" ' +
+                'title="Otra cuenta del mismo cliente — clic para separarla" onclick="separarCuenta(\'' + a + '\')" role="button">+ ' + a + '</span> ').join('') +
               (c.cuit ? 'CUIT ' + c.cuit : '') + '</div>' +
           '</div>' +
         '</div>' +
@@ -272,6 +322,131 @@ function verDetalleDeCliente(cod) {
 }
 
 // Da de alta los clientes que aparecen en los envíos y no están en el maestro.
+// ── Detección de cuentas del mismo cliente ──────────────────────────────────
+// Raíz del nombre de fantasía: sin el número de cuenta al final ni la forma
+// societaria. "LA FERRETERIA 2" y "ATAWALLPA PAPELES S.A" caen en la misma raíz
+// que su cuenta hermana; es la pista que usa el operador para reconocerlas.
+function _raizCliente(nombre) {
+  return normNombre(String(nombre || '')
+    .replace(/\s*(S\.?A\.?S?|S\.?R\.?L\.?)\s*$/i, '')
+    .replace(/\s*[0-9]+\s*$/, ''))
+    .trim();
+}
+
+// Grupos de códigos DISTINTOS que parecen el mismo cliente. Se propone como
+// canónico el que más envíos tiene. Solo sugiere: unir cuentas es del operador.
+function cuentasSugeridas() {
+  const porRaiz = new Map();
+  clientesDeRegistrosCrudo().forEach(c => {
+    const raiz = _raizCliente(c.nombre);
+    if (!raiz) return;
+    if (!porRaiz.has(raiz)) porRaiz.set(raiz, []);
+    porRaiz.get(raiz).push(c);
+  });
+  const out = [];
+  porRaiz.forEach((cuentas, raiz) => {
+    const cods = Array.from(new Set(cuentas.map(c => clienteKey(c.cod))));
+    if (cods.length < 2) return;
+    // Si ya están unificadas, no hay nada que sugerir.
+    const canon = Array.from(new Set(cods.map(clienteCodCanonico)));
+    if (canon.length < 2) return;
+    const porCod = cods.map(cod => {
+      const envios = cuentas.filter(c => clienteKey(c.cod) === cod).reduce((s, c) => s + c.envios, 0);
+      const nombre = cuentas.find(c => clienteKey(c.cod) === cod).nombre;
+      // Se prefiere el código que YA está dado de alta: si el operador armó la
+      // ficha y le cargó el tarifario, no tiene sentido moverle el código.
+      const enMaestro = (AppData.clientes || []).some(x => clienteKey(x.codigo) === cod);
+      return { cod, nombre, envios, enMaestro };
+    }).sort((a, b) => (b.enMaestro ? 1 : 0) - (a.enMaestro ? 1 : 0) || b.envios - a.envios);
+    out.push({ raiz, principal: porCod[0], otras: porCod.slice(1) });
+  });
+  return out.sort((a, b) => b.principal.envios - a.principal.envios);
+}
+
+// Igual que clientesDeRegistros pero SIN unificar cuentas: se necesita para
+// poder detectar las que todavía no están unidas.
+function clientesDeRegistrosCrudo() {
+  const m = new Map();
+  (AppData.records || []).forEach(r => {
+    const k = clienteKey(r && r.cliente_cod);
+    if (!k) return;
+    let x = m.get(k);
+    if (!x) { x = { cod: k, nombre: String(r.cliente || '').trim() || k, envios: 0 }; m.set(k, x); }
+    x.envios++;
+  });
+  return Array.from(m.values());
+}
+
+// Une las cuentas elegidas bajo un código canónico y mueve sus tarifas.
+async function unirCuentasCliente(canon, alias) {
+  const canonK = clienteKey(canon);
+  let ok = 0;
+  for (const a of alias) {
+    const aliasK = clienteKey(a);
+    if (!aliasK || aliasK === canonK) continue;
+    try {
+      await DB.insertRow('cliente_cuentas', { alias_cod: aliasK, cliente_cod: canonK });
+      AppData.clienteCuentas = (AppData.clienteCuentas || [])
+        .filter(x => clienteKey(x.alias_cod) !== aliasK)
+        .concat([{ alias_cod: aliasK, cliente_cod: canonK }]);
+      ok++;
+    } catch (e) { console.warn('unir cuenta', aliasK, e); }
+    // Si la cuenta secundaria tenía su propia ficha y su tarifario, se los
+    // queda el cliente canónico: es el mismo acuerdo comercial.
+    const ficha = (AppData.clientes || []).find(c => clienteKey(c.codigo) === aliasK);
+    if (ficha) {
+      const suyas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) === aliasK);
+      const tieneCanon = (AppData.clienteTarifas || []).some(t => clienteKey(t.cliente_cod) === canonK);
+      try {
+        if (suyas.length && !tieneCanon) {
+          await DB.updateWhere('cliente_tarifas', 'cliente_cod', aliasK, { cliente_cod: canonK });
+          suyas.forEach(t => { t.cliente_cod = canonK; });
+        } else if (suyas.length) {
+          // El canónico ya tiene tarifario propio: el duplicado se descarta.
+          await DB.deleteWhere('cliente_tarifas', 'cliente_cod', aliasK);
+          AppData.clienteTarifas = AppData.clienteTarifas.filter(t => clienteKey(t.cliente_cod) !== aliasK);
+        }
+        await DB.deleteWhere('clientes', 'id', ficha.id);
+        AppData.clientes = AppData.clientes.filter(c => c.id !== ficha.id);
+      } catch (e) { console.warn('absorber ficha', aliasK, e); }
+    }
+  }
+  invalidarIndiceCuentas();
+  persistirClientesLocal();
+  return ok;
+}
+
+// Aplica todas las sugerencias de una (el caso de la primera carga).
+async function unirCuentasSugeridas() {
+  const grupos = cuentasSugeridas();
+  if (!grupos.length) { showToast('No hay cuentas para unir'); return; }
+  const detalle = grupos.slice(0, 10).map(g =>
+    '· ' + g.principal.nombre + ' [' + g.principal.cod + '] ← ' + g.otras.map(o => o.cod).join(', ')).join('\n');
+  if (!confirm('Estos códigos parecen ser el MISMO cliente con varias cuentas.\n' +
+    'Se unifican bajo el que más envíos tiene, y el tarifario pasa a valer para todas:\n\n' + detalle +
+    (grupos.length > 10 ? '\n…y ' + (grupos.length - 10) + ' más' : '') +
+    '\n\nSe puede deshacer desde la ficha de cada cliente.')) return;
+  let ok = 0;
+  for (const g of grupos) ok += await unirCuentasCliente(g.principal.cod, g.otras.map(o => o.cod));
+  renderClientes();
+  showToast('✅ ' + ok + ' cuenta(s) unidas a su cliente');
+}
+
+async function separarCuenta(aliasCod) {
+  const a = clienteKey(aliasCod);
+  const fila = (AppData.clienteCuentas || []).find(x => clienteKey(x.alias_cod) === a);
+  if (!fila) return;
+  if (!confirm('¿Separar la cuenta ' + a + '?\nVuelve a facturarse por su cuenta y va a necesitar su propio tarifario.')) return;
+  try {
+    await DB.deleteWhere('cliente_cuentas', 'alias_cod', a);
+    AppData.clienteCuentas = AppData.clienteCuentas.filter(x => clienteKey(x.alias_cod) !== a);
+    invalidarIndiceCuentas();
+    persistirClientesLocal();
+    renderClientes();
+    showToast('↩ Cuenta ' + a + ' separada');
+  } catch (e) { console.warn('separarCuenta', e); showToast('⛔ No se pudo separar'); }
+}
+
 // Clientes del maestro cuyo código NO aparece en ningún envío pero cuyo NOMBRE
 // sí. Son los que quedaron con un código que no factura nada: típicamente el
 // provisional que pone el import cuando los envíos todavía no estaban cargados.

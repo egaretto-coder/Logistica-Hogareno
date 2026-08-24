@@ -930,3 +930,29 @@ create index if not exists idx_zona_alias_alias on public.zona_alias (alias);
 alter table public.zona_alias enable row level security;
 create policy zona_alias_all on public.zona_alias
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- CLIENTE_CUENTAS (varias cuentas de un mismo cliente) ----------
+-- Un cliente real puede operar con VARIAS cuentas en el listado de envíos, cada
+-- una con su propio Cod.Cliente: LA FERRETERIA factura como FERR y FERR2,
+-- PUNTO HERRAMIENTAS como PH1/PH2/PH3, y hasta el mismo nombre puede tener dos
+-- códigos (BLUEMAIL = BLUE y BLM). Es el mismo cliente y la misma lista de
+-- precios: sin unificarlos habría que cargar el tarifario una vez por cuenta y
+-- la facturación del cliente saldría partida en pedazos.
+--
+-- alias_cod → cliente_cod canónico. clienteCodDeRegistro() (src/clientes.js)
+-- traduce AL LEER cada envío —con un índice cacheado, porque se resuelve una
+-- vez por envío en cada render— así todo lo que agrupa por código (tarifario,
+-- liquidación, cards, detalle) ve un solo cliente. Mismo patrón que los alias
+-- de conductor y los de zona.
+create table if not exists public.cliente_cuentas (
+  id bigint generated always as identity primary key,
+  alias_cod text not null,        -- el Cod.Cliente secundario, como viene en los envíos
+  cliente_cod text not null,      -- el código canónico del cliente
+  created_at timestamptz not null default now(),
+  unique (alias_cod)
+);
+create index if not exists idx_cliente_cuentas_alias on public.cliente_cuentas (alias_cod);
+create index if not exists idx_cliente_cuentas_cod on public.cliente_cuentas (cliente_cod);
+alter table public.cliente_cuentas enable row level security;
+create policy cliente_cuentas_all on public.cliente_cuentas
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
