@@ -452,7 +452,15 @@ async function _hydrateRegistrosReal() {
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
       zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
       direccion: r.direccion || '', destinatario: r.destinatario || '',
-      cliente: r.cliente || '', dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
+      cliente: r.cliente || '',
+      // IDENTIDAD del cliente que factura. Esta ruta es la del ARRANQUE (la
+      // hidratación en dos fases) y se había quedado sin copiarla: los envíos
+      // llegaban sin cliente y toda la facturación —cards, cuentas, tarifario,
+      // liquidación— veía una base vacía, mientras que al re-hidratar por otro
+      // camino sí aparecían. Cualquier campo nuevo hay que sumarlo en LAS DOS.
+      cliente_cod: r.cliente_cod || '',
+      cobro_destino: _num(r.cobro_destino),
+      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
