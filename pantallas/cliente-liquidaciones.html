@@ -1,0 +1,51 @@
+      <div id="page-cliente-liquidaciones" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-file"></i> Liquidación de clientes</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="date-range">
+              <i class="ic ic-calendar"></i>
+              <span class="date-label">Jueves de corte</span>
+              <input type="date" id="cliq-semana" onchange="renderClienteLiquidaciones()" aria-label="Jueves de corte de la semana">
+            </div>
+            <button class="btn btn-sm" id="cliq-btn-unpdf" onclick="descargarLiqClientesCombinado()" title="Todas las elegidas en un solo archivo, una por página"><i class="ic ic-file"></i> En un solo PDF</button>
+            <button class="btn btn-sm btn-primary" id="cliq-btn-descargar" onclick="descargarLiqClientes()"><i class="ic ic-download"></i> Descargar</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          <i class="ic ic-file"></i><div>Acá se <strong>descargan</strong> las liquidaciones que el administrativo ya revisó y marcó como listas desde <strong>Detalle de cliente</strong>.
+          Las que todavía no armó aparecen en gris: no se pueden bajar, para que no salga un PDF con datos a medio corregir.
+          Los montos se calculan en vivo, así que si después se corrige una zona, el PDF sale con el número nuevo.</div>
+        </div>
+
+        <div class="metrics-grid" id="cliq-resumen" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
+
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <input type="search" id="cliq-search" placeholder="🔍 Buscar cliente o código..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderClienteLiquidaciones()">
+          <span id="cliq-periodo" style="font-size:12px;color:var(--text-secondary);font-weight:600"></span>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:34px"><input type="checkbox" id="cliq-check-all" onchange="toggleCliqSelTodas(this.checked)" title="Seleccionar todas las listas"></th>
+                  <th>Cliente</th>
+                  <th style="text-align:right">Envíos</th>
+                  <th style="text-align:right">A facturar</th>
+                  <th style="text-align:right">Margen</th>
+                  <th>Alertas</th>
+                  <th>Estado</th>
+                  <th style="width:150px"></th>
+                </tr>
+              </thead>
+              <tbody id="cliq-rows">
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-file"></i></div><div class="empty-title">Elegí la semana</div><div class="empty-sub">El jueves de corte define el período Vie→Jue</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>

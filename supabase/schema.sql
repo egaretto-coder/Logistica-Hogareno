@@ -956,3 +956,28 @@ create index if not exists idx_cliente_cuentas_cod on public.cliente_cuentas (cl
 alter table public.cliente_cuentas enable row level security;
 create policy cliente_cuentas_all on public.cliente_cuentas
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- CLIENTE_LIQUIDACIONES (semanas cerradas por el administrativo) ----------
+-- El circuito de facturación tiene dos manos: el ADMINISTRATIVO revisa y
+-- corrige los envíos de la semana en "Detalle de cliente" y marca la
+-- liquidación como lista; el OPERADOR la descarga desde "Liquidación de
+-- clientes". Sin este registro el operador no puede distinguir lo revisado de
+-- lo que todavía nadie miró, y bajaría PDFs de datos a medio corregir.
+-- Los montos NO se congelan: se calculan en vivo desde los envíos, así una
+-- corrección posterior se refleja. Lo que se guarda es la DECISIÓN de cerrar
+-- esa semana, y quién la tomó.
+create table if not exists public.cliente_liquidaciones (
+  id bigint generated always as identity primary key,
+  cliente_cod text not null,
+  semana_desde date not null,
+  semana_hasta date not null,       -- jueves de corte: identifica la semana
+  armada_por text default '',
+  armada_en timestamptz not null default now(),
+  obs text default '',
+  unique (cliente_cod, semana_hasta)
+);
+create index if not exists idx_cliente_liq_semana on public.cliente_liquidaciones (semana_hasta);
+create index if not exists idx_cliente_liq_cod on public.cliente_liquidaciones (cliente_cod);
+alter table public.cliente_liquidaciones enable row level security;
+create policy cliente_liquidaciones_all on public.cliente_liquidaciones
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());

@@ -161,16 +161,11 @@ function persistirClientesLocal() {
 }
 
 // ── Solapas ────────────────────────────────────────────────────────────────
-function switchClientesTab(tab) {
-  ['lista', 'liq'].forEach(t => {
-    const panel = document.getElementById('cli-tab-' + t);
-    const btn = document.getElementById('cli-btn-' + t);
-    if (panel) panel.style.display = (t === tab) ? '' : 'none';
-    if (btn) btn.classList.toggle('active', t === tab);
-  });
-  if (tab === 'lista') renderClientes();
-  else renderLiquidacionClienteSelect();
-}
+// El panel es la BASE DE DATOS de clientes: ficha, cuentas vinculadas y
+// tarifario. La liquidación se arma en "Detalle de cliente" y se descarga desde
+// "Liquidación de clientes", que ahora son pantallas propias.
+// Se conserva el nombre de la función porque el router la llama.
+function switchClientesTab() { renderClientes(); }
 
 // ── Render lista de clientes ────────────────────────────────────────────────
 // Ficha de cada cliente: identificación, contacto y cómo viene facturando.
@@ -1094,66 +1089,26 @@ function _resumenImportTarifarios(resultados) {
 }
 
 // ── Liquidación de cliente ───────────────────────────────────────────────────
-function renderLiquidacionClienteSelect() {
-  const sel = document.getElementById('cli-liq-cliente');
-  if (sel) {
-    const actual = sel.value;
-    sel.innerHTML = '<option value="">Elegí un cliente…</option>' +
-      AppData.clientes.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
-        .map(c => '<option value="' + String(c.nombre).replace(/"/g, '&quot;') + '">' + c.nombre + '</option>').join('');
-    sel.value = actual;
-  }
-  const f = document.getElementById('cli-liq-fecha');
-  if (f && !f.value) f.value = hoyISO();
-  renderLiquidacionCliente();
-}
 
-function renderLiquidacionCliente() {
-  const body = document.getElementById('cli-liq-body');
-  if (!body) return;
-  const cliente = document.getElementById('cli-liq-cliente')?.value || '';
-  const iso = document.getElementById('cli-liq-fecha')?.value || hoyISO();
-  const rango = semanaClienteRango(iso);
-  const perEl = document.getElementById('cli-liq-periodo');
-  if (perEl) perEl.textContent = 'Semana ' + rango.desde + ' → ' + rango.hasta;
 
-  if (!cliente) {
-    body.innerHTML = '<div class="empty-state" style="padding:30px"><div class="empty-icon"><i class="ic ic-file"></i></div><div class="empty-title">Elegí un cliente</div><div class="empty-sub">Y la semana (jueves de corte) para ver su liquidación</div></div>';
+// PDF de la liquidación de UN cliente. Recibe el CÓDIGO (no el nombre: el
+// nombre de fantasía tiene variantes y no es la identidad) y el rango de la
+// semana. opts.doc permite encadenar varias liquidaciones en un solo archivo.
+function exportLiquidacionClientePDF(cod, rango, opts) {
+  opts = opts || {};
+  const codK = clienteKey(cod);
+  if (!codK) { alert('Elegí un cliente primero.'); return; }
+  rango = rango || semanaClienteRango(hoyISO());
+  const cliente = clienteNombreDe(codK);
+  const liq = calcLiquidacionCliente(codK, rango);
+  if (!liq.filas.length) {
+    if (!opts.doc) alert('Sin envíos entregados de este cliente en la semana ' + rango.desde + ' → ' + rango.hasta + '.');
     return;
   }
-  const liq = calcLiquidacionCliente(cliente, rango);
-  const filasHtml = liq.filas.length ? liq.filas.map(f =>
-    '<tr>' +
-      '<td><strong>' + f.zona + '</strong></td>' +
-      '<td class="mono" style="text-align:right">' + f.count + '</td>' +
-      '<td class="mono" style="text-align:right">' + (f.precio > 0 ? fmtPeso(f.precio) : '<span style="color:#b45309">sin tarifa</span>') + '</td>' +
-      '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(f.subtotal) + '</td>' +
-    '</tr>').join('')
-    : '<tr><td colspan="4"><div class="empty-state"><div class="empty-sub">Sin envíos entregados de este cliente en la semana</div></div></td></tr>';
-
-  body.innerHTML =
-    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
-      '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Total a facturar</div><div class="metric-value">' + fmtPeso(liq.total) + '</div><div class="metric-sub">' + rango.desde + ' → ' + rango.hasta + '</div></div>' +
-      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-box"></i></div><div class="metric-label">Envíos entregados</div><div class="metric-value">' + liq.totalEnvios + '</div><div class="metric-sub">' + liq.filas.length + ' zona(s)</div></div>' +
-      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-alert"></i></div><div class="metric-label">Envíos sin tarifa</div><div class="metric-value"' + (liq.sinTarifa ? ' style="color:#b45309"' : '') + '>' + liq.sinTarifa + '</div><div class="metric-sub">cargá esas zonas en el tarifario</div></div>' +
-    '</div>' +
-    '<div class="card"><div class="table-wrap"><table>' +
-      '<thead><tr><th>Zona</th><th style="text-align:right">Envíos</th><th style="text-align:right">Tarifa</th><th style="text-align:right">Subtotal</th></tr></thead>' +
-      '<tbody>' + filasHtml + '</tbody>' +
-      (liq.filas.length ? '<tfoot><tr style="font-weight:700;background:var(--surface-0)"><td>TOTAL</td><td class="mono" style="text-align:right">' + liq.totalEnvios + '</td><td></td><td class="mono" style="text-align:right">' + fmtPeso(liq.total) + '</td></tr></tfoot>' : '') +
-    '</table></div></div>';
-}
-
-function exportLiquidacionClientePDF() {
-  const cliente = document.getElementById('cli-liq-cliente')?.value || '';
-  if (!cliente) { alert('Elegí un cliente primero.'); return; }
-  const iso = document.getElementById('cli-liq-fecha')?.value || hoyISO();
-  const rango = semanaClienteRango(iso);
-  const liq = calcLiquidacionCliente(cliente, rango);
-  if (!liq.filas.length) { alert('Sin envíos entregados de este cliente en la semana ' + rango.desde + ' → ' + rango.hasta + '.'); return; }
-  const cli = AppData.clientes.find(c => normCliente(c.nombre) === normCliente(cliente));
+  const cli = (AppData.clientes || []).find(c => clienteKey(c.codigo) === codK);
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const doc = opts.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  if (opts.doc && opts.nuevaPagina) doc.addPage();
   doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
   doc.text('Liquidación de cliente', 14, 18);
   doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.setTextColor(40, 50, 70);
@@ -1183,6 +1138,6 @@ function exportLiquidacionClientePDF() {
     doc.setFontSize(8); doc.setTextColor(180, 83, 9);
     doc.text('⚠ ' + liq.sinTarifa + ' envío(s) sin tarifa de venta cargada — no suman al total. Cargá esas zonas en el tarifario del cliente.', 14, y);
   }
+  if (opts.doc) return doc;   // el combinado guarda una sola vez, al final
   doc.save('Liquidacion_' + cliente.replace(/\s+/g, '_') + '_' + rango.hasta.replace(/\//g, '-') + '.pdf');
-  showToast('📥 Liquidación de ' + cliente + ' descargada');
 }

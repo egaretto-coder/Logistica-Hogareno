@@ -61,6 +61,41 @@ function renderDetalleClientePagina() {
   renderDetalleCliente();
 }
 
+// Botón de cierre de la semana. Es el traspaso del administrativo al operador:
+// mientras no esté marcada, la liquidación aparece en gris en el panel del
+// operador y no se puede descargar — así nadie baja un PDF a medio corregir.
+function _dcliBotonArmar(cod, rango) {
+  if (typeof liquidacionArmada !== 'function') return '';
+  const a = liquidacionArmada(cod, rango);
+  const codEsc = String(cod).replace(/'/g, "\\'");
+  if (a) {
+    return '<div style="margin-top:8px;font-size:11px;opacity:.9">' +
+      '<span class="badge badge-green"><i class="ic ic-check"></i> Liquidación lista</span>' +
+      (a.armada_por ? '<div style="margin-top:3px">por ' + a.armada_por + '</div>' : '') +
+      '<button class="btn btn-sm" style="margin-top:6px" onclick="dcliDesarmar(\'' + codEsc + '\')">Reabrir</button>' +
+      '</div>';
+  }
+  return '<button class="btn btn-sm" style="margin-top:8px;background:#fff;color:#0e7490;border-color:#fff;font-weight:700" ' +
+    'onclick="dcliArmar(\'' + codEsc + '\')" title="Cierra la semana de este cliente para que el operador pueda descargarla">' +
+    '<i class="ic ic-check"></i> Marcar liquidación como lista</button>';
+}
+
+async function dcliArmar(cod) {
+  const rango = dcliRango();
+  const liq = calcLiquidacionCliente(cod, rango);
+  if (!liq.totalEnvios) { alert('Este cliente no tiene envíos que facturen en la semana ' + rango.desde + ' → ' + rango.hasta + '.'); return; }
+  // Las zonas sin tarifa se facturan en $0: conviene decidirlo antes de cerrar,
+  // no después de que el operador haya mandado el PDF.
+  if (liq.sinTarifa && !confirm('Ojo: ' + liq.sinTarifa + ' envío(s) están en zonas SIN tarifa de venta y se facturan en $0.\n\n' +
+    '¿Marcar la liquidación como lista igual?')) return;
+  await marcarLiquidacionLista(cod, rango);
+  renderDetalleCliente();
+}
+async function dcliDesarmar(cod) {
+  await desarmarLiquidacion(cod, dcliRango());
+  renderDetalleCliente();
+}
+
 function renderDetalleCliente() {
   const wrap = document.getElementById('dcli-detalle-wrap');
   if (!wrap) return;
@@ -187,6 +222,9 @@ function renderDetalleCliente() {
         '<div style="margin-left:auto;text-align:right">' +
           '<div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.04em">A facturar</div>' +
           '<div style="font-size:24px;font-weight:700">' + fmtPeso(totCobrado) + '</div>' +
+          // Acá cierra el administrativo: hasta que no marque la semana como
+          // lista, el operador no la ve para descargar.
+          _dcliBotonArmar(cod, rango) +
         '</div>' +
       '</div>' +
       '<div class="metrics" style="padding:14px 16px 0">' +

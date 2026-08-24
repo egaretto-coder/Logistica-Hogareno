@@ -230,6 +230,11 @@ let AppData = {
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
 
+  // Liquidaciones de cliente ya ARMADAS por el administrativo (el operador
+  // solo descarga las que están acá).
+  // clienteLiquidaciones: [{ id, cliente_cod, semana_desde, semana_hasta, armada_por, armada_en }]
+  clienteLiquidaciones: [],
+
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
   // clienteCuentas: [{ id, alias_cod, cliente_cod }]
   clienteCuentas: [],
@@ -250,7 +255,6 @@ let AppData = {
   // Clientes (facturación) y su tarifario de venta por zona.
   // clientes: [{ id, nombre, razon_social, cuit, activo }]
   // clienteTarifas: [{ id, cliente, zona, precio }]
-  'detalle-cliente': { titulo: 'Detalle de cliente', sub: 'Control y margen antes de facturar' },
   clientes: [],
   proveedores: [],   // proveedores de servicio (lista cerrada para cargar gastos)
   clienteTarifas: [],
@@ -1057,7 +1061,9 @@ const PAGE_TITLES = {
   'beneficios': ['Beneficios', 'Combustible y servicio de proveedores por conductor'],
   'km-desvio': ['Km de desvío', 'Adicional por km de desvío al retirar mercadería'],
   'adelantos': ['Adelantos', 'Préstamos en cuotas y deuda por conductor'],
-  'clientes': ['Clientes', 'Tarifario de venta y liquidación semanal (Vie→Jue)'],
+  'clientes': ['Clientes y tarifas', 'Ficha, cuentas vinculadas y tarifario de venta por zona'],
+  'detalle-cliente': ['Detalle de cliente', 'Revisar los envíos de la semana y armar la liquidación'],
+  'cliente-liquidaciones': ['Liquidación de clientes', 'Descargar las liquidaciones que el administrativo dejó listas'],
   'comisiones': ['Comisiones', 'Comisiones de vendedores por clientes nuevos y cierre mensual'],
   'empleados': ['Empleados', 'Sueldos, ajustes trimestrales y liquidación mensual del personal'],
   'rendiciones': ['Rendición de envíos', 'Cobros en destino que el conductor debe rendir'],

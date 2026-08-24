@@ -342,6 +342,12 @@ async function _hydrateFromSupabaseReal(opts) {
       color: r.color || '#6366f1', es_sistema: !!r.es_sistema
     }));
   }
+  AppData.clienteLiquidaciones = (data.cliente_liquidaciones || []).map(x => ({
+    id: x.id, cliente_cod: String(x.cliente_cod || '').toUpperCase(),
+    semana_desde: x.semana_desde || '', semana_hasta: x.semana_hasta || '',
+    armada_por: x.armada_por || '', armada_en: x.armada_en || '', obs: x.obs || ''
+  }));
+
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
   AppData.clienteCuentas = (data.cliente_cuentas || []).map(c => ({
     id: c.id, alias_cod: String(c.alias_cod || '').toUpperCase(), cliente_cod: String(c.cliente_cod || '').toUpperCase()
