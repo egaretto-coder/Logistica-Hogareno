@@ -187,16 +187,20 @@ function renderClientes() {
   const conEnvios = clientesDeRegistros(rango);
   const porCod = new Map(conEnvios.map(c => [c.cod, c]));
 
+  const idsPendientes = new Set(clientesPendientesCodigo().map(c => c.id));
   const lista = (AppData.clientes || [])
     .filter(c => !q || String(c.nombre).toLowerCase().includes(q) ||
                  String(c.codigo || '').toLowerCase().includes(q) ||
                  String(c.razon_social || '').toLowerCase().includes(q))
+    .filter(c => !cliSoloPendientes || idsPendientes.has(c.id))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
   const countEl = document.getElementById('cli-count');
   if (countEl) {
     const sinTarifa = (AppData.clientes || []).filter(c => clienteNZonas(c.codigo) === 0).length;
     countEl.textContent = (AppData.clientes || []).length + ' cliente(s)' +
+      (cliSoloPendientes ? ' · mostrando solo los pendientes' : '') +
+      (idsPendientes.size ? ' · ' + idsPendientes.size + ' con código pendiente' : '') +
       (sinTarifa ? ' · ' + sinTarifa + ' sin tarifario' : '');
   }
 
@@ -215,6 +219,30 @@ function renderClientes() {
   const avisoEl = document.getElementById('cli-faltantes');
   if (avisoEl) {
     let html = '';
+
+    // Sin recorridos no se puede resolver ningún código ni detectar cuentas: si
+    // no se dijera, el panel parecería estar diciendo "no hay nada que hacer".
+    if (!hayEnviosConCodigo()) {
+      html += '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
+        (AppData._cargandoRegistros
+          ? '<strong>Cargando los recorridos…</strong> Los avisos de códigos y de cuentas aparecen cuando terminen.'
+          : '<strong>No hay recorridos con Cod.Cliente cargados.</strong> Sin ellos no se puede saber qué código le corresponde a cada cliente ' +
+            'ni detectar las cuentas de un mismo cliente. Importá el listado y volvé a este panel.') +
+        '</div></div>';
+    }
+
+    // Los que quedan pendientes de código, matcheen por nombre o no.
+    const pendientes = clientesPendientesCodigo();
+    if (pendientes.length) {
+      const nAuto = porVincular.length;
+      html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+        '<i class="ic ic-alert"></i><div><strong>' + pendientes.length + ' de ' + (AppData.clientes || []).length +
+        ' cliente(s) tienen un código que no coincide con ningún envío</strong> — su tarifario no se está aplicando y esos envíos se facturan en $0. ' +
+        (nAuto ? '<strong>' + nAuto + '</strong> se pueden resolver solos; el resto hay que corregirlos a mano con el Cod.Cliente del listado. ' : 'Hay que corregirlos a mano con el Cod.Cliente del listado. ') +
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="toggleSoloPendientes()">' +
+        (cliSoloPendientes ? 'Ver todos' : 'Ver los ' + pendientes.length + ' pendientes') + '</button>' +
+        '</div></div>';
+    }
     // Varias cuentas del mismo cliente: si no se unen, hay que cargarle el
     // tarifario una vez por cuenta y su facturación sale partida.
     const sugeridas = cuentasSugeridas();
@@ -271,7 +299,12 @@ function renderClientes() {
           '<div style="min-width:0;flex:1">' +
             '<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + c.nombre + '</div>' +
             '<div style="font-size:11px;color:var(--text-muted)">' +
-              (cod ? '<span class="tag" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:9.5px">' + cod + '</span> ' : '<span style="color:#b91c1c">sin código</span> ') +
+              (cod
+                ? '<span class="tag" style="font-size:9.5px;' + (idsPendientes.has(c.id)
+                    ? 'background:#fff7ed;color:#9a3412;border:1px solid #fdba74" title="Este código no aparece en ningún envío: su tarifario no se aplica"'
+                    : 'background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe"') + '>' + cod +
+                  (idsPendientes.has(c.id) ? ' ⚠' : '') + '</span> '
+                : '<span style="color:#b91c1c">sin código</span> ') +
               // Las otras cuentas del mismo cliente, para que se vea que su
               // tarifario cubre todas y se puedan separar si se unieron mal.
               cuentasDeCliente(cod).map(a =>
@@ -322,6 +355,30 @@ function verDetalleDeCliente(cod) {
 }
 
 // Da de alta los clientes que aparecen en los envíos y no están en el maestro.
+// ── Pendientes de código ────────────────────────────────────────────────────
+// Un cliente está PENDIENTE si su código no aparece en NINGÚN envío: su
+// tarifario no se aplica a nada y se factura en $0. Es el estado que hay que
+// poder ver de un vistazo, sin depender de que el nombre matchee (los que
+// matchean se arreglan solos con "Vincular"; el resto hay que corregirlos a
+// mano y antes no figuraban en ningún lado).
+function hayEnviosConCodigo() {
+  return (AppData.records || []).some(r => clienteKey(r && r.cliente_cod));
+}
+function clientesPendientesCodigo() {
+  const sabemos = hayEnviosConCodigo();
+  const cods = new Set(clientesDeRegistros().map(c => clienteKey(c.cod)));
+  return (AppData.clientes || []).filter(c => {
+    const cod = clienteKey(c.codigo);
+    if (!cod) return true;
+    // Sin recorridos cargados no se puede saber: vale la marca que dejó el import.
+    if (!sabemos) return /^Código provisional/.test(String(c.obs || ''));
+    return !cods.has(cod);
+  });
+}
+
+let cliSoloPendientes = false;
+function toggleSoloPendientes() { cliSoloPendientes = !cliSoloPendientes; renderClientes(); }
+
 // ── Detección de cuentas del mismo cliente ──────────────────────────────────
 // Raíz del nombre de fantasía: sin el número de cuenta al final ni la forma
 // societaria. "LA FERRETERIA 2" y "ATAWALLPA PAPELES S.A" caen en la misma raíz
