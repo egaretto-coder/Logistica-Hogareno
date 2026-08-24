@@ -14,8 +14,8 @@
           <div class="section-head" style="margin-bottom:8px">
             <span></span>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar tarifario
-                <input type="file" id="cli-tarifario-file" accept=".xlsx,.xls,.csv" onchange="importTarifarioClientes(event)" style="display:none">
+              <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar tarifario(s)
+                <input type="file" id="cli-tarifario-file" accept=".xlsx,.xls,.csv" multiple onchange="importTarifarioClientes(event)" style="display:none">
               </label>
               <button class="btn btn-sm" onclick="descargarPlantillaTarifario()" title="Baja el tarifario completo para editarlo y volver a subirlo"><i class="ic ic-download"></i> Descargar tarifario</button>
               <button class="btn btn-sm btn-primary" onclick="openAddClienteModal()">+ Nuevo cliente</button>
@@ -24,7 +24,7 @@
 
           <div class="alert alert-info" style="margin-bottom:16px">
             <i class="ic ic-building"></i><div>Cada cliente se identifica por su <strong>código</strong> (el "Cod.Cliente" del listado de envíos) y tiene un <strong>tarifario de venta por zona</strong>: lo que le cobrás por cada envío entregado.
-            <strong>Importar tarifario</strong> acepta dos formatos: el <strong>tarifario completo</strong> (Cod.Cliente · Cliente · Zona · Precio, el mismo que baja "Descargar tarifario") o una <strong>planilla de un solo cliente</strong>, con su nombre arriba y debajo las columnas ZONA y PRECIO. En ese caso el código se busca por el nombre, en el maestro y en los envíos ya importados.</div>
+            <strong>Importar tarifario</strong> acepta dos formatos: el <strong>tarifario completo</strong> (Cod.Cliente · Cliente · Zona · Precio, el mismo que baja "Descargar tarifario") o una <strong>planilla de un solo cliente</strong>, con su nombre arriba y debajo las columnas ZONA y PRECIO. Podés subir <strong>varias planillas de una vez</strong>: por cada una se crea el cliente con su nombre y su código, buscándolo por nombre en el maestro y en los envíos ya importados. Si no aparece en ninguno se le pone un <strong>código provisional</strong> y el resumen te dice cuáles hay que corregir.</div>
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
