@@ -336,12 +336,109 @@ function renderClientes() {
 
         '<div style="display:flex;gap:4px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border)">' +
           '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifas' + (nz ? ' (' + nz + ')' : '') + '</button>' +
-          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verDetalleDeCliente(\'' + cod + '\')" title="Ver sus envíos y el margen"><i class="ic ic-list"></i> Detalle</button>' +
+          '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verCardCliente(\'' + cod + '\')" title="Ver la ficha completa del cliente"><i class="ic ic-building"></i> Card</button>' +
           '<button class="btn btn-sm" style="margin-left:auto" onclick="editCliente(' + c.id + ')" title="Editar datos"><i class="ic ic-edit"></i></button>' +
           '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarCliente(' + c.id + ')" title="Dar de baja"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</div></div>';
   }).join('');
+}
+
+// ── Ficha completa del cliente ("Card") ─────────────────────────────────────
+// Todo lo del cliente en un solo lugar: identificación, contacto, las CUENTAS
+// con las que factura, su tarifario y cómo viene la semana. Las cuentas son lo
+// que más costaba ver: BOIRATECNO factura con 8 grafías distintas y desde la
+// tarjeta chica no había forma de saber cuáles están colgando de él.
+function verCardCliente(cod) {
+  const k = clienteKey(cod);
+  const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
+  if (!c) { showToast('No se encontró el cliente'); return; }
+  const rango = semanaClienteRango();
+  const liq = calcLiquidacionCliente(k, rango);
+  const cuentas = cuentasDeCliente(k);
+  const nz = clienteNZonas(k);
+
+  // Envíos de la semana por cuenta, para ver cuánto aporta cada una.
+  const porCuenta = new Map();
+  (AppData.records || []).forEach(r => {
+    if (clienteCodDeRegistro(r) !== k) return;
+    const f = parseFechaReg(r.fecha);
+    if (!f || f < rango.desdeD || f > rango.hastaD) return;
+    const cuenta = clienteKey(r.cliente_cod);
+    porCuenta.set(cuenta, (porCuenta.get(cuenta) || 0) + 1);
+  });
+
+  const dato = (etq, val) => '<div style="min-width:150px"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em">' +
+    etq + '</div><div style="font-size:13px;font-weight:600">' + (val || '<span class="muted" style="font-weight:400">—</span>') + '</div></div>';
+
+  const chipCuenta = (cta, principal) =>
+    '<span class="tag" style="font-size:11px;padding:4px 8px;' +
+      (principal ? 'background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe' : 'background:var(--surface-0);color:var(--text-secondary);border:1px dashed var(--border)') + '">' +
+      cta + (porCuenta.get(cta) ? ' · ' + porCuenta.get(cta) + ' envíos' : '') +
+      (principal ? ' <strong style="font-size:9px;opacity:.75;margin-left:4px">· principal</strong>'
+                 : ' <button class="btn btn-sm" style="padding:0 5px;font-size:10px;margin-left:4px" title="Separar esta cuenta" onclick="separarCuenta(\'' + String(cta).replace(/'/g, "\\'") + '\')">✕</button>') +
+    '</span>';
+
+  // Identidades de los envíos que todavía no cuelgan de ningún cliente: son las
+  // candidatas a sumarse como otra cuenta de este.
+  const enMaestro = new Set((AppData.clientes || []).map(x => clienteKey(x.codigo)).filter(Boolean));
+  const libres = clientesDeRegistros().filter(x => !enMaestro.has(clienteKey(x.cod)) && clienteKey(x.cod) !== k);
+
+  document.getElementById('modal-title').textContent = 'Ficha · ' + c.nombre;
+  document.getElementById('modal-body').innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+      '<div class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:44px;height:44px;font-size:15px">' + initials(c.nombre) + '</div>' +
+      '<div><div style="font-size:16px;font-weight:700">' + c.nombre + '</div>' +
+      '<div style="font-size:11px;color:var(--text-muted)">' + k + (c.activo === false ? ' · dado de baja' : '') + '</div></div>' +
+    '</div>' +
+
+    '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
+      dato('Razón social', c.razon_social) + dato('CUIT', c.cuit) +
+      dato('Contacto', c.contacto) + dato('Teléfono', c.telefono) + dato('Email', c.email) +
+    '</div>' +
+
+    '<div style="padding:12px 0;border-top:1px solid var(--border)">' +
+      '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">' +
+        'Cuentas con las que factura (' + (cuentas.length + 1) + ')</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">' +
+        chipCuenta(k, true) + cuentas.map(a => chipCuenta(a, false)).join('') +
+      '</div>' +
+      (libres.length
+        ? '<div style="display:flex;gap:6px;align-items:center;margin-top:10px">' +
+            '<select id="card-cuenta-nueva" style="flex:1;max-width:280px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">' +
+              '<option value="">Sumar otra cuenta de este cliente…</option>' +
+              libres.map(x => '<option value="' + String(x.cod).replace(/"/g, '&quot;') + '">' + x.nombre + ' · ' + x.envios + ' envíos</option>').join('') +
+            '</select>' +
+            '<button class="btn btn-sm" onclick="sumarCuentaDesdeCard(\'' + String(k).replace(/'/g, "\\'") + '\')"><i class="ic ic-clip"></i> Vincular</button>' +
+          '</div>'
+        : '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">No hay cuentas sueltas en los envíos para sumarle.</div>') +
+    '</div>' +
+
+    '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
+      dato('Zonas con tarifa', nz ? String(nz) : '<span style="color:#b45309">ninguna</span>') +
+      dato('Envíos de la semana', liq.totalEnvios ? String(liq.totalEnvios) : '—') +
+      dato('A facturar', fmtPeso(liq.total)) +
+      dato('Margen', '<span style="color:' + (liq.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(liq.margen) + '</span>') +
+    '</div>' +
+    (liq.sinTarifa ? '<div style="font-size:11px;color:#b45309;padding:4px 0"><i class="ic ic-alert"></i> ' + liq.sinTarifa +
+      ' envío(s) en zonas sin tarifa — se facturan en $0</div>' : '') +
+    (c.obs ? '<div style="font-size:12px;color:var(--text-secondary);padding:10px 0;border-top:1px solid var(--border)">📝 ' + c.obs + '</div>' : '') +
+
+    '<div style="display:flex;gap:6px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border)">' +
+      '<button class="btn btn-sm" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
+      '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')"><i class="ic ic-edit"></i> Editar datos</button>' +
+    '</div>';
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+async function sumarCuentaDesdeCard(cod) {
+  const sel = document.getElementById('card-cuenta-nueva');
+  const alias = sel && sel.value;
+  if (!alias) { showToast('Elegí la cuenta que querés sumarle'); return; }
+  const ok = await unirCuentasCliente(cod, [alias]);
+  renderClientes();
+  if (ok) { showToast('🔗 ' + alias + ' vinculada a ' + clienteNombreDe(cod)); verCardCliente(cod); }
+  else showToast('⛔ No se pudo vincular');
 }
 
 // Salta al detalle del cliente con el cliente ya elegido.
