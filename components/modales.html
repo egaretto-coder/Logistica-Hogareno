@@ -414,6 +414,32 @@
   </div>
 </div>
 
+<!-- MODAL VINCULAR CUENTA DE CLIENTE -->
+<!-- Un cliente real puede facturar con varias cuentas (LA FERRETERIA y
+     LA FERRETERIA 2). Vincularlas hace que compartan el tarifario y que su
+     facturación salga junta, en vez de repartida en fichas separadas. -->
+<div class="modal-backdrop" id="modal-vinccli-backdrop" onclick="closeVincClienteModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1002;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:460px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-clip"></i> Vincular cuenta</span>
+      <button class="modal-close" onclick="closeVincClienteModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">La cuenta <strong id="vcli-nombre"></strong> pasa a ser <strong>otra cuenta del cliente que elijas</strong>: comparte su tarifario y su facturación sale junta.</div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Vincular a</label>
+        <select id="vcli-select" class="form-input" style="width:100%">
+          <option value="">Elegí un cliente…</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeVincClienteModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarVincularCliente()">Vincular</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL TIPO DE CAMBIO (al descontar una cuota de un adelanto en dólares) -->
 <!-- La deuda se lleva en dólares, pero la liquidación se paga en pesos: acá se
      declara a qué cotización se abona esa cuota. Queda guardado en la cuota, así

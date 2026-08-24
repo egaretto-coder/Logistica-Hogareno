@@ -260,13 +260,9 @@ function renderClientes() {
         '<button class="btn btn-sm" style="margin-left:6px" onclick="vincularClientesConEnvios()">Vincular con los envíos</button>' +
         '</div></div>';
     }
-    if (faltantes.length) {
-      html += '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
-        '<strong>' + faltantes.length + ' cliente(s) con envíos esta semana no están dados de alta:</strong> ' +
-        faltantes.slice(0, 8).map(f => f.nombre + ' (' + f.cod + ')').join(', ') +
-        (faltantes.length > 8 ? ' y ' + (faltantes.length - 8) + ' más' : '') + '. ' +
-        '<button class="btn btn-sm" style="margin-left:6px" onclick="altaClientesFaltantes()">Darlos de alta</button></div></div>';
-    }
+    // Los reconocidos en los envíos que no están en el maestro: cada uno con
+    // su decisión (vincular como otra cuenta, o agregar como cliente nuevo).
+    html += _chipsNuevosClientes();
     avisoEl.innerHTML = html;
   }
 
@@ -350,6 +346,85 @@ function verDetalleDeCliente(cod) {
 }
 
 // Da de alta los clientes que aparecen en los envíos y no están en el maestro.
+// ── Clientes reconocidos en los envíos que no están en el maestro ───────────
+// Mismo criterio que el panel de conductores: al aparecer uno nuevo hay dos
+// respuestas posibles y solo el operador sabe cuál. VINCULAR si es otra cuenta
+// de un cliente que ya está (LA FERRETERIA 2 → LA FERRETERIA); AGREGAR si es un
+// cliente nuevo de verdad. Elegir por él sería inventar la facturación.
+let _cliNuevosReconocidos = [];
+function clientesNuevosReconocidos() {
+  const enMaestro = new Set((AppData.clientes || []).map(c => clienteKey(c.codigo)).filter(Boolean));
+  return clientesDeRegistros()
+    .filter(c => !enMaestro.has(clienteKey(c.cod)))
+    .sort((a, b) => b.envios - a.envios);
+}
+
+function _chipsNuevosClientes() {
+  _cliNuevosReconocidos = clientesNuevosReconocidos();
+  if (!_cliNuevosReconocidos.length) return '';
+  const n = _cliNuevosReconocidos.length;
+  const chips = _cliNuevosReconocidos.slice(0, 40).map((c, i) =>
+    '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #f0d98a;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px">' +
+      '<span style="display:inline-flex;align-items:center;gap:6px">' +
+        '<span class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:22px;height:22px;font-size:9px">' + initials(c.nombre) + '</span>' +
+        c.nombre + ' <span style="color:#8a6d00">· ' + c.envios + '</span></span>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es otra cuenta de un cliente que ya está cargado" onclick="vincularClienteReconocido(' + i + ')"><i class="ic ic-clip"></i> Vincular</button>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente nuevo" onclick="agregarClienteReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
+    '</span>').join('');
+  return '<div class="alert" style="background:#fff8e1;border:1px solid #f5d97a;color:#7a5c00;margin:0 0 12px;padding:12px 16px">' +
+    '<div style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px"><i class="ic ic-alert"></i> ' +
+      n + ' cliente' + (n !== 1 ? 's' : '') + ' de los envíos ' + (n !== 1 ? 'no están' : 'no está') + ' en el maestro</div>' +
+    '<div style="font-size:12px;margin-bottom:10px;color:#8a6d00">' +
+      '<strong>Vincular</strong>: si es otra cuenta de un cliente que ya tenés (así comparte su tarifario). ' +
+      '<strong>Agregar</strong>: si es un cliente nuevo, para cargarle su tarifario.</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:200px;overflow-y:auto">' + chips +
+      (n > 40 ? '<span style="align-self:center;font-size:11px">…y ' + (n - 40) + ' más</span>' : '') + '</div>' +
+    (n > 1 ? '<div style="margin-top:10px"><button class="btn btn-sm" onclick="altaClientesFaltantes()">Agregar todos como nuevos</button></div>' : '') +
+    '</div>';
+}
+
+// Alta: abre el modal de cliente nuevo con el nombre y el código ya puestos.
+function agregarClienteReconocido(i) {
+  const c = _cliNuevosReconocidos[i];
+  if (!c) return;
+  openAddClienteModal();
+  const n = document.getElementById('mcli-nombre'); if (n) n.value = c.nombre;
+  const cod = document.getElementById('mcli-codigo'); if (cod) cod.value = c.cod;
+}
+
+// Vincular: esa cuenta pasa a colgar de un cliente que ya está cargado.
+let _cliVincPendiente = null;
+function vincularClienteReconocido(i) {
+  const c = _cliNuevosReconocidos[i];
+  if (!c) return;
+  _cliVincPendiente = c;
+  document.getElementById('vcli-nombre').textContent = c.nombre + ' (' + c.envios + ' envíos)';
+  const sel = document.getElementById('vcli-select');
+  sel.innerHTML = '<option value="">Elegí un cliente…</option>' +
+    (AppData.clientes || []).slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
+      .map(x => '<option value="' + clienteKey(x.codigo) + '">' + x.nombre +
+        ' — ' + clienteNZonas(x.codigo) + ' zonas con tarifa</option>').join('');
+  sel.value = '';
+  document.getElementById('modal-vinccli-backdrop').style.display = 'flex';
+}
+function closeVincClienteModal(e) {
+  if (!e || e.target.id === 'modal-vinccli-backdrop') {
+    document.getElementById('modal-vinccli-backdrop').style.display = 'none';
+    _cliVincPendiente = null;
+  }
+}
+async function confirmarVincularCliente() {
+  const cod = document.getElementById('vcli-select').value;
+  if (!cod) { alert('Elegí a qué cliente vincular esta cuenta.'); return; }
+  const c = _cliVincPendiente;
+  if (!c) return;
+  document.getElementById('modal-vinccli-backdrop').style.display = 'none';
+  _cliVincPendiente = null;
+  const ok = await unirCuentasCliente(cod, [c.cod]);
+  renderClientes();
+  showToast(ok ? '🔗 ' + c.nombre + ' vinculado a ' + clienteNombreDe(cod) : '⛔ No se pudo vincular');
+}
+
 // ── Pendientes de código ────────────────────────────────────────────────────
 // Un cliente está PENDIENTE si su código no aparece en NINGÚN envío: su
 // tarifario no se aplica a nada y se factura en $0. Es el estado que hay que
