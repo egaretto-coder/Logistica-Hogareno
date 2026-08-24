@@ -153,10 +153,19 @@ const BD_FIELDS = [
   // Antes se apuntaba a la columna BZ (que no existe en el listado): el
   // automatch caía en "Razon Social" y por eso casi ningún envío quedaba con
   // cliente. Se buscan por NOMBRE de encabezado, que es lo estable.
-  { key: 'cliente_cod', label: 'Código de cliente (identidad para facturar)', expectedCol: 'I', required: false,
-    preferKeywords: true, keywords: ['cod.cliente', 'cod cliente', 'codigo cliente', 'codigo de cliente', 'cód.cliente'] },
-  { key: 'cliente', label: 'Cliente (nombre de fantasía)', expectedCol: 'K', required: false,
-    preferKeywords: true, keywords: ['nombre fantasia', 'nombre fantasía', 'fantasia', 'fantasía', 'nombre comercial'] },
+  // LA IDENTIDAD DEL CLIENTE ES LA COLUMNA K, FIJA POR POSICIÓN.
+  // Antes se usaba "Cod.Cliente" (columna I) como identidad, y eso mezclaba
+  // clientes distintos: el código TM OFICI agrupaba 13 tiendas diferentes
+  // ("TRANSFER MAILING - SAUDE", "- GARAGE MUSIC", …) y FER agrupaba a FERLAN
+  // con AUTOPARTES FERNI. Facturar por código les mandaba una sola factura a
+  // todos. El nombre de la K distingue al cliente real; cuando un mismo cliente
+  // aparece con varias grafías numeradas (BOIRATECNO1..8) se unifican con las
+  // CUENTAS VINCULADAS del panel Clientes, que es el lugar donde esa decisión
+  // se toma a mano y queda registrada.
+  // Va fija por POSICIÓN y no por nombre de encabezado: el automatch por
+  // nombre ya nos falló antes (cayó en "Razon Social", que viene vacía, y de
+  // 33.278 envíos solo 2 quedaron con cliente).
+  { key: 'cliente', label: 'Cliente (columna K — identidad para facturar)', expectedCol: 'K', required: false, fijo: true },
   // Cobro en destino: el conductor cobra al destinatario y lo rinde al día
   // siguiente (panel Rendición de envíos). En el listado es "Total a cobrar".
   { key: 'cobro_destino', label: 'Cobro en destino ("Total a cobrar")', expectedCol: 'AI', required: false,
@@ -172,14 +181,16 @@ function showColumnMapper() {
     // primero el NOMBRE (p. ej. "Fecha estado"), porque esa columna cambia de
     // lugar según el listado y elegir la posición equivocada mete una fecha que
     // no corresponde.
-    const buscarPorNombre = () => headers.findIndex(h => {
+    const buscarPorNombre = () => !f.keywords ? -1 : headers.findIndex(h => {
       const hn = String(h).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
       return f.keywords.some(k => hn.includes(String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')));
     });
     const expectedIdx = colLetterToIndex(f.expectedCol);
     const porPosicion = (expectedIdx < headers.length) ? expectedIdx : -1;
-    let autoIdx = f.preferKeywords ? buscarPorNombre() : porPosicion;
-    if (autoIdx === -1) autoIdx = f.preferKeywords ? porPosicion : buscarPorNombre();
+    // f.fijo: la columna es SIEMPRE la posición indicada, sin buscar por nombre
+    // (la identidad del cliente es la K y no se negocia con el encabezado).
+    let autoIdx = f.fijo ? porPosicion : (f.preferKeywords ? buscarPorNombre() : porPosicion);
+    if (autoIdx === -1 && !f.fijo) autoIdx = f.preferKeywords ? porPosicion : buscarPorNombre();
 
     return `
     <div class="column-map-row">
@@ -268,6 +279,10 @@ function processUpload() {
       const n = parseFloat(String(v || '').replace(/[^0-9.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
       return isNaN(n) ? 0 : n;
     })();
+    // La IDENTIDAD del cliente es su nombre (columna K), normalizado. Se guarda
+    // en cliente_cod porque es la columna por la que agrupa toda la
+    // facturación; el nombre tal cual viene queda en `cliente` para mostrar.
+    rec.cliente_cod = String(rec.cliente || '').trim().toUpperCase();
     rec.carga_fecha = fechaCarga;
     rec.clave = claveRegistro(rec);
     return rec;
