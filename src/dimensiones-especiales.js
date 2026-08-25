@@ -372,8 +372,12 @@ function importDimensionesEspeciales(event) {
 
       // Índice del catálogo actual (evita el escaneo por fila: con ~2.700 filas
       // el findIndex anidado hacía millones de comparaciones).
+      // SOLO las filas de la solapa activa: son dos tarifarios distintos y la
+      // misma combinación cliente+dimensión+zona existe en los dos. Sin este
+      // filtro, importar la lista de CLIENTES le pisaba el precio a la del
+      // CONDUCTOR y ofrecía borrarla, que es el cartel que aparecía.
       const idxActual = new Map();
-      AppData.dimCatalogo.forEach((d, i) => idxActual.set(claveDe(d.cliente, d.nombre, d.zona), i));
+      AppData.dimCatalogo.forEach((d, i) => { if (dimEsTipo(d)) idxActual.set(claveDe(d.cliente, d.nombre, d.zona), i); });
 
       const vistas = new Set();
       let nuevas = 0, actualizadas = 0, sinCambio = 0, ignoradas = 0;
@@ -381,7 +385,12 @@ function importDimensionesEspeciales(event) {
         const r = rows[i] || [];
         const cliente = String(r[iCli] || '').trim().toUpperCase();
         const nombre  = String(r[iNom] || '').trim().toUpperCase();
-        const zona    = String(r[iZona] || '').trim().toUpperCase();
+        // Alias de zona, igual que en el tarifario de clientes: la planilla parte
+        // LA PLATA en sub-zonas que en los envios no existen, y una dimension
+        // cuya zona no matchea ningun envio no se aplica nunca.
+        const zona    = (typeof zonaCanonica === 'function')
+          ? zonaCanonica(r[iZona])
+          : String(r[iZona] || '').trim().toUpperCase();
         const precio  = parseNum(r[iPrecio]);
         const detalle = iDet >= 0 ? String(r[iDet] || '').trim() : '';
         if (!cliente || !nombre || !zona) { if (r.some(c => String(c).trim())) ignoradas++; continue; }
@@ -402,13 +411,17 @@ function importDimensionesEspeciales(event) {
 
       // La planilla de la empresa es la base de datos maestra: ofrecemos dejar el
       // catálogo idéntico al archivo, quitando lo que ya no figura en él.
-      const sobrantes = AppData.dimCatalogo.filter(d => !vistas.has(claveDe(d.cliente, d.nombre, d.zona)));
+      const sobrantes = AppData.dimCatalogo.filter(d => dimEsTipo(d) && !vistas.has(claveDe(d.cliente, d.nombre, d.zona)));
       let eliminadas = 0;
       if (sobrantes.length) {
         const muestra = sobrantes.slice(0, 5).map(d => '· ' + d.cliente + ' — ' + d.nombre + ' (' + d.zona + ')').join('\n');
-        if (confirm('El archivo trae ' + vistas.size + ' combinaciones.\n\nEn el catálogo hay ' + sobrantes.length + ' que NO figuran en el archivo:\n' + muestra + (sobrantes.length > 5 ? '\n…y ' + (sobrantes.length - 5) + ' más' : '') +
-          '\n\n¿Eliminarlas para que el catálogo quede igual al archivo?\n(Aceptar = sincronizar · Cancelar = conservarlas)')) {
-          AppData.dimCatalogo = AppData.dimCatalogo.filter(d => vistas.has(claveDe(d.cliente, d.nombre, d.zona)));
+        // Decir SIEMPRE de que tarifario habla: el cartel salia sin aclararlo y
+        // parecia que al archivo de clientes le faltaban las filas del conductor.
+        const etq = dimTipo === 'cliente' ? 'de CLIENTES' : 'de CONDUCTOR';
+        if (confirm('El archivo trae ' + vistas.size + ' combinaciones para el tarifario ' + etq + '.\n\nEn ese tarifario hay ' + sobrantes.length + ' que NO figuran en el archivo:\n' + muestra + (sobrantes.length > 5 ? '\n…y ' + (sobrantes.length - 5) + ' más' : '') +
+          '\n\n¿Eliminarlas para que el tarifario ' + etq + ' quede igual al archivo?\n(Aceptar = sincronizar · Cancelar = conservarlas · el otro tarifario no se toca)')) {
+          // El otro tarifario no se toca.
+          AppData.dimCatalogo = AppData.dimCatalogo.filter(d => !dimEsTipo(d) || vistas.has(claveDe(d.cliente, d.nombre, d.zona)));
           eliminadas = sobrantes.length;
         }
       }
