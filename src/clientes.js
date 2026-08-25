@@ -107,11 +107,32 @@ function clienteTarifaEnZona(cod, zona) {
 // cliente seguía facturándose por la tarifa común.
 function precioVentaEnvio(cod, r) {
   const zona = (r && r.zona && r.zona.trim()) ? r.zona.trim() : ((r && r.localidad) || '').trim();
-  const dim = (typeof dimensionAsignada === 'function') ? dimensionAsignada(r) : null;
-  // sinPrecioZona = la dimensión existe pero no tiene precio en esa zona: se
-  // cae a la tarifa de la zona en vez de facturar $0.
-  if (dim && !dim.sinPrecioZona && _num(dim.precio) > 0) return _num(dim.precio);
+  const p = dimPrecioVenta(cod, r, zona);
+  if (p != null) return p;
   return clienteTarifaEnZona(cod, zona);
+}
+
+// Precio de venta de la dimensión asignada, del tarifario de CLIENTES (no del
+// de conductores: lo que se le paga al cadete por llevar un colchón no es lo
+// que se le cobra al cliente por mandarlo). null = no hay precio cargado, y
+// entonces se cae a la tarifa de la zona en vez de facturar $0.
+function dimPrecioVenta(cod, r, zona) {
+  if (!r || !r.dim_especial) return null;
+  const z = zona || ((r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim());
+  // El acuerdo es del cliente del envío; dim_cliente es con el que se cargó.
+  const candidatos = [r.dim_cliente, clienteNombreDe(cod), cod, r.cliente];
+  for (const c of candidatos) {
+    if (!c) continue;
+    const p = dimPrecioEnZona(c, r.dim_especial, z, 'cliente');
+    if (p != null && _num(p) > 0) return _num(p);
+  }
+  return null;
+}
+
+// Nombre de la dimensión que efectivamente se le factura (para discriminarla en
+// la liquidación). Vacío si no tiene precio de venta cargado.
+function dimVentaNombre(cod, r) {
+  return dimPrecioVenta(cod, r) != null ? String(r.dim_especial || '') : '';
 }
 
 // Lo que se le PAGA al conductor por ese envío (para el margen).
@@ -153,10 +174,9 @@ function calcLiquidacionCliente(cliente, rango) {
     // dimensión va en SU PROPIA LÍNEA: en la factura el cliente tiene que ver
     // el acuerdo especial discriminado, no diluido en un promedio de la zona.
     const p = precioVentaEnvio(cKey, r);
-    const dim = (typeof dimensionAsignada === 'function') ? dimensionAsignada(r) : null;
-    const conDim = !!(dim && !dim.sinPrecioZona && _num(dim.precio) > 0);
-    const etiqueta = conDim ? (zona + ' · ' + dim.nombre) : zona;
-    if (!porZona[etiqueta]) porZona[etiqueta] = { zona: etiqueta, count: 0, precio: p, subtotal: 0, pagado: 0, dim: conDim };
+    const nombreDim = dimVentaNombre(cKey, r);
+    const etiqueta = nombreDim ? (zona + ' · ' + nombreDim) : zona;
+    if (!porZona[etiqueta]) porZona[etiqueta] = { zona: etiqueta, count: 0, precio: p, subtotal: 0, pagado: 0, dim: !!nombreDim };
     porZona[etiqueta].pagado += precioPagadoConductor(r);   // para el margen
     porZona[etiqueta].count++;
     porZona[etiqueta].subtotal += p;

@@ -981,3 +981,17 @@ create index if not exists idx_cliente_liq_cod on public.cliente_liquidaciones (
 alter table public.cliente_liquidaciones enable row level security;
 create policy cliente_liquidaciones_all on public.cliente_liquidaciones
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- DIMENSIONES_CATALOGO.tipo (dos tarifarios) ----------
+-- Una dimensión especial (un colchón king, una heladera) tiene DOS precios que
+-- no tienen por qué coincidir: lo que se le PAGA al conductor por llevarla y lo
+-- que se le COBRA al cliente por ese mismo envío. Había una sola lista y se
+-- usaba para las dos cosas, así que o el conductor cobraba de más o al cliente
+-- se le facturaba de menos.
+--   tipo = 'conductor' (lo que se paga) | 'cliente' (lo que se factura)
+-- Las filas que ya existían son las del conductor: ese era su único uso, y por
+-- eso el default. dimPrecioEnZona(cliente, nombre, zona, tipo) elige el
+-- tarifario; el panel lo muestra en dos solapas.
+alter table public.dimensiones_catalogo
+  add column if not exists tipo text not null default 'conductor';
+create index if not exists idx_dim_catalogo_tipo on public.dimensiones_catalogo (tipo);

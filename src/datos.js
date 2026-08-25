@@ -309,6 +309,8 @@ async function _hydrateFromSupabaseReal(opts) {
   // Catálogo de dimensiones especiales (cliente · dimensión · zona · precio).
   AppData.dimCatalogo = (data.dimensiones_catalogo || []).map(d => ({
     id: d.id, cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio),
+    // 'conductor' = lo que se le paga · 'cliente' = lo que se le factura
+    tipo: d.tipo === 'cliente' ? 'cliente' : 'conductor',
     detalle: d.detalle || ''   // nota del acuerdo; no entra en el cálculo pero viaja en la planilla
   }));
 
@@ -529,6 +531,7 @@ function dbPush(table) {
     })),
     dimensiones_catalogo: () => AppData.dimCatalogo.map(d => ({
       cliente: d.cliente || '', nombre: d.nombre || '', zona: d.zona || '', precio: _num(d.precio),
+      tipo: d.tipo === 'cliente' ? 'cliente' : 'conductor',
       detalle: d.detalle || ''
     })).filter(d => d.cliente && d.nombre && d.zona),
     km_desvio: () => AppData.kmDesvio.map(d => ({

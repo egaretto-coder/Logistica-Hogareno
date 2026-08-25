@@ -917,15 +917,22 @@ function dimNombresDe(cliente) {
   AppData.dimCatalogo.forEach(d => { if (normNombre(d.cliente) === ck) { const k = normNombre(d.nombre); if (k && !m.has(k)) m.set(k, d.nombre); } });
   return Array.from(m.values()).sort((a, b) => String(a).localeCompare(String(b)));
 }
-function dimPrecioEnZona(cliente, nombre, zona) {
+// Una dimensión tiene DOS precios que no tienen por qué coincidir: lo que se le
+// PAGA al conductor por llevarla y lo que se le COBRA al cliente por ese envío.
+// El tipo elige el tarifario; 'conductor' por defecto, que es el uso histórico.
+function dimPrecioEnZona(cliente, nombre, zona, tipo) {
+  const t = tipo === 'cliente' ? 'cliente' : 'conductor';
   const ck = normNombre(cliente), nk = normNombre(nombre), zk = normNombre(zona);
-  const row = AppData.dimCatalogo.find(d => normNombre(d.cliente) === ck && normNombre(d.nombre) === nk && normNombre(d.zona) === zk);
+  const row = AppData.dimCatalogo.find(d => (d.tipo || 'conductor') === t &&
+    normNombre(d.cliente) === ck && normNombre(d.nombre) === nk && normNombre(d.zona) === zk);
   return row ? _num(row.precio) : null;
 }
 // Zonas (con precio) en las que existe una dimensión de un cliente.
-function dimZonasDe(cliente, nombre) {
+function dimZonasDe(cliente, nombre, tipo) {
+  const t = tipo === 'cliente' ? 'cliente' : 'conductor';
   const ck = normNombre(cliente), nk = normNombre(nombre);
-  return AppData.dimCatalogo.filter(d => normNombre(d.cliente) === ck && normNombre(d.nombre) === nk)
+  return AppData.dimCatalogo.filter(d => (d.tipo || 'conductor') === t &&
+    normNombre(d.cliente) === ck && normNombre(d.nombre) === nk)
     .map(d => ({ zona: d.zona, precio: _num(d.precio) }));
 }
 // Dimensión asignada a un envío (o null). El precio sale de la zona de entrega.
@@ -933,7 +940,8 @@ function dimensionAsignada(r) {
   if (!r || !r.dim_especial) return null;
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
   const cli = r.dim_cliente || r.cliente || '';
-  const precio = dimPrecioEnZona(cli, r.dim_especial, zona);
+  // Lo que se le paga al CONDUCTOR por esa dimensión.
+  const precio = dimPrecioEnZona(cli, r.dim_especial, zona, 'conductor');
   return { cliente: cli, nombre: r.dim_especial, precio: precio == null ? 0 : precio, sinPrecioZona: precio == null };
 }
 

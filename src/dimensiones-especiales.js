@@ -6,6 +6,23 @@
 // ════════════════════════════════════════════════════════════════════════
 let dimEditIdx = -1;
 
+// DOS tarifarios para la misma dimensión: lo que se le PAGA al conductor por
+// llevarla y lo que se le COBRA al cliente por ese envío. No tienen por qué
+// coincidir, y con una sola lista o el conductor cobraba de más o al cliente se
+// le facturaba de menos. La solapa activa decide sobre cuál se trabaja.
+let dimTipo = 'conductor';
+function dimEsTipo(d) { return ((d && d.tipo) || 'conductor') === dimTipo; }
+
+function switchDimTab(tipo) {
+  dimTipo = (tipo === 'cliente') ? 'cliente' : 'conductor';
+  ['conductor', 'cliente'].forEach(t => {
+    const b = document.getElementById('dim-btn-' + t);
+    if (b) b.classList.toggle('active', t === dimTipo);
+  });
+  const s = document.getElementById('dim-search'); if (s) s.value = '';
+  renderDimensionesEspeciales();
+}
+
 function saveDimCatalogo() {
   try { localStorage.setItem('liq_dim_catalogo', JSON.stringify(AppData.dimCatalogo)); } catch (e) {}
   dbPush('dimensiones_catalogo');
@@ -13,11 +30,33 @@ function saveDimCatalogo() {
 
 function renderDimensionesEspeciales() {
   const search = (document.getElementById('dim-search')?.value || '').toLowerCase().trim();
-  const cat = AppData.dimCatalogo || [];
+  const cat = (AppData.dimCatalogo || []).filter(dimEsTipo);
+
+  // Contador de cada solapa y ayuda según la que esté activa.
+  ['conductor', 'cliente'].forEach(t => {
+    const el = document.getElementById('dim-count-' + t);
+    if (el) {
+      const n = (AppData.dimCatalogo || []).filter(d => ((d.tipo || 'conductor') === t)).length;
+      el.textContent = n ? '(' + n + ')' : '';
+    }
+  });
+  const ayuda = document.getElementById('dim-ayuda');
+  if (ayuda) ayuda.innerHTML = '<i class="ic ic-box"></i><div>' + (dimTipo === 'cliente'
+    ? 'Lo que se le <strong>COBRA AL CLIENTE</strong> por un envío con esa condición especial. Reemplaza la tarifa de venta de su zona: ' +
+      'cuando el administrativo asigna la dimensión a un envío desde <strong>Conductores</strong>, la liquidación de ese cliente pasa a facturar este precio, ' +
+      'discriminado en su propia línea. Si una zona no tiene precio acá, ese envío se factura con la tarifa común de la zona.'
+    : 'Lo que se le <strong>PAGA AL CONDUCTOR</strong> por llevar esa condición especial. Reemplaza la tarifa de su zona cuando se le asigna la dimensión al envío ' +
+      'desde <strong>Conductores</strong> (botón <strong>Dimensión</strong>).<br>' +
+      '<strong>Importar:</strong> subí directamente la <strong>planilla de la empresa</strong> ("PLANILLA DE CARGA PARA CONDUCTORES"). ' +
+      'Se leen <em>Cliente · Zona · Condición especial · Precio</em>; la columna <em>Detalle</em> y los títulos se ignoran.') +
+    '</div>';
   // Nos guardamos el índice real acá: buscarlo con indexOf() dentro del map era
   // O(n²) y con un catálogo completo (~2.700 precios) trababa el panel entero.
+  // OJO: el índice tiene que ser el de AppData.dimCatalogo (editar/borrar
+  // trabajan sobre él), no el de la lista filtrada por solapa.
   const list = [];
-  cat.forEach((d, i) => {
+  (AppData.dimCatalogo || []).forEach((d, i) => {
+    if (!dimEsTipo(d)) return;
     if (!search ||
       String(d.cliente || '').toLowerCase().includes(search) ||
       String(d.nombre || '').toLowerCase().includes(search) ||
@@ -172,6 +211,7 @@ function guardarDimensionModal() {
       const zonas = _dimZonasTarifario();
       if (!zonas.length) { alert('El tarifario no tiene zonas cargadas: no se puede aplicar a todas.'); return; }
       const yaCargadas = zonas.filter(z => AppData.dimCatalogo.some(x =>
+        dimEsTipo(x) &&
         normNombre(x.cliente) === normNombre(cliente) &&
         normNombre(x.nombre) === normNombre(nombre) &&
         normNombre(x.zona) === normNombre(z)));
@@ -183,11 +223,12 @@ function guardarDimensionModal() {
 
       zonas.forEach(z => {
         const i = AppData.dimCatalogo.findIndex(x =>
+          dimEsTipo(x) &&
           normNombre(x.cliente) === normNombre(cliente) &&
           normNombre(x.nombre) === normNombre(nombre) &&
           normNombre(x.zona) === normNombre(z));
         if (i >= 0) AppData.dimCatalogo[i].precio = precio;
-        else AppData.dimCatalogo.push({ cliente, nombre, zona: z, precio });
+        else AppData.dimCatalogo.push({ cliente, nombre, zona: z, precio, tipo: dimTipo });
       });
 
       saveDimCatalogo();
@@ -198,8 +239,8 @@ function guardarDimensionModal() {
       return;
     }
 
-    const entry = { cliente, nombre, zona, precio };
-    const dupIdx = AppData.dimCatalogo.findIndex((x, i) => i !== dimEditIdx &&
+    const entry = { cliente, nombre, zona, precio, tipo: dimTipo };
+    const dupIdx = AppData.dimCatalogo.findIndex((x, i) => i !== dimEditIdx && dimEsTipo(x) &&
       normNombre(x.cliente) === normNombre(cliente) && normNombre(x.nombre) === normNombre(nombre) && normNombre(x.zona) === normNombre(zona));
 
     if (dimEditIdx >= 0) {
@@ -231,19 +272,22 @@ function eliminarDimension(idx) {
 }
 
 function limpiarDimensiones() {
-  if (!AppData.dimCatalogo.length) { showToast('El catálogo ya está vacío'); return; }
-  if (!confirm('¿Vaciar TODO el catálogo de dimensiones? (' + AppData.dimCatalogo.length + ' filas)')) return;
-  AppData.dimCatalogo = [];
+  const propias = (AppData.dimCatalogo || []).filter(dimEsTipo);
+  const etq = dimTipo === 'cliente' ? 'de CLIENTES' : 'de CONDUCTOR';
+  if (!propias.length) { showToast('El catálogo ' + etq + ' ya está vacío'); return; }
+  const salto = String.fromCharCode(10);
+  if (!confirm('¿Vaciar el tarifario ' + etq + '? (' + propias.length + ' filas)' + salto + salto + 'El otro tarifario no se toca.')) return;
+  AppData.dimCatalogo = (AppData.dimCatalogo || []).filter(d => !dimEsTipo(d));
   saveDimCatalogo();
   renderDimensionesEspeciales();
-  showToast('🗑 Catálogo vaciado');
+  showToast('🗑 Tarifario ' + etq + ' vaciado');
 }
 
 function descargarPlantillaDimensiones() {
   // La planilla NO es una plantilla vacía: baja con TODO el catálogo cargado.
   // El circuito real es descargar → agregar las condiciones nuevas → volver a
   // subir. Con una plantilla en blanco habría que recargar todo de cero.
-  const cat = (AppData.dimCatalogo || []).slice().sort((a, b) =>
+  const cat = (AppData.dimCatalogo || []).filter(dimEsTipo).slice().sort((a, b) =>
     String(a.cliente).localeCompare(String(b.cliente)) ||
     String(a.nombre).localeCompare(String(b.nombre)) ||
     String(a.zona).localeCompare(String(b.zona)));
@@ -350,7 +394,7 @@ function importDimensionesEspeciales(event) {
           if (detalle) AppData.dimCatalogo[pos].detalle = detalle;
         } else {
           idxActual.set(k, AppData.dimCatalogo.length);
-          AppData.dimCatalogo.push({ cliente, nombre, zona, precio, detalle });
+          AppData.dimCatalogo.push({ cliente, nombre, zona, precio, detalle, tipo: dimTipo });
           nuevas++;
         }
       }
