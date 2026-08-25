@@ -87,8 +87,15 @@ create table if not exists public.dimensiones_catalogo (
   nombre text not null,           -- nombre de la dimensión (ej. "Heladera")
   zona text not null,
   precio numeric not null default 0,
+  tipo text not null default 'conductor',   -- 'conductor' (lo que se paga) | 'cliente' (lo que se cobra)
+  detalle text default '',
   created_at timestamptz not null default now(),
-  unique (cliente, nombre, zona)
+  -- OJO: 'tipo' es parte de la clave. La misma condición especial existe en los
+  -- DOS tarifarios y con unique (cliente, nombre, zona) el insert de la fila de
+  -- cliente chocaba con la de conductor: al guardar el catálogo completo,
+  -- replaceAll perdía el lote entero desde ese choque en adelante (bug real:
+  -- de 2.808 precios de cliente quedaron 88 — 3.000 filas justas, 6 lotes de 500).
+  unique (cliente, nombre, zona, tipo)
 );
 create index if not exists idx_dim_catalogo_cliente on public.dimensiones_catalogo (cliente);
 -- Asignación en registros: columnas dim_especial (nombre) + dim_cliente.

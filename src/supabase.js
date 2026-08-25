@@ -187,7 +187,19 @@ const DB = {
     for (let i = 0; i < total; i += 500) {
       const chunk = rows.slice(i, i + 500);
       const ins = await sb.from(table).insert(chunk);
-      if (ins.error) throw ins.error;
+      // Esto NO es recuperable solo: el delete ya corrió, así que si un lote
+      // falla la tabla queda a medio escribir. El error tiene que decir cuánto
+      // entró y cuánto se perdió, porque el síntoma que se ve arriba es "la
+      // planilla no se importó completa" y manda a buscar el problema al Excel
+      // (bug real: una unique key sin 'tipo' cortó el guardado en la fila 3.000
+      // de 5.720 y se perdieron 2.720 precios sin que nadie supiera por qué).
+      if (ins.error) {
+        const e = new Error('Se guardaron ' + i + ' de ' + total + ' filas de "' + table +
+          '" y el resto se perdió: ' + (ins.error.message || ins.error));
+        e.parcial = { tabla: table, guardadas: i, total: total };
+        e.causa = ins.error;
+        throw e;
+      }
       if (onProgress) onProgress(Math.min(i + chunk.length, total), total);
     }
   },

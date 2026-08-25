@@ -545,7 +545,18 @@ function dbPush(table) {
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
   return DB.replaceAll(table, rows).catch(e => {
     console.warn('Sincronización de "' + table + '" falló:', e);
-    showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
+    // Una escritura parcial deja la tabla a medio guardar: eso no se avisa con
+    // un toast que se va solo, porque el operador sigue trabajando sobre datos
+    // que en la nube ya no están y lo va a notar recién cuando falte plata.
+    if (e && e.parcial) {
+      alert('No se pudo guardar "' + e.parcial.tabla + '" completo.' + String.fromCharCode(10) + String.fromCharCode(10) +
+        'Quedaron ' + e.parcial.guardadas.toLocaleString('es-AR') + ' de ' +
+        e.parcial.total.toLocaleString('es-AR') + ' filas en la nube.' + String.fromCharCode(10) +
+        'NO cierres ni recargues la página: lo que ves en pantalla está completo, pero la nube no.' + String.fromCharCode(10) + String.fromCharCode(10) +
+        'Detalle: ' + ((e.causa && e.causa.message) || e.message));
+    } else {
+      showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
+    }
   });
 }
 
