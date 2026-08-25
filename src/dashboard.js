@@ -301,7 +301,151 @@ function renderDashboard() {
   // Reportes integrados (por zona / por conductor), respetan el mismo período.
   if (typeof renderZonaReport === 'function') renderZonaReport();
   if (typeof renderConductorReport === 'function') renderConductorReport();
+  // Solapa Clientes: la renta del negocio, con el mismo período.
+  if (typeof renderDashClientes === 'function') renderDashClientes();
 }
 
 // ===== LIQUIDACIONES =====
 // ── Estado filtro fechas de liquidaciones ────────────────────────────────────
+
+// ════════════════════════════════════════════════════════════════════════
+//  DASHBOARD · SOLAPA CLIENTES — la renta del negocio.
+//  Es el ÚNICO lugar donde se mira el margen: los paneles de Facturación
+//  arman y descargan lo que se le factura al cliente, y mezclar ahí el costo
+//  del conductor solo agrega ruido a esa tarea. Acá, en cambio, la pregunta
+//  es justamente cuánto deja cada cliente.
+// ════════════════════════════════════════════════════════════════════════
+
+let dashTab = 'clientes';
+
+function switchDashTab(tab) {
+  dashTab = ['clientes', 'conductores', 'zonas'].indexOf(tab) >= 0 ? tab : 'clientes';
+  ['clientes', 'conductores', 'zonas'].forEach(t => {
+    const panel = document.getElementById('dash-tab-' + t);
+    const btn = document.getElementById('dash-btn-' + t);
+    if (panel) panel.style.display = (t === dashTab) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === dashTab);
+  });
+  renderDashboard();
+}
+
+// Rango del filtro del dashboard en el formato que usa la facturación.
+function _dashRangoCliente() {
+  const r = getDashFechaRango();
+  return { desdeD: r && r.desde ? r.desde : null, hastaD: r && r.hasta ? r.hasta : null };
+}
+
+// Renta por cliente en el período: lo facturado, lo que costó y la diferencia.
+function dashRentaClientes() {
+  const rango = _dashRangoCliente();
+  const clientes = (typeof clientesDeRegistros === 'function') ? clientesDeRegistros(rango) : [];
+  return clientes.map(c => {
+    const liq = calcLiquidacionCliente(c.cod, rango);
+    return {
+      cod: c.cod, nombre: clienteNombreDe(c.cod),
+      envios: liq.totalEnvios, factura: liq.total, costo: liq.pagado,
+      margen: liq.margen, sinTarifa: liq.sinTarifa
+    };
+  }).filter(x => x.envios > 0).sort((a, b) => b.margen - a.margen);
+}
+
+function renderDashClientes() {
+  const body = document.getElementById('dash-cli-body');
+  if (!body) return;
+  const todos = dashRentaClientes();
+  const q = (document.getElementById('dash-cli-search')?.value || '').toLowerCase().trim();
+  const lista = todos.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
+
+  const factura = todos.reduce((s, x) => s + x.factura, 0);
+  const costo = todos.reduce((s, x) => s + x.costo, 0);
+  const margen = factura - costo;
+  const pct = factura > 0 ? (margen * 100 / factura) : 0;
+
+  const kpis = document.getElementById('dash-cli-kpis');
+  if (kpis) kpis.innerHTML =
+    '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
+      '<div class="metric-label">Facturación</div><div class="metric-value">' + fmtPeso(factura) + '</div>' +
+      '<div class="metric-sub">' + todos.length + ' cliente(s) con envíos</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-truck"></i></div>' +
+      '<div class="metric-label">Costo</div><div class="metric-value">' + fmtPeso(costo) + '</div>' +
+      '<div class="metric-sub">lo que se les paga a los conductores</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-trend"></i></div>' +
+      '<div class="metric-label">Margen</div>' +
+      '<div class="metric-value" style="color:' + (margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(margen) + '</div>' +
+      '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>';
+
+  const countEl = document.getElementById('dash-cli-count');
+  if (countEl) countEl.textContent = lista.length === todos.length
+    ? todos.length + ' cliente(s)'
+    : lista.length + ' de ' + todos.length + ' cliente(s)';
+
+  if (!lista.length) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
+      '<div class="empty-title">Sin clientes con envíos</div>' +
+      '<div class="empty-sub">' + (todos.length ? 'Ajustá el buscador' : 'No hay envíos con cliente en el período elegido') + '</div></div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = lista.map(x => {
+    const p = x.factura > 0 ? Math.round(x.margen * 100 / x.factura) : 0;
+    const codEsc = String(x.cod).replace(/'/g, "\\'");
+    return '<tr>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(x.nombre) + '</div>' +
+        '<div><strong>' + x.nombre + '</strong>' +
+        (x.sinTarifa ? '<div style="font-size:10px;color:#b45309">⚠ ' + x.sinTarifa + ' sin tarifa</div>' : '') +
+        '</div></div></td>' +
+      '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
+      '<td class="mono" style="text-align:right">' + fmtPeso(x.factura) + '</td>' +
+      '<td class="mono" style="text-align:right;color:var(--text-muted)">' + fmtPeso(x.costo) + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700;color:' + (x.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(x.margen) +
+        '<div style="font-size:10px;color:var(--text-muted);font-weight:400">' + p + '%</div></td>' +
+      '<td style="text-align:right"><button class="btn btn-sm" onclick="verRentaCliente(\'' + codEsc + '\')">Ver</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// Renta de UN cliente, abierta por zona: dónde gana y dónde pierde. El total no
+// alcanza — un cliente puede cerrar con buen margen y aun así estar perdiendo
+// plata en dos zonas puntuales.
+function verRentaCliente(cod) {
+  const k = clienteKey(cod);
+  const rango = _dashRangoCliente();
+  const liq = calcLiquidacionCliente(k, rango);
+  const pct = liq.total > 0 ? (liq.margen * 100 / liq.total) : 0;
+
+  const filas = liq.filas.slice().sort((a, b) => (b.subtotal - b.pagado) - (a.subtotal - a.pagado));
+  const cuerpo = filas.length ? filas.map(f => {
+    const m = _num(f.subtotal) - _num(f.pagado);
+    const p = f.subtotal > 0 ? Math.round(m * 100 / f.subtotal) : 0;
+    return '<tr>' +
+      '<td>' + f.zona + (f.dim ? ' <span class="badge" style="background:#fef3c7;color:#92400e;font-size:9px">especial</span>' : '') + '</td>' +
+      '<td class="mono" style="text-align:right">' + f.count + '</td>' +
+      '<td class="mono" style="text-align:right">' + (f.precio > 0 ? fmtPeso(f.precio) : '<span style="color:#b45309">sin tarifa</span>') + '</td>' +
+      '<td class="mono" style="text-align:right">' + fmtPeso(f.subtotal) + '</td>' +
+      '<td class="mono" style="text-align:right;color:var(--text-muted)">' + fmtPeso(f.pagado) + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700;color:' + (m >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(m) +
+        '<div style="font-size:10px;font-weight:400;color:var(--text-muted)">' + p + '%</div></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">Sin envíos en el período</td></tr>';
+
+  document.getElementById('modal-title').textContent = 'Renta · ' + clienteNombreDe(k);
+  document.getElementById('modal-body').innerHTML =
+    '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + dashPeriodoLabel() + '</div>' +
+    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+      '<div class="metric-card"><div class="metric-label">Facturación</div><div class="metric-value">' + fmtPeso(liq.total) + '</div>' +
+        '<div class="metric-sub">' + liq.totalEnvios + ' envíos</div></div>' +
+      '<div class="metric-card"><div class="metric-label">Costo</div><div class="metric-value">' + fmtPeso(liq.pagado) + '</div>' +
+        '<div class="metric-sub">a los conductores</div></div>' +
+      '<div class="metric-card accent"><div class="metric-label">Margen</div>' +
+        '<div class="metric-value" style="color:' + (liq.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(liq.margen) + '</div>' +
+        '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>' +
+    '</div>' +
+    (liq.sinTarifa ? '<div class="alert" style="margin:0 0 10px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:12px">' +
+      '<i class="ic ic-alert"></i><div><strong>' + liq.sinTarifa + ' envío(s) en zonas sin tarifa de venta.</strong> ' +
+      'Se facturan en $0 pero igual se le paga al conductor: hunden el margen sin que se note.</div></div>' : '') +
+    '<div class="table-wrap" style="max-height:44vh;overflow:auto"><table>' +
+      '<thead><tr><th>Zona</th><th style="text-align:right">Envíos</th><th style="text-align:right">Tarifa</th>' +
+      '<th style="text-align:right">Factura</th><th style="text-align:right">Costo</th><th style="text-align:right">Margen</th></tr></thead>' +
+      '<tbody>' + cuerpo + '</tbody></table></div>';
+  document.getElementById('modal-backdrop').classList.add('open');
+}

@@ -26,6 +26,32 @@
           </div>
         </div>
 
+        <div class="tabs" id="dash-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="dash-btn-clientes" onclick="switchDashTab('clientes')"><i class="ic ic-building"></i> Clientes</button>
+          <button class="tab" id="dash-btn-conductores" onclick="switchDashTab('conductores')"><i class="ic ic-truck"></i> Conductores</button>
+          <button class="tab" id="dash-btn-zonas" onclick="switchDashTab('zonas')"><i class="ic ic-pin"></i> Zonas</button>
+        </div>
+
+        <!-- ══════════ TAB: CLIENTES ══════════ -->
+        <div id="dash-tab-clientes">
+          <div class="metrics-grid" id="dash-cli-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header dash-report-head">
+              <span class="card-title"><i class="ic ic-building"></i> Renta por cliente</span>
+              <div class="tools">
+                <input type="search" id="dash-cli-search" placeholder="🔍 Buscar cliente..." oninput="renderDashClientes()" style="width:200px;max-width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
+                <span id="dash-cli-count" style="font-size:12px;color:var(--text-muted)"></span>
+              </div>
+            </div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Cliente</th><th style="text-align:right">Envíos</th><th style="text-align:right">Facturación</th><th style="text-align:right">Costo</th><th style="text-align:right">Margen</th><th style="width:90px"></th></tr></thead>
+              <tbody id="dash-cli-body"><tr><td colspan="6"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ══════════ TAB: CONDUCTORES ══════════ -->
+        <div id="dash-tab-conductores" style="display:none">
         <!-- KPIs -->
         <div class="metrics-grid">
           <div class="metric-card accent">
@@ -74,6 +100,40 @@
           </div>
         </div>
 
+          <!-- Reporte por conductor -->
+          <div class="card">
+            <div class="card-header dash-report-head">
+              <span class="card-title"><i class="ic ic-user"></i> Reporte por conductor</span>
+              <div class="tools">
+                <input type="search" id="cond-report-search" placeholder="🔍 Buscar conductor..." oninput="renderConductorReport()" style="width:210px;max-width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
+                <span id="cond-report-count" style="font-size:12px;color:var(--text-muted)"></span>
+                <button class="btn btn-sm btn-primary" onclick="exportReporteConductorPDF()"><i class="ic ic-download"></i> PDF</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conductor</th>
+                    <th>Categoría</th>
+                    <th>Zonas visitadas</th>
+                    <th>Total recorridos</th>
+                    <th>Total liquidado</th>
+                    <th>Super SLA activo</th>
+                    <th>PDF</th>
+                  </tr>
+                </thead>
+                <tbody id="rep-cond-body">
+                  <tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /tab conductores -->
+
+        <!-- ══════════ TAB: ZONAS ══════════ -->
+        <div id="dash-tab-zonas" style="display:none">
         <!-- Reportes integrados -->
         <div class="dash-reports">
 
@@ -106,36 +166,8 @@
             </div>
           </div>
 
-          <!-- Reporte por conductor -->
-          <div class="card">
-            <div class="card-header dash-report-head">
-              <span class="card-title"><i class="ic ic-user"></i> Reporte por conductor</span>
-              <div class="tools">
-                <input type="search" id="cond-report-search" placeholder="🔍 Buscar conductor..." oninput="renderConductorReport()" style="width:210px;max-width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-1)">
-                <span id="cond-report-count" style="font-size:12px;color:var(--text-muted)"></span>
-                <button class="btn btn-sm btn-primary" onclick="exportReporteConductorPDF()"><i class="ic ic-download"></i> PDF</button>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Conductor</th>
-                    <th>Categoría</th>
-                    <th>Zonas visitadas</th>
-                    <th>Total recorridos</th>
-                    <th>Total liquidado</th>
-                    <th>Super SLA activo</th>
-                    <th>PDF</th>
-                  </tr>
-                </thead>
-                <tbody id="rep-cond-body">
-                  <tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
 
         </div>
+        </div><!-- /tab zonas -->
 
       </div>
