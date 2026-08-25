@@ -130,7 +130,7 @@ function renderDetalleCliente() {
     const r = AppData.records[i];
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const contab = contabilizaRegistro(r);
-    const cobrado = contab ? clienteTarifaEnZona(cod, zona) : 0;
+    const cobrado = contab ? precioVentaEnvio(cod, r) : 0;
     return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0 };
   });
 

@@ -96,6 +96,24 @@ function clienteTarifaEnZona(cod, zona) {
   return t ? _num(t.precio) : 0;
 }
 
+// Lo que se le FACTURA al cliente por un envío. Es el único punto que decide
+// ese precio, para que la card, el detalle, la liquidación y el PDF no puedan
+// discrepar.
+//
+// Si el envío tiene una DIMENSIÓN ESPECIAL asignada, manda el precio del
+// catálogo para esa dimensión en esa zona: la dimensión es justamente un
+// acuerdo que reemplaza la tarifa de la zona (un colchón king no se cobra como
+// un paquete). Antes solo pisaba lo que se le pagaba al conductor, así que el
+// cliente seguía facturándose por la tarifa común.
+function precioVentaEnvio(cod, r) {
+  const zona = (r && r.zona && r.zona.trim()) ? r.zona.trim() : ((r && r.localidad) || '').trim();
+  const dim = (typeof dimensionAsignada === 'function') ? dimensionAsignada(r) : null;
+  // sinPrecioZona = la dimensión existe pero no tiene precio en esa zona: se
+  // cae a la tarifa de la zona en vez de facturar $0.
+  if (dim && !dim.sinPrecioZona && _num(dim.precio) > 0) return _num(dim.precio);
+  return clienteTarifaEnZona(cod, zona);
+}
+
 // Lo que se le PAGA al conductor por ese envío (para el margen).
 function precioPagadoConductor(r) {
   if (typeof precioManualDe === 'function') {
@@ -130,12 +148,20 @@ function calcLiquidacionCliente(cliente, rango) {
     if (!contabilizaRegistro(r)) return;   // la visita fallida también se le factura al cliente
     if (desde || hasta) { const f = parseFechaReg(r.fecha); if (!f) return; if (desde && f < desde) return; if (hasta && f > hasta) return; }
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() || '(sin zona)';
-    if (!porZona[zona]) porZona[zona] = { zona, count: 0, precio: clienteTarifaEnZona(cKey, zona), subtotal: 0, pagado: 0 };
-    porZona[zona].pagado += precioPagadoConductor(r);   // para el margen
-    porZona[zona].count++;
-    porZona[zona].subtotal += porZona[zona].precio;
-    if (porZona[zona].precio <= 0) sinTarifa++;
-    totalEnvios++; total += porZona[zona].precio;
+    // El precio es POR ENVÍO, no por zona: una dimensión especial asignada pisa
+    // la tarifa de la zona (un colchón king no se cobra como un paquete). Cada
+    // dimensión va en SU PROPIA LÍNEA: en la factura el cliente tiene que ver
+    // el acuerdo especial discriminado, no diluido en un promedio de la zona.
+    const p = precioVentaEnvio(cKey, r);
+    const dim = (typeof dimensionAsignada === 'function') ? dimensionAsignada(r) : null;
+    const conDim = !!(dim && !dim.sinPrecioZona && _num(dim.precio) > 0);
+    const etiqueta = conDim ? (zona + ' · ' + dim.nombre) : zona;
+    if (!porZona[etiqueta]) porZona[etiqueta] = { zona: etiqueta, count: 0, precio: p, subtotal: 0, pagado: 0, dim: conDim };
+    porZona[etiqueta].pagado += precioPagadoConductor(r);   // para el margen
+    porZona[etiqueta].count++;
+    porZona[etiqueta].subtotal += p;
+    if (p <= 0) sinTarifa++;
+    totalEnvios++; total += p;
   });
   const filas = Object.values(porZona).sort((a, b) => b.subtotal - a.subtotal);
   const pagado = filas.reduce((s, f) => s + _num(f.pagado), 0);

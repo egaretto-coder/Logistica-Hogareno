@@ -69,7 +69,7 @@ function cliqListado(rango) {
     const armada = liquidacionArmada(c.cod, rango);
     return {
       cod: c.cod, nombre: clienteNombreDe(c.cod),
-      envios: liq.totalEnvios, total: liq.total, margen: liq.margen,
+      envios: liq.totalEnvios, total: liq.total,
       sinTarifa: liq.sinTarifa, armada
     };
   }).filter(x => x.envios > 0)
@@ -141,7 +141,7 @@ function renderClienteLiquidaciones() {
   }
 
   if (!lista.length) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-file"></i></div>' +
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-file"></i></div>' +
       '<div class="empty-title">Sin clientes con envíos</div>' +
       '<div class="empty-sub">No hay envíos entregados en la semana ' + rango.desde + ' → ' + rango.hasta + '</div></div></td></tr>';
     return;
@@ -149,7 +149,6 @@ function renderClienteLiquidaciones() {
 
   body.innerHTML = lista.map(x => {
     const codEsc = String(x.cod).replace(/'/g, "\\'");
-    const margenPct = x.total > 0 ? Math.round(x.margen * 100 / x.total) : 0;
     return '<tr' + (x.armada ? '' : ' style="opacity:.6"') + '>' +
       '<td>' + (x.armada
         ? '<input type="checkbox" class="cliq-check" ' + (cliqSeleccion.has(x.cod) ? 'checked' : '') +
@@ -159,8 +158,7 @@ function renderClienteLiquidaciones() {
         '<div><strong>' + x.nombre + '</strong><div class="muted" style="font-size:10px">' + x.cod + '</div></div></div></td>' +
       '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.total) + '</td>' +
-      '<td class="mono" style="text-align:right;color:' + (x.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(x.margen) +
-        '<div style="font-size:10px;color:var(--text-muted)">' + margenPct + '%</div></td>' +
+
       '<td>' + (x.sinTarifa
         ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74" title="Envíos en zonas sin tarifa de venta: se facturan en $0">' + x.sinTarifa + ' sin tarifa</span>'
         : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
