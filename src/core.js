@@ -941,8 +941,14 @@ function dimensionAsignada(r) {
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
   const cli = r.dim_cliente || r.cliente || '';
   // Lo que se le paga al CONDUCTOR por esa dimensión.
+  // Una fila en $0 NO es un precio: es la condición registrada esperando que le
+  // carguen el valor (el aviso cruzado del panel las crea así). Cuenta igual que
+  // "no hay precio en esa zona", si no el envío se pagaría $0 en silencio y sin
+  // el cartel de "sin precio". Es el mismo criterio que dimPrecioVenta, que ya
+  // exige > 0 del lado del cliente.
   const precio = dimPrecioEnZona(cli, r.dim_especial, zona, 'conductor');
-  return { cliente: cli, nombre: r.dim_especial, precio: precio == null ? 0 : precio, sinPrecioZona: precio == null };
+  const sinPrecio = precio == null || !(_num(precio) > 0);
+  return { cliente: cli, nombre: r.dim_especial, precio: sinPrecio ? 0 : _num(precio), sinPrecioZona: sinPrecio };
 }
 
 // Devuelve el precio corregido a mano de un registro, o null si no tiene.

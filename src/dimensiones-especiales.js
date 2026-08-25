@@ -12,6 +12,12 @@ let dimEditIdx = -1;
 // le facturaba de menos. La solapa activa decide sobre cuál se trabaja.
 let dimTipo = 'conductor';
 function dimEsTipo(d) { return ((d && d.tipo) || 'conductor') === dimTipo; }
+function dimOtroTipo() { return dimTipo === 'cliente' ? 'conductor' : 'cliente'; }
+function dimEtiquetaTipo(t) { return t === 'cliente' ? 'CLIENTES' : 'CONDUCTOR'; }
+// Una fila con precio 0 no es un precio: es una condición registrada a la
+// espera de que le pongan valor. Se puede filtrar para completarlas.
+let dimFiltroSinPrecio = false;
+function dimSinPrecio(d) { return !(_num(d && d.precio) > 0); }
 
 function switchDimTab(tipo) {
   dimTipo = (tipo === 'cliente') ? 'cliente' : 'conductor';
@@ -19,6 +25,7 @@ function switchDimTab(tipo) {
     const b = document.getElementById('dim-btn-' + t);
     if (b) b.classList.toggle('active', t === dimTipo);
   });
+  dimFiltroSinPrecio = false;
   const s = document.getElementById('dim-search'); if (s) s.value = '';
   renderDimensionesEspeciales();
 }
@@ -57,24 +64,31 @@ function renderDimensionesEspeciales() {
   const list = [];
   (AppData.dimCatalogo || []).forEach((d, i) => {
     if (!dimEsTipo(d)) return;
+    if (dimFiltroSinPrecio && !dimSinPrecio(d)) return;
     if (!search ||
       String(d.cliente || '').toLowerCase().includes(search) ||
       String(d.nombre || '').toLowerCase().includes(search) ||
       String(d.zona || '').toLowerCase().includes(search)) list.push({ d, i });
   });
 
+  const avisosEl = document.getElementById('dim-avisos');
+  if (avisosEl) avisosEl.innerHTML = _dimBloqueAvisos();
+
   const countEl = document.getElementById('dim-count');
   if (countEl) {
     const nClientes = new Set(cat.map(d => normNombre(d.cliente))).size;
     const nDims = new Set(cat.map(d => normNombre(d.cliente) + '|' + normNombre(d.nombre))).size;
-    countEl.textContent = cat.length + ' precio(s) · ' + nDims + ' dimensión(es) · ' + nClientes + ' cliente(s)';
+    countEl.textContent = cat.length + ' precio(s) · ' + nDims + ' dimensión(es) · ' + nClientes + ' cliente(s)' +
+      (dimFiltroSinPrecio ? ' · mostrando solo las que están sin precio' : '');
   }
 
   const body = document.getElementById('dim-table-body');
   if (!body) return;
   if (!list.length) {
     body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon"><i class="ic ic-box"></i></div><div class="empty-title">Sin dimensiones en el catálogo</div><div class="empty-sub">' +
-      (cat.length ? 'Ajustá el buscador' : 'Agregá una con "+ Nueva dimensión" o importá el Excel (Cliente · Dimensión · Zona · Precio)') +
+      (dimFiltroSinPrecio ? 'Ninguna quedó sin precio en esta solapa'
+        : cat.length ? 'Ajustá el buscador'
+        : 'Agregá una con "+ Nueva dimensión" o importá el Excel (Cliente · Dimensión · Zona · Precio)') +
       '</div></div></td></tr>';
     return;
   }
@@ -100,13 +114,92 @@ function renderDimensionesEspeciales() {
       '<td><strong>' + (d.cliente || '—') + '</strong></td>' +
       '<td><span class="tag" style="background:#fef3c7;color:#92400e"><i class="ic ic-box"></i> ' + (d.nombre || '—') + '</span></td>' +
       '<td>' + (d.zona || '—') + '</td>' +
-      '<td class="mono" style="text-align:right"><strong>' + fmtPeso(_num(d.precio)) + '</strong></td>' +
+      '<td class="mono" style="text-align:right">' + (dimSinPrecio(d)
+        ? '<span class="tag" style="background:#fef2f2;color:#991b1b;border:1px solid #fca5a5">sin precio</span>'
+        : '<strong>' + fmtPeso(_num(d.precio)) + '</strong>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
         '<button class="btn btn-sm" onclick="editDimension(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
         '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDimension(' + realIdx + ')"><i class="ic ic-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+// ── Condiciones que están en un tarifario y NO en el otro ────────────────
+// La misma condición especial tiene que existir de los dos lados: lo que se le
+// paga al conductor por llevarla y lo que se le cobra al cliente por mandarla.
+// Si se carga de un solo lado, ese envío se liquida con la tarifa común de la
+// zona sin que nadie lo note. Devuelve las que faltan EN LA SOLAPA ACTIVA,
+// agrupadas por cliente + condición (no una línea por zona: son ~47 cada una).
+function dimFaltantesEnSolapa() {
+  const cat = AppData.dimCatalogo || [];
+  const clave = d => normNombre(d.cliente) + '|' + normNombre(d.nombre) + '|' + normNombre(d.zona);
+  const acaSet = new Set();
+  cat.forEach(d => { if (dimEsTipo(d)) acaSet.add(clave(d)); });
+  const grupos = new Map();
+  cat.forEach(d => {
+    if (dimEsTipo(d) || acaSet.has(clave(d))) return;
+    const k = normNombre(d.cliente) + '|' + normNombre(d.nombre);
+    if (!grupos.has(k)) grupos.set(k, { cliente: d.cliente, nombre: d.nombre, zonas: [] });
+    grupos.get(k).zonas.push(d.zona);
+  });
+  return Array.from(grupos.values()).sort((a, b) =>
+    String(a.cliente).localeCompare(String(b.cliente)) || String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+// Aviso arriba de la tabla: qué falta registrar acá y qué está sin precio.
+function _dimBloqueAvisos() {
+  let html = '';
+  const faltan = dimFaltantesEnSolapa();
+  if (faltan.length) {
+    const nZonas = faltan.reduce((s, g) => s + g.zonas.length, 0);
+    const muestra = faltan.slice(0, 6).map(g =>
+      '<span class="tag" style="background:#fff;border:1px solid #fdba74;color:#9a3412;font-size:11px">' +
+      g.cliente + ' · ' + g.nombre + ' <span style="opacity:.7">(' + g.zonas.length + ' zona' + (g.zonas.length === 1 ? '' : 's') + ')</span></span>').join(' ');
+    html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+      '<i class="ic ic-alert"></i><div><strong>' + faltan.length + ' condición(es) están en el tarifario de ' + dimEtiquetaTipo(dimOtroTipo()) +
+      ' y no acá</strong> (' + nZonas.toLocaleString('es-AR') + ' precios). Mientras falten, esos envíos se liquidan con la tarifa común de la zona.' +
+      '<div style="margin:8px 0;display:flex;gap:6px;flex-wrap:wrap">' + muestra +
+      (faltan.length > 6 ? '<span style="font-size:11px;align-self:center;opacity:.8">…y ' + (faltan.length - 6) + ' más</span>' : '') + '</div>' +
+      '<button class="btn btn-sm" onclick="crearDimensionesFaltantes()">Registrarlas acá sin precio</button>' +
+      '<span style="font-size:11px;margin-left:8px;opacity:.85">Se crean las ' + nZonas.toLocaleString('es-AR') + ' filas en $0 para completarles el valor.</span>' +
+      '</div></div>';
+  }
+  const sinPrecio = (AppData.dimCatalogo || []).filter(d => dimEsTipo(d) && dimSinPrecio(d)).length;
+  if (sinPrecio) {
+    html += '<div class="alert" style="margin:0 0 12px;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5">' +
+      '<i class="ic ic-alert"></i><div><strong>' + sinPrecio.toLocaleString('es-AR') + ' fila(s) sin precio</strong> en el tarifario de ' + dimEtiquetaTipo(dimTipo) + '. ' +
+      'Hay que asignarles el valor: en $0 la condición no se aplica. ' +
+      '<button class="btn btn-sm" style="margin-left:6px" onclick="toggleDimSinPrecio()">' +
+      (dimFiltroSinPrecio ? 'Ver todas' : 'Ver las sin precio') + '</button></div></div>';
+  }
+  return html;
+}
+
+// Crea acá las condiciones que solo existen en el otro tarifario, en $0, para
+// que aparezcan en la tabla y se les cargue el valor. No se inventa un precio:
+// copiar el del otro lado sería pagarle al conductor lo que se le cobra al
+// cliente, que es exactamente el error que dejó el catálogo mal.
+function crearDimensionesFaltantes() {
+  const faltan = dimFaltantesEnSolapa();
+  if (!faltan.length) return;
+  const nZonas = faltan.reduce((s, g) => s + g.zonas.length, 0);
+  if (!confirm('Se van a registrar ' + faltan.length + ' condición(es) en el tarifario de ' + dimEtiquetaTipo(dimTipo) + ',' + String.fromCharCode(10) +
+    'con ' + nZonas + ' filas en $0 para que les cargues el precio.' + String.fromCharCode(10) + String.fromCharCode(10) +
+    'El tarifario de ' + dimEtiquetaTipo(dimOtroTipo()) + ' no se toca.')) return;
+  const tipo = dimTipo;
+  faltan.forEach(g => g.zonas.forEach(z => {
+    AppData.dimCatalogo.push({ cliente: g.cliente, nombre: g.nombre, zona: z, precio: 0, detalle: '', tipo: tipo });
+  }));
+  dimFiltroSinPrecio = true;
+  saveDimCatalogo();
+  renderDimensionesEspeciales();
+  showToast('✅ ' + nZonas + ' fila(s) registradas en $0 — cargales el precio');
+}
+
+function toggleDimSinPrecio() {
+  dimFiltroSinPrecio = !dimFiltroSinPrecio;
+  renderDimensionesEspeciales();
 }
 
 // Datalists del modal: clientes (catálogo + recorridos), dimensiones y zonas (tarifario).
@@ -430,6 +523,15 @@ function importDimensionesEspeciales(event) {
       renderDimensionesEspeciales();
       showToast('✅ Catálogo importado: ' + nuevas + ' nueva(s) · ' + actualizadas + ' con precio actualizado · ' + sinCambio + ' sin cambios' +
         (eliminadas ? ' · ' + eliminadas + ' eliminada(s)' : '') + (ignoradas ? ' · ' + ignoradas + ' fila(s) ignorada(s)' : ''));
+
+      // Lo que este import sumó de un lado puede faltar del otro: se avisa acá y
+      // no solo con el cartel de la otra solapa, que no se ve hasta entrar.
+      const otro = dimTipo; dimTipo = dimOtroTipo();
+      const faltanAlla = dimFaltantesEnSolapa().length;
+      dimTipo = otro;
+      if (faltanAlla) setTimeout(() => showToast('⚠️ Quedan ' + faltanAlla +
+        ' condición(es) sin registrar en el tarifario de ' + dimEtiquetaTipo(dimOtroTipo()) +
+        ' — entrá a esa solapa para cargarles el precio'), 1200);
     } catch (err) { console.error(err); alert('Error al importar: ' + err.message); }
     finally { event.target.value = ''; }
   };
