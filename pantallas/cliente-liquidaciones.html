@@ -5,8 +5,8 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <div class="date-range">
               <i class="ic ic-calendar"></i>
-              <span class="date-label">Jueves de corte</span>
-              <input type="date" id="cliq-semana" onchange="renderClienteLiquidaciones()" aria-label="Jueves de corte de la semana">
+              <span class="date-label">Semana Vie→Jue</span>
+              <input type="date" id="cliq-semana" onchange="cliqCambioSemana()" aria-label="Semana de facturación (viernes a jueves)" title="Elegí cualquier día: se toma la semana Viernes→Jueves que lo contiene">
             </div>
             <button class="btn btn-sm" id="cliq-btn-unpdf" onclick="descargarLiqClientesCombinado()" title="Todas las elegidas en un solo archivo, una por página"><i class="ic ic-file"></i> En un solo PDF</button>
             <button class="btn btn-sm btn-primary" id="cliq-btn-descargar" onclick="descargarLiqClientes()"><i class="ic ic-download"></i> Descargar</button>

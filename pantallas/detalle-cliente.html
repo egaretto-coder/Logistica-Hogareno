@@ -21,8 +21,8 @@
             </div>
             <div class="date-range">
               <i class="ic ic-calendar"></i>
-              <span class="date-label">Semana</span>
-              <input type="date" id="dcli-semana" onchange="renderDetalleCliente()" aria-label="Semana">
+              <span class="date-label">Semana Vie→Jue</span>
+              <input type="date" id="dcli-semana" onchange="dcliCambioSemana()" aria-label="Semana de facturación (viernes a jueves)" title="Elegí cualquier día: se toma la semana Viernes→Jueves que lo contiene">
             </div>
             <div style="display:flex;align-items:center;gap:6px">
               <span id="dcli-rango" style="font-size:11px;color:var(--text-muted)"></span>

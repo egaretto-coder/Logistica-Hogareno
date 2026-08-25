@@ -30,6 +30,11 @@ function dcliMoverSemana(dias) {
   el.value = base.toISOString().slice(0, 10);
   renderDetalleCliente();
 }
+// Al elegir un día cualquiera, el campo se corre al viernes de esa semana.
+function dcliCambioSemana() {
+  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana');
+  renderDetalleCliente();
+}
 function dcliSemanaAnterior() { dcliMoverSemana(-7); }
 function dcliSemanaSiguiente() { dcliMoverSemana(7); }
 
@@ -60,6 +65,7 @@ function renderDetalleClientePagina() {
   renderDetalleClienteSelect();
   const el = document.getElementById('dcli-semana');
   if (el && !el.value) el.value = new Date().toISOString().slice(0, 10);
+  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana');
   renderDetalleCliente();
 }
 

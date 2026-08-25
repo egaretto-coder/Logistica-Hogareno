@@ -145,6 +145,19 @@ function precioPagadoConductor(r) {
   return 0;
 }
 
+// La semana de facturación va del VIERNES (día 1) al JUEVES siguiente, que es
+// el corte. Al elegir cualquier día, el campo se corre al viernes de esa
+// semana: así el control muestra la pauta en vez de la fecha suelta que se
+// tocó, y no hay que deducir a qué semana pertenece un martes.
+// (Son 7 días de calendario y 6 de operación: los domingos no hay reparto.)
+function snapSemanaCliente(inputId) {
+  const el = document.getElementById(inputId);
+  if (!el || !el.value) return;
+  const r = semanaClienteRango(el.value);
+  const v = r.desdeD;
+  el.value = v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
+}
+
 // Semana de facturación Viernes→Jueves que CONTIENE la fecha dada (ISO o Date).
 function semanaClienteRango(iso) {
   const d = iso ? new Date(iso + 'T12:00:00') : new Date();

@@ -89,9 +89,16 @@ function toggleCliqSelTodas(on) {
   renderClienteLiquidaciones();
 }
 
+// Al elegir un día cualquiera, el campo se corre al viernes de esa semana.
+function cliqCambioSemana() {
+  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('cliq-semana');
+  renderClienteLiquidaciones();
+}
+
 function renderClienteLiquidacionesPagina() {
   const f = document.getElementById('cliq-semana');
   if (f && !f.value) f.value = hoyISO();
+  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('cliq-semana');
   renderClienteLiquidaciones();
 }
 
