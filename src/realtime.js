@@ -63,6 +63,23 @@ function marcarEscrituraLocal(ms) {
   _rtMuteHasta = Date.now() + (ms || 2500);
 }
 
+// Escrituras grandes EN CURSO (dbPush → replaceAll: un delete + N lotes de 500,
+// cada uno un viaje a la nube). El mute de 2,5 s alcanza para un guardado
+// chico, pero el catálogo de dimensiones son 5.700 filas = 12 lotes, y cuando
+// la ventana vencía a mitad de camino Realtime re-hidrataba leyendo la tabla a
+// medio escribir y le PISABA a AppData lo que todavía se estaba guardando: el
+// panel quedaba mostrando 3.000 filas exactas (lo que había en la nube en ese
+// instante) y el operador creía que el Excel se había importado incompleto
+// (bug real). Mientras haya una escritura en vuelo la sincronización se
+// posterga, sin importar cuánto tarde.
+let _rtEscrituraEnVuelo = 0;
+function inicioEscrituraNube() { _rtEscrituraEnVuelo++; marcarEscrituraLocal(); }
+function finEscrituraNube() {
+  _rtEscrituraEnVuelo = Math.max(0, _rtEscrituraEnVuelo - 1);
+  // Un respiro extra al final para no recargar por el propio eco.
+  marcarEscrituraLocal(3000);
+}
+
 // ¿Hay algo en curso que NO conviene interrumpir con una recarga/re-render?
 function _rtEdicionEnCurso() {
   // Ediciones sin guardar en el editor de Conductores.
@@ -95,6 +112,8 @@ function _rtOnCambio(payload) {
 async function sincronizarEnVivo() {
   if (!currentUser) return;                        // sin sesión, no sincronizamos
   if (AppData._hidratando) { _rtReprogramar(2000); return; }
+  // Guardado grande en curso: leer ahora traería la tabla a medio escribir.
+  if (_rtEscrituraEnVuelo > 0) { _rtReprogramar(2000); return; }
   if (_rtEdicionEnCurso()) { _rtReprogramar(3500); return; }   // no pisar al operador
   const ahora = Date.now();
   if (ahora < _rtMuteHasta) { _rtReprogramar(_rtMuteHasta - ahora + 200); return; } // esperar fin del mute

@@ -542,8 +542,16 @@ function dbPush(table) {
   };
   const rows = builders[table] ? builders[table]() : [];
   if ((table === 'super_sla' || table === 'tarifas') && typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas();
-  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
-  return DB.replaceAll(table, rows).catch(e => {
+  // El mute de Realtime tiene que durar TODA la escritura, no 2,5 s: replaceAll
+  // manda un delete y un lote por cada 500 filas, y si la ventana vence a mitad
+  // de camino la re-hidratación lee la tabla incompleta y pisa AppData.
+  if (typeof inicioEscrituraNube === 'function') inicioEscrituraNube();
+  else if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+  const renovarMute = () => { if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal(); };
+  return DB.replaceAll(table, rows, renovarMute).finally(() => {
+    if (typeof finEscrituraNube === 'function') finEscrituraNube();
+    else if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal(3000);
+  }).catch(e => {
     console.warn('Sincronización de "' + table + '" falló:', e);
     // Una escritura parcial deja la tabla a medio guardar: eso no se avisa con
     // un toast que se va solo, porque el operador sigue trabajando sobre datos
