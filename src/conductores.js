@@ -730,11 +730,31 @@ function zonaSelectHTML(catalogo, idx, current, cond) {
   return html;
 }
 
+// Opciones de cliente para el alta manual: los del maestro más los que solo
+// aparecen en los envíos. Sin cliente el envío se le paga al conductor pero no
+// se le factura a nadie, así que se elige de una lista y no se tipea.
+let _aeClienteOpts = '';
+function clienteOptionsHTML() {
+  const vistos = new Map();
+  (AppData.clientes || []).forEach(c => {
+    const k = clienteKey(c.codigo);
+    if (k) vistos.set(k, c.nombre || k);
+  });
+  (typeof clientesDeRegistros === 'function' ? clientesDeRegistros() : []).forEach(c => {
+    if (!vistos.has(clienteKey(c.cod))) vistos.set(clienteKey(c.cod), c.nombre);
+  });
+  return '<option value="">— sin cliente —</option>' +
+    Array.from(vistos.entries())
+      .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+      .map(([cod, nombre]) => '<option value="' + String(cod).replace(/"/g, '&quot;') + '">' + nombre + '</option>').join('');
+}
+
 function envioRowHTML(fechaISO) {
-  return '<div class="addenvio-row" style="display:grid;grid-template-columns:130px 1fr 1fr 110px 34px;gap:8px;align-items:center">' +
+  return '<div class="addenvio-row" style="display:grid;grid-template-columns:120px 1fr 1fr 1fr 100px 34px;gap:8px;align-items:center">' +
     '<input type="date" class="ae-fecha" value="' + (fechaISO || '') + '" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px">' +
     '<input type="text" class="ae-tracking" placeholder="Nº tracking" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:monospace">' +
     '<select class="ae-zona" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeZonaOpts + '</select>' +
+    '<select class="ae-cliente" title="A quién se le factura este envío" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeClienteOpts + '</select>' +
     '<input type="number" class="ae-precio" placeholder="auto" min="0" step="1" title="Vacío = precio automático de la zona elegida" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-align:right;font-family:monospace">' +
     '<button class="btn btn-sm" onclick="removeEnvioRow(this)" title="Quitar fila" style="padding:5px 8px"><i class="ic ic-x"></i></button>' +
   '</div>';
@@ -746,6 +766,7 @@ function openAddEnvioModal() {
   document.getElementById('addenvio-conductor').textContent = conductor;
   // Opciones de zona sincronizadas con Tarifas + Super SLA de ESTE conductor.
   _aeZonaOpts = zonaOptionsHTML(conductor);
+  _aeClienteOpts = clienteOptionsHTML();
   // Fecha por defecto: el "Desde" del período que se está liquidando (o hoy).
   const desde = document.getElementById('cond-fecha-desde')?.value || hoyISO();
   const cont = document.getElementById('addenvio-rows');
@@ -787,15 +808,21 @@ async function guardarEnviosModal() {
     const tracking = row.querySelector('.ae-tracking').value.trim();
     const zona = row.querySelector('.ae-zona').value.trim().toUpperCase();
     const precioV = row.querySelector('.ae-precio').value.trim();
+    const clienteCod = (row.querySelector('.ae-cliente')?.value || '').trim().toUpperCase();
     row.querySelector('.ae-fecha').style.borderColor = 'var(--border)';
     // Fila sin datos reales (solo la fecha por defecto) → se ignora.
-    const tieneContenido = tracking || zona || precioV !== '';
+    const tieneContenido = tracking || zona || precioV !== '' || clienteCod;
     if (!tieneContenido) return;
     if (!iso) { faltaFecha++; row.querySelector('.ae-fecha').style.borderColor = '#e11d48'; return; }
     recs.push({
       cadete: conductor, tracking, fecha: isoToDMY(iso),
       localidad: zona, zona: zona, zona_precio: '',
       direccion: '', destinatario: '',
+      // A quién se le factura. cliente_cod es la IDENTIDAD (el nombre
+      // normalizado); sin esto el envío se le paga al conductor pero no aparece
+      // en la liquidación de ningún cliente.
+      cliente: clienteCod ? clienteNombreDe(clienteCod) : '',
+      cliente_cod: clienteCod,
       estado: 'Entregado', precio_bd: 0,
       carga_fecha: isoToDMY(hoyISO()),
       manual: true, // cargado a mano → chip "Manual" en la tabla
