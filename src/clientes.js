@@ -149,7 +149,8 @@ function precioPagadoConductor(r) {
 // el corte. Al elegir cualquier día, el campo se corre al viernes de esa
 // semana: así el control muestra la pauta en vez de la fecha suelta que se
 // tocó, y no hay que deducir a qué semana pertenece un martes.
-// (Son 7 días de calendario y 6 de operación: los domingos no hay reparto.)
+// Son los 7 días de calendario, DOMINGO INCLUIDO: pasa poco, pero a veces un
+// conductor trabaja el domingo y esas entregas se liquidan como cualquier otra.
 function snapSemanaCliente(inputId) {
   const el = document.getElementById(inputId);
   if (!el || !el.value) return;

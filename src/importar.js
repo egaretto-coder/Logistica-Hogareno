@@ -463,7 +463,10 @@ function diasFaltantesRecorridos() {
   const d = new Date(min.getFullYear(), min.getMonth(), min.getDate());
   const end = new Date(max.getFullYear(), max.getMonth(), max.getDate());
   for (; d <= end; d.setDate(d.getDate() + 1)) {
-    if (d.getDay() === 0) continue; // domingo
+    // El domingo no se reclama: casi nunca se reparte, y avisar todas las
+    // semanas por un día que suele estar vacío entrena a ignorar el aviso.
+    // Si ese domingo SÍ se trabajó, sus envíos entran igual al importarlos.
+    if (d.getDay() === 0) continue;
     if (!set.has(d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate())) faltan.push(new Date(d));
   }
   return faltan;
