@@ -481,7 +481,7 @@ function editarRegistroConductor(idx, campo, valor) {
   if (!r) return;
   if (r._historico) {
     showToast('🗄️ Registro archivado (solo lectura): no se puede editar');
-    renderConductorDetail();
+    _repintarPanelDeEnvios();
     return;
   }
   if (campo === 'tracking') r.tracking = String(valor).trim();
@@ -496,10 +496,21 @@ function editarRegistroConductor(idx, campo, valor) {
   invalidarLiquidaciones();   // cambió un envío: los totales se recalculan
   condEditPendientes = true;
   actualizarEstadoEdicion('Cambios sin guardar…');
-  renderConductorDetail();
+  _repintarPanelDeEnvios();
   // Autoguardado con espera corta: agrupa varias ediciones en un solo guardado.
   clearTimeout(condEditTimer);
   condEditTimer = setTimeout(guardarEdicionConductores, 2500);
+}
+
+// Los envíos se editan desde DOS paneles (Conductores y Detalle de cliente) y
+// son los mismos `registros`. Repintar siempre el de Conductores dejaba al
+// operador del panel de cliente sin ver nada: elegía una zona, quedaba
+// pendiente, pero la fila no se volvía a dibujar y el botón "Confirmar" nunca
+// aparecía — el cambio se quedaba trabado sin ningún aviso (bug real).
+function _repintarPanelDeEnvios() {
+  const pagina = (typeof paginaActivaId === 'function') ? paginaActivaId() : null;
+  if (pagina === 'detalle-cliente' && typeof renderDetalleCliente === 'function') { renderDetalleCliente(); return; }
+  renderConductorDetail();
 }
 
 // ── Confirmación de zona en 2 pasos ─────────────────────────────────────────
@@ -516,7 +527,7 @@ function stageZonaConductor(idx, value) {
   const nuevo = String(value || '').toUpperCase().trim();
   if (nuevo === actual) delete _zonaPendiente[idx];   // volvió a la original → sin cambio
   else _zonaPendiente[idx] = nuevo;
-  renderConductorDetail();
+  _repintarPanelDeEnvios();
 }
 
 function confirmarZonaConductor(idx) {
@@ -530,7 +541,7 @@ function confirmarZonaConductor(idx) {
 
 function cancelarZonaConductor(idx) {
   delete _zonaPendiente[idx];
-  renderConductorDetail();
+  _repintarPanelDeEnvios();
 }
 
 function actualizarEstadoEdicion(txt) {

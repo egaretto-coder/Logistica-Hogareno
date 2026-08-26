@@ -134,6 +134,24 @@ function rendicionesDelRango() {
   return (AppData.rendiciones || []).filter(_rendEnRango);
 }
 
+// Las 6 solapas de estado (Abiertos · En la calle · Atrasados · En la empresa ·
+// Devueltos · Todos) llamaban a esta función y NO existía: cada clic tiraba un
+// ReferenceError y la tabla se quedaba siempre en "Abiertos", sin ninguna señal
+// de que el filtro no había hecho nada.
+function setFiltroRendicion(estado) {
+  rendFiltroEstado = estado || 'abiertas';
+  renderRendiciones();
+}
+
+// Marca cuál de las 6 está activa. Sin esto, aunque el filtro funcione, la
+// solapa resaltada sigue siendo la primera y no se sabe qué se está mirando.
+function _pintarSolapasRendicion() {
+  ['abiertas', 'calle', 'vencido', 'recibido', 'rendido', 'todas'].forEach(f => {
+    const b = document.getElementById('rend-f-' + f);
+    if (b) b.classList.toggle('active', f === rendFiltroEstado);
+  });
+}
+
 function setRendFechas() {
   rendDesde = document.getElementById('rend-desde')?.value || '';
   rendHasta = document.getElementById('rend-hasta')?.value || '';
@@ -165,6 +183,7 @@ function setRendPreset(cual) {
 function renderRendiciones() {
   const cont = document.getElementById('rend-rows');
   if (!cont) return;
+  _pintarSolapasRendicion();
   const lista = rendicionesDelRango();
 
   // ── Resumen: dónde está la plata ──

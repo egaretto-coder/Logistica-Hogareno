@@ -157,8 +157,12 @@ function evalComisionCliente(cliente, recs) {
   recs.forEach(r => {
     const f = parseFechaReg(r.fecha);
     if (!f || f < desdeD || f > hastaD) return;
-    const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : ((r.localidad || '').trim() || '(sin zona)');
-    const precio = clienteTarifaEnZona(cliente, zona);
+    // MISMO precio que factura el resto de la app: precioVentaEnvio contempla la
+    // dimensión especial asignada, que reemplaza la tarifa de la zona. Con
+    // clienteTarifaEnZona a secas, un cliente con condiciones especiales
+    // facturaba de menos en la evaluación y podía caer en una categoría más baja
+    // de la escala, pagándole menos comisión al vendedor.
+    const precio = precioVentaEnvio(cliente, r);
     total += precio; envios++; if (precio <= 0) sinTarifa++;
   });
   const cat = categoriaDeFacturacion(total);
