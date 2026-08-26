@@ -12,11 +12,15 @@ const ROL_PERMISOS = {
     label: 'Analista — acceso total',
     color: '#059669',
     paginas: [
-      'dashboard', 'upload', 'liquidaciones', 'conductores',
-      'panel-conductores', 'config-tarifas', 'config-supersla',
-      'dimensiones-especiales',
-      'extraviados', 'beneficios', 'km-desvio', 'adelantos',
-      'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones',
+      // El ORDEN de esta lista es el que muestra Gestión de permisos
+      // (paginasConfigurables()). Se mantiene igual al del sidebar para que las
+      // dos pantallas cuenten la misma historia.
+      'dashboard', 'upload',
+      'panel-conductores', 'conductores', 'liquidaciones',
+      'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
+      'clientes', 'detalle-cliente', 'cliente-liquidaciones',
+      'config-tarifas', 'config-supersla', 'dimensiones-especiales',
+      'empleados', 'vacaciones', 'comisiones',
       'gestion-permisos'
     ]
   },
@@ -30,6 +34,26 @@ const ROL_PERMISOS = {
       'extraviados', 'beneficios', 'km-desvio', 'adelantos',
       'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones'
     ]
+  },
+
+  // ── Los dos lados del mostrador, separados ───────────────────────────────
+  // Son personas distintas y cada una trabaja sobre su mitad: el de conductores
+  // arma lo que se PAGA, el de clientes arma lo que se COBRA. Los dos ven su
+  // propio panel de liquidación (el de su área) y ninguno el del otro.
+  administrativo_conductores: {
+    label: 'Administrativo Conductores',
+    color: '#0ea5e9',
+    paginas: [
+      'upload',
+      'panel-conductores', 'conductores', 'liquidaciones',
+      // Todo lo que se le descuenta o se le suma al conductor.
+      'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones'
+    ]
+  },
+  administrativo_clientes: {
+    label: 'Administrativo Clientes',
+    color: '#8b5cf6',
+    paginas: ['clientes', 'detalle-cliente', 'cliente-liquidaciones']
   }
 };
 
