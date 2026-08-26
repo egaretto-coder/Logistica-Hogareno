@@ -1441,6 +1441,7 @@ function conciliacionCobro(rango) {
   });
 
   res.clientes = Array.from(res.porCliente.values()).sort((a, b) => b.pagado - a.pagado);
+  res.sinPagar = _conciliacionSinPagar(desde, hasta);
   return res;
 }
 
@@ -1460,5 +1461,44 @@ function diagnosticoCobroEnvio(r) {
   return {
     cobra: !motivo, motivo, pagado, cobrado, zona, cod,
     texto: motivo ? (FUGA_MOTIVOS[motivo] || {}).label : ''
+  };
+}
+
+// ── El reverso: lo que se COBRA y no se PAGA ────────────────────────────────
+// Todo envío entregado se le factura al cliente, tenga o no conductor asignado
+// — eso está bien y es lo que corresponde. Pero el conductor cobra por DÍA DE
+// PAGO (Titular=viernes · Semi Titular=lunes · Suplente=martes), y esa condición
+// se carga a mano en el Panel de conductores. Un cadete que reparte pero que
+// nunca fue dado de alta ahí —o que está sin condición— no cae en ningún lote:
+// el operador liquida por condición y nunca lo ve. Sus envíos se facturan y no
+// se pagan, y no aparecen como faltante en ningún lado.
+// Medido al implementarlo: 11 conductores con 1.146 envíos desde el 20/08.
+function _conciliacionSinPagar(desde, hasta) {
+  const porCond = new Map();
+  let envios = 0, cobrado = 0;
+  (AppData.records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(r.fecha);
+      if (!f) return;
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    const cond = (typeof conductorCanonico === 'function') ? conductorCanonico(r.cadete) : String(r.cadete || '').trim();
+    const panel = (typeof panelConductorDe === 'function') ? panelConductorDe(cond) : null;
+    const sinDiaDePago = !panel || !String(panel.condicion || '').trim();
+    if (!sinDiaDePago) return;
+
+    const cod = clienteCodDeRegistro(r);
+    const c = cod ? precioVentaEnvio(cod, r) : 0;
+    envios++; cobrado += c;
+    const clave = cond || '(sin conductor)';
+    let x = porCond.get(clave);
+    if (!x) x = { conductor: clave, envios: 0, cobrado: 0, enPanel: !!panel }, porCond.set(clave, x);
+    x.envios++; x.cobrado += c;
+  });
+  return {
+    envios, cobrado,
+    conductores: Array.from(porCond.values()).sort((a, b) => b.envios - a.envios)
   };
 }

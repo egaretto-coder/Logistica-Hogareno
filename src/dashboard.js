@@ -469,10 +469,14 @@ function renderDashFuga() {
   const c = conciliacionCobro(_dashRangoCliente());
 
   if (!c.envios) { cont.innerHTML = ''; return; }
+  // El reverso: envíos que se facturan pero cuyo conductor no tiene día de pago,
+  // así que no entran en ningún lote de liquidación. Se muestra siempre, aunque
+  // del otro lado esté todo bien: son dos fugas distintas.
+  const rev = _bloqueSinPagar(c.sinPagar);
   if (!c.fugaEnvios) {
     cont.innerHTML = '<div class="alert" style="margin:16px 0 0;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">' +
       '<i class="ic ic-check-circle"></i><div><strong>Todo lo que se paga se cobra</strong> — ' +
-      'los ' + c.envios.toLocaleString('es-AR') + ' envíos del período se le facturan a un cliente.</div></div>';
+      'los ' + c.envios.toLocaleString('es-AR') + ' envíos del período se le facturan a un cliente.</div></div>' + rev;
     return;
   }
 
@@ -517,5 +521,33 @@ function renderDashFuga() {
           (c.clientes.length > 12 ? '<div style="padding:6px 10px;font-size:11px;color:var(--text-muted)">…y ' + (c.clientes.length - 12) + ' cliente(s) más</div>' : '') +
           '</div>'
         : '') +
+    '</div></div>' + rev;
+}
+
+// Bloque del reverso: envíos que se facturan pero que no entran en ninguna
+// liquidación de conductor. La condición (día de pago) se carga a mano en el
+// Panel de conductores; sin ella el cadete no cae en ningún lote y el operador,
+// que liquida por condición, nunca lo ve.
+function _bloqueSinPagar(sp) {
+  if (!sp || !sp.envios) return '';
+  const filas = sp.conductores.slice(0, 10).map(x =>
+    '<tr>' +
+    '<td><strong>' + x.conductor + '</strong></td>' +
+    '<td style="font-size:11px">' + (x.enPanel ? 'está en el panel, sin condición' : 'no está en el Panel de conductores') + '</td>' +
+    '<td class="mono" style="text-align:right">' + x.envios.toLocaleString('es-AR') + '</td>' +
+    '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.cobrado) + '</td>' +
+    '</tr>').join('');
+  return '<div class="alert" style="margin:12px 0 0;background:#eff6ff;color:#1e3a8a;border:1px solid #93c5fd">' +
+    '<i class="ic ic-truck"></i><div>' +
+      '<strong>' + sp.envios.toLocaleString('es-AR') + ' envíos entregados no entran en ninguna liquidación de conductor</strong> — ' +
+      'se le facturan al cliente (' + fmtPeso(sp.cobrado) + ') pero el cadete que los hizo <strong>no tiene día de pago</strong>. ' +
+      'La condición (Titular=viernes · Semi Titular=lunes · Suplente=martes) se carga en <strong>Panel de conductores</strong>; ' +
+      'sin ella no cae en ningún lote y el operador que liquida por condición no lo ve.' +
+      '<div class="table-wrap" style="margin-top:10px;background:var(--surface-1);border-radius:8px">' +
+      '<table><thead><tr><th>Conductor</th><th>Qué falta</th>' +
+      '<th style="text-align:right">Envíos</th><th style="text-align:right">Se factura</th></tr></thead>' +
+      '<tbody>' + filas + '</tbody></table>' +
+      (sp.conductores.length > 10 ? '<div style="padding:6px 10px;font-size:11px;color:var(--text-muted)">…y ' + (sp.conductores.length - 10) + ' conductor(es) más</div>' : '') +
+      '</div>' +
     '</div></div>';
 }
