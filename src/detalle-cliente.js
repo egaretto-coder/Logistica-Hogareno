@@ -206,10 +206,7 @@ function renderDetalleCliente() {
         '<td>' + ((typeof zonaSelectHTML === 'function')
             ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '', zonaPreviewCliente)
             : (d.zona || '—')) + '</td>' +
-        '<td style="font-size:11px">' + (d.contab
-            ? '<span class="badge" style="background:#dcfce7;color:#166534">Factura</span>'
-            : '<span class="badge" style="background:#fee2e2;color:#b91c1c">No factura</span>') +
-          '<div class="muted" style="font-size:10px;margin-top:2px">' + (d.r.estado || '—') + '</div></td>' +
+        '<td style="font-size:11px">' + _dcliEstadoSelect(d) + '</td>' +
         '<td class="mono" style="text-align:right">' + (d.sinTarifa
             ? '<span style="color:#b45309" title="La zona no tiene tarifa de venta para este cliente">sin tarifa</span>'
             : fmtPeso(d.cobrado)) + '</td>' +
@@ -326,4 +323,34 @@ function _dcliPreviewZona(cod, zona) {
   return p > 0
     ? '<span style="color:#15803d;font-weight:600">' + zona + ' · ' + fmtPeso(p) + '</span>'
     : '<span style="color:#b91c1c;font-weight:600">' + zona + ' · sin tarifa · se factura $0</span>';
+}
+
+// ── Estado del envío, editable desde acá ────────────────────────────────────
+// La ayuda del panel dice "Corregí la zona o el estado", pero el estado era de
+// SOLO LECTURA: el operador de clientes lo leía, no podía tocarlo y terminaba
+// pidiéndole el cambio al operador de conductores. Son dos personas distintas y
+// ese ida y vuelta es justo lo que hay que evitar. Usa el MISMO handler que el
+// panel de Conductores (los dos editan los mismos `registros`), así el cambio
+// impacta a la vez en lo que se le factura al cliente y en lo que se le paga al
+// conductor, y dispara el aviso de impacto.
+function _dcliEstadoSelect(d) {
+  const r = d.r, i = d.i;
+  const est = String(r.estado || '').toUpperCase().trim();
+  const esCanonico = ['ENTREGADO', 'NO ENTREGADO'].includes(est);
+  const opts =
+    (!esCanonico ? '<option value="' + String(r.estado || '').replace(/"/g, '&quot;') + '" selected>' + (r.estado || '—') + '</option>' : '') +
+    '<option value="Entregado"' + (est === 'ENTREGADO' ? ' selected' : '') + '>Entregado (factura)</option>' +
+    '<option value="No entregado"' + (est === 'NO ENTREGADO' ? ' selected' : '') + '>No entregado (no factura)</option>';
+  const sel = '<select onchange="editarRegistroConductor(' + i + ',\'estado\',this.value)" ' +
+    'style="padding:4px 6px;border:1px solid ' + (d.contab ? '#86efac' : '#fca5a5') + ';border-radius:6px;font-size:11px;' +
+    'background:' + (d.contab ? '#f0fdf4' : '#fef2f2') + ';color:' + (d.contab ? '#166534' : '#b91c1c') + ';font-weight:600;max-width:100%">' +
+    opts + '</select>';
+  // Una visita pagada al conductor también se le factura al cliente, pero el
+  // estado sigue diciendo "Rechazado": sin este chip el operador ve "Rechazado"
+  // y una fila que factura, y parece un error.
+  const chip = r.contabiliza_manual
+    ? '<div style="margin-top:3px"><span class="tag" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-size:9.5px" ' +
+      'title="' + String(r.motivo_contab || 'Visita hecha sin entrega').replace(/"/g, '&quot;') + '">visita pagada · factura igual</span></div>'
+    : '';
+  return sel + chip;
 }

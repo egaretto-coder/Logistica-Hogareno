@@ -157,7 +157,12 @@ function renderConductorDetail() {
   if (condDiasDe !== cond) { condDiasDe = cond; condDiasAbiertos = new Set(); }
   const wrap = document.getElementById('conductor-detail-wrap');
   if (!cond) {
-    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon"><i class="ic ic-truck"></i></div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">Vas a poder revisar y corregir sus recorridos antes de liquidar</div></div>`;
+    // Sin conductor elegido el buscador no hacía NADA: para encontrar un envío
+    // había que saber de antemano quién lo llevó. Como el operador de clientes
+    // no es el mismo que el de conductores, eso obligaba a que se preguntaran
+    // entre ellos por cada tracking. Ahora la búsqueda resuelve el conductor.
+    if (_buscarEnvioSinConductor(wrap)) return;
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon"><i class="ic ic-truck"></i></div><div class="empty-title">Seleccioná un conductor</div><div class="empty-sub">…o buscá un envío por <strong>tracking</strong>, destinatario o zona y te llevamos al conductor que lo hizo</div></div>`;
     const cEl = document.getElementById('cond-filtro-count'); if (cEl) cEl.textContent = '';
     const bEl = document.getElementById('cond-incompletos-count'); if (bEl) bEl.textContent = '';
     return;
@@ -1011,9 +1016,16 @@ function _avisarImpactoCobro(r, accion) {
   if (typeof diagnosticoCobroEnvio !== 'function') return;
   let d;
   try { d = diagnosticoCobroEnvio(r); } catch (e) { return; }
-  if (!d || d.noContabiliza) return;
+  if (!d) return;
   const tk = r.tracking ? (' ' + r.tracking) : '';
   const pre = accion ? (accion + ' — envío' + tk) : ('Envío' + tk);
+  // Dejó de contabilizar: sale de las DOS liquidaciones a la vez. Conviene
+  // decirlo — el operador de clientes que cambia un estado acaba de sacarle
+  // plata a la factura y al conductor, y no tiene el otro panel a la vista.
+  if (d.noContabiliza) {
+    showToast('ℹ️ ' + pre + ': ya no contabiliza — no se le factura al cliente ni se le paga al conductor');
+    return;
+  }
   if (d.cobra) {
     // El espejo de la fuga: el envío se cobra pero al conductor se le paga $0.
     // Pasa cuando la dimensión asignada no tiene precio en la zona nueva —
@@ -1044,4 +1056,92 @@ function _avisarImpactoCobro(r, accion) {
   }[d.motivo] || 'revisalo';
   showToast('⚠️ ' + pre + ': se paga ' + fmtPeso(d.pagado) +
     ' y NO se le factura a nadie (' + d.texto + ') — ' + comoArreglar);
+}
+
+// ── Buscar un envío SIN saber quién lo llevó ────────────────────────────────
+// El operador de clientes ve un envío con problema en Detalle de cliente y
+// necesita corregirlo acá, pero no tiene por qué saber el conductor. Busca por
+// tracking (o destinatario / zona) y esta función resuelve el resto:
+//   · un solo conductor  → lo selecciona y muestra su detalle ya filtrado
+//   · varios             → los lista con cuántos envíos matchean cada uno
+//   · ninguno            → lo dice, y avisa si puede estar fuera de la ventana
+//                          de días cargada (por defecto 14), que es la causa
+//                          más común de "ese tracking no aparece".
+// Devuelve true si se hizo cargo de pintar el panel.
+function _buscarEnvioSinConductor(wrap) {
+  const fCli = (document.getElementById('cond-filtro-cliente')?.value || '').toLowerCase().trim();
+  const fTrk = (document.getElementById('cond-filtro-tracking')?.value || '').toLowerCase().trim();
+  const fZona = (document.getElementById('cond-filtro-zona')?.value || '').toLowerCase().trim();
+  if (!fCli && !fTrk && !fZona) return false;
+
+  const porConductor = new Map();
+  let total = 0;
+  (AppData.records || []).forEach(r => {
+    if (fTrk && !String(r.tracking || '').toLowerCase().includes(fTrk)) return;
+    if (fZona && !String(r.zona || r.localidad || '').toLowerCase().includes(fZona)) return;
+    if (fCli && !(String(r.destinatario || '').toLowerCase().includes(fCli) ||
+                  String(r.cliente || '').toLowerCase().includes(fCli))) return;
+    total++;
+    const c = conductorCanonico(r.cadete) || '(sin conductor)';
+    let x = porConductor.get(c);
+    if (!x) { x = { cond: c, envios: 0, ejemplo: r }; porConductor.set(c, x); }
+    x.envios++;
+  });
+
+  const cnt = document.getElementById('cond-filtro-count');
+
+  if (!total) {
+    if (cnt) cnt.textContent = '';
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="ic ic-search"></i></div>' +
+      '<div class="empty-title">Ningún envío coincide</div>' +
+      '<div class="empty-sub">La app tiene cargados los <strong>últimos ' + (typeof VENTANA_DIAS_REGISTROS !== 'undefined' ? VENTANA_DIAS_REGISTROS : 14) +
+      ' días</strong>. Si el envío es más viejo, traelo desde <strong>Importar datos → Archivo</strong> ' +
+      'o cargá el historial completo desde el Dashboard.</div></div>';
+    return true;
+  }
+
+  const lista = Array.from(porConductor.values()).sort((a, b) => b.envios - a.envios);
+
+  // Un solo conductor: lo elegimos y mostramos su detalle, que es lo que el
+  // operador quería. El filtro de texto sigue puesto, así que ve justo el envío.
+  if (lista.length === 1 && lista[0].cond !== '(sin conductor)') {
+    const sel = document.getElementById('cond-select');
+    if (sel) {
+      if (!Array.from(sel.options).some(o => o.value === lista[0].cond)) {
+        sel.insertAdjacentHTML('beforeend', '<option value="' + String(lista[0].cond).replace(/"/g, '&quot;') + '">' + lista[0].cond + '</option>');
+      }
+      sel.value = lista[0].cond;
+      renderConductorDetail();     // ahora sí hay conductor: pinta el detalle
+      abrirTodosLosDias(true);
+      return true;
+    }
+  }
+
+  // Varios conductores (o envíos sin conductor): que elija.
+  if (cnt) cnt.textContent = total + ' envío(s) en ' + lista.length + ' conductor(es)';
+  wrap.innerHTML = '<div class="card"><div class="card-header">' +
+    '<span class="card-title"><i class="ic ic-search"></i> ' + total + ' envío(s) encontrados</span>' +
+    '<span style="font-size:11px;color:var(--text-muted)">elegí el conductor para verlos y corregirlos</span></div>' +
+    '<div class="card-body" style="display:flex;flex-direction:column;gap:6px">' +
+    lista.map(x => {
+      const esc = String(x.cond).replace(/'/g, "\'");
+      const r = x.ejemplo;
+      return '<button class="btn" style="justify-content:flex-start;text-align:left" onclick="_irAConductorDeEnvio(\'' + esc + '\')">' +
+        '<strong>' + x.cond + '</strong>' +
+        '<span style="margin-left:8px;font-size:11px;color:var(--text-muted)">' + x.envios + ' envío(s)' +
+        (r.tracking ? ' · ej. ' + r.tracking : '') + (r.fecha ? ' · ' + r.fecha : '') + '</span></button>';
+    }).join('') +
+    '</div></div>';
+  return true;
+}
+
+function _irAConductorDeEnvio(cond) {
+  const sel = document.getElementById('cond-select');
+  if (!sel) return;
+  if (!Array.from(sel.options).some(o => o.value === cond)) {
+    sel.insertAdjacentHTML('beforeend', '<option value="' + String(cond).replace(/"/g, '&quot;') + '">' + cond + '</option>');
+  }
+  sel.value = cond;
+  renderConductorDetail();
+  abrirTodosLosDias(true);
 }
