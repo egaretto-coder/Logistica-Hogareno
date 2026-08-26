@@ -167,9 +167,20 @@ function renderDetalleCliente() {
     btn.style.fontWeight = dcliSoloSinTarifa ? '700' : '';
   }
 
-  const vista = dcliSoloSinTarifa ? detalle.filter(d => d.sinTarifa) : detalle;
+  // Buscador: tracking, destinatario o zona. Busca sobre TODOS los envíos de la
+  // semana, sin importar en qué día estén ni si el día está plegado.
+  const q = (document.getElementById('dcli-buscar')?.value || '').toLowerCase().trim();
+  const btnLimpiar = document.getElementById('dcli-btn-limpiar');
+  if (btnLimpiar) btnLimpiar.style.display = q ? '' : 'none';
+
+  let vista = dcliSoloSinTarifa ? detalle.filter(d => d.sinTarifa) : detalle;
+  if (q) vista = vista.filter(d =>
+    String(d.r.tracking || '').toLowerCase().includes(q) ||
+    String(d.r.destinatario || '').toLowerCase().includes(q) ||
+    String(d.zona || '').toLowerCase().includes(q));
+
   const cont = document.getElementById('dcli-count');
-  if (cont) cont.textContent = dcliSoloSinTarifa
+  if (cont) cont.textContent = (q || dcliSoloSinTarifa)
     ? 'Mostrando ' + vista.length + ' de ' + detalle.length + ' envíos'
     : detalle.length + ' envío(s) en la semana';
 
@@ -202,7 +213,7 @@ function renderDetalleCliente() {
       const rd = porDia.get(dia) || { envios: 0, contab: 0, cobrado: 0 };
       // Con el filtro puesto los días van ABIERTOS: si no, el filtro decía
       // "23 envíos" y no se veía ninguno, porque quedaban dentro de días plegados.
-      const abierto = dcliSoloSinTarifa || dcliDiasAbiertos.has(dia);
+      const abierto = _dcliFiltroActivo() || dcliDiasAbiertos.has(dia);
       const fd = parseFechaReg(dia);
       const dow = fd && typeof DIAS_SEM !== 'undefined' ? DIAS_SEM[fd.getDay()] + ' ' : '';
       sep = '<tr class="dcli-dia-head" style="background:var(--surface-0);cursor:pointer" data-dia="' + dia.replace(/"/g, '&quot;') + '" onclick="toggleDiaCliente(this.dataset.dia)">' +
@@ -214,7 +225,7 @@ function renderDetalleCliente() {
             '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(rd.cobrado) + '</strong>' +
           '</div></td></tr>';
     }
-    const oculto = (dcliSoloSinTarifa || dcliDiasAbiertos.has(dia)) ? '' : 'display:none;';
+    const oculto = (_dcliFiltroActivo() || dcliDiasAbiertos.has(dia)) ? '' : 'display:none;';
     // Un envío con dimensión asignada se marca con una barra al costado: es una
     // corrección manual del otro panel que le cambió el precio, y desde acá no
     // había NINGUNA señal de que ese envío era distinto.
@@ -271,7 +282,9 @@ function renderDetalleCliente() {
           '<div class="metric-sub">se facturan en $0 — cargá esas zonas</div></div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
-        '<span>Los días arrancan cerrados — tocá uno para ver y corregir sus envíos.</span>' +
+        '<span>' + (q
+          ? 'Buscando en los ' + detalle.length + ' envíos de la semana — los días se abren solos para mostrarte lo que coincide.'
+          : 'Los días arrancan cerrados — tocá uno para ver y corregir sus envíos, o buscá por tracking.') + '</span>' +
         '<button class="btn btn-sm" style="margin-left:auto;padding:3px 8px;font-size:10.5px" onclick="abrirTodosLosDiasCliente(true)">Abrir todos</button>' +
         '<button class="btn btn-sm" style="padding:3px 8px;font-size:10.5px" onclick="abrirTodosLosDiasCliente(false)">Cerrar todos</button>' +
       '</div>' +
@@ -279,7 +292,9 @@ function renderDetalleCliente() {
         '<thead><tr><th>Tracking</th><th>Fecha</th><th>Zona</th><th>¿Factura?</th>' +
           '<th style="text-align:right">Se factura</th></tr></thead>' +
         '<tbody>' + (filas || '<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">' +
-          (dcliSoloSinTarifa ? '✅ No hay envíos sin tarifa en la semana' : 'Sin envíos de este cliente en la semana') + '</td></tr>') + '</tbody>' +
+          (q ? 'Ningún envío de la semana coincide con "' + q.replace(/</g, '&lt;') + '" — puede estar en otra semana o en otro cliente'
+             : dcliSoloSinTarifa ? '✅ No hay envíos sin tarifa en la semana'
+             : 'Sin envíos de este cliente en la semana') + '</td></tr>') + '</tbody>' +
       '</table></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
         '💡 Corregí la zona o el estado y el total se recalcula solo. Cuando esté listo, marcá la liquidación como lista para que el operador pueda descargarla.' +
@@ -298,7 +313,7 @@ function aplicarPlegadoDiasCliente() {
   const wrap = document.getElementById('dcli-detalle-wrap');
   if (!wrap) return;
   wrap.querySelectorAll('tr.dcli-fila-dia').forEach(tr => {
-    tr.style.display = dcliDiasAbiertos.has(tr.dataset.dia) ? '' : 'none';
+    tr.style.display = (_dcliFiltroActivo() || dcliDiasAbiertos.has(tr.dataset.dia)) ? '' : 'none';
   });
   wrap.querySelectorAll('.cond-dia-chev').forEach(el => {
     el.classList.toggle('abierto', dcliDiasAbiertos.has(el.dataset.dia));
@@ -404,4 +419,19 @@ function _dcliChipDimension(d) {
     'style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-size:9.5px" ' +
     'title="Condición especial asignada desde Conductores: se factura con el precio de la condición, no con la tarifa de la zona.">' +
     '<i class="ic ic-box"></i> ' + nombre + '</span></div>';
+}
+
+// ¿Hay un filtro puesto? Con filtro los días van ABIERTOS: si no, el contador
+// dice "1 envío" y no se ve ninguno porque quedó dentro de un día plegado —
+// el mismo problema que ya había con "Sin tarifa". Lo consultan el render y el
+// plegado, así no pueden discrepar.
+function _dcliFiltroActivo() {
+  if (dcliSoloSinTarifa) return true;
+  return !!(document.getElementById('dcli-buscar')?.value || '').trim();
+}
+
+function limpiarBusquedaCliente() {
+  const el = document.getElementById('dcli-buscar');
+  if (el) el.value = '';
+  renderDetalleCliente();
 }

@@ -31,6 +31,11 @@
             <button class="btn btn-sm" onclick="dcliSemanaSiguiente()" title="Semana siguiente">▶</button>
             <button class="btn btn-sm" id="dcli-btn-sinzona" onclick="toggleDcliSinTarifa()" title="Mostrar solo los envíos cuya zona no tiene tarifa de venta cargada">
               <i class="ic ic-alert"></i> Sin tarifa<span id="dcli-sintarifa-count"></span></button>
+            <!-- Con 400+ envíos por semana, encontrar uno por tracking a mano es
+                 imposible: los días arrancan plegados y hay que abrirlos todos. -->
+            <input type="search" id="dcli-buscar" placeholder="🔍 Tracking, destinatario o zona" oninput="renderDetalleCliente()"
+              style="width:230px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+            <button class="btn btn-sm" id="dcli-btn-limpiar" onclick="limpiarBusquedaCliente()" style="display:none"><i class="ic ic-x"></i> Limpiar</button>
             <span id="dcli-count" style="font-size:11px;color:var(--text-muted)"></span>
           </div>
         </div>
