@@ -693,7 +693,12 @@ function zonaOptionsHTML(conductor) {
 // elegir zonas del tarifario (validación de datos). Si la zona actual está fuera
 // del tarifario (o vacía), la marca en ámbar y la muestra como "sin tarifa" para
 // que el operador la reemplace por una válida.
-function zonaSelectHTML(catalogo, idx, current, cond) {
+// `previewFn` decide qué precio se muestra al confirmar. Por defecto el del
+// CONDUCTOR (este panel), pero Detalle de cliente le pasa el de VENTA: ahí el
+// costo del cadete no va —es el otro lado del mostrador— y encima arrastraba su
+// categoría ("MATANZA SUR · $3.400 · Super SLA"), que no significa nada para el
+// cliente y hacía parecer que el tarifario del cliente estaba mal cargado.
+function zonaSelectHTML(catalogo, idx, current, cond, previewFn) {
   const pend = _zonaPendiente[idx];               // zona elegida pero aún NO confirmada
   const tienePend = pend !== undefined;
   const cur = String(current || '').toUpperCase().trim();
@@ -713,6 +718,8 @@ function zonaSelectHTML(catalogo, idx, current, cond) {
     let preview;
     if (!pend) {
       preview = '<span style="color:#b91c1c;font-weight:600">Zona vacía (no suma)</span>';
+    } else if (typeof previewFn === 'function') {
+      preview = previewFn(pend);
     } else {
       const p = getPrecio(cond, pend);
       preview = p.sin_tarifa

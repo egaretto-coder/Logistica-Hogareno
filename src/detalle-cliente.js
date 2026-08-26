@@ -159,6 +159,12 @@ function renderDetalleCliente() {
   const contab = detalle.filter(d => d.contab);
   const totCobrado = contab.reduce((s, d) => s + d.cobrado, 0);
 
+  // Catálogo de zonas con el precio DE VENTA de este cliente (una vez por
+  // render). Antes se usaba el del conductor, que mostraba lo que se le paga al
+  // cadete y su categoría — acá no va ninguna de las dos cosas.
+  const zonaCat = zonaCatalogoCliente(cod);
+  const zonaPreviewCliente = z => _dcliPreviewZona(cod, z);
+
   // Resumen por día (mismo plegado que Conductores: con cientos de filas,
   // scrollear es inmanejable).
   const porDia = new Map();
@@ -192,14 +198,13 @@ function renderDetalleCliente() {
           '</div></td></tr>';
     }
     const oculto = (dcliSoloSinTarifa || dcliDiasAbiertos.has(dia)) ? '' : 'display:none;';
-    const zonaCat = (typeof zonaCatalogoDe === 'function') ? zonaCatalogoDe(d.r.cadete || '') : [];
     return sep +
       '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
         '<td class="mono" style="font-size:11.5px">' + (d.r.tracking || '—') +
           (d.r.destinatario ? '<div class="muted" style="font-size:10px">' + d.r.destinatario + '</div>' : '') + '</td>' +
         '<td class="muted mono" style="font-size:12px">' + (d.r.fecha || '—') + '</td>' +
         '<td>' + ((typeof zonaSelectHTML === 'function')
-            ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '')
+            ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '', zonaPreviewCliente)
             : (d.zona || '—')) + '</td>' +
         '<td style="font-size:11px">' + (d.contab
             ? '<span class="badge" style="background:#dcfce7;color:#166534">Factura</span>'
@@ -282,4 +287,43 @@ function abrirTodosLosDiasCliente(abrir) {
   dcliDiasAbiertos = new Set();
   if (abrir) wrap.querySelectorAll('tr.dcli-dia-head').forEach(tr => dcliDiasAbiertos.add(tr.dataset.dia));
   aplicarPlegadoDiasCliente();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ZONAS CON EL PRECIO DE VENTA
+//  El selector de zona de este panel NO puede usar el catálogo del conductor
+//  (zonaCatalogoDe): ese etiqueta con getPrecio(), o sea lo que se le PAGA al
+//  cadete, y arrastra su categoría — "MATANZA SUR · $3.400 · Super SLA". Acá se
+//  arma lo que se le COBRA al cliente, así que cada zona tiene que mostrar la
+//  tarifa de venta de ESE cliente. Además Super SLA es una categoría de
+//  conductor: verla acá hacía pensar que el tarifario del cliente estaba mal.
+// ════════════════════════════════════════════════════════════════════════
+
+// Zonas ofrecidas: las del tarifario de costos (la lista canónica de zonas
+// reales) MÁS las que el cliente tenga tarifadas. No se limita a las que el
+// cliente tiene con precio: la zona de un envío es un lugar real y el operador
+// tiene que poder corregirla aunque todavía no esté tarifada — para eso queda
+// marcada "sin tarifa", que es justo lo que cuenta el aviso de arriba.
+function zonaCatalogoCliente(cod) {
+  const k = clienteKey(cod);
+  const zonas = new Set(
+    ((typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : [])
+  );
+  (AppData.clienteTarifas || []).forEach(t => {
+    if (clienteKey(t.cliente_cod) !== k) return;
+    const z = String(t.zona || '').trim().toUpperCase();
+    if (z && (typeof esZonaValida !== 'function' || esZonaValida(z))) zonas.add(z);
+  });
+  return Array.from(zonas).sort().map(z => {
+    const p = clienteTarifaEnZona(k, z);
+    return { val: z, label: z + ' · ' + (p > 0 ? fmtPeso(p) : 'sin tarifa') };
+  });
+}
+
+// Vista previa al confirmar una zona: lo que pasaría a facturarse.
+function _dcliPreviewZona(cod, zona) {
+  const p = clienteTarifaEnZona(clienteKey(cod), zona);
+  return p > 0
+    ? '<span style="color:#15803d;font-weight:600">' + zona + ' · ' + fmtPeso(p) + '</span>'
+    : '<span style="color:#b91c1c;font-weight:600">' + zona + ' · sin tarifa · se factura $0</span>';
 }
