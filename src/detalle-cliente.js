@@ -131,13 +131,30 @@ function renderDetalleCliente() {
     idxs.push(i);
   });
 
+  // ORDEN POR FECHA. Los registros vienen en orden de importación, no
+  // cronológico: sin ordenar, el separador de día se repetía cada vez que la
+  // lista volvía a una fecha anterior y el mismo sábado aparecía DOS veces con
+  // el mismo subtotal, como si hubiera dos sábados (bug real). Mismo criterio
+  // que el panel de Conductores.
+  const _ts = new Map();
+  idxs.forEach(i => { const f = parseFechaReg(AppData.records[i].fecha); _ts.set(i, f ? f.getTime() : Infinity); });
+  idxs.sort((a, b) => (_ts.get(a) - _ts.get(b)) || (a - b));
+
   // Cada envío con lo que se le factura al cliente por su zona.
   const detalle = idxs.map(i => {
     const r = AppData.records[i];
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const contab = contabilizaRegistro(r);
     const cobrado = contab ? precioVentaEnvio(cod, r) : 0;
-    return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0 };
+    // La dimensión asignada desde Conductores tiene que VERSE acá: es una
+    // corrección manual que cambia el precio del envío. `dimVentaNombre` está
+    // vacío cuando la condición no tiene precio de venta cargado, y entonces
+    // se está facturando la tarifa común de la zona — que es lo que hay que
+    // poder distinguir de un envío normal.
+    const dimAsignada = String(r.dim_especial || '').trim();
+    const dimFactura = contab ? dimVentaNombre(cod, r) : '';
+    return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0,
+             dimAsignada, dimSinPrecioVenta: !!dimAsignada && !dimFactura };
   });
 
   const sinTarifa = detalle.filter(d => d.sinTarifa).length;
@@ -198,10 +215,17 @@ function renderDetalleCliente() {
           '</div></td></tr>';
     }
     const oculto = (dcliSoloSinTarifa || dcliDiasAbiertos.has(dia)) ? '' : 'display:none;';
+    // Un envío con dimensión asignada se marca con una barra al costado: es una
+    // corrección manual del otro panel que le cambió el precio, y desde acá no
+    // había NINGUNA señal de que ese envío era distinto.
+    const barraDim = d.dimAsignada
+      ? ('box-shadow:inset 3px 0 0 ' + (d.dimSinPrecioVenta ? '#f59e0b' : '#7c3aed') + ';')
+      : '';
     return sep +
-      '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
+      '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + barraDim + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
         '<td class="mono" style="font-size:11.5px">' + (d.r.tracking || '—') +
-          (d.r.destinatario ? '<div class="muted" style="font-size:10px">' + d.r.destinatario + '</div>' : '') + '</td>' +
+          (d.r.destinatario ? '<div class="muted" style="font-size:10px">' + d.r.destinatario + '</div>' : '') +
+          _dcliChipDimension(d) + '</td>' +
         '<td class="muted mono" style="font-size:12px">' + (d.r.fecha || '—') + '</td>' +
         '<td>' + ((typeof zonaSelectHTML === 'function')
             ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '', zonaPreviewCliente)
@@ -209,7 +233,9 @@ function renderDetalleCliente() {
         '<td style="font-size:11px">' + _dcliEstadoSelect(d) + '</td>' +
         '<td class="mono" style="text-align:right">' + (d.sinTarifa
             ? '<span style="color:#b45309" title="La zona no tiene tarifa de venta para este cliente">sin tarifa</span>'
-            : fmtPeso(d.cobrado)) + '</td>' +
+            : (fmtPeso(d.cobrado) + (d.dimSinPrecioVenta
+                ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit">tarifa de la zona</div>'
+                : (d.dimAsignada ? '<div style="font-size:9.5px;color:#6d28d9;font-family:inherit">precio de la condición</div>' : '')))) + '</td>' +
 
       '</tr>';
   }).join('');
@@ -353,4 +379,29 @@ function _dcliEstadoSelect(d) {
       'title="' + String(r.motivo_contab || 'Visita hecha sin entrega').replace(/"/g, '&quot;') + '">visita pagada · factura igual</span></div>'
     : '';
   return sel + chip;
+}
+
+// ── Chip de la dimensión especial asignada ──────────────────────────────────
+// La asignación se hace desde Conductores, pero el que factura es este panel y
+// no tenía forma de saber que ese envío llevaba una condición especial: veía un
+// precio distinto al de la zona y ningún motivo. Dos casos, y hay que
+// distinguirlos porque se arreglan distinto:
+//   · violeta = la condición tiene precio de venta y es el que se está facturando
+//   · ámbar   = la condición NO tiene precio de venta cargado (o está en $0),
+//               así que se está facturando la tarifa común de la zona. El envío
+//               no factura $0 —eso ya está resuelto— pero el acuerdo especial
+//               no se está cobrando y hay que cargarlo en Dimensiones Especiales.
+function _dcliChipDimension(d) {
+  if (!d.dimAsignada) return '';
+  const nombre = String(d.dimAsignada).replace(/</g, '&lt;');
+  if (d.dimSinPrecioVenta) {
+    return '<div style="margin-top:3px"><span class="tag" ' +
+      'style="background:#fffbeb;color:#92400e;border:1px solid #fcd34d;font-size:9.5px" ' +
+      'title="Este envío tiene una condición especial asignada, pero no tiene precio de venta cargado para esta zona: se está facturando la tarifa común. Cargalo en Dimensiones Especiales → solapa Clientes.">' +
+      '<i class="ic ic-box"></i> ' + nombre + ' · sin precio de venta</span></div>';
+  }
+  return '<div style="margin-top:3px"><span class="tag" ' +
+    'style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-size:9.5px" ' +
+    'title="Condición especial asignada desde Conductores: se factura con el precio de la condición, no con la tarifa de la zona.">' +
+    '<i class="ic ic-box"></i> ' + nombre + '</span></div>';
 }
