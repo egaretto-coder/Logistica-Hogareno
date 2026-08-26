@@ -610,8 +610,7 @@ function aplicarDimensionEnvio(cliente, nombre) {
   r.dim_cliente = String(cliente).toUpperCase();
   r.dim_especial = String(nombre).toUpperCase();
   document.getElementById('modal-dim-asignar-backdrop').style.display = 'none';
-  _marcarDimDirty(r);
-  showToast('✅ Dimensión "' + nombre + '" asignada al envío');
+  _marcarDimDirty(r, 'Dimensión "' + nombre + '" asignada');
 }
 
 function quitarDimensionEnvio(idx) {
@@ -619,18 +618,21 @@ function quitarDimensionEnvio(idx) {
   if (!r) return;
   if (r._historico) { showToast('🗄️ Registro archivado (solo lectura)'); return; }
   r.dim_especial = ''; r.dim_cliente = '';
-  _marcarDimDirty(r);
-  showToast('Dimensión quitada del envío');
+  _marcarDimDirty(r, 'Dimensión quitada');
 }
 
 // Marca el registro como sucio y agenda el autoguardado (igual que las ediciones).
-function _marcarDimDirty(r) {
+// `accion` describe qué se hizo; va en el MISMO toast que el impacto. Dos
+// toasts seguidos se apilan en el mismo lugar y el segundo tapa al primero,
+// justo el aviso de que el envío quedó a pérdida.
+function _marcarDimDirty(r, accion) {
   if (r.id) condEditIdsSucios.add(r.id);
   else console.warn('Registro sin id de nube (no se podrá sincronizar la dimensión):', r.tracking);
   invalidarLiquidaciones();   // cambió el precio del envío por la dimensión
   condEditPendientes = true;
   actualizarEstadoEdicion('Cambios sin guardar…');
   renderConductorDetail();
+  _avisarImpactoCobro(r, accion);   // la dimensión cambia lo que se paga: ¿sigue cobrándose?
   clearTimeout(condEditTimer);
   condEditTimer = setTimeout(guardarEdicionConductores, 1500);
 }
@@ -852,6 +854,20 @@ async function guardarEnviosModal() {
   if (faltaFecha) { showToast('Completá la fecha en las filas marcadas en rojo'); return; }
   if (!recs.length) { showToast('No cargaste ningún envío'); return; }
 
+  // Un envío sin cliente se le paga al conductor y no se le factura a NADIE: no
+  // aparece en la liquidación de ningún cliente, así que no hay dónde se note el
+  // faltante. Se avisa ACÁ, que es el único momento en que el operador tiene el
+  // dato a mano; puede seguir igual (a veces la empresa lo absorbe).
+  const sinCliente = recs.filter(r => !r.cliente_cod);
+  if (sinCliente.length) {
+    const lista = sinCliente.slice(0, 5).map(r => '· ' + (r.tracking || '(sin tracking)') + ' — ' + (r.zona || 'sin zona')).join(String.fromCharCode(10));
+    if (!confirm(sinCliente.length + ' de los ' + recs.length + ' envíos NO tienen cliente:' + String.fromCharCode(10) +
+      lista + (sinCliente.length > 5 ? String.fromCharCode(10) + '…y ' + (sinCliente.length - 5) + ' más' : '') +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Se le van a pagar al conductor pero no se le facturan a nadie.' + String.fromCharCode(10) +
+      'Aceptar = guardarlos igual · Cancelar = volver y elegir el cliente')) return;
+  }
+
   const btn = document.getElementById('addenvio-guardar');
   const est = document.getElementById('addenvio-estado');
   btn.disabled = true;
@@ -862,7 +878,13 @@ async function guardarEnviosModal() {
     AppData.records.push(...recs);
     document.getElementById('modal-addenvio-backdrop').style.display = 'none';
     renderConductorDetail();
-    showToast('✅ ' + recs.length + ' envío(s) agregados a la liquidación de ' + conductor);
+    // Cuánto de lo que se acaba de cargar se le factura a alguien.
+    let seCobran = 0, noSeCobran = 0;
+    if (typeof diagnosticoCobroEnvio === 'function') {
+      recs.forEach(r => { const d = diagnosticoCobroEnvio(r); if (d.cobra) seCobran++; else noSeCobran++; });
+    }
+    showToast('✅ ' + recs.length + ' envío(s) agregados a la liquidación de ' + conductor +
+      (noSeCobran ? ' — ⚠️ ' + noSeCobran + ' no se le factura(n) a nadie' : (seCobran ? ' · se facturan todos' : '')));
   } catch (e) {
     console.warn('guardarEnviosModal:', e);
     if (est) est.textContent = '';
@@ -985,14 +1007,33 @@ function closeModal(e) {
 // lado y no tiene forma de ver el otro. Este aviso lo dice en el momento, que
 // es cuando se puede arreglar: si el envío quedó pago pero sin nadie a quien
 // cobrarle, avisa POR QUÉ y qué falta cargar.
-function _avisarImpactoCobro(r) {
+function _avisarImpactoCobro(r, accion) {
   if (typeof diagnosticoCobroEnvio !== 'function') return;
   let d;
   try { d = diagnosticoCobroEnvio(r); } catch (e) { return; }
   if (!d || d.noContabiliza) return;
   const tk = r.tracking ? (' ' + r.tracking) : '';
+  const pre = accion ? (accion + ' — envío' + tk) : ('Envío' + tk);
   if (d.cobra) {
-    showToast('✅ Envío' + tk + ': se paga ' + fmtPeso(d.pagado) + ' · se factura ' + fmtPeso(d.cobrado));
+    // El espejo de la fuga: el envío se cobra pero al conductor se le paga $0.
+    // Pasa cuando la dimensión asignada no tiene precio en la zona nueva —
+    // el cadete hizo el viaje y no cobra nada, y en la fila solo se ve un
+    // discreto "(sin precio en …)".
+    if (!(d.pagado > 0)) {
+      showToast('⚠️ ' + pre + ': se factura ' + fmtPeso(d.cobrado) +
+        ' pero al conductor NO se le paga nada — revisá el precio de ' +
+        (r.dim_especial ? ('"' + r.dim_especial + '" en ' + (d.zona || 'esa zona')) : ('la zona ' + (d.zona || ''))));
+      return;
+    }
+    // Se cobra, pero ¿alcanza? Una dimensión asignada puede subir lo que se le
+    // paga al cadete sin que exista el precio de venta equivalente: el envío
+    // sigue facturándose por la tarifa común de la zona y queda a pérdida.
+    if (d.cobrado < d.pagado) {
+      showToast('⚠️ ' + pre + ': se paga ' + fmtPeso(d.pagado) + ' y se factura ' + fmtPeso(d.cobrado) +
+        ' — queda a pérdida de ' + fmtPeso(d.pagado - d.cobrado));
+      return;
+    }
+    showToast('✅ ' + pre + ': se paga ' + fmtPeso(d.pagado) + ' · se factura ' + fmtPeso(d.cobrado));
     return;
   }
   const comoArreglar = {
@@ -1001,6 +1042,6 @@ function _avisarImpactoCobro(r) {
     no_alta:     'dalo de alta en Clientes y tarifas',
     sin_tarifa:  'cargá la tarifa de ' + (d.zona || 'esa zona') + ' en su tarifario'
   }[d.motivo] || 'revisalo';
-  showToast('⚠️ Envío' + tk + ': se paga ' + fmtPeso(d.pagado) +
+  showToast('⚠️ ' + pre + ': se paga ' + fmtPeso(d.pagado) +
     ' y NO se le factura a nadie (' + d.texto + ') — ' + comoArreglar);
 }
