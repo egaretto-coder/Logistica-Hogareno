@@ -61,6 +61,8 @@ function loadSavedConfig() {
   if (slasol) { try { AppData.superSLASolicitudes = JSON.parse(slasol) || []; } catch(e) {} }
   const dimc = localStorage.getItem('liq_dim_catalogo');
   if (dimc) { try { AppData.dimCatalogo = JSON.parse(dimc) || []; } catch(e) {} }
+  const ccg = localStorage.getItem('liq_cliente_cargos');
+  if (ccg) { try { AppData.clienteCargos = JSON.parse(ccg) || []; } catch(e) {} }
   const vac = localStorage.getItem('liq_vacaciones');
   if (vac) { try { AppData.vacaciones = JSON.parse(vac) || []; } catch(e) {} }
   const emp = localStorage.getItem('liq_empleados');
@@ -219,6 +221,8 @@ async function _hydrateFromSupabaseReal(opts) {
     contabiliza_manual: !!r.contabiliza_manual,
     motivo_contab: r.motivo_contab || '',
     zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
+    // Semana en la que se FACTURA (arrastre). null = por su fecha.
+    factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
   }));
@@ -293,6 +297,14 @@ async function _hydrateFromSupabaseReal(opts) {
     monto_adelanto: _num(s.monto_adelanto), total: _num(s.total),
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
+  }));
+
+  // Cargos extra por cliente y semana (colecta, viajes particulares, otros).
+  AppData.clienteCargos = (data.cliente_cargos || []).map(c => ({
+    id: c.id, cliente_cod: (c.cliente_cod || '').toUpperCase(), semana: String(c.semana || '').slice(0, 10),
+    concepto: c.concepto || 'otro', detalle: c.detalle || '',
+    cantidad: _num(c.cantidad), precio_unitario: _num(c.precio_unitario), monto: _num(c.monto),
+    creado_por: c.creado_por || ''
   }));
 
   // Vacaciones del personal (el plantel sale de AppData.empleados).
@@ -420,6 +432,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_dim_catalogo', JSON.stringify(AppData.dimCatalogo));
     localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
     localStorage.setItem('liq_vacaciones', JSON.stringify(AppData.vacaciones || []));
+    localStorage.setItem('liq_cliente_cargos', JSON.stringify(AppData.clienteCargos || []));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
     localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));
@@ -475,6 +488,7 @@ async function _hydrateRegistrosReal() {
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
+      factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     }));
@@ -689,6 +703,7 @@ async function cargarHistorialCompleto(btn) {
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
+      factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
@@ -701,6 +716,7 @@ async function cargarHistorialCompleto(btn) {
       dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
+      factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });

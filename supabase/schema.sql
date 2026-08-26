@@ -602,6 +602,36 @@ create policy empleados_all        on public.empleados        for all to authent
 create policy empleado_ajustes_all on public.empleado_ajustes for all to authenticated using (true) with check (true);
 create policy empleado_sueldos_all on public.empleado_sueldos for all to authenticated using (true) with check (true);
 
+-- ---------- CARGOS AL CLIENTE (no vienen de un envio) ----------
+-- COLECTA (lo que se le cobra por pasar a retirar), VIAJE PARTICULAR (hecho
+-- por fuera de la plataforma) y OTRO. Se imputan a una semana: `semana` es el
+-- VIERNES que la abre, la misma clave que usa registros.factura_semana.
+-- `monto` se congela al guardar (cantidad x precio_unitario).
+create table if not exists public.cliente_cargos (
+  id bigint generated always as identity primary key,
+  cliente_cod text not null,
+  semana date not null,
+  concepto text not null default 'colecta',   -- colecta | viaje | otro
+  detalle text default '',
+  cantidad numeric not null default 1,
+  precio_unitario numeric not null default 0,
+  monto numeric not null default 0,
+  creado_por text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_cliente_cargos_cod    on public.cliente_cargos (cliente_cod);
+create index if not exists idx_cliente_cargos_semana on public.cliente_cargos (semana);
+alter table public.cliente_cargos enable row level security;
+create policy cliente_cargos_all on public.cliente_cargos
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- registros.factura_semana: viernes de la semana en la que se COBRA ese envio.
+-- NULL = se cobra por su fecha. Sirve para los envios colgados que se pagan
+-- tarde, cuando la liquidacion del cliente de esa semana ya se envio. El PAGO
+-- al conductor NO lo usa: el cadete cobra por la fecha real del envio.
+-- alter table public.registros add column if not exists factura_semana date;
+-- create index if not exists idx_registros_factura_semana on public.registros (factura_semana);
+
 -- ---------- VACACIONES ----------
 -- Cuelga de empleados: el plantel, la fecha de ingreso y la baja lógica salen
 -- de ahí, no hay una segunda lista de gente.

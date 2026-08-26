@@ -121,10 +121,15 @@ function renderDetalleCliente() {
     return;
   }
 
-  // Envíos del cliente en la semana (índices para poder editarlos).
+  // Envíos del cliente en la semana (índices para poder editarlos). MISMA regla
+  // que calcLiquidacionCliente: un envío arrastrado se ve en la semana a la que
+  // se lo trajo y desaparece de la suya, si no la tabla y el total no coinciden.
+  const semanaISO = viernesDeRango(rango);
   const idxs = [];
   (AppData.records || []).forEach((r, i) => {
     if (clienteCodDeRegistro(r) !== clienteKey(cod)) return;
+    const arr = String(r.factura_semana || '').slice(0, 10);
+    if (arr) { if (arr === semanaISO) idxs.push(i); return; }
     const f = parseFechaReg(r.fecha);
     if (!f) return;
     if (f < rango.desdeD || f > rango.hastaD) return;
@@ -154,7 +159,8 @@ function renderDetalleCliente() {
     const dimAsignada = String(r.dim_especial || '').trim();
     const dimFactura = contab ? dimVentaNombre(cod, r) : '';
     return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0,
-             dimAsignada, dimSinPrecioVenta: !!dimAsignada && !dimFactura };
+             dimAsignada, dimSinPrecioVenta: !!dimAsignada && !dimFactura,
+             arrastrado: !!String(r.factura_semana || '').trim() };
   });
 
   const sinTarifa = detalle.filter(d => d.sinTarifa).length;
@@ -185,7 +191,11 @@ function renderDetalleCliente() {
     : detalle.length + ' envío(s) en la semana';
 
   const contab = detalle.filter(d => d.contab);
-  const totCobrado = contab.reduce((s, d) => s + d.cobrado, 0);
+  const totEnvios = contab.reduce((s, d) => s + d.cobrado, 0);
+  // Cargos que no vienen de un envío (colecta, viajes particulares, otros).
+  const cargos = (typeof cargosDeSemana === 'function') ? cargosDeSemana(cod, semanaISO) : [];
+  const totCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
+  const totCobrado = totEnvios + totCargos;
 
   // Catálogo de zonas con el precio DE VENTA de este cliente (una vez por
   // render). Antes se usaba el del conductor, que mostraba lo que se le paga al
@@ -236,7 +246,14 @@ function renderDetalleCliente() {
       '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + barraDim + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
         '<td class="mono" style="font-size:11.5px">' + (d.r.tracking || '—') +
           (d.r.destinatario ? '<div class="muted" style="font-size:10px">' + d.r.destinatario + '</div>' : '') +
-          _dcliChipDimension(d) + '</td>' +
+          _dcliChipDimension(d) +
+          (d.arrastrado
+            ? '<div style="margin-top:3px"><span class="tag" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:9.5px" ' +
+              'title="Traído de otra semana: su fecha es ' + (d.r.fecha || '') + ' pero se cobra en esta liquidación">' +
+              '<i class="ic ic-undo"></i> traído del ' + (d.r.fecha || '') + '</span> ' +
+              '<button class="btn btn-sm" style="padding:1px 5px;font-size:9.5px" title="Devolverlo a la semana de su fecha" ' +
+              'onclick="devolverEnvioASuSemana(' + d.i + ')">✕</button></div>'
+            : '') + '</td>' +
         '<td class="muted mono" style="font-size:12px">' + (d.r.fecha || '—') + '</td>' +
         '<td>' + ((typeof zonaSelectHTML === 'function')
             ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '', zonaPreviewCliente)
@@ -294,7 +311,8 @@ function renderDetalleCliente() {
         '<tbody>' + (filas || '<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">' +
           (q ? 'Ningún envío de la semana coincide con "' + q.replace(/</g, '&lt;') + '" — puede estar en otra semana o en otro cliente'
              : dcliSoloSinTarifa ? '✅ No hay envíos sin tarifa en la semana'
-             : 'Sin envíos de este cliente en la semana') + '</td></tr>') + '</tbody>' +
+             : 'Sin envíos de este cliente en la semana') + '</td></tr>') +
+          _dcliFilasCargos(cargos, totEnvios, totCargos) + '</tbody>' +
       '</table></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
         '💡 Corregí la zona o el estado y el total se recalcula solo. Cuando esté listo, marcá la liquidación como lista para que el operador pueda descargarla.' +
@@ -434,4 +452,293 @@ function limpiarBusquedaCliente() {
   const el = document.getElementById('dcli-buscar');
   if (el) el.value = '';
   renderDetalleCliente();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HERRAMIENTAS DE ARMADO
+//  1) Traer envíos colgados de semanas anteriores a la liquidación en curso.
+//  2) Cargar cargos que no vienen de un envío: colecta, viajes particulares.
+// ════════════════════════════════════════════════════════════════════════
+
+// ── 1) TRAER ENVÍOS DE OTRAS SEMANAS ───────────────────────────────────────
+// El caso real: al pagarle al conductor, reclama un envío que no le liquidaron.
+// Se corrige y se le abona en el momento, pero la liquidación de ESE cliente de
+// esa semana ya se envió. El cobro tiene que caer en la semana en curso.
+// Se mueve solo en qué semana se COBRA: el conductor sigue cobrando por la
+// fecha real del envío, que es cuando lo hizo.
+let _traerSeleccion = new Set();
+
+function abrirTraerEnvios() {
+  const cod = document.getElementById('dcli-select')?.value || '';
+  if (!cod) { alert('Elegí un cliente primero.'); return; }
+  _traerSeleccion = new Set();
+  const el = document.getElementById('mtraer-buscar'); if (el) el.value = '';
+  const chk = document.getElementById('mtraer-todos'); if (chk) chk.checked = false;
+  const rango = dcliRango();
+  const ctx = document.getElementById('mtraer-contexto');
+  if (ctx) ctx.innerHTML = 'Envíos <strong>entregados</strong> de ' + clienteNombreDe(cod) +
+    ' que quedaron <strong>fuera</strong> de la semana ' + rango.desde + ' → ' + rango.hasta + '. ' +
+    'Los que traigas se van a cobrar en <strong>esta</strong> liquidación y salen de la semana a la que ' +
+    'pertenecían, así no se facturan dos veces. Al conductor se le sigue pagando por la fecha real del envío.';
+  document.getElementById('modal-traer-backdrop').style.display = 'flex';
+  renderTraerEnvios();
+}
+function cerrarTraerEnvios(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('modal-traer-backdrop').style.display = 'none';
+}
+
+// Candidatos: envíos del cliente que contabilizan y NO caen en la semana actual
+// (ni por fecha ni por arrastre). Del más nuevo al más viejo.
+function _traerCandidatos() {
+  const cod = document.getElementById('dcli-select')?.value || '';
+  const rango = dcliRango();
+  const semana = viernesDeRango(rango);
+  const cKey = clienteKey(cod);
+  const out = [];
+  (AppData.records || []).forEach((r, i) => {
+    if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
+    if (!contabilizaRegistro(r)) return;
+    const arr = String(r.factura_semana || '').slice(0, 10);
+    if (arr === semana) return;                       // ya está en esta liquidación
+    if (!arr) {
+      const f = parseFechaReg(r.fecha);
+      if (f && f >= rango.desdeD && f <= rango.hastaD) return;   // ya entra por fecha
+    }
+    out.push({ i, r, cod: cKey, arr,
+      cobra: precioVentaEnvio(cKey, r),
+      zona: (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() });
+  });
+  out.sort((a, b) => {
+    const fa = parseFechaReg(a.r.fecha), fb = parseFechaReg(b.r.fecha);
+    return (fb ? fb.getTime() : 0) - (fa ? fa.getTime() : 0);
+  });
+  return out;
+}
+
+function renderTraerEnvios() {
+  const body = document.getElementById('mtraer-rows');
+  if (!body) return;
+  const q = (document.getElementById('mtraer-buscar')?.value || '').toLowerCase().trim();
+  const todos = _traerCandidatos();
+  const lista = q ? todos.filter(d =>
+    String(d.r.tracking || '').toLowerCase().includes(q) ||
+    String(d.r.destinatario || '').toLowerCase().includes(q) ||
+    String(d.zona || '').toLowerCase().includes(q)) : todos;
+
+  const info = document.getElementById('mtraer-info');
+  if (info) info.textContent = lista.length === todos.length
+    ? todos.length + ' envío(s) fuera de la semana'
+    : 'Mostrando ' + lista.length + ' de ' + todos.length;
+
+  if (!lista.length) {
+    body.innerHTML = '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">' +
+      (todos.length ? 'Ninguno coincide con la búsqueda'
+        : 'No hay envíos de este cliente fuera de la semana. Si el envío es más viejo que los ' +
+          (typeof VENTANA_DIAS_REGISTROS !== 'undefined' ? VENTANA_DIAS_REGISTROS : 14) +
+          ' días cargados, traelo primero desde Importar datos → Archivo.') + '</td></tr>';
+    _actualizarResumenTraer();
+    return;
+  }
+  body.innerHTML = lista.map(d => {
+    const marcado = _traerSeleccion.has(d.i);
+    return '<tr>' +
+      '<td><input type="checkbox" ' + (marcado ? 'checked' : '') + ' onchange="toggleTraer(' + d.i + ',this.checked)"></td>' +
+      '<td class="mono" style="font-size:11.5px">' + (d.r.tracking || '—') +
+        (d.r.destinatario ? '<div class="muted" style="font-size:10px">' + d.r.destinatario + '</div>' : '') + '</td>' +
+      '<td class="mono muted" style="font-size:12px">' + (d.r.fecha || '—') +
+        (d.arr ? '<div style="font-size:10px;color:#6d28d9">ya arrastrado a otra semana</div>' : '') + '</td>' +
+      '<td style="font-size:12px">' + (d.zona || '—') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (d.cobra > 0 ? fmtPeso(d.cobra) :
+        '<span style="color:#b45309">sin tarifa</span>') + '</td>' +
+      '<td style="font-size:11px" class="muted">' + (d.r.estado || '—') + '</td>' +
+    '</tr>';
+  }).join('');
+  _actualizarResumenTraer();
+}
+
+function toggleTraer(i, on) {
+  if (on) _traerSeleccion.add(i); else _traerSeleccion.delete(i);
+  _actualizarResumenTraer();
+}
+function marcarTodosTraer(on) {
+  const q = (document.getElementById('mtraer-buscar')?.value || '').toLowerCase().trim();
+  _traerCandidatos().forEach(d => {
+    if (q && !(String(d.r.tracking || '').toLowerCase().includes(q) ||
+               String(d.r.destinatario || '').toLowerCase().includes(q) ||
+               String(d.zona || '').toLowerCase().includes(q))) return;
+    if (on) _traerSeleccion.add(d.i); else _traerSeleccion.delete(d.i);
+  });
+  renderTraerEnvios();
+}
+function _actualizarResumenTraer() {
+  const el = document.getElementById('mtraer-resumen');
+  if (!el) return;
+  const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
+  let monto = 0;
+  _traerSeleccion.forEach(i => { const r = AppData.records[i]; if (r) monto += precioVentaEnvio(cod, r); });
+  el.innerHTML = _traerSeleccion.size
+    ? '<strong>' + _traerSeleccion.size + '</strong> envío(s) seleccionados · suman <strong>' + fmtPeso(monto) + '</strong>'
+    : '<span class="muted">Marcá los envíos que querés cobrar en esta liquidación</span>';
+}
+
+async function confirmarTraerEnvios() {
+  if (!_traerSeleccion.size) { alert('No marcaste ningún envío.'); return; }
+  const rango = dcliRango();
+  const semana = viernesDeRango(rango);
+  const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
+  let monto = 0;
+  _traerSeleccion.forEach(i => { const r = AppData.records[i]; if (r) monto += precioVentaEnvio(cod, r); });
+  const NL = String.fromCharCode(10);
+  if (!confirm(_traerSeleccion.size + ' envío(s) van a pasar a cobrarse en la semana ' +
+    rango.desde + ' → ' + rango.hasta + ', por ' + fmtPeso(monto) + '.' + NL + NL +
+    'Salen de la semana a la que pertenecían, así no se facturan dos veces.' + NL +
+    'Al conductor se le sigue pagando por la fecha real del envío.')) return;
+  try {
+    const n = await arrastrarEnviosASemana(Array.from(_traerSeleccion), semana);
+    cerrarTraerEnvios();
+    renderDetalleCliente();
+    showToast('✅ ' + n + ' envío(s) traídos a esta liquidación · ' + fmtPeso(monto));
+  } catch (e) { console.warn('confirmarTraerEnvios', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// Quitar un envío arrastrado: vuelve a cobrarse en la semana de su fecha.
+async function devolverEnvioASuSemana(i) {
+  const r = AppData.records[i];
+  if (!r) return;
+  if (!confirm('El envío ' + (r.tracking || '') + ' vuelve a cobrarse en la semana de su fecha (' + (r.fecha || '') + ').')) return;
+  try {
+    await arrastrarEnviosASemana([i], null);
+    renderDetalleCliente();
+    showToast('Envío devuelto a su semana');
+  } catch (e) { alert('No se pudo: ' + (e.message || e)); }
+}
+
+// ── 2) CARGOS: colecta, viaje particular, otro ─────────────────────────────
+function abrirCargoCliente() {
+  const cod = document.getElementById('dcli-select')?.value || '';
+  if (!cod) { alert('Elegí un cliente primero.'); return; }
+  const rango = dcliRango();
+  const ctx = document.getElementById('mcargo-contexto');
+  if (ctx) ctx.innerHTML = 'Se le va a facturar a <strong>' + clienteNombreDe(cod) + '</strong> en la semana <strong>' +
+    rango.desde + ' → ' + rango.hasta + '</strong>.';
+  document.getElementById('mcargo-concepto').value = 'colecta';
+  document.getElementById('mcargo-detalle').value = '';
+  document.getElementById('mcargo-cantidad').value = '1';
+  document.getElementById('mcargo-precio').value = '';
+  document.getElementById('modal-cargo-backdrop').style.display = 'flex';
+  recalcCargoCliente();
+}
+function cerrarCargoCliente(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('modal-cargo-backdrop').style.display = 'none';
+}
+// Envíos cargados A MANO del cliente en la semana. Un envío manual de
+// Conductores YA factura al cliente (paga y cobra), así que si además se carga
+// un "viaje particular" acá, el viaje queda facturado DOS VECES. Es el único
+// solapamiento posible entre los dos caminos y por eso se avisa.
+function _dcliManualesDeSemana(cod, rango) {
+  const cKey = clienteKey(cod);
+  const semana = viernesDeRango(rango);
+  const out = [];
+  (AppData.records || []).forEach(r => {
+    if (!r.manual) return;
+    if (clienteCodDeRegistro(r) !== cKey) return;
+    if (!contabilizaRegistro(r)) return;
+    const arr = String(r.factura_semana || '').slice(0, 10);
+    if (arr) { if (arr === semana) out.push(r); return; }
+    const f = parseFechaReg(r.fecha);
+    if (f && f >= rango.desdeD && f <= rango.hastaD) out.push(r);
+  });
+  return out;
+}
+
+function recalcCargoCliente() {
+  const c = document.getElementById('mcargo-concepto').value;
+  const ayuda = document.getElementById('mcargo-ayuda');
+  if (ayuda) ayuda.textContent = (CARGO_CONCEPTOS[c] || {}).detalle || '';
+  const cant = parseFloat(document.getElementById('mcargo-cantidad').value) || 0;
+  const pu = parseFloat(document.getElementById('mcargo-precio').value) || 0;
+  const el = document.getElementById('mcargo-total');
+  if (el) el.textContent = fmtPeso(cant * pu);
+
+  // Aviso de duplicado: solo aplica al viaje particular.
+  const av = document.getElementById('mcargo-aviso');
+  if (!av) return;
+  if (c !== 'viaje') { av.innerHTML = ''; return; }
+  const cod = document.getElementById('dcli-select')?.value || '';
+  const manuales = _dcliManualesDeSemana(cod, dcliRango());
+  av.innerHTML = manuales.length
+    ? '<div class="alert" style="margin:0;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:11.5px">' +
+      '<i class="ic ic-alert"></i><div><strong>Ojo: este cliente ya tiene ' + manuales.length +
+      ' envío(s) cargados a mano esta semana</strong>, y esos <strong>ya se le están facturando</strong>. ' +
+      'Si el viaje es uno de ellos, no lo agregues acá — quedaría cobrado dos veces.' +
+      '<div style="margin-top:5px;font-family:monospace;font-size:10.5px">' +
+      manuales.slice(0, 5).map(r => (r.tracking || '(sin tracking)') + ' · ' + (r.fecha || '') + ' · ' +
+        fmtPeso(precioVentaEnvio(clienteKey(cod), r))).join('<br>') +
+      (manuales.length > 5 ? '<br>…y ' + (manuales.length - 5) + ' más' : '') + '</div></div></div>'
+    : '<div style="font-size:11px;color:var(--text-muted)">' +
+      'Este cargo <strong>solo factura</strong>. Si el viaje lo hizo un conductor de la empresa y hay que pagarle, ' +
+      'cargalo desde <strong>Conductores → Agregar envío</strong>: ese camino paga y factura de una.</div>';
+}
+async function guardarCargoDesdeModal() {
+  const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
+  if (!cod) { alert('Elegí un cliente primero.'); return; }
+  const cant = parseFloat(document.getElementById('mcargo-cantidad').value) || 0;
+  const pu = parseFloat(document.getElementById('mcargo-precio').value) || 0;
+  const monto = cant * pu;
+  if (!(monto > 0)) { alert('Cargá una cantidad y un precio: el cargo tiene que dar más de $0.'); return; }
+  const rec = {
+    cliente_cod: cod,
+    semana: viernesDeRango(dcliRango()),
+    concepto: document.getElementById('mcargo-concepto').value,
+    detalle: (document.getElementById('mcargo-detalle').value || '').trim(),
+    cantidad: cant, precio_unitario: pu, monto,
+    creado_por: (typeof currentUser !== 'undefined' && currentUser && currentUser.usuario) || ''
+  };
+  try {
+    await guardarCargoCliente(rec);
+    cerrarCargoCliente();
+    renderDetalleCliente();
+    showToast('✅ ' + cargoLabel(rec.concepto) + ' agregado · ' + fmtPeso(monto));
+  } catch (e) { console.warn('guardarCargoDesdeModal', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+async function quitarCargoCliente(id) {
+  const c = (AppData.clienteCargos || []).find(x => x.id === id);
+  if (!c) return;
+  if (!confirm('Quitar ' + cargoLabel(c.concepto) + ' de ' + fmtPeso(c.monto) + ' de esta liquidación?')) return;
+  try {
+    await borrarCargoCliente(id);
+    renderDetalleCliente();
+    showToast('Cargo quitado');
+  } catch (e) { alert('No se pudo: ' + (e.message || e)); }
+}
+
+// Filas de los cargos al pie de la tabla. Van SIEMPRE visibles (no se pliegan
+// con los días ni se esconden con el buscador): son parte del total y si
+// quedaran escondidos la suma del encabezado no cerraría con lo que se ve.
+function _dcliFilasCargos(cargos, totEnvios, totCargos) {
+  if (!cargos || !cargos.length) return '';
+  const filas = cargos.map(c =>
+    '<tr style="background:var(--surface-0);box-shadow:inset 3px 0 0 #0e7490">' +
+      '<td colspan="3" style="font-size:12px">' +
+        '<strong>' + cargoLabel(c.concepto) + '</strong>' +
+        (c.detalle ? ' <span class="muted">· ' + String(c.detalle).replace(/</g, '&lt;') + '</span>' : '') +
+        (_num(c.cantidad) !== 1
+          ? '<div class="muted" style="font-size:10px">' + _num(c.cantidad) + ' × ' + fmtPeso(_num(c.precio_unitario)) + '</div>'
+          : '') +
+      '</td>' +
+      '<td style="font-size:11px" class="muted">no es un envío</td>' +
+      '<td class="mono" style="text-align:right"><strong>' + fmtPeso(_num(c.monto)) + '</strong>' +
+        '<button class="btn btn-sm" style="margin-left:6px;padding:1px 5px;font-size:9.5px;border-color:#fca5a5;color:#b91c1c" ' +
+        'title="Quitar este cargo" onclick="quitarCargoCliente(' + c.id + ')">✕</button></td>' +
+    '</tr>').join('');
+  const resumen =
+    '<tr style="background:var(--surface-0)">' +
+      '<td colspan="4" style="text-align:right;font-size:11.5px" class="muted">' +
+        'Envíos ' + fmtPeso(totEnvios) + '  ·  cargos ' + fmtPeso(totCargos) + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700;border-top:2px solid var(--border)">' +
+        fmtPeso(totEnvios + totCargos) + '</td>' +
+    '</tr>';
+  return filas + resumen;
 }

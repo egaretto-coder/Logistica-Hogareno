@@ -1134,3 +1134,87 @@
     </div>
   </div>
 </div>
+
+<!-- ══════════ MODAL: CARGO AL CLIENTE (colecta / viaje particular / otro) ══════════
+     No son envíos: son conceptos que se le facturan al cliente en la semana. -->
+<div class="modal-backdrop" id="modal-cargo-backdrop" onclick="cerrarCargoCliente(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-dollar"></i> Agregar cargo al cliente</span>
+      <button class="modal-close" onclick="cerrarCargoCliente()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div id="mcargo-contexto" style="font-size:11.5px;color:var(--text-muted)"></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Concepto</label>
+        <select id="mcargo-concepto" class="form-input" style="width:100%" onchange="recalcCargoCliente()">
+          <option value="colecta">Colecta — pasar a retirar los envíos</option>
+          <option value="viaje">Viaje particular — por fuera de la plataforma</option>
+          <option value="otro">Otro cargo</option>
+        </select>
+        <div id="mcargo-ayuda" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
+      </div>
+      <!-- Aviso de duplicado: un envío manual de Conductores YA factura al
+           cliente, así que cargar además el viaje acá lo cobraría dos veces. -->
+      <div id="mcargo-aviso"></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Detalle (sale en la factura)</label>
+        <input type="text" id="mcargo-detalle" class="form-input" placeholder="Ej: retiro en depósito Munro" style="width:100%">
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:110px">
+          <label class="form-label">Cantidad</label>
+          <input type="number" id="mcargo-cantidad" class="form-input" value="1" min="0" step="1" style="width:100%" oninput="recalcCargoCliente()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Precio unitario</label>
+          <input type="number" id="mcargo-precio" class="form-input" value="" min="0" step="0.01" style="width:100%" oninput="recalcCargoCliente()">
+        </div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+        <div style="font-size:11px;color:var(--text-muted)">Se suma a la liquidación</div>
+        <div id="mcargo-total" style="font-size:20px;font-weight:700">$0</div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarCargoCliente()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarCargoDesdeModal()"><i class="ic ic-save"></i> Agregar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: TRAER ENVÍOS DE OTRAS SEMANAS ══════════
+     Envíos colgados que ya se le pagaron al conductor pero que nunca se le
+     cobraron al cliente porque su liquidación de esa semana ya se había enviado. -->
+<div class="modal-backdrop" id="modal-traer-backdrop" onclick="cerrarTraerEnvios(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:820px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-undo"></i> Traer envíos de otras semanas</span>
+      <button class="modal-close" onclick="cerrarTraerEnvios()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-undo"></i><div id="mtraer-contexto"></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="search" id="mtraer-buscar" placeholder="🔍 Tracking, destinatario o zona" oninput="renderTraerEnvios()"
+          style="width:250px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" id="mtraer-todos" onchange="marcarTodosTraer(this.checked)"> Marcar todos los que se ven
+        </label>
+        <span id="mtraer-info" style="font-size:11.5px;color:var(--text-muted);margin-left:auto"></span>
+      </div>
+      <div class="table-wrap" style="max-height:46vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table><thead><tr>
+          <th style="width:34px"></th><th>Tracking</th><th>Fecha</th><th>Zona</th>
+          <th style="text-align:right">Se factura</th><th>Estado</th>
+        </tr></thead><tbody id="mtraer-rows"></tbody></table>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
+        <span id="mtraer-resumen" style="font-size:12px;margin-right:auto"></span>
+        <button class="btn" onclick="cerrarTraerEnvios()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarTraerEnvios()"><i class="ic ic-check"></i> Traer a esta liquidación</button>
+      </div>
+    </div>
+  </div>
+</div>

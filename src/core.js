@@ -282,6 +282,9 @@ let AppData = {
   // empleados: [{ id, nombre, dni, telefono, email, direccion, puesto, registrado,
   //               fecha_ingreso, sueldo, pct_transferencia, activo, obs }]
   empleados: [],
+  // clienteCargos: [{ id, cliente_cod, semana, concepto, detalle, cantidad, precio_unitario, monto }]
+  // Cargos que NO vienen de un envío: colecta, viajes particulares, otros.
+  clienteCargos: [],
   // vacaciones: [{ id, empleado_id, periodo, fecha_desde, fecha_hasta, dias, estado, obs }]
   // Cuelga de empleados: el plantel y la fecha de ingreso salen de ahí.
   vacaciones: [],

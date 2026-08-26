@@ -175,13 +175,24 @@ function calcLiquidacionCliente(cliente, rango) {
   const cKey = clienteKey(cliente);
   const desde = rango && rango.desdeD ? rango.desdeD : null;
   const hasta = rango && rango.hastaD ? rango.hastaD : null;
+  const semana = viernesDeRango(rango);   // clave de la semana que se está facturando
   const porZona = {};
-  let totalEnvios = 0, total = 0, sinTarifa = 0;
+  let totalEnvios = 0, total = 0, sinTarifa = 0, arrastrados = 0;
   AppData.records.forEach(r => {
     if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     if (!contabilizaRegistro(r)) return;   // la visita fallida también se le factura al cliente
-    if (desde || hasta) { const f = parseFechaReg(r.fecha); if (!f) return; if (desde && f < desde) return; if (hasta && f > hasta) return; }
+    // Semana en la que se COBRA. Un envío arrastrado (factura_semana seteada)
+    // se cobra en la semana que indica ese campo y NO en la de su fecha: si no
+    // se lo sacara de su semana original se facturaría dos veces.
+    const arr = String(r.factura_semana || '').slice(0, 10);
+    if (arr) {
+      if (!semana || arr !== semana) return;
+      arrastrados++;
+    } else if (desde || hasta) {
+      const f = parseFechaReg(r.fecha); if (!f) return;
+      if (desde && f < desde) return; if (hasta && f > hasta) return;
+    }
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() || '(sin zona)';
     // El precio es POR ENVÍO, no por zona: una dimensión especial asignada pisa
     // la tarifa de la zona (un colchón king no se cobra como un paquete). Cada
@@ -199,9 +210,17 @@ function calcLiquidacionCliente(cliente, rango) {
   });
   const filas = Object.values(porZona).sort((a, b) => b.subtotal - a.subtotal);
   const pagado = filas.reduce((s, f) => s + _num(f.pagado), 0);
+  // Cargos que no vienen de un envío: colecta, viajes particulares, otros.
+  // Van aparte de las zonas porque en la factura son otro concepto.
+  const cargos = cargosDeSemana(cKey, semana);
+  const totalCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
   // Margen = lo que se le cobra al cliente menos lo que se le paga al conductor
   // por esos mismos envíos. Es el número que conecta las dos liquidaciones.
-  return { filas, totalEnvios, total, sinTarifa, pagado, margen: total - pagado };
+  return {
+    filas, totalEnvios, total: total + totalCargos, totalEnvio: total,
+    sinTarifa, pagado, margen: (total + totalCargos) - pagado,
+    arrastrados, cargos, totalCargos, semana
+  };
 }
 
 // Cantidad de zonas con tarifa cargada de un cliente.
@@ -1332,8 +1351,10 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   rango = rango || semanaClienteRango(hoyISO());
   const cliente = clienteNombreDe(codK);
   const liq = calcLiquidacionCliente(codK, rango);
-  if (!liq.filas.length) {
-    if (!opts.doc) alert('Sin envíos entregados de este cliente en la semana ' + rango.desde + ' → ' + rango.hasta + '.');
+  // Puede no haber envíos y sí cargos (una semana en la que solo se le cobró
+  // una colecta o un viaje particular): esa liquidación también se emite.
+  if (!liq.filas.length && !(liq.cargos || []).length) {
+    if (!opts.doc) alert('Sin envíos entregados ni cargos de este cliente en la semana ' + rango.desde + ' → ' + rango.hasta + '.');
     return;
   }
   const cli = (AppData.clientes || []).find(c => clienteKey(c.codigo) === codK);
@@ -1351,11 +1372,22 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   doc.text('Generado: ' + new Date().toLocaleString('es-AR'), 14, 35.5);
 
   const body = liq.filas.map(f => [f.zona, f.count, f.precio > 0 ? fmtPeso(f.precio) : 'sin tarifa', fmtPeso(f.subtotal)]);
+  // Cargos que no vienen de un envío (colecta, viajes particulares): van con su
+  // propio concepto, no diluidos en una zona. En la factura el cliente tiene que
+  // ver por qué le cobran eso.
+  (liq.cargos || []).forEach(c => body.push([
+    cargoLabel(c.concepto) + (c.detalle ? ' · ' + c.detalle : ''),
+    _num(c.cantidad) !== 1 ? _num(c.cantidad) : '',
+    _num(c.cantidad) !== 1 ? fmtPeso(_num(c.precio_unitario)) : '',
+    fmtPeso(_num(c.monto))
+  ]));
   doc.autoTable({
     startY: 41,
-    head: [['Zona', 'Envíos', 'Tarifa', 'Subtotal']],
+    head: [['Concepto', 'Envíos', 'Tarifa', 'Subtotal']],
     body,
-    foot: [[{ content: 'TOTAL · ' + liq.totalEnvios + ' envíos', colSpan: 3, styles: { halign: 'right' } }, fmtPeso(liq.total)]],
+    foot: [[{ content: 'TOTAL · ' + liq.totalEnvios + ' envíos' +
+      (liq.totalCargos ? ' + ' + (liq.cargos || []).length + ' cargo(s)' : ''),
+      colSpan: 3, styles: { halign: 'right' } }, fmtPeso(liq.total)]],
     theme: 'striped',
     headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
     footStyles: { fillColor: [37, 79, 161], textColor: 255, fontStyle: 'bold', fontSize: 9 },
@@ -1501,4 +1533,68 @@ function _conciliacionSinPagar(desde, hasta) {
     envios, cobrado,
     conductores: Array.from(porCond.values()).sort((a, b) => b.envios - a.envios)
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ARRASTRE DE ENVÍOS Y CARGOS EXTRA
+// ════════════════════════════════════════════════════════════════════════
+
+// Viernes que abre la semana de un rango, en ISO. Es la CLAVE con la que se
+// imputan los arrastres y los cargos: identifica la semana con un solo dato.
+function viernesDeRango(rango) {
+  const d = rango && rango.desdeD ? rango.desdeD : null;
+  if (!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// ── Cargos extra (colecta, viajes particulares, otros) ─────────────────────
+const CARGO_CONCEPTOS = {
+  colecta: { label: 'Colecta',           detalle: 'Lo que se le cobra al cliente por pasar a retirar los envíos.' },
+  viaje:   { label: 'Viaje particular',  detalle: 'Viaje hecho por fuera de la plataforma, lo haya hecho o no un conductor de la empresa.' },
+  otro:    { label: 'Otro cargo',        detalle: 'Cualquier otro concepto que se le factura al cliente.' },
+};
+function cargoLabel(c) { return (CARGO_CONCEPTOS[c] || {}).label || c || 'Cargo'; }
+
+function cargosDeSemana(cod, semana) {
+  const k = clienteKey(cod);
+  if (!k || !semana) return [];
+  return (AppData.clienteCargos || [])
+    .filter(c => clienteKey(c.cliente_cod) === k && String(c.semana || '').slice(0, 10) === semana)
+    .sort((a, b) => String(a.concepto).localeCompare(String(b.concepto)) || _num(a.id) - _num(b.id));
+}
+
+function persistirCargosLocal() {
+  try { localStorage.setItem('liq_cliente_cargos', JSON.stringify(AppData.clienteCargos || [])); } catch (e) {}
+}
+
+async function guardarCargoCliente(rec) {
+  const row = await DB.insertRow('cliente_cargos', rec);
+  AppData.clienteCargos = (AppData.clienteCargos || []).concat([Object.assign({ id: row.id }, rec)]);
+  persistirCargosLocal();
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+  return row.id;
+}
+
+async function borrarCargoCliente(id) {
+  await DB.deleteWhere('cliente_cargos', 'id', id);
+  AppData.clienteCargos = (AppData.clienteCargos || []).filter(c => c.id !== id);
+  persistirCargosLocal();
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+}
+
+// ── Arrastre: mover en qué semana se COBRA un envío ────────────────────────
+// El envío sigue perteneciendo a su fecha (el conductor cobra por la fecha
+// real); lo único que se mueve es en qué liquidación de cliente entra.
+async function arrastrarEnviosASemana(indices, semanaISO) {
+  const ids = [];
+  indices.forEach(i => {
+    const r = AppData.records[i];
+    if (!r || !r.id) return;
+    r.factura_semana = semanaISO || null;
+    ids.push(r.id);
+  });
+  for (const id of ids) await DB.updateWhere('registros', 'id', id, { factura_semana: semanaISO || null });
+  if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+  return ids.length;
 }

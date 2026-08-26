@@ -37,6 +37,10 @@
               style="width:230px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px">
             <button class="btn btn-sm" id="dcli-btn-limpiar" onclick="limpiarBusquedaCliente()" style="display:none"><i class="ic ic-x"></i> Limpiar</button>
             <span id="dcli-count" style="font-size:11px;color:var(--text-muted)"></span>
+            <!-- Herramientas de armado: traer envíos colgados de semanas anteriores
+                 y agregar cargos que no vienen de un envío (colecta, viajes). -->
+            <button class="btn btn-sm" style="margin-left:auto" onclick="abrirTraerEnvios()" title="Traer envíos de semanas anteriores para cobrarlos en esta liquidación"><i class="ic ic-undo"></i> Traer envíos</button>
+            <button class="btn btn-sm" onclick="abrirCargoCliente()" title="Colecta, viaje particular u otro cargo que se le factura al cliente"><i class="ic ic-plus"></i> Agregar cargo</button>
           </div>
         </div>
 
