@@ -106,10 +106,25 @@ function clienteTarifaEnZona(cod, zona) {
 // un paquete). Antes solo pisaba lo que se le pagaba al conductor, así que el
 // cliente seguía facturándose por la tarifa común.
 function precioVentaEnvio(cod, r) {
+  // Gesto comercial: se anuló para este cliente. No se le factura — pero al
+  // conductor se le paga igual, así que precioPagadoConductor NO mira esto.
+  if (envioAnuladoCliente(r)) return 0;
   const zona = (r && r.zona && r.zona.trim()) ? r.zona.trim() : ((r && r.localidad) || '').trim();
   const p = dimPrecioVenta(cod, r, zona);
   if (p != null) return p;
   return clienteTarifaEnZona(cod, zona);
+}
+
+// ¿Este envío está anulado como gesto con el cliente?
+function envioAnuladoCliente(r) { return !!(r && r.anulado_cliente); }
+
+// Lo que se le habría facturado si no estuviera anulado. Es el valor del gesto:
+// va en la liquidación para que el cliente VEA cuánto se le descontó.
+function precioSinAnular(cod, r) {
+  if (!r) return 0;
+  const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : ((r.localidad) || '').trim();
+  const p = dimPrecioVenta(cod, r, zona);
+  return p != null ? p : clienteTarifaEnZona(cod, zona);
 }
 
 // Precio de venta de la dimensión asignada, del tarifario de CLIENTES (no del
@@ -194,6 +209,19 @@ function calcLiquidacionCliente(cliente, rango) {
       if (desde && f < desde) return; if (hasta && f > hasta) return;
     }
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() || '(sin zona)';
+    // ANULADO: va en su PROPIA línea, en $0 y con lo que se bonificó. No se
+    // esconde ni se saca de la liquidación — el punto del gesto es que el
+    // cliente lo vea descontado.
+    if (envioAnuladoCliente(r)) {
+      const bonif = precioSinAnular(cKey, r);
+      const etq = zona + ' · ANULADO';
+      if (!porZona[etq]) porZona[etq] = { zona: etq, count: 0, precio: 0, subtotal: 0, pagado: 0, anulado: true, bonificado: 0 };
+      porZona[etq].count++;
+      porZona[etq].bonificado += bonif;
+      porZona[etq].pagado += precioPagadoConductor(r);   // al conductor se le paga igual
+      totalEnvios++;
+      return;
+    }
     // El precio es POR ENVÍO, no por zona: una dimensión especial asignada pisa
     // la tarifa de la zona (un colchón king no se cobra como un paquete). Cada
     // dimensión va en SU PROPIA LÍNEA: en la factura el cliente tiene que ver
@@ -216,10 +244,14 @@ function calcLiquidacionCliente(cliente, rango) {
   const totalCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
   // Margen = lo que se le cobra al cliente menos lo que se le paga al conductor
   // por esos mismos envíos. Es el número que conecta las dos liquidaciones.
+  const anulados = filas.filter(f => f.anulado);
   return {
     filas, totalEnvios, total: total + totalCargos, totalEnvio: total,
     sinTarifa, pagado, margen: (total + totalCargos) - pagado,
-    arrastrados, cargos, totalCargos, semana
+    arrastrados, cargos, totalCargos, semana,
+    // Gestos comerciales de la semana: cuántos y cuánto se bonificó.
+    anulados: anulados.reduce((s, f) => s + f.count, 0),
+    bonificado: anulados.reduce((s, f) => s + _num(f.bonificado), 0)
   };
 }
 
@@ -1371,7 +1403,9 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   doc.text(sub, 14, 31);
   doc.text('Generado: ' + new Date().toLocaleString('es-AR'), 14, 35.5);
 
-  const body = liq.filas.map(f => [f.zona, f.count, f.precio > 0 ? fmtPeso(f.precio) : 'sin tarifa', fmtPeso(f.subtotal)]);
+  const body = liq.filas.map(f => f.anulado
+    ? [f.zona, f.count, 'bonificado ' + fmtPeso(_num(f.bonificado)), fmtPeso(0)]
+    : [f.zona, f.count, f.precio > 0 ? fmtPeso(f.precio) : 'sin tarifa', fmtPeso(f.subtotal)]);
   // Cargos que no vienen de un envío (colecta, viajes particulares): van con su
   // propio concepto, no diluidos en una zona. En la factura el cliente tiene que
   // ver por qué le cobran eso.
@@ -1396,8 +1430,13 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     margin: { left: 14, right: 14 }
   });
+  if (liq.anulados) {
+    const y0 = doc.lastAutoTable.finalY + 6;
+    doc.setFontSize(8.5); doc.setTextColor(21, 128, 61);
+    doc.text('Se bonificaron ' + liq.anulados + ' envío(s) por ' + fmtPeso(liq.bonificado) + ' — no se facturan.', 14, y0);
+  }
   if (liq.sinTarifa) {
-    const y = doc.lastAutoTable.finalY + 6;
+    const y = doc.lastAutoTable.finalY + (liq.anulados ? 11 : 6);
     doc.setFontSize(8); doc.setTextColor(180, 83, 9);
     doc.text('⚠ ' + liq.sinTarifa + ' envío(s) sin tarifa de venta cargada — no suman al total. Cargá esas zonas en el tarifario del cliente.', 14, y);
   }
@@ -1434,6 +1473,7 @@ function conciliacionCobro(rango) {
   const res = {
     envios: 0, pagadoTotal: 0, cobradoTotal: 0,
     fugaEnvios: 0, fugaPagado: 0,
+    anuladosEnvios: 0, anuladosPagado: 0,
     porMotivo: {}, porCliente: new Map(), casos: []
   };
   Object.keys(FUGA_MOTIVOS).forEach(m => { res.porMotivo[m] = { envios: 0, pagado: 0 }; });
@@ -1448,6 +1488,10 @@ function conciliacionCobro(rango) {
     }
     const pagado = precioPagadoConductor(r);
     res.envios++; res.pagadoTotal += pagado;
+
+    // Anulado a propósito (gesto con el cliente): NO es una fuga. Se cuenta
+    // aparte, con la plata que la empresa decidió absorber.
+    if (envioAnuladoCliente(r)) { res.anuladosEnvios++; res.anuladosPagado += pagado; return; }
 
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const cod = clienteCodDeRegistro(r);
@@ -1482,6 +1526,8 @@ function conciliacionCobro(rango) {
 function diagnosticoCobroEnvio(r) {
   if (!r || !contabilizaRegistro(r)) return { cobra: true, noContabiliza: true, pagado: 0, cobrado: 0 };
   const pagado = precioPagadoConductor(r);
+  // Anulado a propósito: no se avisa como problema, se confirma el gesto.
+  if (envioAnuladoCliente(r)) return { cobra: true, anulado: true, pagado, cobrado: 0 };
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
   const cod = clienteCodDeRegistro(r);
   const cobrado = cod ? precioVentaEnvio(cod, r) : 0;

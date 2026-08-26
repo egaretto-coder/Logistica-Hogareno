@@ -223,6 +223,8 @@ async function _hydrateFromSupabaseReal(opts) {
     zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
     // Semana en la que se FACTURA (arrastre). null = por su fecha.
     factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
+    // Gesto comercial: no se le factura al cliente, pero al conductor se le paga.
+    anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
     // null = sin corrección; número = precio corregido a mano por el operador
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
   }));
@@ -489,6 +491,7 @@ async function _hydrateRegistrosReal() {
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
+      anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     }));
@@ -704,6 +707,7 @@ async function cargarHistorialCompleto(btn) {
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
+      anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });
@@ -717,6 +721,7 @@ async function cargarHistorialCompleto(btn) {
       estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
       manual: !!r.manual, zona_manual: !!r.zona_manual,
       factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
+      anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
       contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
       precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
     });

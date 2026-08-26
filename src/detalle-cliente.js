@@ -158,9 +158,11 @@ function renderDetalleCliente() {
     // poder distinguir de un envío normal.
     const dimAsignada = String(r.dim_especial || '').trim();
     const dimFactura = contab ? dimVentaNombre(cod, r) : '';
-    return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0,
+    return { i, r, zona, contab, cobrado, sinTarifa: contab && cobrado <= 0 && !envioAnuladoCliente(r),
              dimAsignada, dimSinPrecioVenta: !!dimAsignada && !dimFactura,
-             arrastrado: !!String(r.factura_semana || '').trim() };
+             arrastrado: !!String(r.factura_semana || '').trim(),
+             anulado: envioAnuladoCliente(r),
+             bonificado: envioAnuladoCliente(r) ? precioSinAnular(cod, r) : 0 };
   });
 
   const sinTarifa = detalle.filter(d => d.sinTarifa).length;
@@ -196,6 +198,9 @@ function renderDetalleCliente() {
   const cargos = (typeof cargosDeSemana === 'function') ? cargosDeSemana(cod, semanaISO) : [];
   const totCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
   const totCobrado = totEnvios + totCargos;
+  // Gestos comerciales de la semana: cuántos y cuánto se bonificó.
+  const anulados = detalle.filter(d => d.anulado);
+  const totBonificado = anulados.reduce((s, d) => s + d.bonificado, 0);
 
   // Catálogo de zonas con el precio DE VENTA de este cliente (una vez por
   // render). Antes se usaba el del conductor, que mostraba lo que se le paga al
@@ -242,8 +247,13 @@ function renderDetalleCliente() {
     const barraDim = d.dimAsignada
       ? ('box-shadow:inset 3px 0 0 ' + (d.dimSinPrecioVenta ? '#f59e0b' : '#7c3aed') + ';')
       : '';
+    // ANULADO: atenuado y tachado. Tiene que leerse "esto estaba y se sacó",
+    // no "esto no está" — el gesto solo vale si el cliente lo ve descontado.
+    const estiloAnulado = d.anulado
+      ? 'opacity:.55;text-decoration:line-through;text-decoration-thickness:1px;box-shadow:inset 3px 0 0 #15803d;'
+      : '';
     return sep +
-      '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + barraDim + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
+      '<tr class="dcli-fila-dia" data-dia="' + dia.replace(/"/g, '&quot;') + '" style="' + oculto + (d.anulado ? estiloAnulado : barraDim) + (d.contab ? '' : 'background:#fdf6f6;') + '">' +
         '<td class="mono" style="font-size:11.5px">' + (d.r.tracking || '—') +
           (d.r.destinatario ? '<div class="muted" style="font-size:10px">' + d.r.destinatario + '</div>' : '') +
           _dcliChipDimension(d) +
@@ -258,8 +268,11 @@ function renderDetalleCliente() {
         '<td>' + ((typeof zonaSelectHTML === 'function')
             ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '', zonaPreviewCliente)
             : (d.zona || '—')) + '</td>' +
-        '<td style="font-size:11px">' + _dcliEstadoSelect(d) + '</td>' +
-        '<td class="mono" style="text-align:right">' + (d.sinTarifa
+        '<td style="font-size:11px">' + _dcliEstadoSelect(d) + _dcliBotonAnular(d) + '</td>' +
+        '<td class="mono" style="text-align:right">' + (d.anulado
+            ? ('<span style="font-weight:700">' + fmtPeso(0) + '</span>' +
+               '<div style="font-size:9.5px;color:#15803d;font-family:inherit;text-decoration:none">bonificado ' + fmtPeso(d.bonificado) + '</div>')
+            : d.sinTarifa
             ? '<span style="color:#b45309" title="La zona no tiene tarifa de venta para este cliente">sin tarifa</span>'
             : (fmtPeso(d.cobrado) + (d.dimSinPrecioVenta
                 ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit">tarifa de la zona</div>'
@@ -276,7 +289,8 @@ function renderDetalleCliente() {
           '<div class="conductor-name">' + clienteNombreDe(cod) + '</div>' +
           '<div class="conductor-meta"><strong>' + cod + '</strong> · ' + detalle.length + ' envíos · ' +
             contab.length + ' facturan · ' + clienteNZonas(cod) + ' zonas con tarifa' +
-            (sinTarifa ? ' · ⚠ ' + sinTarifa + ' sin tarifa' : '') + '</div>' +
+            (sinTarifa ? ' · ⚠ ' + sinTarifa + ' sin tarifa' : '') +
+            (anulados.length ? ' · ' + anulados.length + ' bonificado(s) por ' + fmtPeso(totBonificado) : '') + '</div>' +
         '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
           '<div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.04em">A facturar</div>' +
@@ -741,4 +755,73 @@ function _dcliFilasCargos(cargos, totEnvios, totCargos) {
         fmtPeso(totEnvios + totCargos) + '</td>' +
     '</tr>';
   return filas + resumen;
+}
+
+// ── ANULAR UN ENVÍO (gesto comercial) ───────────────────────────────────────
+// El envío se entregó y al conductor SE LE PAGA igual: hizo el viaje. Lo que se
+// anula es el COBRO al cliente, y la empresa absorbe la diferencia.
+// No se borra ni se esconde: queda en la liquidación tachado y en $0, con lo
+// que se bonificó al lado. Un gesto que el cliente no ve no sirve de nada.
+const MOTIVOS_ANULACION = [
+  'Gesto comercial',
+  'Demora en la entrega',
+  'Paquete dañado',
+  'Reclamo del cliente',
+  'Error nuestro',
+];
+
+function _dcliBotonAnular(d) {
+  if (!d.contab) return '';   // si no factura, no hay nada que anular
+  if (d.anulado) {
+    const m = String(d.r.motivo_anulacion || '').replace(/"/g, '&quot;');
+    return '<div style="margin-top:3px;text-decoration:none">' +
+      '<span class="tag" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-size:9.5px"' +
+      (m ? ' title="' + m + '"' : '') + '>anulado' + (m ? ' · ' + m : '') + '</span> ' +
+      '<button class="btn btn-sm" style="padding:1px 5px;font-size:9.5px" title="Volver a facturarlo" ' +
+      'onclick="restituirEnvioCliente(' + d.i + ')">↺</button></div>';
+  }
+  return '<div style="margin-top:3px">' +
+    '<button class="btn btn-sm" style="padding:1px 6px;font-size:9.5px;border-color:#86efac;color:#15803d" ' +
+    'title="No cobrarle este envío al cliente. Al conductor se le paga igual." ' +
+    'onclick="anularEnvioCliente(' + d.i + ')">Anular</button></div>';
+}
+
+async function anularEnvioCliente(i) {
+  const r = AppData.records[i];
+  if (!r) return;
+  if (!r.id) { alert('Este envío todavía no está sincronizado con la nube. Reintentá en unos segundos.'); return; }
+  const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
+  const monto = precioSinAnular(cod, r);
+  const pagado = precioPagadoConductor(r);
+  const NL = String.fromCharCode(10);
+  const motivo = prompt('Anular el envío ' + (r.tracking || '') + ' para ' + clienteNombreDe(cod) + '.' + NL + NL +
+    'Se le bonifican ' + fmtPeso(monto) + ': NO se le factura.' + NL +
+    'Al conductor se le siguen pagando ' + fmtPeso(pagado) + ' — hizo el viaje.' + NL +
+    'Queda en la liquidación tachado y en $0 para que el cliente lo vea.' + NL + NL +
+    '¿Motivo? (' + MOTIVOS_ANULACION.join(' · ') + ')', MOTIVOS_ANULACION[0]);
+  if (motivo === null) return;
+  try {
+    await DB.updateWhere('registros', 'id', r.id, { anulado_cliente: true, motivo_anulacion: motivo.trim() });
+    r.anulado_cliente = true; r.motivo_anulacion = motivo.trim();
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    renderDetalleCliente();
+    showToast('✅ Envío anulado · se bonifican ' + fmtPeso(monto) + ' — al conductor se le paga igual');
+  } catch (e) { console.warn('anularEnvioCliente', e); alert('No se pudo anular: ' + (e.message || e)); }
+}
+
+async function restituirEnvioCliente(i) {
+  const r = AppData.records[i];
+  if (!r || !r.id) return;
+  const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
+  const monto = precioSinAnular(cod, r);
+  if (!confirm('El envío ' + (r.tracking || '') + ' vuelve a facturarse por ' + fmtPeso(monto) + '.')) return;
+  try {
+    await DB.updateWhere('registros', 'id', r.id, { anulado_cliente: false, motivo_anulacion: '' });
+    r.anulado_cliente = false; r.motivo_anulacion = '';
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    renderDetalleCliente();
+    showToast('Envío restituido · vuelve a facturarse ' + fmtPeso(monto));
+  } catch (e) { console.warn('restituirEnvioCliente', e); alert('No se pudo restituir: ' + (e.message || e)); }
 }

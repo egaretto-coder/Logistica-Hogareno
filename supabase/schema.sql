@@ -602,6 +602,14 @@ create policy empleados_all        on public.empleados        for all to authent
 create policy empleado_ajustes_all on public.empleado_ajustes for all to authenticated using (true) with check (true);
 create policy empleado_sueldos_all on public.empleado_sueldos for all to authenticated using (true) with check (true);
 
+-- registros.anulado_cliente + motivo_anulacion: GESTO COMERCIAL. El envio se
+-- entrego y al conductor SE LE PAGA igual; lo que se anula es el cobro al
+-- cliente. No se borra: queda en la liquidacion tachado y en $0 con lo
+-- bonificado al lado, porque el gesto solo sirve si el cliente lo ve.
+-- alter table public.registros
+--   add column if not exists anulado_cliente boolean not null default false,
+--   add column if not exists motivo_anulacion text default '';
+
 -- ---------- CARGOS AL CLIENTE (no vienen de un envio) ----------
 -- COLECTA (lo que se le cobra por pasar a retirar), VIAJE PARTICULAR (hecho
 -- por fuera de la plataforma) y OTRO. Se imputan a una semana: `semana` es el
