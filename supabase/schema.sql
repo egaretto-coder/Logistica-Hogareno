@@ -602,6 +602,31 @@ create policy empleados_all        on public.empleados        for all to authent
 create policy empleado_ajustes_all on public.empleado_ajustes for all to authenticated using (true) with check (true);
 create policy empleado_sueldos_all on public.empleado_sueldos for all to authenticated using (true) with check (true);
 
+-- ---------- VACACIONES ----------
+-- Cuelga de empleados: el plantel, la fecha de ingreso y la baja lógica salen
+-- de ahí, no hay una segunda lista de gente.
+-- 'periodo' es el AÑO al que corresponden, no el año en que se toman: la LCT
+-- computa la antigüedad al 31/12 del año que corresponden (art. 150) y las
+-- vacaciones se gozan del 1/10 al 30/4 (art. 154), así que un descanso de enero
+-- normalmente pertenece al período del año anterior.
+-- 'dias' se congela al guardar (días corridos, los dos extremos incluidos).
+create table if not exists public.vacaciones (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  periodo int not null,
+  fecha_desde date not null,
+  fecha_hasta date not null,
+  dias int not null default 0,
+  estado text not null default 'planificada',   -- planificada | aprobada | tomada | cancelada
+  obs text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_vacaciones_empleado on public.vacaciones (empleado_id);
+create index if not exists idx_vacaciones_periodo  on public.vacaciones (periodo);
+alter table public.vacaciones enable row level security;
+create policy vacaciones_all on public.vacaciones
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
 -- ---------- RENDICIÓN DE ENVÍOS (cobros en destino) ----------
 -- Envíos que se cobran al destinatario: el conductor cobra y debe RENDIR ese
 -- dinero al día siguiente de la entrega (fecha_limite). Lo vencido se reclama.

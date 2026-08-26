@@ -71,6 +71,7 @@ function showPage(id) {
   if (id === 'cliente-liquidaciones' && typeof renderClienteLiquidacionesPagina === 'function') renderClienteLiquidacionesPagina();
   if (id === 'comisiones' && typeof switchComisionesTab === 'function') switchComisionesTab('vend');
   if (id === 'empleados' && typeof switchEmpleadosTab === 'function') switchEmpleadosTab('plantel');
+  if (id === 'vacaciones' && typeof renderVacacionesPagina === 'function') renderVacacionesPagina();
   if (id === 'rendiciones' && typeof renderRendiciones === 'function') renderRendiciones();
   if (id === 'gestion-permisos') renderGestionPermisos();
   if (id === 'upload') { renderArchivoPanel(); if (typeof renderHistorialImportaciones === 'function') renderHistorialImportaciones(); }
@@ -98,7 +99,7 @@ const PANTALLAS = [
   'tarifas', 'super-sla',
   'panel-conductores', 'dimensiones-especiales',
   'extraviados', 'beneficios', 'km-desvio', 'adelantos',
-  'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'rendiciones', 'gestion-permisos'
+  'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones', 'gestion-permisos'
 ];
 
 async function fetchText(url) {

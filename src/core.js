@@ -282,6 +282,9 @@ let AppData = {
   // empleados: [{ id, nombre, dni, telefono, email, direccion, puesto, registrado,
   //               fecha_ingreso, sueldo, pct_transferencia, activo, obs }]
   empleados: [],
+  // vacaciones: [{ id, empleado_id, periodo, fecha_desde, fecha_hasta, dias, estado, obs }]
+  // Cuelga de empleados: el plantel y la fecha de ingreso salen de ahí.
+  vacaciones: [],
   empleadoAjustes: [],
   empleadoSueldos: [],
 
@@ -1080,6 +1083,7 @@ const PAGE_TITLES = {
   'cliente-liquidaciones': ['Liquidación de clientes', 'Descargar las liquidaciones que el administrativo dejó listas'],
   'comisiones': ['Comisiones', 'Comisiones de vendedores por clientes nuevos y cierre mensual'],
   'empleados': ['Empleados', 'Sueldos, ajustes trimestrales y liquidación mensual del personal'],
+  'vacaciones': ['Vacaciones', 'Días que corresponden, licencias y superposiciones del personal'],
   'rendiciones': ['Rendición de envíos', 'Cobros en destino que el conductor debe rendir'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };

@@ -1078,3 +1078,59 @@
     </div>
   </div>
 </div>
+
+<!-- ══════════ MODAL: VACACIONES ══════════
+     El empleado se ELIGE del plantel de Empleados: no hay alta de gente acá.
+     El bloque de info anticipa el efecto sobre el saldo antes de guardar. -->
+<div class="modal-backdrop" id="modal-vac-backdrop" onclick="closeVacModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-calendar"></i> <span id="modal-vac-title">Cargar vacaciones</span></span>
+      <button class="modal-close" onclick="closeVacModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Empleado *</label>
+        <select id="mvac-empleado" class="form-input" style="width:100%" onchange="recalcVacModal()"></select>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Desde *</label>
+          <input type="date" id="mvac-desde" onchange="recalcVacModal()" style="width:100%">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Hasta *</label>
+          <input type="date" id="mvac-hasta" onchange="recalcVacModal()" style="width:100%">
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Corresponde al período</label>
+          <select id="mvac-periodo" class="form-input" style="width:100%" onchange="recalcVacModal()"></select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Estado</label>
+          <select id="mvac-estado" class="form-input" style="width:100%" onchange="recalcVacModal()">
+            <option value="planificada">Planificada</option>
+            <option value="aprobada">Aprobada</option>
+            <option value="tomada">Tomada</option>
+            <option value="cancelada">Cancelada (no descuenta días)</option>
+          </select>
+        </div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+        <div style="font-size:11px;color:var(--text-muted)">Duración</div>
+        <div id="mvac-dias" style="font-size:16px;font-weight:700;margin-bottom:6px">—</div>
+        <div id="mvac-info"></div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <input type="text" id="mvac-obs" class="form-input" placeholder="Ej: adelanta 5 días del período siguiente" style="width:100%">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="closeVacModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarVacacion()"><i class="ic ic-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -19,7 +19,7 @@ const RT_TABLAS = [
   'clientes', 'cliente_tarifas',
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
-  'empleados', 'empleado_ajustes', 'empleado_sueldos', 'rendiciones',
+  'empleados', 'empleado_ajustes', 'empleado_sueldos', 'vacaciones', 'rendiciones',
 ];
 
 let _rtCanal = null;
@@ -53,6 +53,7 @@ const RT_PANTALLA_TABLAS = {
   'clientes':               ['clientes', 'cliente_tarifas', 'registros'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
                              'clientes', 'cliente_tarifas', 'registros', 'config'],
+  'vacaciones':             ['vacaciones', 'empleados'],
   'gestion-permisos':       ['rol_permisos', 'roles'],
 };
 

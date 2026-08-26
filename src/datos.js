@@ -61,6 +61,8 @@ function loadSavedConfig() {
   if (slasol) { try { AppData.superSLASolicitudes = JSON.parse(slasol) || []; } catch(e) {} }
   const dimc = localStorage.getItem('liq_dim_catalogo');
   if (dimc) { try { AppData.dimCatalogo = JSON.parse(dimc) || []; } catch(e) {} }
+  const vac = localStorage.getItem('liq_vacaciones');
+  if (vac) { try { AppData.vacaciones = JSON.parse(vac) || []; } catch(e) {} }
   const emp = localStorage.getItem('liq_empleados');
   if (emp) { try { AppData.empleados = JSON.parse(emp) || []; } catch(e) {} }
   const empa = localStorage.getItem('liq_empleado_ajustes');
@@ -293,6 +295,13 @@ async function _hydrateFromSupabaseReal(opts) {
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
   }));
 
+  // Vacaciones del personal (el plantel sale de AppData.empleados).
+  AppData.vacaciones = (data.vacaciones || []).map(v => ({
+    id: v.id, empleado_id: v.empleado_id, periodo: _num(v.periodo),
+    fecha_desde: v.fecha_desde || '', fecha_hasta: v.fecha_hasta || '',
+    dias: _num(v.dias), estado: v.estado || 'planificada', obs: v.obs || ''
+  }));
+
   // Rendiciones de cobros en destino.
   AppData.rendiciones = (data.rendiciones || []).map(r => ({
     id: r.id, tracking: r.tracking || '', conductor: r.conductor, cliente: r.cliente || '',
@@ -410,6 +419,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_supersla_solic', JSON.stringify(AppData.superSLASolicitudes));
     localStorage.setItem('liq_dim_catalogo', JSON.stringify(AppData.dimCatalogo));
     localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
+    localStorage.setItem('liq_vacaciones', JSON.stringify(AppData.vacaciones || []));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
     localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));

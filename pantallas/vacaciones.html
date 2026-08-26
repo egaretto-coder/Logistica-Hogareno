@@ -1,0 +1,81 @@
+      <div id="page-vacaciones" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-calendar"></i> Vacaciones</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:11px;color:var(--text-muted)">Período</label>
+            <select id="vac-periodo" onchange="vacCambioPeriodo()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px"></select>
+            <button class="btn btn-sm" onclick="exportVacSaldosPDF()"><i class="ic ic-download"></i> Saldos (PDF)</button>
+            <button class="btn btn-sm btn-primary" onclick="openVacModal()">+ Cargar vacaciones</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:14px">
+          <i class="ic ic-calendar"></i><div>El plantel sale del panel <strong>Empleados</strong>: acá no se da de alta gente.
+          Los días que corresponden se calculan por <strong>antigüedad al 31/12 del período</strong> (14 · 21 · 28 · 35 días corridos según la escala),
+          y si alguien no llegó a trabajar medio año se le liquida <strong>1 día cada 20 trabajados</strong>.
+          El <strong>período es el año al que corresponden</strong>, no el año en que se toman: se gozan del <strong>1/10 al 30/4</strong>,
+          así que un descanso de enero suele pertenecer al año anterior.</div>
+        </div>
+
+        <div class="tabs" id="vac-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="vac-btn-saldos" onclick="switchVacacionesTab('saldos')"><i class="ic ic-user"></i> Saldos</button>
+          <button class="tab" id="vac-btn-calendario" onclick="switchVacacionesTab('calendario')"><i class="ic ic-calendar"></i> Calendario</button>
+          <button class="tab" id="vac-btn-historial" onclick="switchVacacionesTab('historial')"><i class="ic ic-list"></i> Historial</button>
+        </div>
+
+        <!-- ══════════ TAB: SALDOS ══════════ -->
+        <div id="vac-tab-saldos">
+          <div class="metrics-grid" id="vac-resumen" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
+          <div id="vac-aviso"></div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="vac-search" placeholder="🔍 Buscar por nombre, puesto o área..." oninput="renderVacSaldos()"
+              style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+            <button class="btn btn-sm" id="vac-filtro-pend" onclick="toggleVacPendientes()"><i class="ic ic-alert"></i> Solo con días pendientes</button>
+            <span id="vac-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div id="vac-saldos-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
+        </div>
+
+        <!-- ══════════ TAB: CALENDARIO ══════════
+             Lo que importa no es la lista sino la SUPERPOSICIÓN: si se van tres
+             de la misma área la misma semana hay que verlo antes de aprobar. -->
+        <div id="vac-tab-calendario" style="display:none">
+          <div class="card" style="margin-bottom:14px;padding:14px 18px">
+            <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes</label>
+                <input type="month" id="vac-mes" onchange="renderVacCalendario()">
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);flex:1;min-width:200px">
+                Muestra las licencias de <strong>cualquier período</strong> que toquen ese mes: en enero se están gozando las del año anterior.
+              </div>
+            </div>
+          </div>
+          <div id="vac-cal-cont"></div>
+        </div>
+
+        <!-- ══════════ TAB: HISTORIAL ══════════ -->
+        <div id="vac-tab-historial" style="display:none">
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <input type="search" id="vac-hist-search" placeholder="🔍 Buscar por empleado..." oninput="renderVacHistorial()"
+                style="width:280px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+                <input type="checkbox" id="vac-hist-todos" onchange="renderVacHistorial()"> Ver todos los períodos
+              </label>
+              <span id="vac-hist-info" style="font-size:12px;color:var(--text-muted)"></span>
+            </div>
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Empleado</th><th>Desde</th><th>Hasta</th><th style="text-align:right">Días</th>
+              <th>Corresponde a</th><th>Estado</th><th style="width:90px"></th>
+            </tr></thead>
+            <tbody id="vac-hist-rows"></tbody>
+          </table></div></div>
+        </div>
+
+      </div>
