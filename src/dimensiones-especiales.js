@@ -136,10 +136,19 @@ function dimFaltantesEnSolapa() {
   const clave = d => normNombre(d.cliente) + '|' + normNombre(d.nombre) + '|' + normNombre(d.zona);
   const acaSet = new Set();
   cat.forEach(d => { if (dimEsTipo(d)) acaSet.add(clave(d)); });
+  // Las que están en el otro lado con OTRA REDACCIÓN no son faltantes: tienen
+  // su propio aviso, con la opción de unificar el nombre. Contarlas acá era lo
+  // que hacía que las mismas 11 aparecieran como ausentes en las dos solapas.
+  const emparejadas = new Set();
+  dimParesDesalineados().forEach(p => {
+    emparejadas.add(normNombre(p.cond.cliente) + '|' + normNombre(p.cond.nombre));
+    emparejadas.add(normNombre(p.cli.cliente) + '|' + normNombre(p.cli.nombre));
+  });
   const grupos = new Map();
   cat.forEach(d => {
     if (dimEsTipo(d) || acaSet.has(clave(d))) return;
     const k = normNombre(d.cliente) + '|' + normNombre(d.nombre);
+    if (emparejadas.has(k)) return;
     if (!grupos.has(k)) grupos.set(k, { cliente: d.cliente, nombre: d.nombre, zonas: [] });
     grupos.get(k).zonas.push(d.zona);
   });
@@ -147,9 +156,150 @@ function dimFaltantesEnSolapa() {
     String(a.cliente).localeCompare(String(b.cliente)) || String(a.nombre).localeCompare(String(b.nombre)));
 }
 
+// ── Condiciones escritas DISTINTO en cada tarifario ─────────────────────────
+// Las dos planillas las carga gente distinta y la misma condición termina con
+// otra redacción de cada lado: "COMPRESORES" / "COMPRESORES 25000",
+// "PINTURERIA SENTIDOS" / "SENTIDOS PINTURERIAS", "RR MOTOSPORT" / "RR
+// MOTORSPORT". El aviso de faltantes las contaba como ausentes en LOS DOS
+// lados —11 acá y las mismas 11 allá— y no había forma de que apareciera en
+// ninguno. Peor: el envío guarda el nombre del lado CONDUCTOR, así que el
+// cadete cobra la condición y al cliente se le factura la tarifa común de la
+// zona, sin que nadie lo note.
+function _dimTokens(s) {
+  return String(s || '').toUpperCase().normalize('NFD')
+    .replace(/[̀-ͯ]/g, '').split(/[^A-Z0-9]+/).filter(Boolean);
+}
+// "CALZADO" ≈ "CALZADOS" (plural/sufijo), pero no cualquier prefijo corto.
+function _dimTokenParecido(a, b) {
+  if (a === b) return true;
+  const [c, l] = a.length <= b.length ? [a, b] : [b, a];
+  return c.length >= 4 && l.startsWith(c);
+}
+function _dimSim(a, b) {
+  const A = _dimTokens(a), B = _dimTokens(b);
+  if (!A.length || !B.length) return 0;
+  const usados = new Set();
+  let comunes = 0;
+  A.forEach(x => {
+    const j = B.findIndex((y, k) => !usados.has(k) && _dimTokenParecido(x, y));
+    if (j >= 0) { usados.add(j); comunes++; }
+  });
+  return comunes / (A.length + B.length - comunes);
+}
+
+// Devuelve [{ cond, cli, motivo, score }] — cond/cli = { cliente, nombre }.
+// Es candidato si coincide EXACTO el cliente o la condición (el caso real: una
+// de las dos cosas la escribieron igual), o si las dos se parecen bastante.
+// El emparejado es 1 a 1 por mejor puntaje, así dos condiciones parecidas del
+// mismo cliente no se cruzan entre sí.
+function dimParesDesalineados() {
+  const cat = AppData.dimCatalogo || [];
+  const par = (d) => normNombre(d.cliente) + '|' + normNombre(d.nombre);
+  const setDe = t => {
+    const m = new Map();
+    cat.forEach(d => { if (((d.tipo || 'conductor') === t)) m.set(par(d), { cliente: d.cliente, nombre: d.nombre }); });
+    return m;
+  };
+  const mCond = setDe('conductor'), mCli = setDe('cliente');
+  const soloCond = Array.from(mCond.entries()).filter(([k]) => !mCli.has(k)).map(([, v]) => v);
+  const soloCli = Array.from(mCli.entries()).filter(([k]) => !mCond.has(k)).map(([, v]) => v);
+  if (!soloCond.length || !soloCli.length) return [];
+
+  const cand = [];
+  soloCond.forEach((c, i) => soloCli.forEach((v, j) => {
+    const mismoCli = normNombre(c.cliente) === normNombre(v.cliente);
+    const mismoNom = normNombre(c.nombre) === normNombre(v.nombre);
+    const sc = mismoCli ? 1 : _dimSim(c.cliente, v.cliente);
+    const sn = mismoNom ? 1 : _dimSim(c.nombre, v.nombre);
+    if (!(mismoCli || mismoNom || (sc >= 0.5 && sn >= 0.5))) return;
+    cand.push({ i, j, score: sc + sn, motivo: mismoCli ? 'mismo cliente' : mismoNom ? 'misma condición' : 'ambos parecidos' });
+  }));
+  cand.sort((a, b) => b.score - a.score);
+  const usC = new Set(), usV = new Set(), pares = [];
+  cand.forEach(x => {
+    if (usC.has(x.i) || usV.has(x.j)) return;
+    usC.add(x.i); usV.add(x.j);
+    pares.push({ cond: soloCond[x.i], cli: soloCli[x.j], motivo: x.motivo, score: x.score });
+  });
+  return pares.sort((a, b) => String(a.cond.cliente).localeCompare(String(b.cond.cliente)) ||
+                              String(a.cond.nombre).localeCompare(String(b.cond.nombre)));
+}
+
+// Renombra las filas del tarifario de CLIENTES para que coincidan con las de
+// CONDUCTOR. La dirección NO es arbitraria: el envío guarda el nombre del lado
+// conductor (`registros.dim_especial` / `dim_cliente`, que es lo que ofrece el
+// panel Conductores al asignar), así que ese es el que tiene que mandar.
+// Renombrar el otro lado dejaría huérfanos los envíos ya asignados.
+async function unificarNombresDimension(soloIdx) {
+  const pares = dimParesDesalineados();
+  if (!pares.length) return;
+  const lista = (soloIdx === undefined || soloIdx === null) ? pares : [pares[soloIdx]].filter(Boolean);
+  if (!lista.length) return;
+
+  const detalle = lista.slice(0, 8).map(p =>
+    '· ' + p.cli.cliente + ' · ' + p.cli.nombre + String.fromCharCode(10) +
+    '     → ' + p.cond.cliente + ' · ' + p.cond.nombre).join(String.fromCharCode(10));
+  if (!confirm('Se van a renombrar ' + lista.length + ' condición(es) del tarifario de CLIENTES ' +
+    'para que coincidan con las de CONDUCTOR:' + String.fromCharCode(10) + String.fromCharCode(10) + detalle +
+    (lista.length > 8 ? String.fromCharCode(10) + '…y ' + (lista.length - 8) + ' más' : '') +
+    String.fromCharCode(10) + String.fromCharCode(10) +
+    'Manda el nombre de CONDUCTOR porque es el que queda grabado en el envío.' + String.fromCharCode(10) +
+    'Los precios no se tocan: solo cambia el nombre.')) return;
+
+  const clave = d => normNombre(d.cliente) + '|' + normNombre(d.nombre) + '|' + normNombre(d.zona);
+  const yaExiste = new Set();
+  (AppData.dimCatalogo || []).forEach(d => { if (d.tipo === 'cliente') yaExiste.add(clave(d)); });
+
+  let renombradas = 0, chocaron = 0;
+  lista.forEach(p => {
+    const kOrigen = normNombre(p.cli.cliente) + '|' + normNombre(p.cli.nombre);
+    (AppData.dimCatalogo || []).forEach(d => {
+      if (d.tipo !== 'cliente') return;
+      if (normNombre(d.cliente) + '|' + normNombre(d.nombre) !== kOrigen) return;
+      const destino = normNombre(p.cond.cliente) + '|' + normNombre(p.cond.nombre) + '|' + normNombre(d.zona);
+      // Si ya hay una fila de cliente con el nombre destino en esa zona, no se
+      // pisa su precio: se avisa y se deja como está.
+      if (yaExiste.has(destino)) { chocaron++; return; }
+      yaExiste.delete(clave(d));
+      d.cliente = p.cond.cliente;
+      d.nombre = p.cond.nombre;
+      yaExiste.add(destino);
+      renombradas++;
+    });
+  });
+
+  saveDimCatalogo();
+  renderDimensionesEspeciales();
+  showToast('✅ ' + renombradas + ' fila(s) renombradas' + (chocaron ? ' · ' + chocaron + ' se dejaron sin tocar (ya existía ese nombre)' : ''));
+}
+
 // Aviso arriba de la tabla: qué falta registrar acá y qué está sin precio.
 function _dimBloqueAvisos() {
   let html = '';
+
+  // Primero lo que NO es un faltante sino una diferencia de redacción: si no se
+  // resuelve esto, el aviso de abajo cuenta las mismas condiciones en los dos
+  // lados y no se puede completar en ninguno.
+  const pares = dimParesDesalineados();
+  if (pares.length) {
+    const filas = pares.slice(0, 8).map((p, i) =>
+      '<tr>' +
+      '<td style="padding:3px 8px 3px 0;font-size:11px"><span style="opacity:.65">CONDUCTOR</span><br><strong>' + p.cond.cliente + '</strong> · ' + p.cond.nombre + '</td>' +
+      '<td style="padding:3px 8px;font-size:11px"><span style="opacity:.65">CLIENTES</span><br><strong>' + p.cli.cliente + '</strong> · ' + p.cli.nombre + '</td>' +
+      '<td style="padding:3px 0;text-align:right"><button class="btn btn-sm" onclick="unificarNombresDimension(' + i + ')">Unificar</button></td>' +
+      '</tr>').join('');
+    html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+      '<i class="ic ic-alert"></i><div><strong>' + pares.length + ' condición(es) están cargadas con NOMBRES DISTINTOS en cada tarifario</strong> — ' +
+      'son la misma condición escrita de otra manera, por eso figuran como faltantes en los dos lados y no se pueden completar en ninguno. ' +
+      'Mientras no coincidan, al conductor se le paga la condición y <strong>al cliente se le factura la tarifa común de la zona</strong>.' +
+      '<div style="overflow-x:auto;margin:8px 0"><table style="border-collapse:collapse">' + filas + '</table></div>' +
+      (pares.length > 8 ? '<div style="font-size:11px;opacity:.85;margin-bottom:6px">…y ' + (pares.length - 8) + ' más</div>' : '') +
+      '<button class="btn btn-sm" onclick="unificarNombresDimension()">Unificar las ' + pares.length + '</button>' +
+      '<span style="font-size:11px;margin-left:8px;opacity:.85">Se renombran las de <strong>CLIENTES</strong> para que coincidan con las de <strong>CONDUCTOR</strong>, ' +
+      'que es el nombre que queda grabado en el envío. Los precios no se tocan.</span>' +
+      '</div></div>';
+  }
+
   const faltan = dimFaltantesEnSolapa();
   if (faltan.length) {
     const nZonas = faltan.reduce((s, g) => s + g.zonas.length, 0);
