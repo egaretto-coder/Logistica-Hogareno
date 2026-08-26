@@ -497,6 +497,7 @@ function editarRegistroConductor(idx, campo, valor) {
   condEditPendientes = true;
   actualizarEstadoEdicion('Cambios sin guardar…');
   _repintarPanelDeEnvios();
+  _avisarImpactoCobro(r);     // el envío quedó pago pero ¿se le cobra a alguien?
   // Autoguardado con espera corta: agrupa varias ediciones en un solo guardado.
   clearTimeout(condEditTimer);
   condEditTimer = setTimeout(guardarEdicionConductores, 2500);
@@ -977,3 +978,29 @@ function closeModal(e) {
 }
 
 // ===== REPORTE ZONA =====
+
+// ── Aviso de impacto al corregir un envío a mano ────────────────────────────
+// Cada corrección manual mueve plata de los dos lados: lo que se le paga al
+// conductor y lo que se le factura al cliente. El operador corrige mirando UN
+// lado y no tiene forma de ver el otro. Este aviso lo dice en el momento, que
+// es cuando se puede arreglar: si el envío quedó pago pero sin nadie a quien
+// cobrarle, avisa POR QUÉ y qué falta cargar.
+function _avisarImpactoCobro(r) {
+  if (typeof diagnosticoCobroEnvio !== 'function') return;
+  let d;
+  try { d = diagnosticoCobroEnvio(r); } catch (e) { return; }
+  if (!d || d.noContabiliza) return;
+  const tk = r.tracking ? (' ' + r.tracking) : '';
+  if (d.cobra) {
+    showToast('✅ Envío' + tk + ': se paga ' + fmtPeso(d.pagado) + ' · se factura ' + fmtPeso(d.cobrado));
+    return;
+  }
+  const comoArreglar = {
+    sin_zona:    'cargale la zona',
+    sin_cliente: 'asignale el cliente',
+    no_alta:     'dalo de alta en Clientes y tarifas',
+    sin_tarifa:  'cargá la tarifa de ' + (d.zona || 'esa zona') + ' en su tarifario'
+  }[d.motivo] || 'revisalo';
+  showToast('⚠️ Envío' + tk + ': se paga ' + fmtPeso(d.pagado) +
+    ' y NO se le factura a nadie (' + d.texto + ') — ' + comoArreglar);
+}

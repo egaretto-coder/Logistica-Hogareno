@@ -35,6 +35,12 @@
         <!-- ══════════ TAB: CLIENTES ══════════ -->
         <div id="dash-tab-clientes">
           <div class="metrics-grid" id="dash-cli-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
+
+          <!-- Lo que se paga y no se le cobra a nadie. Va ARRIBA de la renta:
+               un envío que se paga y factura $0 no aparece en la liquidación de
+               ningún cliente, así que sin este control nadie lo extraña. -->
+          <div id="dash-fuga"></div>
+
           <div class="card" style="margin-top:16px">
             <div class="card-header dash-report-head">
               <span class="card-title"><i class="ic ic-building"></i> Renta por cliente</span>

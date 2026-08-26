@@ -1372,3 +1372,93 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   if (opts.doc) return doc;   // el combinado guarda una sola vez, al final
   doc.save('Liquidacion_' + cliente.replace(/\s+/g, '_') + '_' + rango.hasta.replace(/\//g, '-') + '.pdf');
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  CONCILIACIÓN — lo que se PAGA y no se COBRA
+//  Un envío entregado siempre se le paga al conductor. Que además se le
+//  facture a alguien depende de tres cosas que se cargan por separado: que el
+//  envío traiga cliente, que ese cliente esté de alta y que tenga tarifa en esa
+//  zona. Si falla cualquiera, el envío se paga y se factura $0 — y no aparece
+//  en la liquidación de ningún cliente, así que nadie lo extraña.
+//  Medido sobre producción: 1.690 de 8.335 envíos pagados desde el 20/08.
+// ════════════════════════════════════════════════════════════════════════
+
+// Por qué un envío no se cobra. El orden importa: se informa la PRIMERA causa,
+// que es la que hay que resolver para destrabarlo.
+const FUGA_MOTIVOS = {
+  sin_zona:    { label: 'Sin zona',                 detalle: 'El envío no tiene zona ni localidad: no hay con qué buscar la tarifa.', color: '#b91c1c' },
+  sin_cliente: { label: 'Sin cliente',              detalle: 'El envío no dice a quién facturarle. Los cargados a mano piden el cliente; los importados lo traen en la columna K.', color: '#b91c1c' },
+  no_alta:     { label: 'Cliente sin ficha',        detalle: 'El cliente aparece en los envíos pero no está dado de alta en Clientes y tarifas.', color: '#c2410c' },
+  sin_tarifa:  { label: 'Sin tarifa en esa zona',   detalle: 'El cliente está de alta pero no tiene precio de venta cargado para esa zona.', color: '#b45309' },
+};
+
+// Recorre los envíos que SE PAGAN en el rango y los clasifica. `pagado` es lo
+// que cuesta ese envío, así que la suma de cada motivo es la plata en juego.
+function conciliacionCobro(rango) {
+  const desde = rango && rango.desdeD ? rango.desdeD : null;
+  const hasta = rango && rango.hastaD ? rango.hastaD : null;
+  const enAlta = new Set((AppData.clientes || []).map(c => clienteKey(c.codigo)).filter(Boolean));
+
+  const res = {
+    envios: 0, pagadoTotal: 0, cobradoTotal: 0,
+    fugaEnvios: 0, fugaPagado: 0,
+    porMotivo: {}, porCliente: new Map(), casos: []
+  };
+  Object.keys(FUGA_MOTIVOS).forEach(m => { res.porMotivo[m] = { envios: 0, pagado: 0 }; });
+
+  (AppData.records || []).forEach((r, i) => {
+    if (!contabilizaRegistro(r)) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(r.fecha);
+      if (!f) return;
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    const pagado = precioPagadoConductor(r);
+    res.envios++; res.pagadoTotal += pagado;
+
+    const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
+    const cod = clienteCodDeRegistro(r);
+    const cobrado = cod ? precioVentaEnvio(cod, r) : 0;
+
+    let motivo = null;
+    if (!zona) motivo = 'sin_zona';
+    else if (!cod) motivo = 'sin_cliente';
+    else if (!enAlta.has(cod)) motivo = 'no_alta';
+    else if (!(cobrado > 0)) motivo = 'sin_tarifa';
+
+    if (!motivo) { res.cobradoTotal += cobrado; return; }
+
+    res.fugaEnvios++; res.fugaPagado += pagado;
+    res.porMotivo[motivo].envios++; res.porMotivo[motivo].pagado += pagado;
+
+    const clave = cod || '(sin cliente)';
+    let c = res.porCliente.get(clave);
+    if (!c) { c = { cod: clave, nombre: cod ? clienteNombreDe(cod) : '(sin cliente)', envios: 0, pagado: 0, motivos: new Set(), zonas: new Map() }; res.porCliente.set(clave, c); }
+    c.envios++; c.pagado += pagado; c.motivos.add(motivo);
+    if (zona) c.zonas.set(zona, (c.zonas.get(zona) || 0) + 1);
+    if (res.casos.length < 500) res.casos.push({ i, r, zona, cod, pagado, motivo });
+  });
+
+  res.clientes = Array.from(res.porCliente.values()).sort((a, b) => b.pagado - a.pagado);
+  return res;
+}
+
+// Diagnóstico de UN envío, para avisar en el momento de editarlo. Devuelve
+// { cobra, pagado, cobrado, motivo, texto } — 'cobra' false = se paga y no se cobra.
+function diagnosticoCobroEnvio(r) {
+  if (!r || !contabilizaRegistro(r)) return { cobra: true, noContabiliza: true, pagado: 0, cobrado: 0 };
+  const pagado = precioPagadoConductor(r);
+  const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
+  const cod = clienteCodDeRegistro(r);
+  const cobrado = cod ? precioVentaEnvio(cod, r) : 0;
+  let motivo = null;
+  if (!zona) motivo = 'sin_zona';
+  else if (!cod) motivo = 'sin_cliente';
+  else if (!(AppData.clientes || []).some(c => clienteKey(c.codigo) === cod)) motivo = 'no_alta';
+  else if (!(cobrado > 0)) motivo = 'sin_tarifa';
+  return {
+    cobra: !motivo, motivo, pagado, cobrado, zona, cod,
+    texto: motivo ? (FUGA_MOTIVOS[motivo] || {}).label : ''
+  };
+}

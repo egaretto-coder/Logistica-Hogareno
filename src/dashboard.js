@@ -352,6 +352,7 @@ function dashRentaClientes() {
 function renderDashClientes() {
   const body = document.getElementById('dash-cli-body');
   if (!body) return;
+  renderDashFuga();   // lo que se paga y no se cobra, antes de la renta
   const todos = dashRentaClientes();
   const q = (document.getElementById('dash-cli-search')?.value || '').toLowerCase().trim();
   const lista = todos.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
@@ -448,4 +449,73 @@ function verRentaCliente(cod) {
       '<th style="text-align:right">Factura</th><th style="text-align:right">Costo</th><th style="text-align:right">Margen</th></tr></thead>' +
       '<tbody>' + cuerpo + '</tbody></table></div>';
   document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  CONTROL DE FUGA — lo que se paga y no se cobra
+//  Un envío entregado siempre se le paga al conductor. Que se le facture a
+//  alguien depende de tres cargas separadas (que el envío traiga cliente, que
+//  el cliente esté de alta y que tenga tarifa en esa zona). Si falla una, el
+//  envío se factura $0 y NO aparece en la liquidación de ningún cliente: no hay
+//  ningún lugar donde se note el faltante. Por eso el control va acá arriba,
+//  antes de la renta, y no escondido en un filtro.
+// ════════════════════════════════════════════════════════════════════════
+let dashFugaAbierto = false;
+function toggleDashFuga() { dashFugaAbierto = !dashFugaAbierto; renderDashFuga(); }
+
+function renderDashFuga() {
+  const cont = document.getElementById('dash-fuga');
+  if (!cont || typeof conciliacionCobro !== 'function') return;
+  const c = conciliacionCobro(_dashRangoCliente());
+
+  if (!c.envios) { cont.innerHTML = ''; return; }
+  if (!c.fugaEnvios) {
+    cont.innerHTML = '<div class="alert" style="margin:16px 0 0;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">' +
+      '<i class="ic ic-check-circle"></i><div><strong>Todo lo que se paga se cobra</strong> — ' +
+      'los ' + c.envios.toLocaleString('es-AR') + ' envíos del período se le facturan a un cliente.</div></div>';
+    return;
+  }
+
+  const pct = (c.fugaEnvios * 100 / c.envios);
+  const motivos = Object.entries(c.porMotivo).filter(([, v]) => v.envios > 0)
+    .sort((a, b) => b[1].pagado - a[1].pagado)
+    .map(([k, v]) => {
+      const m = FUGA_MOTIVOS[k] || { label: k, detalle: '', color: '#b45309' };
+      return '<div style="border-left:3px solid ' + m.color + ';padding:2px 0 2px 8px">' +
+        '<div style="font-size:12px;font-weight:700">' + m.label + ' · ' + v.envios.toLocaleString('es-AR') + ' envío(s)</div>' +
+        '<div style="font-size:11px;opacity:.85">' + fmtPeso(v.pagado) + ' pagados · ' + m.detalle + '</div></div>';
+    }).join('');
+
+  const filas = c.clientes.slice(0, 12).map(x => {
+    const zonas = Array.from(x.zonas.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4)
+      .map(([z, n]) => z + ' (' + n + ')').join(', ');
+    const etq = Array.from(x.motivos).map(m => (FUGA_MOTIVOS[m] || {}).label || m).join(' · ');
+    return '<tr>' +
+      '<td><strong>' + x.nombre + '</strong>' + (x.cod !== x.nombre ? '<div style="font-size:10px;color:var(--text-muted)">' + x.cod + '</div>' : '') + '</td>' +
+      '<td style="font-size:11px">' + etq + '</td>' +
+      '<td style="font-size:11px;color:var(--text-muted)">' + (zonas || '—') + '</td>' +
+      '<td class="mono" style="text-align:right">' + x.envios.toLocaleString('es-AR') + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.pagado) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  cont.innerHTML =
+    '<div class="alert" style="margin:16px 0 0;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+    '<i class="ic ic-alert"></i><div>' +
+      '<strong>' + c.fugaEnvios.toLocaleString('es-AR') + ' de ' + c.envios.toLocaleString('es-AR') +
+      ' envíos (' + pct.toFixed(1) + '%) se pagan y no se le facturan a nadie</strong> — ' +
+      '<strong>' + fmtPeso(c.fugaPagado) + '</strong> pagados a conductores que no se cobran. ' +
+      'Esos envíos no salen en la liquidación de ningún cliente, así que no aparecen como faltante en ningún lado.' +
+      '<div style="display:grid;gap:6px;margin:10px 0">' + motivos + '</div>' +
+      '<button class="btn btn-sm" onclick="toggleDashFuga()">' +
+        (dashFugaAbierto ? 'Ocultar el detalle' : 'Ver qué clientes son') + '</button>' +
+      (dashFugaAbierto
+        ? '<div class="table-wrap" style="margin-top:10px;background:var(--surface-1);border-radius:8px">' +
+          '<table><thead><tr><th>Cliente</th><th>Falta</th><th>Zonas</th>' +
+          '<th style="text-align:right">Envíos</th><th style="text-align:right">Pagado</th></tr></thead>' +
+          '<tbody>' + filas + '</tbody></table>' +
+          (c.clientes.length > 12 ? '<div style="padding:6px 10px;font-size:11px;color:var(--text-muted)">…y ' + (c.clientes.length - 12) + ' cliente(s) más</div>' : '') +
+          '</div>'
+        : '') +
+    '</div></div>';
 }
