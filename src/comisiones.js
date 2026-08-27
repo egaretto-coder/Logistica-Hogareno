@@ -187,31 +187,64 @@ function mesesPagoComision(row) {
   for (let i = 0; i < 5; i++) arr.push(addMeses(mi, i));
   return arr;
 }
+// Último mes que se cobra (el 5.º). Después de ese mes la comisión ya no corre.
+function mesFinComision(row) { return addMeses(row.mes_inicio || mesInicioDefaultCliente(row.cliente), 4); }
+
+// ── Estado del cliente en comisión ──────────────────────────────────────────
+// `activo` comisiona; `baja` es el cliente que se perdió: deja de comisionar
+// desde su mes de baja (inclusive) pero la fila NO se borra. El vendedor tiene
+// que poder ver POR QUÉ dejó de cobrar por ese cliente, y quitarlo del registro
+// haría desaparecer la explicación junto con el dato.
+function comisionEsBaja(row) { return String(row.estado || 'activo').toLowerCase() === 'baja'; }
+// ¿Corresponde comisión de esta fila en `periodo`?
+function comisionaEnMes(row, periodo) {
+  if (!mesesPagoComision(row).includes(periodo)) return false;
+  if (!comisionEsBaja(row)) return true;
+  const mb = row.mes_baja || '';
+  return mb ? periodo < mb : false;   // sin mes cargado, la baja corta desde siempre
+}
 
 // ── Cálculo de comisiones de un mes (solo filas confirmadas/bloqueadas) ─────
 function calcComisionesMes(periodo) {
   const porVend = {};
+  const bajas = [];
   AppData.comisionClientes.forEach(row => {
     if (!row.bloqueado) return;
+    const meses = mesesPagoComision(row);
+    if (!meses.includes(periodo)) return;
+    const v = row.vendedor || '(sin vendedor)';
+    const nroMes = meses.indexOf(periodo) + 1;
+    // Los de baja caen dentro de la ventana de 5 meses pero cobran $0. Se listan
+    // igual, como en la planilla: un renglón que desaparece se lee como un error
+    // de cálculo, y el vendedor no tendría dónde ver que perdió al cliente.
+    if (!comisionaEnMes(row, periodo)) {
+      bajas.push({ vendedor: v, cliente: row.cliente, categoria: row.categoria || '', nroMes, mesBaja: row.mes_baja || '', motivo: row.motivo_baja || '' });
+      return;
+    }
     const monto = _num(row.monto);
     if (monto <= 0) return;
-    if (!mesesPagoComision(row).includes(periodo)) return;
-    const v = row.vendedor || '(sin vendedor)';
     if (!porVend[v]) porVend[v] = { vendedor: v, clientes: [], monto: 0 };
-    const meses = mesesPagoComision(row);
-    porVend[v].clientes.push({ cliente: row.cliente, monto, categoria: row.categoria, nroMes: meses.indexOf(periodo) + 1 });
+    porVend[v].clientes.push({ cliente: row.cliente, monto, categoria: row.categoria, nroMes });
     porVend[v].monto += monto;
   });
   const vendedores = Object.values(porVend).sort((a, b) => b.monto - a.monto);
   const totalVendedores = vendedores.reduce((s, v) => s + v.monto, 0);
   const pct = supervisorPct();
   const supNombre = supervisorName();
-  const supMonto = Math.round(totalVendedores * pct / 100);
-  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto };
+  // Sin redondear: el % del equipo cae en centavos y el pago registrado tiene que
+  // guardar lo que realmente corresponde (fmtPeso ya redondea al mostrarlo).
+  const supMonto = totalVendedores * pct / 100;
+  bajas.sort((a, b) => String(a.vendedor).localeCompare(String(b.vendedor)) || String(a.cliente).localeCompare(String(b.cliente)));
+  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto, bajas };
 }
 
-function comisionPagoDe(periodo, beneficiario) {
-  return AppData.comisionPagos.find(p => p.periodo === periodo && normNombre(p.beneficiario) === normNombre(beneficiario));
+// El supervisor puede ser TAMBIÉN vendedor (cobra por sus propios clientes y
+// además el % del equipo), así que el pago se identifica por su TIPO: sin eso,
+// marcar uno de los dos como pagado dejaba el otro tildado sin haberlo abonado.
+function comisionPagoDe(periodo, beneficiario, tipo) {
+  return AppData.comisionPagos.find(p => p.periodo === periodo
+    && normNombre(p.beneficiario) === normNombre(beneficiario)
+    && (tipo ? (p.tipo || 'vendedor') === tipo : true));
 }
 
 // ── Persistencia local ──────────────────────────────────────────────────────
@@ -486,9 +519,15 @@ function renderComisionClientes() {
     const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[1]);
 
     let estadoHtml, acciones;
-    if (bloq) {
-      estadoHtml = '<span class="badge" style="background:#dcfce7;color:#166534">✓ Confirmado</span>';
-      acciones = '<button class="btn btn-sm" onclick="desbloquearComisionCliente(' + row.id + ')" title="Volver a evaluar">↺ Reabrir</button>';
+    const baja = comisionEsBaja(row);
+    if (baja) {
+      estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c">Baja' + (row.mes_baja ? ' · ' + mesLabel(row.mes_baja) : '') + '</span>' +
+        (row.motivo_baja ? '<div class="muted" style="font-size:10px;margin-top:2px">' + row.motivo_baja + '</div>' : '');
+      acciones = '<button class="btn btn-sm" style="white-space:nowrap" onclick="reactivarComisionCliente(' + row.id + ')" title="Vuelve a comisionar los meses que le queden">↺ Reactivar</button>';
+    } else if (bloq) {
+      estadoHtml = '<span class="badge" style="background:#dcfce7;color:#166534">✓ Activo</span>';
+      acciones = '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;white-space:nowrap" onclick="darDeBajaComisionCliente(' + row.id + ')" title="El cliente se dio de baja: deja de comisionar">Dar de baja</button>' +
+        '<button class="btn btn-sm" onclick="desbloquearComisionCliente(' + row.id + ')" title="Volver a evaluar">↺</button>';
     } else if (!ev.tieneEscala) {
       estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c">Falta escala</span>';
       acciones = '';
@@ -501,12 +540,16 @@ function renderComisionClientes() {
     }
     const warnTarifa = (!bloq && ev.rango && ev.sinTarifa > 0) ? ' <span title="Hay envíos sin tarifa de venta cargada — la facturación evaluada puede estar incompleta" style="color:#b45309">⚠</span>' : '';
 
-    return '<tr' + (bloq ? '' : ' style="background:var(--surface-0)"') + '>' +
+    // La fila de baja se atenúa y el monto va tachado: la comisión existió y hoy
+    // no corre, que es distinto de no haber tenido nunca.
+    const trStyle = baja ? ' style="opacity:.6"' : (bloq ? '' : ' style="background:var(--surface-0)"');
+    const montoTxt = monto > 0 ? (baja ? '<s>' + fmtPeso(monto) + '</s>' : fmtPeso(monto)) : '—';
+    return '<tr' + trStyle + '>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(row.cliente) + ';width:26px;height:26px;font-size:9px">' + initials(row.cliente) + '</div><strong>' + row.cliente + '</strong></div></td>' +
       '<td>' + (row.vendedor || '<span class="muted">—</span>') + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(fact) + warnTarifa + '</td>' +
       '<td style="text-align:center">' + cat + '</td>' +
-      '<td class="mono" style="text-align:right;font-weight:700">' + (monto > 0 ? fmtPeso(monto) : '—') + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + montoTxt + '</td>' +
       '<td style="font-size:11px;color:var(--text-secondary)">' + mesesTxt + '</td>' +
       '<td style="text-align:center">' + estadoHtml + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' + acciones +
@@ -531,6 +574,7 @@ function openAddComisionClienteModal() {
   document.getElementById('mcc-vendedor').value = '';
   document.getElementById('mcc-fecha').value = '';
   document.getElementById('mcc-mesinicio').value = '';
+  _setEstadoComisionModal('activo', '', '');
   renderComisionClientes(); // refresca datalists
   actualizarPreviewComisionCliente();
   document.getElementById('modal-cc-backdrop').style.display = 'flex';
@@ -546,8 +590,27 @@ function editComisionCliente(id) {
   document.getElementById('mcc-vendedor').value = row.vendedor || '';
   document.getElementById('mcc-fecha').value = row.fecha_alta && /^\d{4}-\d{2}-\d{2}$/.test(row.fecha_alta) ? row.fecha_alta : '';
   document.getElementById('mcc-mesinicio').value = row.mes_inicio || '';
+  _setEstadoComisionModal(row.estado || 'activo', row.mes_baja || '', row.motivo_baja || '');
   actualizarPreviewComisionCliente();
   document.getElementById('modal-cc-backdrop').style.display = 'flex';
+}
+// Estado del cliente dentro del modal (activo / baja + desde cuándo y por qué).
+function _setEstadoComisionModal(estado, mesBaja, motivo) {
+  const sel = document.getElementById('mcc-estado');
+  if (!sel) return;
+  sel.value = String(estado || 'activo').toLowerCase() === 'baja' ? 'baja' : 'activo';
+  const mb = document.getElementById('mcc-mesbaja'); if (mb) mb.value = mesBaja || '';
+  const mo = document.getElementById('mcc-motivobaja'); if (mo) mo.value = motivo || '';
+  toggleBajaComisionCliente();
+}
+function toggleBajaComisionCliente() {
+  const sel = document.getElementById('mcc-estado');
+  const box = document.getElementById('mcc-baja-box');
+  if (!sel || !box) return;
+  const esBaja = sel.value === 'baja';
+  box.style.display = esBaja ? 'block' : 'none';
+  const mb = document.getElementById('mcc-mesbaja');
+  if (esBaja && mb && !mb.value) mb.value = mesActualYYYYMM();
 }
 function closeComisionClienteModal(e) {
   if (!e || e.target.id === 'modal-cc-backdrop') document.getElementById('modal-cc-backdrop').style.display = 'none';
@@ -580,6 +643,10 @@ async function guardarComisionClienteModal() {
   const vendedor = (document.getElementById('mcc-vendedor').value || '').trim().toUpperCase();
   const fecha_alta = document.getElementById('mcc-fecha').value || '';
   const mes_inicio = document.getElementById('mcc-mesinicio').value || '';
+  const estado = (document.getElementById('mcc-estado')?.value === 'baja') ? 'baja' : 'activo';
+  const mes_baja = estado === 'baja' ? (document.getElementById('mcc-mesbaja')?.value || '') : '';
+  const motivo_baja = estado === 'baja' ? (document.getElementById('mcc-motivobaja')?.value || '').trim() : '';
+  if (estado === 'baja' && !mes_baja) { alert('Indicá desde qué mes el cliente deja de comisionar.'); return; }
   if (!cliente) { alert('Elegí un cliente.'); return; }
   if (!vendedor) { alert('Elegí o escribí un vendedor.'); return; }
   const dup = AppData.comisionClientes.find(c => normCliente(c.cliente) === normCliente(cliente) && c.id !== comisionClienteEditId);
@@ -590,11 +657,12 @@ async function guardarComisionClienteModal() {
       try { const vr = await DB.insertRow('vendedores', { nombre: vendedor, activo: true }); AppData.vendedores.push({ id: vr.id, nombre: vendedor, activo: true }); } catch (e) {}
     }
     if (comisionClienteEditId != null) {
-      await DB.updateWhere('comision_clientes', 'id', comisionClienteEditId, { vendedor, fecha_alta, mes_inicio });
+      const campos = { vendedor, fecha_alta, mes_inicio, estado, mes_baja, motivo_baja };
+      await DB.updateWhere('comision_clientes', 'id', comisionClienteEditId, campos);
       const row = AppData.comisionClientes.find(x => x.id === comisionClienteEditId);
-      if (row) { row.vendedor = vendedor; row.fecha_alta = fecha_alta; row.mes_inicio = mes_inicio; }
+      if (row) Object.assign(row, campos);
     } else {
-      const rec = { cliente, vendedor, fecha_alta, mes_inicio, categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false };
+      const rec = { cliente, vendedor, fecha_alta, mes_inicio, categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false, estado, mes_baja, motivo_baja };
       const r = await DB.insertRow('comision_clientes', rec);
       AppData.comisionClientes.push(Object.assign({ id: r.id }, rec));
     }
@@ -638,6 +706,39 @@ async function desbloquearComisionCliente(id) {
     renderComisionClientes();
     showToast('↺ Evaluación reabierta');
   } catch (e) { console.warn('desbloquearComisionCliente', e); showToast('⛔ No se pudo reabrir'); }
+}
+// El cliente se dio de baja: deja de comisionar desde el mes elegido (ese mes ya
+// no se paga). La fila NO se borra — el registro tiene que explicar por qué el
+// vendedor dejó de cobrar por ese cliente.
+async function darDeBajaComisionCliente(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  const mes = prompt('Baja de ' + row.cliente + '\n\n¿Desde qué mes deja de comisionar? (AAAA-MM)\nEse mes ya NO se paga.', mesActualYYYYMM());
+  if (mes === null) return;
+  const m = String(mes).trim();
+  if (!/^\d{4}-\d{2}$/.test(m)) { alert('Mes inválido. Usá el formato AAAA-MM (ejemplo: 2026-08).'); return; }
+  const motivo = (prompt('Motivo de la baja (opcional):', row.motivo_baja || '') || '').trim();
+  const campos = { estado: 'baja', mes_baja: m, motivo_baja: motivo };
+  try {
+    await DB.updateWhere('comision_clientes', 'id', id, campos);
+    Object.assign(row, campos);
+    persistirComisionesLocal();
+    renderComisionClientes();
+    showToast('✔ ' + row.cliente + ' dado de baja · sin comisión desde ' + mesLabel(m));
+  } catch (e) { console.warn('darDeBajaComisionCliente', e); alert('No se pudo dar de baja: ' + (e.message || e)); }
+}
+async function reactivarComisionCliente(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  if (!confirm('¿Reactivar a ' + row.cliente + '?\nVuelve a comisionar los meses que le queden de los 5.')) return;
+  const campos = { estado: 'activo', mes_baja: '', motivo_baja: '' };
+  try {
+    await DB.updateWhere('comision_clientes', 'id', id, campos);
+    Object.assign(row, campos);
+    persistirComisionesLocal();
+    renderComisionClientes();
+    showToast('↺ ' + row.cliente + ' reactivado');
+  } catch (e) { console.warn('reactivarComisionCliente', e); alert('No se pudo reactivar: ' + (e.message || e)); }
 }
 async function quitarComisionCliente(id) {
   const row = AppData.comisionClientes.find(x => x.id === id);
@@ -731,27 +832,27 @@ function renderCierreMensual() {
   const lbl = document.getElementById('com-cierre-periodo');
   if (lbl) lbl.textContent = mesLabel(periodo);
 
-  if (!r.vendedores.length) {
+  if (!r.vendedores.length && !r.bajas.length) {
     body.innerHTML = '<div class="empty-state" style="padding:30px"><div class="empty-icon"><i class="ic ic-file"></i></div><div class="empty-title">Sin comisiones en ' + mesLabel(periodo) + '</div><div class="empty-sub">No hay clientes confirmados con pago en este mes. Confirmá asignaciones en "Clientes en comisión".</div></div>';
     return;
   }
 
   const filasVend = r.vendedores.map(v => {
-    const pago = comisionPagoDe(periodo, v.vendedor);
+    const pago = comisionPagoDe(periodo, v.vendedor, 'vendedor');
     const detalle = v.clientes.map(c => c.cliente + ' (' + (c.categoria || '?') + ', mes ' + c.nroMes + '/5)').join(' · ');
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(v.vendedor) + ';width:26px;height:26px;font-size:9px">' + initials(v.vendedor) + '</div><div><strong>' + v.vendedor + '</strong><div class="muted" style="font-size:10px">' + detalle + '</div></div></div></td>' +
       '<td class="mono" style="text-align:right">' + v.clientes.length + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(v.monto) + '</td>' +
       '<td style="text-align:center">' + (pago
-        ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ')" title="Deshacer">↺</button>'
+        ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ',\'vendedor\')" title="Deshacer">↺</button>'
         : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ',\'vendedor\',' + v.monto + ')"><i class="ic ic-check"></i> Marcar pagado</button>') + '</td>' +
     '</tr>';
   }).join('');
 
   // Fila supervisor
   const supNombre = r.supNombre || '(supervisor sin definir)';
-  const pagoSup = r.supNombre ? comisionPagoDe(periodo, r.supNombre) : null;
+  const pagoSup = r.supNombre ? comisionPagoDe(periodo, r.supNombre, 'supervisor') : null;
   const filaSup = '<tr style="background:var(--surface-0)">' +
     '<td><strong>' + supNombre + '</strong> <span class="muted" style="font-size:11px">· supervisor (' + r.pct + '% del equipo)</span></td>' +
     '<td class="mono" style="text-align:right">—</td>' +
@@ -759,9 +860,23 @@ function renderCierreMensual() {
     '<td style="text-align:center">' + (!r.supNombre
       ? '<span class="muted" style="font-size:11px">definí el supervisor</span>'
       : (pagoSup
-        ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ')" title="Deshacer">↺</button>'
+        ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ',\'supervisor\')" title="Deshacer">↺</button>'
         : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ',\'supervisor\',' + r.supMonto + ')"><i class="ic ic-check"></i> Marcar pagado</button>')) + '</td>' +
   '</tr>';
+
+  // Clientes de baja que caen dentro de sus 5 meses: se listan en $0. Si la fila
+  // desapareciera, el vendedor vería su total bajar sin ninguna explicación.
+  const bloqueBajas = !r.bajas.length ? '' :
+    '<div class="card" style="margin-top:12px"><div class="table-wrap"><table>' +
+      '<thead><tr><th colspan="4" style="background:var(--surface-0);font-weight:700">Clientes de baja — no comisionan en ' + mesLabel(periodo) + '</th></tr>' +
+      '<tr><th>Cliente</th><th>Vendedor</th><th>Baja</th><th style="text-align:right">Comisión</th></tr></thead><tbody>' +
+      r.bajas.map(b => '<tr style="opacity:.65">' +
+        '<td><s>' + b.cliente + '</s>' + (b.categoria ? ' <span class="muted" style="font-size:10px">(' + b.categoria + ' · mes ' + b.nroMes + '/5)</span>' : '') + '</td>' +
+        '<td>' + b.vendedor + '</td>' +
+        '<td style="font-size:11px">' + (b.mesBaja ? mesLabel(b.mesBaja) : '—') + (b.motivo ? ' · ' + b.motivo : '') + '</td>' +
+        '<td class="mono" style="text-align:right">$0</td>' +
+      '</tr>').join('') +
+    '</tbody></table></div></div>';
 
   body.innerHTML =
     '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
@@ -773,14 +888,14 @@ function renderCierreMensual() {
       '<thead><tr><th>Beneficiario</th><th style="text-align:right">Clientes</th><th style="text-align:right">Monto</th><th style="text-align:center;width:170px">Estado</th></tr></thead>' +
       '<tbody>' + filasVend + filaSup + '</tbody>' +
       '<tfoot><tr style="font-weight:700;background:var(--surface-0)"><td>TOTAL</td><td></td><td class="mono" style="text-align:right">' + fmtPeso(r.total) + '</td><td></td></tr></tfoot>' +
-    '</table></div></div>';
+    '</table></div></div>' + bloqueBajas;
 }
 
 // Escapa un string para incrustarlo como argumento JS en un onclick.
 function jsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
 
 async function marcarPagoComision(periodo, beneficiario, tipo, monto) {
-  if (comisionPagoDe(periodo, beneficiario)) { renderCierreMensual(); return; }
+  if (comisionPagoDe(periodo, beneficiario, tipo)) { renderCierreMensual(); return; }
   const rec = { periodo, beneficiario, tipo, monto: _num(monto), detalle: '' };
   try {
     const r = await DB.insertRow('comision_pagos', rec);
@@ -790,8 +905,8 @@ async function marcarPagoComision(periodo, beneficiario, tipo, monto) {
     showToast('✅ Pago registrado: ' + beneficiario + ' · ' + fmtPeso(monto));
   } catch (e) { console.warn('marcarPagoComision', e); alert('No se pudo registrar el pago: ' + (e.message || e)); }
 }
-async function deshacerPagoComision(periodo, beneficiario) {
-  const pago = comisionPagoDe(periodo, beneficiario);
+async function deshacerPagoComision(periodo, beneficiario, tipo) {
+  const pago = comisionPagoDe(periodo, beneficiario, tipo);
   if (!pago) return;
   if (!confirm('¿Deshacer el pago registrado de ' + beneficiario + ' (' + mesLabel(periodo) + ')?')) return;
   try {
@@ -807,7 +922,7 @@ async function deshacerPagoComision(periodo, beneficiario) {
 function exportComisionesMesPDF() {
   const periodo = document.getElementById('com-cierre-mes')?.value || mesActualYYYYMM();
   const r = calcComisionesMes(periodo);
-  if (!r.vendedores.length) { alert('No hay comisiones en ' + mesLabel(periodo) + '.'); return; }
+  if (!r.vendedores.length && !r.bajas.length) { alert('No hay comisiones en ' + mesLabel(periodo) + '.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
@@ -838,6 +953,25 @@ function exportComisionesMesPDF() {
     columnStyles: { 1: { cellWidth: 78, fontSize: 7 }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     margin: { left: 14, right: 14 }
   });
+  // Las bajas van en su propia tabla, en $0: el vendedor tiene que ver que el
+  // cliente salió, no que el renglón desapareció.
+  if (r.bajas.length) {
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 8,
+      head: [['Cliente de baja', 'Vendedor', 'Baja', 'Comisión']],
+      body: r.bajas.map(b => [
+        b.cliente + (b.categoria ? ' (' + b.categoria + ')' : ''),
+        b.vendedor,
+        (b.mesBaja ? mesLabel(b.mesBaja) : '—') + (b.motivo ? ' · ' + b.motivo : ''),
+        '$0'
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [140, 30, 30], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 7.5, textColor: [90, 100, 115] },
+      columnStyles: { 3: { halign: 'right' } },
+      margin: { left: 14, right: 14 }
+    });
+  }
   doc.save('Comisiones_' + periodo + '.pdf');
   showToast('📥 Comisiones de ' + mesLabel(periodo) + ' descargadas');
 }

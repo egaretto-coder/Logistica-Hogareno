@@ -13,7 +13,8 @@
         <!-- ══════════ TAB: VENDEDORES + SUPERVISOR + ESCALA ══════════ -->
         <div id="com-tab-vend">
           <div class="alert alert-info" style="margin-bottom:16px">
-            <i class="ic ic-dollar"></i> Los vendedores comisionan un <strong>monto fijo mensual</strong> por cada <strong>cliente nuevo</strong>, durante <strong>5 meses</strong>. El monto surge de evaluar las <strong>4 primeras liquidaciones</strong> del cliente y ubicar su facturación en la <strong>escala de categorización</strong>. El <strong>supervisor</strong> cobra un % del total del equipo.
+            <i class="ic ic-dollar"></i>
+            <div>Los vendedores comisionan un <strong>monto fijo mensual</strong> por cada <strong>cliente nuevo</strong>, durante <strong>5 meses</strong>. El monto surge de evaluar las <strong>4 primeras liquidaciones</strong> del cliente y ubicar su facturación en la <strong>escala de categorización</strong>. El <strong>supervisor</strong> cobra un % del total del equipo.</div>
           </div>
 
           <!-- Supervisor -->
@@ -71,7 +72,8 @@
           </div>
 
           <div class="alert alert-info" style="margin-bottom:16px">
-            <i class="ic ic-building"></i> Asigná cada <strong>cliente nuevo</strong> a un vendedor. Tras sus <strong>4 primeras liquidaciones</strong> el sistema calcula la facturación y la categoría; cuando esté completa, <strong>Confirmá</strong> para congelar el monto y arrancar los 5 pagos mensuales.
+            <i class="ic ic-building"></i>
+            <div>Asigná cada <strong>cliente nuevo</strong> a un vendedor. Tras sus <strong>4 primeras liquidaciones</strong> el sistema calcula la facturación y la categoría; cuando esté completa, <strong>Confirmá</strong> para congelar el monto y arrancar los 5 pagos mensuales. Si el cliente se pierde, marcalo de <strong>baja</strong>: deja de comisionar desde ese mes y la fila queda en el registro con el motivo.</div>
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
@@ -83,7 +85,7 @@
             <thead><tr>
               <th>Cliente</th><th>Vendedor</th><th style="text-align:right">Facturación 4 liq.</th>
               <th style="text-align:center">Cat.</th><th style="text-align:right">Monto/mes</th>
-              <th>Meses de pago</th><th style="text-align:center">Estado</th><th style="width:200px"></th>
+              <th>Meses de pago</th><th style="text-align:center">Estado</th><th style="width:260px"></th>
             </tr></thead>
             <tbody id="com-cli-rows"></tbody>
           </table></div></div>

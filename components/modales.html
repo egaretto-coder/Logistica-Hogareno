@@ -690,6 +690,22 @@
           <input type="month" id="mcc-mesinicio" class="form-input" style="width:100%" />
         </div>
       </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Estado del cliente</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <select id="mcc-estado" class="form-input" style="flex:0 0 130px" onchange="toggleBajaComisionCliente()">
+            <option value="activo">Activo</option>
+            <option value="baja">Baja</option>
+          </select>
+          <div id="mcc-baja-box" style="display:none;flex:1;min-width:220px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="month" id="mcc-mesbaja" class="form-input" style="flex:0 0 150px" title="Desde este mes deja de comisionar (ese mes ya no se paga)" />
+              <input type="text" id="mcc-motivobaja" class="form-input" placeholder="Motivo (opcional)" style="flex:1;min-width:130px" />
+            </div>
+          </div>
+        </div>
+        <span style="font-size:11px;color:var(--text-muted)">Un cliente de <strong>baja</strong> deja de comisionar desde el mes indicado (ese mes ya no se paga). La fila queda en el registro con el motivo.</span>
+      </div>
       <div id="mcc-preview" style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button class="btn" onclick="closeComisionClienteModal()">Cancelar</button>

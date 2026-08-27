@@ -274,6 +274,12 @@ create table if not exists public.comision_clientes (
   facturacion_eval numeric default 0,
   monto numeric default 0,
   bloqueado boolean not null default false,
+  -- estado: 'activo' | 'baja'. El cliente que se pierde deja de comisionar desde
+  -- mes_baja (inclusive) pero la fila NO se borra: el registro tiene que explicar
+  -- por qué el vendedor dejó de cobrar por ese cliente.
+  estado text not null default 'activo',
+  mes_baja text default '',        -- YYYY-MM
+  motivo_baja text default '',
   created_at timestamptz not null default now()
 );
 create unique index if not exists idx_comision_clientes_cliente on public.comision_clientes (upper(btrim(cliente)));
@@ -288,9 +294,12 @@ create table if not exists public.comision_pagos (
   monto numeric not null default 0,
   detalle text default '',
   pagado_en timestamptz not null default now(),
-  created_at timestamptz not null default now(),
-  unique (periodo, beneficiario)
+  created_at timestamptz not null default now()
 );
+-- El supervisor puede ser TAMBIÉN vendedor (cobra por sus clientes y además el %
+-- del equipo): la clave incluye el tipo, si no marcar uno de los dos como pagado
+-- dejaba el otro tildado sin haberlo abonado.
+create unique index if not exists idx_comision_pagos_unico on public.comision_pagos (periodo, beneficiario, tipo);
 create index if not exists idx_comision_pagos_periodo on public.comision_pagos (periodo);
 -- Config del supervisor único (clave/valor en la tabla config):
 --   comision_supervisor      = nombre del supervisor que cobra el %
