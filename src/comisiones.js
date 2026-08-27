@@ -208,10 +208,19 @@ function comisionaEnMes(row, periodo) {
 function calcComisionesMes(periodo) {
   const porVend = {};
   const bajas = [];
+  const fuera = [];
   AppData.comisionClientes.forEach(row => {
     if (!row.bloqueado) return;
     const meses = mesesPagoComision(row);
-    if (!meses.includes(periodo)) return;
+    // Un cliente fuera de su ventana simplemente no aparecía, así que comparar
+    // contra la planilla vieja dejaba faltantes imposibles de rastrear. Se
+    // listan aparte con el motivo: o todavía no arrancó, o ya cumplió sus 5.
+    if (!meses.includes(periodo)) {
+      fuera.push({ cliente: row.cliente, vendedor: row.vendedor || '(sin vendedor)',
+        monto: _num(row.monto), categoria: row.categoria || '',
+        desde: meses[0], hasta: meses[4], antes: periodo < meses[0] });
+      return;
+    }
     const v = row.vendedor || '(sin vendedor)';
     const nroMes = meses.indexOf(periodo) + 1;
     // Los de baja caen dentro de la ventana de 5 meses pero cobran $0. Se listan
@@ -235,7 +244,8 @@ function calcComisionesMes(periodo) {
   // guardar lo que realmente corresponde (fmtPeso ya redondea al mostrarlo).
   const supMonto = totalVendedores * pct / 100;
   bajas.sort((a, b) => String(a.vendedor).localeCompare(String(b.vendedor)) || String(a.cliente).localeCompare(String(b.cliente)));
-  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto, bajas };
+  fuera.sort((a, b) => (a.antes === b.antes ? 0 : (a.antes ? -1 : 1)) || String(a.desde).localeCompare(String(b.desde)) || String(a.cliente).localeCompare(String(b.cliente)));
+  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto, bajas, fuera };
 }
 
 // El supervisor puede ser TAMBIÉN vendedor (cobra por sus propios clientes y
@@ -892,6 +902,36 @@ function renderCierreMensual() {
       '</tr>').join('') +
     '</tbody></table></div></div>';
 
+  // Los que no cobran este mes, con el motivo. Va plegado: es material de
+  // control, no la liquidación. Lo que resuelve es la pregunta "¿por qué me
+  // falta este cliente?", que sin esto no se puede contestar desde la pantalla.
+  const nAntes = r.fuera.filter(f => f.antes).length;
+  const nDespues = r.fuera.length - nAntes;
+  const bloqueFuera = !r.fuera.length ? '' :
+    '<details style="margin-top:12px" class="card">' +
+      '<summary style="cursor:pointer;padding:10px 14px;font-size:12.5px;font-weight:600">' +
+        r.fuera.length + ' cliente(s) en comisión no cobran en ' + mesLabel(periodo) +
+        '<span class="muted" style="font-weight:400"> · ' +
+          (nAntes ? nAntes + ' todavía no arrancan' : '') + (nAntes && nDespues ? ' · ' : '') +
+          (nDespues ? nDespues + ' ya cumplieron sus 5 pagos' : '') + '</span>' +
+      '</summary>' +
+      '<div class="table-wrap"><table>' +
+        '<thead><tr><th>Cliente</th><th>Vendedor</th><th>Sus 5 pagos</th><th style="text-align:right">Monto</th></tr></thead><tbody>' +
+        r.fuera.map(f => '<tr style="opacity:.7">' +
+          '<td>' + f.cliente + (f.categoria ? ' <span class="muted" style="font-size:10px">(' + f.categoria + ')</span>' : '') + '</td>' +
+          '<td>' + f.vendedor + '</td>' +
+          '<td style="font-size:11px">' + mesLabel(f.desde) + ' → ' + mesLabel(f.hasta) +
+            ' <span style="color:' + (f.antes ? '#854d0e' : '#64748b') + '">· ' +
+            (f.antes ? 'arranca en ' + mesLabel(f.desde) : 'terminó en ' + mesLabel(f.hasta)) + '</span></td>' +
+          '<td class="mono" style="text-align:right">' + fmtPeso(f.monto) + '</td>' +
+        '</tr>').join('') +
+      '</tbody></table></div>' +
+      '<div style="padding:8px 14px;font-size:11px;color:var(--text-muted)">' +
+        'Cada cliente cobra <strong>5 meses</strong>, del mes siguiente al cierre de su evaluación en adelante. ' +
+        'Si alguno debería estar cobrando este mes, corregile el <strong>1.er mes de pago</strong> en "Clientes en comisión".' +
+      '</div>' +
+    '</details>';
+
   body.innerHTML =
     '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
       '<div class="metric-card"><div class="metric-ic"><i class="ic ic-user"></i></div><div class="metric-label">Comisión vendedores</div><div class="metric-value">' + fmtPeso(r.totalVendedores) + '</div><div class="metric-sub">' + r.vendedores.length + ' vendedor(es)</div></div>' +
@@ -902,7 +942,7 @@ function renderCierreMensual() {
       '<thead><tr><th>Beneficiario</th><th style="text-align:right">Clientes</th><th style="text-align:right">Monto</th><th style="text-align:center;width:170px">Estado</th></tr></thead>' +
       '<tbody>' + filasVend + filaSup + '</tbody>' +
       '<tfoot><tr style="font-weight:700;background:var(--surface-0)"><td>TOTAL</td><td></td><td class="mono" style="text-align:right">' + fmtPeso(r.total) + '</td><td></td></tr></tfoot>' +
-    '</table></div></div>' + bloqueBajas;
+    '</table></div></div>' + bloqueBajas + bloqueFuera;
 }
 
 // Escapa un string para incrustarlo como argumento JS en un onclick.
