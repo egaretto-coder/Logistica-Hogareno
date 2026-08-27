@@ -307,7 +307,8 @@ async function _hydrateFromSupabaseReal(opts) {
   // Cargos extra por cliente y semana (colecta, viajes particulares, otros).
   AppData.clienteCargos = (data.cliente_cargos || []).map(c => ({
     id: c.id, cliente_cod: (c.cliente_cod || '').toUpperCase(), semana: String(c.semana || '').slice(0, 10),
-    concepto: c.concepto || 'otro', detalle: c.detalle || '',
+    concepto: c.concepto || 'otro',
+    fecha: String(c.fecha || '').slice(0, 10), direccion: c.direccion || '', zona: c.zona || '',
     cantidad: _num(c.cantidad), precio_unitario: _num(c.precio_unitario), monto: _num(c.monto),
     creado_por: c.creado_por || ''
   }));

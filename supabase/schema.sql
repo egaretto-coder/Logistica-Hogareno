@@ -636,7 +636,14 @@ create table if not exists public.cliente_cargos (
   cliente_cod text not null,
   semana date not null,
   concepto text not null default 'colecta',   -- colecta | viaje | otro
-  detalle text default '',
+  -- Fecha del servicio: sale en la factura. La semana a la que se imputa es
+  -- `semana`, que puede no coincidir (un cargo viejo se factura en el período
+  -- en curso), por eso son dos campos y no uno.
+  fecha text default '',                      -- YYYY-MM-DD
+  -- Solo para el viaje particular: es el único cargo que ocurre en un lugar, y
+  -- el cliente tiene que poder reconocer cuál viaje le están cobrando.
+  direccion text default '',
+  zona text default '',
   cantidad numeric not null default 1,
   precio_unitario numeric not null default 0,
   monto numeric not null default 0,

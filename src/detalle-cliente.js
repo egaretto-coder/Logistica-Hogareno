@@ -642,11 +642,33 @@ function abrirCargoCliente() {
   if (ctx) ctx.innerHTML = 'Se le va a facturar a <strong>' + clienteNombreDe(cod) + '</strong> en la semana <strong>' +
     rango.desde + ' → ' + rango.hasta + '</strong>.';
   document.getElementById('mcargo-concepto').value = 'colecta';
-  document.getElementById('mcargo-detalle').value = '';
   document.getElementById('mcargo-cantidad').value = '1';
   document.getElementById('mcargo-precio').value = '';
+  document.getElementById('mcargo-direccion').value = '';
+  // La fecha arranca dentro del período que se está liquidando: hoy si cae
+  // adentro, si no el primer día. Los límites guían al operador, pero un cargo
+  // de otra fecha imputado acá se puede guardar igual (se avisa al confirmar).
+  const fEl = document.getElementById('mcargo-fecha');
+  if (fEl) {
+    const d1 = isoDeRango(rango, 'desde'), d2 = isoDeRango(rango, 'hasta');
+    const hoy = new Date();
+    const hoyISO = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+    fEl.min = d1; fEl.max = d2;
+    fEl.value = (hoyISO >= d1 && hoyISO <= d2) ? hoyISO : d1;
+  }
+  _mcargoZonas('');
   document.getElementById('modal-cargo-backdrop').style.display = 'flex';
   recalcCargoCliente();
+}
+// Zonas válidas del tarifario para el viaje particular. Es un lugar real: se
+// elige de la lista, no se tipea, igual que en el resto de la app.
+function _mcargoZonas(actual) {
+  const sel = document.getElementById('mcargo-zona');
+  if (!sel) return;
+  const zonas = (typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : [];
+  const esc = s => String(s).replace(/"/g, '&quot;');
+  sel.innerHTML = '<option value="">Sin zona</option>' +
+    zonas.map(z => '<option value="' + esc(z) + '"' + (z === actual ? ' selected' : '') + '>' + z + '</option>').join('');
 }
 function cerrarCargoCliente(e) {
   if (e && e.target !== e.currentTarget) return;
@@ -676,6 +698,10 @@ function recalcCargoCliente() {
   const c = document.getElementById('mcargo-concepto').value;
   const ayuda = document.getElementById('mcargo-ayuda');
   if (ayuda) ayuda.textContent = (CARGO_CONCEPTOS[c] || {}).detalle || '';
+  // Dirección y zona solo tienen sentido en el viaje particular: es el único
+  // cargo que ocurre en un lugar.
+  const vb = document.getElementById('mcargo-viaje-box');
+  if (vb) vb.style.display = (c === 'viaje') ? 'flex' : 'none';
   const cant = parseFloat(document.getElementById('mcargo-cantidad').value) || 0;
   const pu = parseFloat(document.getElementById('mcargo-precio').value) || 0;
   const el = document.getElementById('mcargo-total');
@@ -707,11 +733,20 @@ async function guardarCargoDesdeModal() {
   const pu = parseFloat(document.getElementById('mcargo-precio').value) || 0;
   const monto = cant * pu;
   if (!(monto > 0)) { alert('Cargá una cantidad y un precio: el cargo tiene que dar más de $0.'); return; }
+  const concepto = document.getElementById('mcargo-concepto').value;
+  const fecha = (document.getElementById('mcargo-fecha').value || '').slice(0, 10);
+  if (!fecha) { alert('Poné la fecha del servicio: sale en la factura.'); return; }
+  const rango = dcliRango();
+  if ((fecha < isoDeRango(rango, 'desde') || fecha > isoDeRango(rango, 'hasta')) &&
+      !confirm('La fecha ' + cargoFechaTxt(fecha) + ' queda fuera del período que estás liquidando (' +
+        rango.desde + ' → ' + rango.hasta + ').' + String.fromCharCode(10) + String.fromCharCode(10) +
+        'El cargo se va a facturar igual en ESTA liquidación. ¿Confirmás?')) return;
   const rec = {
     cliente_cod: cod,
-    semana: viernesDeRango(dcliRango()),
-    concepto: document.getElementById('mcargo-concepto').value,
-    detalle: (document.getElementById('mcargo-detalle').value || '').trim(),
+    semana: viernesDeRango(rango),
+    concepto, fecha,
+    direccion: concepto === 'viaje' ? (document.getElementById('mcargo-direccion').value || '').trim() : '',
+    zona: concepto === 'viaje' ? (document.getElementById('mcargo-zona').value || '').trim().toUpperCase() : '',
     cantidad: cant, precio_unitario: pu, monto,
     creado_por: (typeof currentUser !== 'undefined' && currentUser && currentUser.usuario) || ''
   };
@@ -742,7 +777,7 @@ function _dcliFilasCargos(cargos, totEnvios, totCargos) {
     '<tr style="background:var(--surface-0);box-shadow:inset 3px 0 0 #0e7490">' +
       '<td colspan="3" style="font-size:12px">' +
         '<strong>' + cargoLabel(c.concepto) + '</strong>' +
-        (c.detalle ? ' <span class="muted">· ' + String(c.detalle).replace(/</g, '&lt;') + '</span>' : '') +
+        (cargoDatosTxt(c) ? ' <span class="muted">· ' + cargoDatosTxt(c).replace(/</g, '&lt;') + '</span>' : '') +
         (_num(c.cantidad) !== 1
           ? '<div class="muted" style="font-size:10px">' + _num(c.cantidad) + ' × ' + fmtPeso(_num(c.precio_unitario)) + '</div>'
           : '') +

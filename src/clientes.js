@@ -475,6 +475,7 @@ function verCardCliente(cod) {
     '</div>' +
 
     _cardPeriodo(k, c) +
+    _cardVendedor(c) +
     '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
       dato('Razón social', c.razon_social) + dato('CUIT', c.cuit) +
       dato('Contacto', c.contacto) + dato('Teléfono', c.telefono) + dato('Email', c.email) +
@@ -512,6 +513,93 @@ function verCardCliente(cod) {
       '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')"><i class="ic ic-edit"></i> Editar datos</button>' +
     '</div>';
   document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// ── Vendedor que trajo al cliente ──────────────────────────────────────────
+// La asignación NO se guarda en `clientes`: escribe derecho en
+// `comision_clientes`, que es de donde sale la comisión. Un segundo padrón se
+// desincroniza, y el vendedor que cobra tiene que ser el mismo que se asignó acá.
+function comisionDeCliente(nombre) {
+  return (AppData.comisionClientes || []).find(x => normCliente(x.cliente) === normCliente(nombre));
+}
+function _cardVendedor(c) {
+  const row = comisionDeCliente(c.nombre);
+  const actual = row ? (row.vendedor || '') : '';
+  const vends = (AppData.vendedores || []).filter(v => v.activo !== false)
+    .slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  const esc = s => String(s).replace(/"/g, '&quot;');
+  const hayActual = actual && vends.some(v => normNombre(v.nombre) === normNombre(actual));
+  const opts = '<option value="">Sin vendedor asignado</option>' +
+    vends.map(v => '<option value="' + esc(v.nombre) + '"' +
+      (normNombre(v.nombre) === normNombre(actual) ? ' selected' : '') + '>' + v.nombre + '</option>').join('') +
+    // Un vendedor dado de baja que figure en una asignación vieja se muestra
+    // marcado en vez de desaparecer: si no, guardar la ficha se lo borraría.
+    (actual && !hayActual ? '<option value="' + esc(actual) + '" selected>' + actual + ' (dado de baja)</option>' : '');
+
+  let estado;
+  if (!row) {
+    estado = '<span class="muted">Al asignarle un vendedor entra al régimen de comisiones y la app evalúa sus 4 primeras liquidaciones.</span>';
+  } else if (comisionEsBaja(row)) {
+    estado = '<span style="color:#b91c1c">Comisión dada de baja' + (row.mes_baja ? ' desde ' + mesLabel(row.mes_baja) : '') + '</span>';
+  } else if (row.bloqueado) {
+    const mi = row.mes_inicio || '';
+    estado = '<span style="color:#166534">Comisiona ' + fmtPeso(_num(row.monto)) + '/mes' +
+      (row.categoria ? ' · categoría ' + row.categoria : '') +
+      (mi ? ' · ' + mesLabel(mi) + ' → ' + mesLabel(addMeses(mi, 4)) : '') + '</span>';
+  } else {
+    estado = '<span style="color:#854d0e">En evaluación — se confirma desde el panel Comisiones.</span>';
+  }
+
+  return '<div style="padding:12px 0;border-top:1px solid var(--border)">' +
+    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Vendedor</div>' +
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+      '<select id="card-vendedor" style="flex:1;min-width:200px;max-width:280px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">' + opts + '</select>' +
+      '<button class="btn btn-sm" onclick="asignarVendedorCliente(' + JSON.stringify(c.nombre).replace(/"/g, '&quot;') + ')"><i class="ic ic-save"></i> Asignar</button>' +
+    '</div>' +
+    '<div style="font-size:11px;margin-top:6px">' + estado + '</div>' +
+  '</div>';
+}
+
+async function asignarVendedorCliente(nombre) {
+  const sel = document.getElementById('card-vendedor');
+  if (!sel) return;
+  const vendedor = (sel.value || '').trim().toUpperCase();
+  const row = comisionDeCliente(nombre);
+  const actual = row ? (row.vendedor || '') : '';
+  if (normNombre(vendedor) === normNombre(actual)) { showToast('El vendedor ya es ese'); return; }
+
+  try {
+    // Sacarle el vendedor: si ya está confirmado, la comisión está corriendo y
+    // eso se decide en Comisiones (baja), no borrando la asignación de una ficha.
+    if (!vendedor) {
+      if (!row) return;
+      if (row.bloqueado) {
+        alert('"' + nombre + '" ya tiene la comisión confirmada y corriendo.' + String.fromCharCode(10) +
+          'Para cortarla usá "Dar de baja" en el panel Comisiones: así queda registrado desde qué mes deja de pagarse y por qué.');
+        return;
+      }
+      if (!confirm('¿Sacar a ' + nombre + ' del régimen de comisiones?')) return;
+      await DB.deleteWhere('comision_clientes', 'id', row.id);
+      AppData.comisionClientes = AppData.comisionClientes.filter(x => x.id !== row.id);
+    } else if (row) {
+      if (row.bloqueado && !confirm('La comisión de "' + nombre + '" ya está confirmada (' + fmtPeso(_num(row.monto)) + '/mes).' + String.fromCharCode(10) +
+        'Cambiar el vendedor a ' + vendedor + ' mueve ese pago de un vendedor al otro desde el próximo cierre.' + String.fromCharCode(10) + String.fromCharCode(10) + '¿Confirmás?')) return;
+      await DB.updateWhere('comision_clientes', 'id', row.id, { vendedor });
+      row.vendedor = vendedor;
+    } else {
+      const rec = { cliente: String(nombre).toUpperCase(), vendedor, fecha_alta: '', mes_inicio: '',
+        categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false, estado: 'activo', mes_baja: '', motivo_baja: '' };
+      const r = await DB.insertRow('comision_clientes', rec);
+      AppData.comisionClientes.push(Object.assign({ id: r.id }, rec));
+    }
+    if (typeof persistirComisionesLocal === 'function') persistirComisionesLocal();
+    if (typeof renderComisionClientes === 'function' && document.getElementById('com-cli-rows')) renderComisionClientes();
+    verCardCliente(clienteKey((AppData.clientes || []).find(x => normCliente(x.nombre) === normCliente(nombre))?.codigo));
+    showToast(vendedor ? '✅ ' + nombre + ' asignado a ' + vendedor : '🗑 ' + nombre + ' fuera de comisiones');
+  } catch (e) {
+    console.warn('asignarVendedorCliente', e);
+    alert('No se pudo asignar el vendedor: ' + (e.message || e));
+  }
 }
 
 async function sumarCuentaDesdeCard(cod) {
@@ -869,10 +957,26 @@ async function altaClientesFaltantes() {
   renderClientes();
   showToast('✅ ' + ok + ' cliente(s) dados de alta — cargales el tarifario');
 }
+// Llena el select de vendedores del modal de alta/edición, dejando marcado el
+// que ya tenga asignado el cliente.
+function _mcliVendedores(actual) {
+  const sel = document.getElementById('mcli-vendedor');
+  if (!sel) return;
+  const esc = s => String(s).replace(/"/g, '&quot;');
+  const vends = (AppData.vendedores || []).filter(v => v.activo !== false)
+    .slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  const hay = actual && vends.some(v => normNombre(v.nombre) === normNombre(actual));
+  sel.innerHTML = '<option value="">Sin vendedor</option>' +
+    vends.map(v => '<option value="' + esc(v.nombre) + '"' +
+      (normNombre(v.nombre) === normNombre(actual) ? ' selected' : '') + '>' + v.nombre + '</option>').join('') +
+    (actual && !hay ? '<option value="' + esc(actual) + '" selected>' + actual + ' (dado de baja)</option>' : '');
+}
+
 function openAddClienteModal() {
   clienteEditId = null;
   document.getElementById('modal-cliente-title').textContent = 'Nuevo cliente';
   document.getElementById('mcli-nombre').value = '';
+  _mcliVendedores('');
   ['mcli-codigo','mcli-razon','mcli-contacto','mcli-telefono','mcli-email','mcli-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('mcli-cuit').value = '';
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
@@ -887,6 +991,8 @@ function editCliente(id) {
   set('mcli-codigo', c.codigo); set('mcli-razon', c.razon_social);
   set('mcli-contacto', c.contacto); set('mcli-telefono', c.telefono);
   set('mcli-email', c.email); set('mcli-obs', c.obs);
+  const rc = comisionDeCliente(c.nombre);
+  _mcliVendedores(rc ? (rc.vendedor || '') : '');
   document.getElementById('mcli-cuit').value = c.cuit || '';
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
 }
@@ -919,12 +1025,47 @@ async function guardarClienteModal() {
       AppData.clientes.push({ id: row.id, nombre, codigo, razon_social, cuit, contacto, telefono, email, obs, activo: true });
     }
     persistirClientesLocal();
+    // El vendedor no se guarda en `clientes`: va a `comision_clientes`, que es la
+    // única fuente de la comisión. Se aplica después de tener el cliente creado.
+    await _guardarVendedorDeCliente(nombre);
     clienteEditId = null;
     document.getElementById('modal-cliente-backdrop').style.display = 'none';
     renderClientes();
     showToast('✅ Cliente guardado');
   } catch (e) { console.warn('guardarClienteModal:', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }
+// Aplica lo elegido en el select del modal. Un cliente con la comisión ya
+// confirmada no se saca de acá: eso es una baja y se decide en Comisiones, con
+// su mes y su motivo.
+async function _guardarVendedorDeCliente(nombre) {
+  const sel = document.getElementById('mcli-vendedor');
+  if (!sel) return;
+  const vendedor = (sel.value || '').trim().toUpperCase();
+  const row = comisionDeCliente(nombre);
+  const actual = row ? (row.vendedor || '') : '';
+  if (normNombre(vendedor) === normNombre(actual)) return;
+  try {
+    if (!vendedor) {
+      if (!row || row.bloqueado) return;   // confirmado: se da de baja en Comisiones
+      await DB.deleteWhere('comision_clientes', 'id', row.id);
+      AppData.comisionClientes = AppData.comisionClientes.filter(x => x.id !== row.id);
+    } else if (row) {
+      await DB.updateWhere('comision_clientes', 'id', row.id, { vendedor });
+      row.vendedor = vendedor;
+    } else {
+      const rec = { cliente: String(nombre).toUpperCase(), vendedor, fecha_alta: '', mes_inicio: '',
+        categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false, estado: 'activo', mes_baja: '', motivo_baja: '' };
+      const r = await DB.insertRow('comision_clientes', rec);
+      AppData.comisionClientes.push(Object.assign({ id: r.id }, rec));
+    }
+    if (typeof persistirComisionesLocal === 'function') persistirComisionesLocal();
+    if (typeof renderComisionClientes === 'function' && document.getElementById('com-cli-rows')) renderComisionClientes();
+  } catch (e) {
+    console.warn('_guardarVendedorDeCliente', e);
+    showToast('⚠️ El cliente se guardó, pero no se pudo asignar el vendedor');
+  }
+}
+
 async function eliminarCliente(id) {
   const c = AppData.clientes.find(x => x.id === id);
   if (!c) return;
@@ -1411,7 +1552,7 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   // propio concepto, no diluidos en una zona. En la factura el cliente tiene que
   // ver por qué le cobran eso.
   (liq.cargos || []).forEach(c => body.push([
-    cargoLabel(c.concepto) + (c.detalle ? ' · ' + c.detalle : ''),
+    cargoLabel(c.concepto) + (cargoDatosTxt(c) ? ' · ' + cargoDatosTxt(c) : ''),
     _num(c.cantidad) !== 1 ? _num(c.cantidad) : '',
     _num(c.cantidad) !== 1 ? fmtPeso(_num(c.precio_unitario)) : '',
     fmtPeso(_num(c.monto))
@@ -1588,6 +1729,14 @@ function _conciliacionSinPagar(desde, hasta) {
 
 // Viernes que abre la semana de un rango, en ISO. Es la CLAVE con la que se
 // imputan los arrastres y los cargos: identifica la semana con un solo dato.
+// Los dos extremos del rango en ISO (YYYY-MM-DD). `rango.desde/hasta` son para
+// mostrar (DD/MM/AAAA) y no sirven ni para un input[type=date] ni para comparar.
+function isoDeRango(rango, cual) {
+  const d = rango && (cual === 'hasta' ? rango.hastaD : rango.desdeD);
+  if (!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function viernesDeRango(rango) {
   const d = rango && rango.desdeD ? rango.desdeD : null;
   if (!d) return '';
@@ -1601,6 +1750,28 @@ const CARGO_CONCEPTOS = {
   otro:    { label: 'Otro cargo',        detalle: 'Cualquier otro concepto que se le factura al cliente.' },
 };
 function cargoLabel(c) { return (CARGO_CONCEPTOS[c] || {}).label || c || 'Cargo'; }
+
+// Los datos que acompañan al concepto en la tabla y en la factura: la fecha
+// siempre, y para el viaje particular a dónde fue. Reemplazan al viejo campo
+// libre "detalle": escrito a mano cada operador ponía otra cosa y el cliente no
+// podía reconocer qué le estaban cobrando. Una sola fuente para los dos lados.
+function cargoFechaTxt(f) {
+  const s = String(f || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  return s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
+}
+function cargoDatosTxt(c) {
+  const p = [];
+  const f = cargoFechaTxt(c.fecha);
+  if (f) p.push(f);
+  if (c.concepto === 'viaje') {
+    const dir = String(c.direccion || '').trim();
+    const z = String(c.zona || '').trim();
+    if (dir && z) p.push(dir + ' (' + z + ')');
+    else if (dir || z) p.push(dir || z);
+  }
+  return p.join(' · ');
+}
 
 function cargosDeSemana(cod, semana) {
   const k = clienteKey(cod);

@@ -612,6 +612,11 @@
         </div>
       </div>
       <div class="form-group" style="margin:0">
+        <label class="form-label">Vendedor que lo trajo (opcional)</label>
+        <select id="mcli-vendedor" class="form-input" style="width:100%"></select>
+        <span style="font-size:11px;color:var(--text-muted)">Lo pone en el régimen de comisiones: la app evalúa sus 4 primeras liquidaciones y el pago va a ese vendedor.</span>
+      </div>
+      <div class="form-group" style="margin:0">
         <label class="form-label">Notas del acuerdo</label>
         <textarea id="mcli-obs" class="form-input" rows="2" placeholder="Condiciones, forma de pago, lo que convenga recordar" style="width:100%;resize:vertical"></textarea>
       </div>
@@ -1175,8 +1180,20 @@
            cliente, así que cargar además el viaje acá lo cobraría dos veces. -->
       <div id="mcargo-aviso"></div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">Detalle (sale en la factura)</label>
-        <input type="text" id="mcargo-detalle" class="form-input" placeholder="Ej: retiro en depósito Munro" style="width:100%">
+        <label class="form-label">Fecha del servicio *</label>
+        <input type="date" id="mcargo-fecha" class="form-input" style="width:100%">
+        <span style="font-size:11px;color:var(--text-muted)">Sale en la factura. Se imputa igual a la liquidación que estás viendo.</span>
+      </div>
+      <!-- Solo para el viaje particular: a dónde fue. -->
+      <div id="mcargo-viaje-box" style="display:none;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:2;min-width:180px">
+          <label class="form-label">Dirección</label>
+          <input type="text" id="mcargo-direccion" class="form-input" placeholder="Ej: Av. Mitre 1234" style="width:100%">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Zona</label>
+          <select id="mcargo-zona" class="form-input" style="width:100%"></select>
+        </div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:110px">
