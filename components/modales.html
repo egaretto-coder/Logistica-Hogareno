@@ -1019,6 +1019,51 @@
   </div>
 </div>
 
+<!-- MODAL ANULAR EL COBRO DE UN ENVÍO (gesto comercial con el cliente).
+     Mismo formato que "Pagar la visita": las dos son decisiones sobre plata que
+     se toman envío por envío y necesitan quedar registradas con su motivo. -->
+<div class="modal-backdrop" id="modal-anular-backdrop" onclick="cerrarAnularEnvio(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:480px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-dollar"></i> Anular el cobro</span>
+      <button class="modal-close" onclick="cerrarAnularEnvio()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-alert"></i><div>El envío se entregó y <strong>al conductor se le paga igual</strong> — hizo el viaje.
+        Lo que se anula es el <strong>cobro al cliente</strong>: queda en la liquidación <strong>tachado y en $0</strong>,
+        con el importe bonificado al lado, para que el cliente vea el gesto.</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted)">
+        <div><strong id="manul-envio" style="color:var(--text-primary)">—</strong></div>
+        <div style="margin-top:2px">Cliente: <strong id="manul-cliente" style="color:var(--text-primary)">—</strong></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em">Se le bonifica</div>
+          <div id="manul-bonifica" style="font-size:17px;font-weight:700;color:#15803d">$0</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em">Se le sigue pagando al conductor</div>
+          <div id="manul-pagado" style="font-size:17px;font-weight:700">$0</div>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">¿Por qué se le bonifica? *</label>
+        <select id="manul-motivo" class="form-input" style="width:100%"></select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Detalle (opcional)</label>
+        <input type="text" id="manul-detalle" class="form-input" placeholder="Ej: se entregó 3 días tarde" maxlength="120" style="width:100%" />
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="cerrarAnularEnvio()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarAnularEnvio()"><i class="ic ic-check"></i> Anular el cobro</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL GESTIÓN DE PROVEEDORES (lista cerrada para cargar servicios) -->
 <div class="modal-backdrop" id="modal-prov-backdrop" onclick="cerrarGestionProveedores(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1002;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:560px" onclick="event.stopPropagation()">

@@ -802,12 +802,14 @@ function _dcliFilasCargos(cargos, totEnvios, totCargos) {
 // anula es el COBRO al cliente, y la empresa absorbe la diferencia.
 // No se borra ni se esconde: queda en la liquidación tachado y en $0, con lo
 // que se bonificó al lado. Un gesto que el cliente no ve no sirve de nada.
+// Lista cerrada: escrito a mano el mismo motivo entra de cinco formas y después
+// no se puede saber cuánto se bonificó por cada causa. El detalle libre queda
+// para el matiz, igual que en "Pagar la visita".
 const MOTIVOS_ANULACION = [
   'Gesto comercial',
-  'Demora en la entrega',
+  'Duplicado',
   'Paquete dañado',
-  'Reclamo del cliente',
-  'Error nuestro',
+  'Demora',
 ];
 
 function _dcliBotonAnular(d) {
@@ -826,29 +828,54 @@ function _dcliBotonAnular(d) {
     'onclick="anularEnvioCliente(' + d.i + ')">Anular</button></div>';
 }
 
-async function anularEnvioCliente(i) {
+// Índice del registro que se está anulando (el modal vive en components/modales.html).
+let anularEnvioIdx = -1;
+
+function anularEnvioCliente(i) {
   const r = AppData.records[i];
   if (!r) return;
   if (!r.id) { alert('Este envío todavía no está sincronizado con la nube. Reintentá en unos segundos.'); return; }
   const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
+  anularEnvioIdx = i;
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set('manul-envio', (r.tracking || 's/tracking') + ' · ' + (r.destinatario || '') + ' · ' + (r.zona || r.localidad || ''));
+  set('manul-cliente', clienteNombreDe(cod));
+  set('manul-bonifica', fmtPeso(precioSinAnular(cod, r)));
+  set('manul-pagado', fmtPeso(precioPagadoConductor(r)));
+  const sel = document.getElementById('manul-motivo');
+  if (sel) sel.innerHTML = MOTIVOS_ANULACION.map(m => '<option value="' + m.replace(/"/g, '&quot;') + '">' + m + '</option>').join('');
+  const det = document.getElementById('manul-detalle');
+  if (det) det.value = '';
+  document.getElementById('modal-anular-backdrop').style.display = 'flex';
+}
+
+function cerrarAnularEnvio(e) {
+  if (!e || e.target.id === 'modal-anular-backdrop') {
+    document.getElementById('modal-anular-backdrop').style.display = 'none';
+    anularEnvioIdx = -1;
+  }
+}
+
+async function guardarAnularEnvio() {
+  const i = anularEnvioIdx;
+  const r = AppData.records[i];
+  if (!r) return;
+  const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
   const monto = precioSinAnular(cod, r);
-  const pagado = precioPagadoConductor(r);
-  const NL = String.fromCharCode(10);
-  const motivo = prompt('Anular el envío ' + (r.tracking || '') + ' para ' + clienteNombreDe(cod) + '.' + NL + NL +
-    'Se le bonifican ' + fmtPeso(monto) + ': NO se le factura.' + NL +
-    'Al conductor se le siguen pagando ' + fmtPeso(pagado) + ' — hizo el viaje.' + NL +
-    'Queda en la liquidación tachado y en $0 para que el cliente lo vea.' + NL + NL +
-    '¿Motivo? (' + MOTIVOS_ANULACION.join(' · ') + ')', MOTIVOS_ANULACION[0]);
-  if (motivo === null) return;
+  let motivo = (document.getElementById('manul-motivo') || {}).value || MOTIVOS_ANULACION[0];
+  const libre = ((document.getElementById('manul-detalle') || {}).value || '').trim();
+  if (libre) motivo = motivo + ' — ' + libre;
   try {
-    await DB.updateWhere('registros', 'id', r.id, { anulado_cliente: true, motivo_anulacion: motivo.trim() });
-    r.anulado_cliente = true; r.motivo_anulacion = motivo.trim();
+    await DB.updateWhere('registros', 'id', r.id, { anulado_cliente: true, motivo_anulacion: motivo });
+    r.anulado_cliente = true; r.motivo_anulacion = motivo;
     await reabrirLiquidacionDeEnvio(r, 'una anulación');
     if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    document.getElementById('modal-anular-backdrop').style.display = 'none';
+    anularEnvioIdx = -1;
     renderDetalleCliente();
     showToast('✅ Envío anulado · se bonifican ' + fmtPeso(monto) + ' — al conductor se le paga igual');
-  } catch (e) { console.warn('anularEnvioCliente', e); alert('No se pudo anular: ' + (e.message || e)); }
+  } catch (e) { console.warn('guardarAnularEnvio', e); alert('No se pudo anular: ' + (e.message || e)); }
 }
 
 async function restituirEnvioCliente(i) {
