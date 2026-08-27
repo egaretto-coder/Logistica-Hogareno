@@ -261,6 +261,10 @@ async function unificarNombresDimension(soloIdx) {
       // pisa su precio: se avisa y se deja como está.
       if (yaExiste.has(destino)) { chocaron++; return; }
       yaExiste.delete(clave(d));
+      // El destino pasa a estar ocupado: sin esto, dos condiciones distintas que
+      // se unifican al MISMO nombre quedaban como dos filas idénticas y el
+      // guardado se caía por clave repetida.
+      yaExiste.add(destino);
       d.cliente = p.cond.cliente;
       d.nombre = p.cond.nombre;
       yaExiste.add(destino);
@@ -338,7 +342,16 @@ function crearDimensionesFaltantes() {
     'con ' + nZonas + ' filas en $0 para que les cargues el precio.' + String.fromCharCode(10) + String.fromCharCode(10) +
     'El tarifario de ' + dimEtiquetaTipo(dimOtroTipo()) + ' no se toca.')) return;
   const tipo = dimTipo;
+  // Se saltea lo que ya exista en esta solapa: volver a crearlo dejaría dos
+  // filas con la misma clave y el guardado fallaría entero.
+  const yaEstan = new Set();
+  (AppData.dimCatalogo || []).forEach(d => {
+    if ((d.tipo || 'conductor') === tipo) yaEstan.add(normNombre(d.cliente) + '|' + normNombre(d.nombre) + '|' + normNombre(d.zona));
+  });
   faltan.forEach(g => g.zonas.forEach(z => {
+    const k = normNombre(g.cliente) + '|' + normNombre(g.nombre) + '|' + normNombre(z);
+    if (yaEstan.has(k)) return;
+    yaEstan.add(k);
     AppData.dimCatalogo.push({ cliente: g.cliente, nombre: g.nombre, zona: z, precio: 0, detalle: '', tipo: tipo });
   }));
   dimFiltroSinPrecio = true;

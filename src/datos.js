@@ -570,7 +570,18 @@ function dbPush(table) {
       imputar: d.imputar !== false
     })).filter(d => d.conductor),
   };
-  const rows = builders[table] ? builders[table]() : [];
+  let rows = builders[table] ? builders[table]() : [];
+  // Una fila repetida hace fallar el lote, y como `replaceAll` ya borró la tabla
+  // el guardado queda a medio camino: "500 de 6.827 filas en la nube" (pasó de
+  // verdad al eliminar una dimensión especial). La base solo puede quedarse con
+  // una de las repetidas, así que se colapsan ACÁ, antes de mandar: perder un
+  // duplicado es incomparablemente mejor que perder 6.327 filas buenas.
+  const ded = _colapsarRepetidas(table, rows);
+  rows = ded.filas;
+  if (ded.quitadas > 0) {
+    console.warn('dbPush(' + table + '): ' + ded.quitadas + ' fila(s) repetidas colapsadas antes de guardar');
+    if (typeof showToast === 'function') showToast('ℹ️ ' + ded.quitadas + ' fila(s) repetidas se unificaron al guardar');
+  }
   if ((table === 'super_sla' || table === 'tarifas') && typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas();
   // El mute de Realtime tiene que durar TODA la escritura, no 2,5 s: replaceAll
   // manda un delete y un lote por cada 500 filas, y si la ventana vence a mitad
@@ -596,6 +607,32 @@ function dbPush(table) {
       showToast('⚠️ Guardado local OK, pero falló la sincronización con la nube');
     }
   });
+}
+
+// Claves únicas de las tablas que se guardan con `replaceAll` (delete + insert
+// por lotes). Tienen que coincidir con los `unique` de la base: si una fila se
+// repite, el insert falla y la tabla queda a medio escribir.
+const CLAVES_UNICAS = {
+  tarifas:              r => [r.zona],
+  super_sla:            r => [r.conductor, r.zona],
+  cliente_tarifas:      r => [r.cliente, r.zona],
+  dimensiones_catalogo: r => [r.cliente, r.nombre, r.zona, r.tipo],
+  zona_alias:           r => [r.alias],
+};
+// Deja una sola fila por clave. Entre dos repetidas gana la que TIENE precio:
+// una fila en $0 es la condición registrada esperando valor, no un precio
+// acordado, y quedarse con ella haría liquidar en cero sin que nadie lo note.
+function _colapsarRepetidas(table, filas) {
+  const clave = CLAVES_UNICAS[table];
+  if (!clave) return { filas, quitadas: 0 };
+  const vistas = new Map();
+  filas.forEach(f => {
+    const k = clave(f).map(v => String(v == null ? '' : v)).join(String.fromCharCode(1));
+    const previa = vistas.get(k);
+    if (!previa) { vistas.set(k, f); return; }
+    if (_num(previa.precio) <= 0 && _num(f.precio) > 0) vistas.set(k, f);
+  });
+  return { filas: Array.from(vistas.values()), quitadas: filas.length - vistas.size };
 }
 
 // Registra una NUEVA tarifa de km en el historial (append), con vigencia desde
