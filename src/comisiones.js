@@ -863,9 +863,24 @@ function renderCierreMensual() {
 
   const filasVend = r.vendedores.map(v => {
     const pago = comisionPagoDe(periodo, v.vendedor, 'vendedor');
-    const detalle = v.clientes.map(c => c.cliente + ' (' + (c.categoria || '?') + ', mes ' + c.nroMes + '/5)').join(' · ');
+    // De mayor a menor: lo que más pesa en su liquidación va primero.
+    const clientes = v.clientes.slice().sort((a, b) => b.monto - a.monto);
+    const detalle =
+      '<details style="margin-top:5px">' +
+        '<summary style="cursor:pointer;font-size:11px;color:var(--text-secondary);user-select:none">' +
+          'Ver el detalle · ' + clientes.length + ' cliente(s)</summary>' +
+        '<div style="display:grid;grid-template-columns:1fr auto auto;gap:3px 12px;font-size:11px;margin:6px 0 2px;max-width:520px">' +
+          clientes.map(c =>
+            '<div>' + c.cliente + '</div>' +
+            '<div class="muted" style="white-space:nowrap">' + (c.categoria || '?') + ' · mes ' + c.nroMes + '/5</div>' +
+            '<div class="mono" style="text-align:right;white-space:nowrap">' + fmtPeso(c.monto) + '</div>').join('') +
+          '<div style="border-top:1px solid var(--border);padding-top:3px;font-weight:600">Total</div>' +
+          '<div style="border-top:1px solid var(--border)"></div>' +
+          '<div class="mono" style="border-top:1px solid var(--border);padding-top:3px;text-align:right;font-weight:700">' + fmtPeso(v.monto) + '</div>' +
+        '</div>' +
+      '</details>';
     return '<tr>' +
-      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(v.vendedor) + ';width:26px;height:26px;font-size:9px">' + initials(v.vendedor) + '</div><div><strong>' + v.vendedor + '</strong><div class="muted" style="font-size:10px">' + detalle + '</div></div></div></td>' +
+      '<td><div class="conductor-cell" style="align-items:flex-start"><div class="conductor-avatar" style="background:' + avatarColor(v.vendedor) + ';width:26px;height:26px;font-size:9px;flex:0 0 auto">' + initials(v.vendedor) + '</div><div><strong>' + v.vendedor + '</strong>' + detalle + '</div></div></td>' +
       '<td class="mono" style="text-align:right">' + v.clientes.length + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(v.monto) + '</td>' +
       '<td style="text-align:center">' + (pago
