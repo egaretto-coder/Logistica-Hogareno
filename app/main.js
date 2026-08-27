@@ -136,6 +136,7 @@ async function bootstrap() {
 
   // Interacciones que dependen del DOM ya inyectado
   initImportar();
+  initSidebarMini();
 
   // 1) Caché local (arranque instantáneo / offline)
   loadSavedConfig();
@@ -150,6 +151,39 @@ async function bootstrap() {
 }
 
 document.addEventListener('DOMContentLoaded', bootstrap);
+
+// ── Menú lateral contraído ────────────────────────────────────────────────
+// Deja una banda de íconos de 62px y le devuelve 158px de ancho al contenido,
+// que es lo que necesitan las tablas anchas. La preferencia se persiste igual
+// que el tema. Se corre después de inyectar el sidebar (no antes de pintar,
+// como el tema) porque en ese momento la pantalla está tapada por el login.
+function initSidebarMini() {
+  // Contraído no se lee ninguna etiqueta: el nombre pasa al tooltip ANTES de
+  // apagar el texto, así el título sale del propio botón y no de una lista
+  // paralela que habría que mantener sincronizada con el sidebar.
+  document.querySelectorAll('.sidebar .nav-item').forEach(b => {
+    if (!b.title) b.title = (b.textContent || '').trim();
+  });
+  let mini = false;
+  try { mini = localStorage.getItem('liq_menu') === 'mini'; } catch (e) {}
+  _aplicarSidebarMini(mini);
+}
+
+function _aplicarSidebarMini(mini) {
+  document.body.classList.toggle('nav-mini', !!mini);
+  const btn = document.getElementById('nav-toggle');
+  if (btn) {
+    const txt = mini ? 'Desplegar el menú' : 'Contraer el menú';
+    btn.title = txt;
+    btn.setAttribute('aria-label', txt);
+  }
+}
+
+function toggleSidebar() {
+  const mini = !document.body.classList.contains('nav-mini');
+  _aplicarSidebarMini(mini);
+  try { localStorage.setItem('liq_menu', mini ? 'mini' : 'full'); } catch (e) {}
+}
 
 // Alterna el tema claro/oscuro y lo persiste. El tema inicial se aplica antes de
 // pintar (script inline en index.html) para evitar el flash.

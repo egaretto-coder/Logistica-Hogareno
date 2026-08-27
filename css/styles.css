@@ -197,6 +197,67 @@
 
   .data-badge strong { color: rgba(255,255,255,0.85); display: block; font-size: 12px; }
 
+  /* ── Menú contraído ──────────────────────────────────────────────────────
+     Con 20 pantallas el sidebar se come 220px de ancho todo el tiempo, y las
+     tablas anchas (liquidaciones, detalle de cliente) son las que más sufren.
+     Contraído queda una banda de íconos de 62px y el contenido gana 158px.
+     El texto se apaga con font-size:0 en vez de esconder cada etiqueta: los
+     rótulos son nodos de texto sueltos dentro del botón y no hay a qué
+     apuntarles. Por eso todo lo que tiene que sobrevivir lleva medida propia
+     en px (.nav-icon ya la tenía; .ic es 1em y se le fija acá). */
+  .sidebar-logo { position: relative; }
+
+  .nav-toggle {
+    position: absolute; top: 22px; right: 12px;
+    width: 26px; height: 26px; padding: 0;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-toggle:hover { background: rgba(255,255,255,0.16); color: #fff; }
+  .nav-toggle svg {
+    width: 14px; height: 14px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  body.nav-mini .sidebar { width: 62px; }
+  body.nav-mini .main { margin-left: 62px; }
+
+  body.nav-mini .logo-text,
+  body.nav-mini .logo-sub,
+  body.nav-mini .user-badge,
+  body.nav-mini .data-badge { display: none; }
+
+  body.nav-mini .sidebar-logo { padding: 16px 0 12px; }
+  body.nav-mini .sidebar-logo .logo-mark { justify-content: center; gap: 0; margin: 0 0 10px; }
+  body.nav-mini .nav-toggle { position: static; margin: 0 auto; transform: rotate(180deg); }
+
+  /* Los rótulos de sección pasan a ser una línea divisoria: sin texto no dicen
+     nada, pero los grupos tienen que seguir distinguiéndose. */
+  body.nav-mini .nav-section {
+    height: 1px; padding: 0; margin: 10px 14px; overflow: hidden;
+    background: rgba(255,255,255,0.14);
+  }
+
+  body.nav-mini .nav-item {
+    font-size: 0; gap: 0;
+    justify-content: center;
+    padding: 10px 0;
+  }
+
+  body.nav-mini .sidebar-footer { padding: 12px 8px; }
+  body.nav-mini .logout-btn {
+    font-size: 0; gap: 0;
+    padding: 9px 0; justify-content: center; margin-bottom: 8px;
+  }
+  body.nav-mini .logout-btn .ic { width: 16px; height: 16px; }
+  body.nav-mini .logout-btn .lb-ic { font-size: 15px; }
+
   /* MAIN CONTENT */
   .main {
     margin-left: 220px;

@@ -1,5 +1,8 @@
   <nav class="sidebar">
     <div class="sidebar-logo">
+      <button class="nav-toggle" id="nav-toggle" onclick="toggleSidebar()" title="Contraer el menú" aria-label="Contraer el menú">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
       <div class="logo-mark">
         <div class="logo-icon">L</div>
         <span class="logo-text">Liquidaciones</span>
@@ -83,7 +86,7 @@
         <span class="t-light"><i class="ic ic-moon"></i> Modo oscuro</span>
         <span class="t-dark"><i class="ic ic-sun"></i> Modo claro</span>
       </button>
-      <button class="logout-btn" id="logout-btn" onclick="logout()" style="display:none;margin-bottom:8px">↪ Cerrar sesión</button>
+      <button class="logout-btn" id="logout-btn" onclick="logout()" style="display:none;margin-bottom:8px" title="Cerrar sesión"><span class="lb-ic">↪</span> Cerrar sesión</button>
       <div class="data-badge">
         <strong id="sidebar-conductor-count">0 conductores</strong>
         <span id="sidebar-record-count">Sin datos cargados</span>
