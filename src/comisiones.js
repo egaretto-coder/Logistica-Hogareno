@@ -38,29 +38,36 @@ function mesLabel(yyyymm) {
 function supervisorName() { return (AppData.config && AppData.config.comision_supervisor) || ''; }
 function supervisorPct() { const n = parseFloat(AppData.config && AppData.config.comision_supervisor_pct); return isNaN(n) ? 30 : n; }
 
-// ── Evaluación de un cliente (primeras 4 liquidaciones) ─────────────────────
-// Fecha más temprana con envío contabilizable del cliente.
-function primeraFechaCliente(cliente) {
-  const cKey = normCliente(cliente);
-  let min = null;
-  AppData.records.forEach(r => {
-    if (normCliente(r.cliente) !== cKey) return;
-    if (!contabilizaRegistro(r)) return;
-    const f = parseFechaReg(r.fecha);
-    if (!f) return;
-    if (!min || f < min) min = f;
-  });
-  return min;
+// ── Evaluación de un cliente: sus 4 PRIMERAS FACTURAS ───────────────────────
+// Se evaluaba por calendario —4 semanas desde el primer envío— y eso no es lo
+// que se evalúa: lo que cuenta son las 4 primeras FACTURAS emitidas, que el
+// operador contabiliza desde "Liquidación de clientes". Un cliente quincenal, o
+// uno que tuvo una semana sin envíos, nunca cerraba bien su evaluación con la
+// cuenta por calendario, y encima esa cuenta se movía sola: cualquier corrección
+// de zona meses después cambiaba la facturación evaluada y podía recategorizarlo.
+const FACTURAS_EVALUACION = 4;
+
+// El código con el que factura un cliente del régimen de comisiones. La fila de
+// comisión guarda el NOMBRE y las liquidaciones el código, así que se resuelve
+// por el maestro y se lleva a la cuenta canónica: un cliente con varias cuentas
+// factura junto y sus facturas tienen que contar juntas.
+function comisionCodDe(cliente) {
+  const c = (AppData.clientes || []).find(x => normCliente(x.nombre) === normCliente(cliente));
+  return clienteCodCanonico(clienteKey(c ? c.codigo : cliente));
 }
 
-// Rango de las 4 primeras liquidaciones (semana 1 Vie→Jue + 3 semanas = 28 días).
-function rangoEvaluacionCliente(cliente) {
-  const first = primeraFechaCliente(cliente);
-  if (!first) return null;
-  const w1 = semanaClienteRango(isoDeFecha(first));
-  const desdeD = w1.desdeD;
-  const hastaD = new Date(desdeD); hastaD.setDate(desdeD.getDate() + 27); hastaD.setHours(23, 59, 59, 999);
-  return { desdeD, hastaD, completo: new Date() > hastaD, primeraSemana: w1.desde + ' → ' + w1.hasta };
+// La fila de comisión de un cliente, buscada por su código de facturación.
+function comisionPorCod(cod) {
+  const k = clienteCodCanonico(clienteKey(cod));
+  return (AppData.comisionClientes || []).find(c => comisionCodDe(c.cliente) === k) || null;
+}
+
+// Las liquidaciones contabilizadas de un cliente, de la más vieja a la más nueva.
+function facturasComisionDe(cliente) {
+  const k = comisionCodDe(cliente);
+  return (AppData.clienteLiquidaciones || [])
+    .filter(x => x.cuenta_comision && clienteCodCanonico(clienteKey(x.cliente_cod)) === k)
+    .sort((a, b) => String(a.semana_hasta).localeCompare(String(b.semana_hasta)));
 }
 
 // Categoría (y monto) que le corresponde a una facturación según la escala.
@@ -75,109 +82,32 @@ function categoriaDeFacturacion(fact) {
   return match;
 }
 
-// ── Recorridos del cliente para EVALUAR la comisión ─────────────────────────
-// La app carga una ventana corta de días (lo operativo), pero la evaluación de
-// un cliente nuevo necesita sus 4 primeras liquidaciones (28 días desde su
-// primer envío), que pueden ser anteriores. Por eso los traemos BAJO DEMANDA
-// desde la nube (vivos + archivados) y los cacheamos por cliente.
-const _comisionRecords = new Map();      // normCliente -> [registros contabilizables]
-const _comisionCargando = new Set();
-
-function _esContab(r) {
-  return contabilizaRegistro(r);
-}
-
-// Recorridos contabilizables de un cliente: los traídos bajo demanda si están,
-// si no los que haya en memoria (ventana operativa).
-function _recordsContabDeCliente(cliente) {
-  const cKey = normCliente(cliente);
-  const completos = _comisionRecords.get(cKey);
-  if (completos) return completos;
-  return AppData.records.filter(r => normCliente(r.cliente) === cKey && _esContab(r));
-}
-
-// Trae de la nube TODOS los recorridos del cliente (fuera de la ventana también).
-async function cargarRecorridosCliente(cliente) {
-  const cKey = normCliente(cliente);
-  if (_comisionRecords.has(cKey) || _comisionCargando.has(cKey)) return false;
-  if (!(window.DB && DB.ready)) return false;
-  _comisionCargando.add(cKey);
-  try {
-    const filas = await DB.selectRegistrosDeCliente(cliente);
-    _comisionRecords.set(cKey, (filas || []).filter(_esContab).map(r => ({
-      cliente: r.cliente || '', zona: r.zona || r.localidad || '', localidad: r.localidad || '',
-      estado: r.estado || '', fecha: r.fecha || ''
-    })));
-    return true;
-  } catch (e) {
-    console.warn('cargarRecorridosCliente(' + cliente + '):', e);
-    return false;
-  } finally { _comisionCargando.delete(cKey); }
-}
-
-// Para los clientes que todavía no están confirmados, asegura tener su historia
-// completa y re-renderiza cuando llegan (así el monto nunca se evalúa de menos).
-async function asegurarRecorridosParaEvaluar() {
-  const pendientes = (AppData.comisionClientes || []).filter(c => !c.bloqueado);
-  if (!pendientes.length) return;
-  const res = await Promise.all(pendientes.map(c => cargarRecorridosCliente(c.cliente)));
-  if (res.some(Boolean)) renderComisionClientes();
-}
-// Índice recorridos contabilizables por cliente (1 sola pasada) — para no repetir
-// el scan de AppData.records por cada fila en la tabla de comisiones (O(N) total
-// en vez de O(filas × registros)).
-function _indexRecordsContabPorCliente() {
-  const idx = new Map();
-  AppData.records.forEach(r => {
-    if (!contabilizaRegistro(r)) return;
-    const k = normCliente(r.cliente);
-    if (!k) return;
-    let b = idx.get(k); if (!b) { b = []; idx.set(k, b); }
-    b.push(r);
-  });
-  return idx;
-}
-
-// Evaluación en vivo de un cliente: facturación de las 4 primeras liquidaciones,
-// categoría y monto. `recs` (opcional) = recorridos contabilizables ya filtrados
-// del cliente (los pasa la tabla desde su índice para no re-escanear todo).
-function evalComisionCliente(cliente, recs) {
+// Evaluación en vivo: cuántas facturas lleva contabilizadas, cuánto suman y qué
+// categoría le tocaría. Cierra recién en la 4.ª.
+function evalComisionCliente(cliente) {
   const tieneEscala = AppData.comisionCategorias.length > 0;
-  if (!recs) recs = _recordsContabDeCliente(cliente);
-  const vacio = { facturacion: 0, envios: 0, sinTarifa: 0, categoria: '', monto: 0, rango: null, completo: false, tieneEscala };
-  if (!recs.length) return vacio;
-  let min = null;
-  recs.forEach(r => { const f = parseFechaReg(r.fecha); if (f && (!min || f < min)) min = f; });
-  if (!min) return vacio;
-  const w1 = semanaClienteRango(isoDeFecha(min));
-  const desdeD = w1.desdeD;
-  const hastaD = new Date(desdeD); hastaD.setDate(desdeD.getDate() + 27); hastaD.setHours(23, 59, 59, 999);
-  const completo = new Date() > hastaD;
-  let total = 0, envios = 0, sinTarifa = 0;
-  recs.forEach(r => {
-    const f = parseFechaReg(r.fecha);
-    if (!f || f < desdeD || f > hastaD) return;
-    // MISMO precio que factura el resto de la app: precioVentaEnvio contempla la
-    // dimensión especial asignada, que reemplaza la tarifa de la zona. Con
-    // clienteTarifaEnZona a secas, un cliente con condiciones especiales
-    // facturaba de menos en la evaluación y podía caer en una categoría más baja
-    // de la escala, pagándole menos comisión al vendedor.
-    const precio = precioVentaEnvio(cliente, r);
-    total += precio; envios++; if (precio <= 0) sinTarifa++;
-  });
-  const cat = categoriaDeFacturacion(total);
+  const todas = facturasComisionDe(cliente);
+  const usadas = todas.slice(0, FACTURAS_EVALUACION);
+  const facturacion = usadas.reduce((s, f) => s + _num(f.monto), 0);
+  const completo = usadas.length >= FACTURAS_EVALUACION;
+  const cat = completo ? categoriaDeFacturacion(facturacion) : null;
   return {
-    facturacion: total, envios, sinTarifa,
+    facturacion, facturas: usadas.length, faltan: Math.max(0, FACTURAS_EVALUACION - usadas.length),
+    ultima: usadas.length ? usadas[usadas.length - 1] : null,
+    desde: usadas.length ? String(usadas[0].semana_desde || '').slice(0, 10) : '',
+    hasta: usadas.length ? String(usadas[usadas.length - 1].semana_hasta || '').slice(0, 10) : '',
     categoria: cat ? cat.categoria : '', monto: cat ? _num(cat.monto) : 0,
-    rango: { desdeD, hastaD, completo, primeraSemana: w1.desde + ' → ' + w1.hasta }, completo, tieneEscala
+    completo, tieneEscala,
   };
 }
 
-// Primer mes de pago por defecto: el mes siguiente al fin de la evaluación.
+// Primer mes de pago por defecto: el mes SIGUIENTE al de la 4.ª factura. La
+// evaluación puede cerrar a mitad de mes y ese mes ya está corriendo, así que
+// se abona siempre desde el siguiente.
 function mesInicioDefaultCliente(cliente) {
-  const rango = rangoEvaluacionCliente(cliente);
-  if (!rango) return mesActualYYYYMM();
-  return addMeses(mesDeFechaD(rango.hastaD), 1);
+  const ev = evalComisionCliente(cliente);
+  if (!ev.completo || !ev.hasta) return addMeses(mesActualYYYYMM(), 1);
+  return addMeses(ev.hasta.slice(0, 7), 1);
 }
 
 // Los 5 meses de pago de una fila de comisión.
@@ -549,18 +479,14 @@ function renderComisionClientes() {
     return;
   }
 
-  const idx = _indexRecordsContabPorCliente();
   cont.innerHTML = lista.map(row => {
-    const _k = normCliente(row.cliente);
-    // Preferimos la historia completa traída de la nube; si aún no llegó, lo que
-    // haya en la ventana operativa (se repinta solo al llegar).
-    const ev = evalComisionCliente(row.cliente, _comisionRecords.get(_k) || idx.get(_k) || []);
+    const ev = evalComisionCliente(row.cliente);
     const bloq = !!row.bloqueado;
     const fact = bloq ? _num(row.facturacion_eval) : ev.facturacion;
     const cat = bloq ? (row.categoria || '—') : (ev.categoria || '—');
     const monto = bloq ? _num(row.monto) : ev.monto;
     // 5 meses de pago: desde row.mes_inicio, o el mes siguiente al fin de evaluación.
-    const miDefault = ev.rango ? addMeses(mesDeFechaD(ev.rango.hastaD), 1) : mesActualYYYYMM();
+    const miDefault = mesInicioDefaultCliente(row.cliente);
     const mi = row.mes_inicio || miDefault;
     const meses = [0, 4].map(i => addMeses(mi, i));
     // Los 5 pagos arrancan el mes SIGUIENTE al cierre de la evaluación, así que
@@ -583,13 +509,14 @@ function renderComisionClientes() {
       estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c">Falta escala</span>';
       acciones = '';
     } else if (!ev.completo) {
-      estadoHtml = '<span class="badge" style="background:#fef9c3;color:#854d0e">En evaluación</span>';
+      estadoHtml = '<span class="badge" style="background:#fef9c3;color:#854d0e">' + ev.facturas + ' de ' + FACTURAS_EVALUACION + ' facturas</span>' +
+        '<div class="muted" style="font-size:10px;margin-top:2px">faltan ' + ev.faltan + '</div>';
       acciones = '';
     } else {
       estadoHtml = '<span class="badge" style="background:#e0e7ff;color:#3730a3">Listo p/ confirmar</span>';
       acciones = '<button class="btn btn-sm btn-primary" onclick="confirmarComisionCliente(' + row.id + ')" title="Congela el monto y arranca los 5 pagos"><i class="ic ic-check"></i> Confirmar</button>';
     }
-    const warnTarifa = (!bloq && ev.rango && ev.sinTarifa > 0) ? ' <span title="Hay envíos sin tarifa de venta cargada — la facturación evaluada puede estar incompleta" style="color:#b45309">⚠</span>' : '';
+    const warnTarifa = '';
 
     // La fila de baja se atenúa y el monto va tachado: la comisión existió y hoy
     // no corre, que es distinto de no haber tenido nunca.
@@ -611,9 +538,6 @@ function renderComisionClientes() {
     '</tr>';
   }).join('');
 
-  // Traer de la nube la historia completa de los clientes aún sin confirmar
-  // (puede exceder la ventana de días que carga la app) y repintar al llegar.
-  asegurarRecorridosParaEvaluar();
 }
 
 // Chip de cuántos pagos quedan. Se pinta en ámbar cuando quedan 2 o menos: es
@@ -746,30 +670,30 @@ function actualizarPreviewComisionCliente() {
     return;
   }
   if (!cliente) { box.innerHTML = '<span class="muted">Elegí un cliente para ver la evaluación de sus primeras 4 liquidaciones.</span>'; return; }
-  // Si todavía no tenemos su historia completa, la pedimos y refrescamos el preview.
-  if (!_comisionRecords.has(normCliente(cliente))) {
-    cargarRecorridosCliente(cliente).then(ok => { if (ok) actualizarPreviewComisionCliente(); });
-  }
   const ev = evalComisionCliente(cliente);
   if (miInput && !miInput.value) miInput.placeholder = mesInicioDefaultCliente(cliente) + ' (por defecto)';
   if (!ev.tieneEscala) { box.innerHTML = '<span style="color:#b91c1c">⚠ No hay escala de categorización cargada. Importala en la solapa "Vendedores y escala".</span>'; return; }
-  if (!ev.rango) { box.innerHTML = '<span style="color:#854d0e">Sin envíos entregados de este cliente todavía — no se puede evaluar aún.</span>'; return; }
-  const estado = ev.completo ? '<span style="color:#166534">4 liquidaciones completas ✓</span>' : '<span style="color:#854d0e">Evaluación en curso (aún no pasaron las 4 semanas)</span>';
-  // Los 5 pagos empiezan una vez cerrada la evaluación, no desde el alta del
-  // cliente. Se deletrea porque en la planilla la columna "Mes Inicio" es el mes
-  // en que CIERRA la evaluación, y copiarlo al campo de abajo correría todo.
-  const mFin = mesDeFechaD(ev.rango.hastaD);
-  const m1 = addMeses(mFin, 1);
-  const cronograma = '<div style="margin-top:6px;font-size:11px;border-top:1px solid var(--border);padding-top:6px">' +
-    'La evaluación cierra en <strong>' + mesLabel(mFin) + '</strong> · los 5 pagos van de <strong>' +
-    mesLabel(m1) + '</strong> a <strong>' + mesLabel(addMeses(m1, 4)) + '</strong>.</div>';
+  const estado = ev.completo
+    ? '<span style="color:#166534">Las ' + FACTURAS_EVALUACION + ' facturas están contabilizadas ✓</span>'
+    : '<span style="color:#854d0e">Lleva <strong>' + ev.facturas + ' de ' + FACTURAS_EVALUACION + '</strong> facturas · faltan ' + ev.faltan +
+      '. Se contabilizan desde <strong>Liquidación de clientes</strong>.</span>';
+  // El pago arranca el mes SIGUIENTE al de la 4.ª factura: la evaluación puede
+  // cerrar a mitad de mes y ese mes ya está corriendo.
+  const cronograma = !ev.completo ? '' :
+    (function () {
+      const m1 = addMeses(ev.hasta.slice(0, 7), 1);
+      return '<div style="margin-top:6px;font-size:11px;border-top:1px solid var(--border);padding-top:6px">' +
+        'La 4.ª factura cierra el <strong>' + cargoFechaTxt(ev.hasta) + '</strong> · los 5 pagos van de <strong>' +
+        mesLabel(m1) + '</strong> a <strong>' + mesLabel(addMeses(m1, 4)) + '</strong>.</div>';
+    })();
   box.innerHTML =
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">' +
-      '<div><div class="muted" style="font-size:10px">Facturación 4 liq.</div><div style="font-weight:700">' + fmtPeso(ev.facturacion) + '</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">' +
+      '<div><div class="muted" style="font-size:10px">Facturas</div><div style="font-weight:700">' + ev.facturas + ' de ' + FACTURAS_EVALUACION + '</div></div>' +
+      '<div><div class="muted" style="font-size:10px">Facturación</div><div style="font-weight:700">' + fmtPeso(ev.facturacion) + '</div></div>' +
       '<div><div class="muted" style="font-size:10px">Categoría</div><div style="font-weight:700">' + (ev.categoria || '—') + '</div></div>' +
       '<div><div class="muted" style="font-size:10px">Monto fijo/mes</div><div style="font-weight:700">' + (ev.monto > 0 ? fmtPeso(ev.monto) : '—') + '</div></div>' +
     '</div>' +
-    '<div style="margin-top:6px;font-size:11px">' + estado + (ev.sinTarifa > 0 ? ' · <span style="color:#b45309">⚠ ' + ev.sinTarifa + ' envío(s) sin tarifa de venta</span>' : '') + '</div>' +
+    '<div style="margin-top:6px;font-size:11px">' + estado + '</div>' +
     cronograma;
 }
 async function guardarComisionClienteModal() {
@@ -838,12 +762,9 @@ function _camposCategoriaManual(catManual, factManual, filaPrevia) {
 async function confirmarComisionCliente(id) {
   const row = AppData.comisionClientes.find(x => x.id === id);
   if (!row) return;
-  // CONGELA el monto: nos aseguramos de tener TODOS sus envíos (incluso fuera de
-  // la ventana operativa) antes de evaluar, para no comisionar de menos.
-  await cargarRecorridosCliente(row.cliente);
   const ev = evalComisionCliente(row.cliente);
   if (!ev.tieneEscala) { alert('No hay escala de categorización cargada.'); return; }
-  if (!ev.completo) { if (!confirm('Las 4 liquidaciones todavía no están completas. ¿Confirmar igual con la facturación actual (' + fmtPeso(ev.facturacion) + ')?')) return; }
+  if (!ev.completo) { if (!confirm('Lleva ' + ev.facturas + ' de ' + FACTURAS_EVALUACION + ' facturas contabilizadas. ¿Confirmar igual con lo facturado hasta acá (' + fmtPeso(ev.facturacion) + ')?')) return; }
   if (ev.monto <= 0) { if (!confirm('La categoría evaluada da monto $0 (facturación ' + fmtPeso(ev.facturacion) + '). ¿Confirmar igual?')) return; }
   const mesInicio = row.mes_inicio || mesInicioDefaultCliente(row.cliente);
   const campos = { categoria: ev.categoria, facturacion_eval: ev.facturacion, monto: ev.monto, mes_inicio: mesInicio, bloqueado: true };

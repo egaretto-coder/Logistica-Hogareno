@@ -374,7 +374,8 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.clienteLiquidaciones = (data.cliente_liquidaciones || []).map(x => ({
     id: x.id, cliente_cod: String(x.cliente_cod || '').toUpperCase(),
     semana_desde: x.semana_desde || '', semana_hasta: x.semana_hasta || '',
-    armada_por: x.armada_por || '', armada_en: x.armada_en || '', obs: x.obs || ''
+    armada_por: x.armada_por || '', armada_en: x.armada_en || '', obs: x.obs || '',
+    cuenta_comision: !!x.cuenta_comision, monto: _num(x.monto)
   }));
 
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.

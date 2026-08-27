@@ -1067,6 +1067,13 @@ create table if not exists public.cliente_liquidaciones (
   armada_por text default '',
   armada_en timestamptz not null default now(),
   obs text default '',
+  -- La evaluación de comisiones se cuenta por FACTURAS emitidas: a la 4.ª
+  -- contabilizada cierra y el cliente se categoriza por el total de esas 4.
+  -- Se marca a mano: no toda liquidación cerrada cuenta.
+  cuenta_comision boolean not null default false,
+  -- Total facturado, CONGELADO al cerrar. Sin esto, corregir una zona o anular
+  -- un envío meses después movería para atrás una evaluación ya pagada.
+  monto numeric not null default 0,
   unique (cliente_cod, semana_hasta)
 );
 create index if not exists idx_cliente_liq_semana on public.cliente_liquidaciones (semana_hasta);
