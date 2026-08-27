@@ -690,10 +690,14 @@
           <label class="form-label">Fecha de alta (opcional)</label>
           <input type="date" id="mcc-fecha" class="form-input" style="width:100%" />
         </div>
-        <div class="form-group" style="margin:0;flex:1;min-width:150px">
-          <label class="form-label">1er mes de pago (opcional)</label>
-          <input type="month" id="mcc-mesinicio" class="form-input" style="width:100%" />
-          <span style="font-size:11px;color:var(--text-muted)">Es el <strong>primer mes que se cobra</strong>, no el mes en que cierra la evaluación. Vacío = se calcula solo.</span>
+        <div class="form-group" style="margin:0;flex:1;min-width:180px">
+          <label class="form-label">1.er mes de pago</label>
+          <div style="display:flex;gap:6px;align-items:center;min-height:36px">
+            <strong id="mcc-mesinicio-txt" style="font-size:13px">—</strong>
+            <button type="button" class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="mostrarCorreccionMesPago()" id="mcc-mesinicio-btn">Corregir</button>
+          </div>
+          <input type="month" id="mcc-mesinicio" class="form-input" style="width:100%;display:none" onchange="actualizarPreviewComisionCliente()" />
+          <span style="font-size:11px;color:var(--text-muted)">Lo calcula la app: el mes siguiente al de la 4.ª factura.</span>
         </div>
       </div>
       <div class="form-group" style="margin:0">

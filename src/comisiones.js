@@ -739,7 +739,7 @@ function openAddComisionClienteModal() {
   document.getElementById('mcc-cliente').removeAttribute('disabled');
   document.getElementById('mcc-vendedor').value = '';
   document.getElementById('mcc-fecha').value = '';
-  document.getElementById('mcc-mesinicio').value = '';
+  _mccResetMesPago('');
   _mccCategorias(''); document.getElementById('mcc-facturacion').value = '';
   _setEstadoComisionModal('activo', '', '');
   renderComisionClientes(); // refresca datalists
@@ -756,7 +756,7 @@ function editComisionCliente(id) {
   cliInput.setAttribute('disabled', 'disabled'); // no se cambia el cliente al editar
   document.getElementById('mcc-vendedor').value = row.vendedor || '';
   document.getElementById('mcc-fecha').value = row.fecha_alta && /^\d{4}-\d{2}-\d{2}$/.test(row.fecha_alta) ? row.fecha_alta : '';
-  document.getElementById('mcc-mesinicio').value = row.mes_inicio || '';
+  _mccResetMesPago(row.bloqueado ? (row.mes_inicio || '') : '');
   _mccCategorias(row.bloqueado ? (row.categoria || '') : '');
   document.getElementById('mcc-facturacion').value = row.bloqueado && _num(row.facturacion_eval) > 0 ? _num(row.facturacion_eval) : '';
   _setEstadoComisionModal(row.estado || 'activo', row.mes_baja || '', row.motivo_baja || '');
@@ -797,23 +797,60 @@ function toggleBajaComisionCliente() {
 function closeComisionClienteModal(e) {
   if (!e || e.target.id === 'modal-cc-backdrop') document.getElementById('modal-cc-backdrop').style.display = 'none';
 }
+// Deja el campo escondido de vuelta, con la corrección previa si la había: una
+// fila ya confirmada puede tener un mes puesto a mano y editarla no debe
+// borrarlo en silencio.
+function _mccResetMesPago(valor) {
+  const inp = document.getElementById('mcc-mesinicio');
+  const btn = document.getElementById('mcc-mesinicio-btn');
+  if (inp) { inp.value = valor || ''; inp.style.display = valor ? '' : 'none'; }
+  if (btn) btn.style.display = valor ? 'none' : '';
+}
+
+// Muestra el 1.er mes de pago que sale de la evaluación. El operador no lo
+// escribe: es una cuenta que la app ya sabe hacer y pedírsela es pedirle que la
+// repita. El input sigue existiendo, escondido, como corrección puntual.
+function _mccPintarMesPago(cliente) {
+  const txt = document.getElementById('mcc-mesinicio-txt');
+  const inp = document.getElementById('mcc-mesinicio');
+  if (!txt || !inp) return '';
+  const manual = (inp.value || '').trim();
+  const mi = manual || (cliente ? mesInicioDefaultCliente(cliente) : '');
+  txt.innerHTML = mi
+    ? mesLabel(mi) + (manual ? ' <span class="muted" style="font-weight:400;font-size:11px">· corregido a mano</span>' : '')
+    : '<span class="muted" style="font-weight:400">se define al cerrar la evaluación</span>';
+  return mi;
+}
+
+function mostrarCorreccionMesPago() {
+  const inp = document.getElementById('mcc-mesinicio');
+  const btn = document.getElementById('mcc-mesinicio-btn');
+  if (!inp) return;
+  inp.style.display = '';
+  if (btn) btn.style.display = 'none';
+  const cliente = (document.getElementById('mcc-cliente').value || '').trim();
+  if (!inp.value && cliente) inp.value = mesInicioDefaultCliente(cliente);
+  inp.focus();
+  actualizarPreviewComisionCliente();
+}
+
 function actualizarPreviewComisionCliente() {
   const cliente = (document.getElementById('mcc-cliente').value || '').trim();
   const box = document.getElementById('mcc-preview');
   const miInput = document.getElementById('mcc-mesinicio');
+  _mccPintarMesPago(cliente);
   if (!box) return;
   // Categoría declarada a mano: manda sobre la evaluación automática y el
   // preview tiene que decir eso mismo, para que nadie espere que la app la mueva.
   const catManual = (document.getElementById('mcc-categoria') || {}).value || '';
   if (catManual) {
     const c = (AppData.comisionCategorias || []).find(x => x.categoria === catManual);
-    const mi = (miInput && miInput.value) || '';
+    const mi = ((miInput && miInput.value) || '') || (cliente ? mesInicioDefaultCliente(cliente) : '');
     box.innerHTML =
       '<div><strong>Categoría ' + catManual + '</strong> declarada a mano · ' +
       fmtPeso(_num(c && c.monto)) + '/mes durante 5 meses.</div>' +
       '<div style="margin-top:4px;font-size:11px">' +
-      (mi ? 'Cobra de <strong>' + mesLabel(mi) + '</strong> a <strong>' + mesLabel(addMeses(mi, 4)) + '</strong>.'
-          : '<span style="color:#b45309">⚠ Poné el 1.er mes de pago: es lo que define los 5 meses que va a cobrar.</span>') +
+      (mi ? 'Cobra de <strong>' + mesLabel(mi) + '</strong> a <strong>' + mesLabel(addMeses(mi, 4)) + '</strong>.' : '') +
       '</div>';
     return;
   }
@@ -848,7 +885,10 @@ async function guardarComisionClienteModal() {
   const cliente = (document.getElementById('mcc-cliente').value || '').trim().toUpperCase();
   const vendedor = (document.getElementById('mcc-vendedor').value || '').trim().toUpperCase();
   const fecha_alta = document.getElementById('mcc-fecha').value || '';
-  const mes_inicio = document.getElementById('mcc-mesinicio').value || '';
+  // Sin corrección a mano, el mes sale del cálculo. Solo se persiste cuando la
+  // fila queda confirmada: mientras esté en evaluación se recalcula sola, así
+  // sigue el movimiento de las facturas.
+  const mesManual = document.getElementById('mcc-mesinicio').value || '';
   const catManual = (document.getElementById('mcc-categoria')?.value || '').trim();
   const factManual = parseFloat(document.getElementById('mcc-facturacion')?.value);
   const estado = (document.getElementById('mcc-estado')?.value === 'baja') ? 'baja' : 'activo';
@@ -857,9 +897,7 @@ async function guardarComisionClienteModal() {
   if (estado === 'baja' && !mes_baja) { alert('Indicá desde qué mes el cliente deja de comisionar.'); return; }
   if (!cliente) { alert('Elegí un cliente.'); return; }
   if (!vendedor) { alert('Elegí o escribí un vendedor.'); return; }
-  // Con la categoría a mano no hay evaluación de la que deducir el arranque, y
-  // ese mes define los 5 pagos: se pide en vez de inventarlo.
-  if (catManual && !mes_inicio) { alert('Poné el 1.er mes de pago: con la categoría declarada a mano es lo que define los 5 meses que va a cobrar.'); return; }
+  const mes_inicio = mesManual || (catManual ? mesInicioDefaultCliente(cliente) : '');
   const dup = AppData.comisionClientes.find(c => normCliente(c.cliente) === normCliente(cliente) && c.id !== comisionClienteEditId);
   if (dup) { alert('El cliente "' + cliente + '" ya está asignado a ' + dup.vendedor + '.'); return; }
   try {
