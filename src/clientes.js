@@ -435,7 +435,7 @@ function verCardCliente(cod) {
   const k = clienteKey(cod);
   const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
   if (!c) { showToast('No se encontró el cliente'); return; }
-  const rango = semanaClienteRango();
+  const rango = periodoClienteRango(k);
   const liq = calcLiquidacionCliente(k, rango);
   const cuentas = cuentasDeCliente(k);
   const nz = clienteNZonas(k);
@@ -474,6 +474,7 @@ function verCardCliente(cod) {
       '<div style="font-size:11px;color:var(--text-muted)">' + k + (c.activo === false ? ' · dado de baja' : '') + '</div></div>' +
     '</div>' +
 
+    _cardPeriodo(k, c) +
     '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
       dato('Razón social', c.razon_social) + dato('CUIT', c.cuit) +
       dato('Contacto', c.contacto) + dato('Teléfono', c.telefono) + dato('Email', c.email) +
@@ -1643,4 +1644,99 @@ async function arrastrarEnviosASemana(indices, semanaISO) {
   if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
   return ids.length;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  PERÍODO DE FACTURACIÓN POR CLIENTE
+//  Hay clientes semanales, quincenales y mensuales. Se cuenta por SEMANAS
+//  ENTERAS Vie→Jue —el mismo ciclo con el que se le paga al conductor—, así el
+//  corte nunca parte una semana del cadete y el viernes que ABRE el período
+//  sigue siendo la clave que ancla los arrastres y los cargos.
+// ════════════════════════════════════════════════════════════════════════
+const PERIODOS_CLIENTE = {
+  7:  { label: 'Semanal',    detalle: 'Viernes a jueves' },
+  14: { label: 'Quincenal',  detalle: 'Dos semanas, de viernes a jueves' },
+  28: { label: 'Mensual',    detalle: 'Cuatro semanas, de viernes a jueves' },
+};
+function periodoLabel(dias) { return (PERIODOS_CLIENTE[_num(dias) || 7] || PERIODOS_CLIENTE[7]).label; }
+
+function periodoDiasDe(cod) {
+  const k = clienteKey(cod);
+  const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
+  const d = _num(c && c.periodo_dias) || 7;
+  return PERIODOS_CLIENTE[d] ? d : 7;
+}
+
+// Semanas transcurridas desde un viernes de referencia (02/01/1970 fue viernes).
+// Da una grilla ESTABLE: qué viernes abre un período no depende de qué día se
+// mire, así que la liquidación de un quincenal cae siempre en las mismas fechas.
+function _semanasDesdeEpoca(viernes) {
+  const base = Date.UTC(1970, 0, 2);
+  const v = Date.UTC(viernes.getFullYear(), viernes.getMonth(), viernes.getDate());
+  return Math.floor((v - base) / 604800000);
+}
+
+// Período de facturación de un cliente que CONTIENE la fecha dada.
+// Sin cliente (o semanal) devuelve la semana de siempre.
+function periodoClienteRango(cod, iso) {
+  const semana = semanaClienteRango(iso);
+  const dias = periodoDiasDe(cod);
+  if (dias === 7) return Object.assign({}, semana, { dias: 7, semanas: 1 });
+  const n = dias / 7;
+  const atras = ((_semanasDesdeEpoca(semana.desdeD) % n) + n) % n;
+  const desde = new Date(semana.desdeD); desde.setDate(desde.getDate() - atras * 7); desde.setHours(0, 0, 0, 0);
+  const hasta = new Date(desde); hasta.setDate(desde.getDate() + n * 7 - 1); hasta.setHours(23, 59, 59, 999);
+  const fmt = x => String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear();
+  return { desde: fmt(desde), hasta: fmt(hasta), desdeD: desde, hastaD: hasta, dias, semanas: n };
+}
+
+// Corre un input date al viernes que ABRE el período de ese cliente.
+function snapPeriodoCliente(inputId, cod) {
+  const el = document.getElementById(inputId);
+  if (!el || !el.value) return;
+  const v = periodoClienteRango(cod, el.value).desdeD;
+  el.value = v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
+}
+
+// Guarda el período elegido en la ficha.
+async function guardarPeriodoCliente(cod, dias) {
+  const k = clienteKey(cod);
+  const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
+  if (!c) return;
+  const d = PERIODOS_CLIENTE[_num(dias)] ? _num(dias) : 7;
+  try {
+    await DB.updateWhere('clientes', 'id', c.id, { periodo_dias: d });
+    c.periodo_dias = d;
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    if (typeof renderClientes === 'function') renderClientes();
+    showToast('✅ ' + clienteNombreDe(k) + ': facturación ' + periodoLabel(d).toLowerCase() +
+      ' (' + d + ' días)');
+  } catch (e) { console.warn('guardarPeriodoCliente', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// Selector del período de facturación en la ficha. Va arriba de todo porque
+// define el ciclo: de él dependen qué envíos entran, dónde se anclan los cargos
+// y qué le muestra el panel del operador.
+function _cardPeriodo(k, c) {
+  const actual = periodoDiasDe(k);
+  const esc = String(k).replace(/'/g, "\'");
+  const opts = Object.keys(PERIODOS_CLIENTE).map(d => {
+    const info = PERIODOS_CLIENTE[d];
+    return '<option value="' + d + '"' + (_num(d) === actual ? ' selected' : '') + '>' +
+      info.label + ' · cada ' + d + ' días</option>';
+  }).join('');
+  const r = periodoClienteRango(k);
+  return '<div style="padding:12px 0;border-top:1px solid var(--border)">' +
+    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">' +
+      'Período de facturación</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<select id="card-periodo" onchange="guardarPeriodoCliente(\'' + esc + '\', this.value)" ' +
+        'style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">' + opts + '</select>' +
+      '<span style="font-size:11.5px;color:var(--text-muted)">' + PERIODOS_CLIENTE[actual].detalle +
+      ' · el período en curso va del <strong>' + r.desde + '</strong> al <strong>' + r.hasta + '</strong></span>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">' +
+      'Se cuenta por semanas enteras Vie→Jue, el mismo ciclo con el que se le paga al conductor: ' +
+      'así el corte no parte una semana del cadete.</div>' +
+  '</div>';
 }

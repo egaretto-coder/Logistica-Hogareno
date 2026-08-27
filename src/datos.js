@@ -238,6 +238,8 @@ async function _hydrateFromSupabaseReal(opts) {
     id: c.id, nombre: c.nombre, codigo: (c.codigo || '').toUpperCase(),
     razon_social: c.razon_social || '', cuit: c.cuit || '',
     contacto: c.contacto || '', telefono: c.telefono || '', email: c.email || '', obs: c.obs || '',
+    // Cada cuánto se le factura, en días: 7 semanal · 14 quincenal · 28 mensual.
+    periodo_dias: _num(c.periodo_dias) || 7,
     activo: c.activo !== false
   }));
   AppData.clienteTarifas = (data.cliente_tarifas || []).map(t => ({

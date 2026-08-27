@@ -17,9 +17,13 @@ let dcliDiasAbiertos = new Set();
 let dcliClienteActual = null;
 
 // Semana Vie→Jue que se está mirando (la del date, o la actual).
+// El rango es el PERÍODO del cliente elegido: semanal, quincenal o mensual.
+// Siempre arranca un viernes y termina un jueves, así el corte no parte una
+// semana del conductor.
 function dcliRango() {
   const iso = document.getElementById('dcli-semana')?.value || '';
-  return semanaClienteRango(iso || undefined);
+  const cod = document.getElementById('dcli-select')?.value || '';
+  return periodoClienteRango(cod, iso || undefined);
 }
 
 function dcliMoverSemana(dias) {
@@ -32,7 +36,8 @@ function dcliMoverSemana(dias) {
 }
 // Al elegir un día cualquiera, el campo se corre al viernes de esa semana.
 function dcliCambioSemana() {
-  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana');
+  const cod = document.getElementById('dcli-select')?.value || '';
+  if (typeof snapPeriodoCliente === 'function') snapPeriodoCliente('dcli-semana', cod);
   renderDetalleCliente();
 }
 function dcliSemanaAnterior() { dcliMoverSemana(-7); }

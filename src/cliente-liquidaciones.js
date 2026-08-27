@@ -63,12 +63,21 @@ async function desarmarLiquidacion(cod, rango) {
 // ── Listado del panel ───────────────────────────────────────────────────
 // Todos los clientes con envíos contabilizables en la semana, armados o no.
 function cliqListado(rango) {
+  // El rango que llega es el de la SEMANA de la fecha elegida; sirve para
+  // saber a quién mirar, pero cada cliente se liquida por SU período (7, 14
+  // o 28 días). Un quincenal que no cierra esta semana no tiene nada que
+  // descargar todavía, y mostrarle media quincena seria un numero falso.
   const conEnvios = clientesDeRegistros(rango);
+  const iso = (rango && rango.desdeD)
+    ? rango.desdeD.getFullYear() + '-' + String(rango.desdeD.getMonth() + 1).padStart(2, '0') + '-' + String(rango.desdeD.getDate()).padStart(2, '0')
+    : undefined;
   return conEnvios.map(c => {
-    const liq = calcLiquidacionCliente(c.cod, rango);
-    const armada = liquidacionArmada(c.cod, rango);
+    const rc = periodoClienteRango(c.cod, iso);
+    const liq = calcLiquidacionCliente(c.cod, rc);
+    const armada = liquidacionArmada(c.cod, rc);
     return {
-      cod: c.cod, nombre: clienteNombreDe(c.cod),
+      cod: c.cod, nombre: clienteNombreDe(c.cod), rango: rc,
+      periodo: periodoDiasDe(c.cod), periodoLabel: periodoLabel(periodoDiasDe(c.cod)),
       envios: liq.totalEnvios, total: liq.total,
       sinTarifa: liq.sinTarifa, armada
     };
@@ -107,7 +116,9 @@ function renderClienteLiquidaciones() {
   if (!body) return;
   const rango = semanaClienteRango(cliqSemanaISO());
   const per = document.getElementById('cliq-periodo');
-  if (per) per.textContent = 'Semana ' + rango.desde + ' → ' + rango.hasta + ' (corte jueves)';
+  // Cada cliente puede tener su propio ciclo, así que el encabezado habla de
+  // la fecha elegida y cada fila muestra el período que le toca.
+  if (per) per.textContent = 'Períodos que contienen la semana ' + rango.desde + ' → ' + rango.hasta;
 
   const q = (document.getElementById('cliq-search')?.value || '').toLowerCase().trim();
   const todas = cliqListado(rango);
@@ -162,7 +173,9 @@ function renderClienteLiquidaciones() {
           ' onchange="toggleCliqSel(\'' + codEsc + '\',this.checked)">'
         : '') + '</td>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(x.nombre) + '</div>' +
-        '<div><strong>' + x.nombre + '</strong><div class="muted" style="font-size:10px">' + x.cod + '</div></div></div></td>' +
+        '<div><strong>' + x.nombre + '</strong><div class="muted" style="font-size:10px">' + x.cod +
+          (x.periodo !== 7 ? ' · ' + x.periodoLabel : '') + '</div>' +
+          '<div class="muted" style="font-size:9.5px">' + x.rango.desde + ' → ' + x.rango.hasta + '</div></div></div></td>' +
       '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.total) + '</td>' +
 
@@ -203,8 +216,7 @@ function cliqADescargar() {
 }
 
 function descargarLiqCliente(cod) {
-  const rango = semanaClienteRango(cliqSemanaISO());
-  exportLiquidacionClientePDF(cod, rango);
+  exportLiquidacionClientePDF(cod, periodoClienteRango(cod, cliqSemanaISO()));
 }
 
 async function descargarLiqClientes() {
@@ -222,7 +234,7 @@ async function descargarLiqClientes() {
   try {
     for (let i = 0; i < lista.length; i++) {
       if (btn) btn.innerHTML = '<i class="ic ic-download"></i> Descargando ' + (i + 1) + ' de ' + lista.length + '…';
-      exportLiquidacionClientePDF(lista[i].cod, rango);
+      exportLiquidacionClientePDF(lista[i].cod, lista[i].rango || rango);
       if (i < lista.length - 1) await _esperar(LIQ_MS_ENTRE_DESCARGAS);
     }
   } finally {
@@ -238,7 +250,7 @@ async function descargarLiqClientesCombinado() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   for (let i = 0; i < lista.length; i++) {
-    exportLiquidacionClientePDF(lista[i].cod, rango, { doc, nuevaPagina: i > 0 });
+    exportLiquidacionClientePDF(lista[i].cod, lista[i].rango || rango, { doc, nuevaPagina: i > 0 });
     await _esperar(0);
   }
   doc.save('Liquidaciones_clientes_' + lista.length + '_' + rango.hasta.replace(/\//g, '-') + '.pdf');

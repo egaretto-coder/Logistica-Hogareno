@@ -610,6 +610,13 @@ create policy empleado_sueldos_all on public.empleado_sueldos for all to authent
 --   add column if not exists anulado_cliente boolean not null default false,
 --   add column if not exists motivo_anulacion text default '';
 
+-- clientes.periodo_dias: cada cuanto se le factura (7 semanal, 14 quincenal,
+-- 28 mensual). Se cuenta por semanas enteras Vie->Jue, el mismo ciclo del pago
+-- al conductor, y el viernes que ABRE el periodo sigue siendo la clave de los
+-- arrastres y los cargos.
+-- alter table public.clientes add column if not exists periodo_dias int not null
+--   default 7 check (periodo_dias in (7, 14, 28));
+
 -- ---------- CARGOS AL CLIENTE (no vienen de un envio) ----------
 -- COLECTA (lo que se le cobra por pasar a retirar), VIAJE PARTICULAR (hecho
 -- por fuera de la plataforma) y OTRO. Se imputan a una semana: `semana` es el
