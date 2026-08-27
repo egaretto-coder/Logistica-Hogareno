@@ -513,6 +513,13 @@ function verCardCliente(cod) {
         '<strong>Dado de baja</strong>' + (c.fecha_baja ? ' el ' + cargoFechaTxt(c.fecha_baja) : '') +
         (c.motivo_baja ? ' · ' + c.motivo_baja : '') + '</div>'
       : '') +
+    // Lo que quedó sin facturar. Se muestra siempre que haya algo: en un cliente
+    // de baja es lo que hay que cerrar antes de olvidarlo, y en uno activo es un
+    // período que se pasó por alto.
+    '<div style="padding:12px 0;border-top:1px solid var(--border)">' +
+      '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Liquidaciones pendientes</div>' +
+      _bloqueSinLiquidar(k, c.activo === false ? (c.fecha_baja || '') : '') +
+    '</div>' +
     '<div style="display:flex;gap:6px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border)">' +
       (c.activo === false
         ? '<button class="btn btn-sm" onclick="reactivarCliente(' + c.id + ')"><i class="ic ic-undo"></i> Reactivar</button>'
@@ -521,6 +528,77 @@ function verCardCliente(cod) {
       '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')"><i class="ic ic-edit"></i> Editar datos</button>' +
     '</div>';
   document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// ── Períodos con envíos que quedaron SIN liquidar ──────────────────────────
+// Después de una baja es lo que hay que cerrar: la baja no borra nada y esos
+// envíos se cobran igual, pero si nadie los mira quedan sin facturar para
+// siempre. Se excluye el período en curso, que está abierto por definición.
+function periodosSinLiquidar(cod, hastaISO) {
+  const k = clienteCodCanonico(clienteKey(cod));
+  if (!k) return [];
+  const ahora = new Date();
+  const porPeriodo = new Map();
+  (AppData.records || []).forEach(r => {
+    if (clienteCodDeRegistro(r) !== k) return;
+    if (!contabilizaRegistro(r)) return;
+    const f = parseFechaReg(r.fecha);
+    if (!f) return;
+    const iso = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-' + String(f.getDate()).padStart(2, '0');
+    if (hastaISO && iso > hastaISO) return;
+    const rango = periodoClienteRango(k, iso);
+    if (!rango || !rango.hastaD || rango.hastaD > ahora) return;   // el período en curso no cuenta
+    const key = viernesDeRango(rango);
+    if (!porPeriodo.has(key)) porPeriodo.set(key, { rango, envios: 0 });
+    porPeriodo.get(key).envios++;
+  });
+  const out = [];
+  porPeriodo.forEach((v, key) => {
+    if (typeof liquidacionArmada === 'function' && liquidacionArmada(k, v.rango)) return;
+    out.push({ semana: key, rango: v.rango, envios: v.envios, total: _num(calcLiquidacionCliente(k, v.rango).total) });
+  });
+  return out.sort((a, b) => String(a.semana).localeCompare(String(b.semana)));
+}
+
+// Abre Detalle de cliente en ese cliente y ese período, listo para armar.
+function liquidarPeriodoCliente(cod, semanaISO) {
+  const backs = ['modal-cbaja-backdrop'];
+  backs.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  const mb = document.getElementById('modal-backdrop'); if (mb) mb.classList.remove('open');
+  showPage('detalle-cliente');
+  const sel = document.getElementById('dcli-select');
+  const fecha = document.getElementById('dcli-semana');
+  if (fecha) fecha.value = semanaISO;
+  if (sel) {
+    sel.value = clienteKey(cod);
+    // Un cliente sin envíos en la ventana no está en el select: se agrega.
+    if (sel.value !== clienteKey(cod)) {
+      sel.insertAdjacentHTML('beforeend', '<option value="' + clienteKey(cod) + '">' + clienteNombreDe(cod) + '</option>');
+      sel.value = clienteKey(cod);
+    }
+  }
+  if (typeof renderDetalleCliente === 'function') renderDetalleCliente();
+}
+
+// El bloque que lista lo que quedó sin liquidar, con el atajo para cerrarlo.
+function _bloqueSinLiquidar(cod, hastaISO, titulo) {
+  const pend = periodosSinLiquidar(cod, hastaISO);
+  if (!pend.length) {
+    return '<div class="muted" style="font-size:11.5px">' +
+      (hastaISO ? 'No queda ningún período sin liquidar hasta esa fecha.' : 'No queda ningún período cerrado sin liquidar.') + '</div>';
+  }
+  const tot = pend.reduce((s, p) => s + p.total, 0);
+  const env = pend.reduce((s, p) => s + p.envios, 0);
+  const esc = s => String(s).replace(/'/g, "\\'");
+  return '<div style="font-size:12px"><strong>' + (titulo || 'Quedan sin liquidar') + ': ' + pend.length +
+      ' período(s)</strong> · ' + env + ' envíos · ' + fmtPeso(tot) + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:3px;margin-top:6px;max-height:150px;overflow-y:auto">' +
+      pend.map(p => '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px">' +
+        '<span style="flex:1">' + p.rango.desde + ' → ' + p.rango.hasta + ' · ' + p.envios + ' envíos</span>' +
+        '<span class="mono" style="font-weight:600">' + fmtPeso(p.total) + '</span>' +
+        '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px" onclick="liquidarPeriodoCliente(\'' + esc(cod) + '\',\'' + p.semana + '\')">Liquidar</button>' +
+      '</div>').join('') +
+    '</div>';
 }
 
 // ── Baja del cliente (maestro) ─────────────────────────────────────────────
@@ -559,6 +637,7 @@ function recalcBajaCliente() {
   const c = (AppData.clientes || []).find(x => x.id === clienteBajaId);
   const box = document.getElementById('mcbaja-comision');
   if (!c || !box) return;
+  _recalcPendientesBaja();
   const f = (document.getElementById('mcbaja-fecha') || {}).value || '';
   const row = (typeof comisionDeCliente === 'function') ? comisionDeCliente(c.nombre) : null;
   if (!row) { box.innerHTML = '<span class="muted">No tiene comisión asignada: la baja no afecta a ningún vendedor.</span>'; return; }
@@ -580,6 +659,17 @@ function recalcBajaCliente() {
     '<div style="margin-top:4px">Deja de comisionar desde <strong>' + mesLabel(m) + '</strong>' +
     (perdidos > 0 ? ' · cobra ' + pagos + ' de sus 5 pagos y se pierden ' + perdidos + ' (' + fmtPeso(perdidos * _num(row.monto)) + ').'
                   : ' · ya había cobrado sus 5 pagos.') + '</div>';
+}
+
+// Lo que quedó sin facturar hasta la baja. Es la plata que se pierde de verdad
+// si nadie la cierra: la baja no la toca, pero después nadie vuelve a mirar a
+// un cliente que ya no opera.
+function _recalcPendientesBaja() {
+  const c = (AppData.clientes || []).find(x => x.id === clienteBajaId);
+  const box = document.getElementById('mcbaja-pendientes');
+  if (!c || !box) return;
+  const f = (document.getElementById('mcbaja-fecha') || {}).value || '';
+  box.innerHTML = _bloqueSinLiquidar(c.codigo, f, 'Sin liquidar hasta la baja');
 }
 
 async function guardarBajaCliente() {
