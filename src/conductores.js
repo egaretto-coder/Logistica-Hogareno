@@ -503,6 +503,8 @@ function editarRegistroConductor(idx, campo, valor) {
   actualizarEstadoEdicion('Cambios sin guardar…');
   _repintarPanelDeEnvios();
   _avisarImpactoCobro(r);     // el envío quedó pago pero ¿se le cobra a alguien?
+  // Si la liquidación de ese cliente ya estaba cerrada, se reabre sola.
+  if (typeof reabrirLiquidacionDeEnvio === 'function') reabrirLiquidacionDeEnvio(r, 'un envío (' + campo + ')');
   // Autoguardado con espera corta: agrupa varias ediciones en un solo guardado.
   clearTimeout(condEditTimer);
   condEditTimer = setTimeout(guardarEdicionConductores, 2500);
@@ -638,6 +640,7 @@ function _marcarDimDirty(r, accion) {
   actualizarEstadoEdicion('Cambios sin guardar…');
   renderConductorDetail();
   _avisarImpactoCobro(r, accion);   // la dimensión cambia lo que se paga: ¿sigue cobrándose?
+  if (typeof reabrirLiquidacionDeEnvio === 'function') reabrirLiquidacionDeEnvio(r, 'una dimensión especial');
   clearTimeout(condEditTimer);
   condEditTimer = setTimeout(guardarEdicionConductores, 1500);
 }
@@ -881,6 +884,17 @@ async function guardarEnviosModal() {
     const ids = await DB.insertRows('registros', recs.map(filaRegistroNube));
     recs.forEach((r, i) => { r.id = ids[i]; });
     AppData.records.push(...recs);
+    // Un envío nuevo cambia el total del cliente: si su liquidación de ese
+    // período ya estaba cerrada, se reabre sola.
+    if (typeof reabrirLiquidacionDeEnvio === 'function') {
+      const vistos = new Set();
+      for (const r of recs) {
+        const clave = (r.cliente_cod || '') + '|' + r.fecha;
+        if (!r.cliente_cod || vistos.has(clave)) continue;
+        vistos.add(clave);
+        await reabrirLiquidacionDeEnvio(r, 'un envío cargado a mano');
+      }
+    }
     document.getElementById('modal-addenvio-backdrop').style.display = 'none';
     renderConductorDetail();
     // Cuánto de lo que se acaba de cargar se le factura a alguien.

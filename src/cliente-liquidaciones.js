@@ -256,3 +256,37 @@ async function descargarLiqClientesCombinado() {
   doc.save('Liquidaciones_clientes_' + lista.length + '_' + rango.hasta.replace(/\//g, '-') + '.pdf');
   showToast('📄 ' + lista.length + ' liquidaciones en un solo PDF');
 }
+
+// ── Reapertura automática ───────────────────────────────────────────────
+// Una liquidación que cambió DESPUÉS de cerrarse no está lista: el tesorero
+// podría bajar un PDF que ya no coincide con lo aprobado, o mandar uno y que el
+// número se mueva atrás suyo. Así que cualquier cambio que toque lo que se le
+// factura la desmarca sola y vuelve a quedar pendiente del administrativo.
+// Sin confirmación: no es una decisión, es la consecuencia de lo que se hizo.
+async function _reabrirPorCambio(cod, rango, queCambio) {
+  const k = clienteKey(cod);
+  if (!k || !rango) return false;
+  const a = liquidacionArmada(k, rango);
+  if (!a) return false;
+  try {
+    await DB.deleteWhere('cliente_liquidaciones', 'id', a.id);
+    AppData.clienteLiquidaciones = (AppData.clienteLiquidaciones || []).filter(x => x.id !== a.id);
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    setTimeout(() => showToast('↩ La liquidación de ' + clienteNombreDe(k) + ' (' + rango.desde + ' → ' +
+      rango.hasta + ') se reabrió: cambió ' + (queCambio || 'un envío') +
+      ' después de cerrarse. Volvé a marcarla como lista.'), 900);
+    return true;
+  } catch (e) { console.warn('_reabrirPorCambio', e); return false; }
+}
+
+// Reabre la liquidación del cliente de ESE envío, en el período que le toca.
+// Si el envío está arrastrado, el período afectado es el de destino.
+async function reabrirLiquidacionDeEnvio(r, queCambio) {
+  if (!r || typeof clienteCodDeRegistro !== 'function') return;
+  const cod = clienteCodDeRegistro(r);
+  if (!cod) return;
+  const arr = String(r.factura_semana || '').slice(0, 10);
+  const iso = arr || (typeof isoDeFecha === 'function' ? isoDeFecha(parseFechaReg(r.fecha)) : null);
+  if (!iso) return;
+  await _reabrirPorCambio(cod, periodoClienteRango(cod, iso), queCambio);
+}

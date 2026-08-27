@@ -1616,6 +1616,9 @@ function persistirCargosLocal() {
 
 async function guardarCargoCliente(rec) {
   const row = await DB.insertRow('cliente_cargos', rec);
+  // Un cargo cambia el total: si la liquidación ya estaba cerrada, se reabre.
+  if (typeof _reabrirPorCambio === 'function')
+    await _reabrirPorCambio(rec.cliente_cod, periodoClienteRango(rec.cliente_cod, rec.semana), 'un cargo');
   AppData.clienteCargos = (AppData.clienteCargos || []).concat([Object.assign({ id: row.id }, rec)]);
   persistirCargosLocal();
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
@@ -1623,7 +1626,10 @@ async function guardarCargoCliente(rec) {
 }
 
 async function borrarCargoCliente(id) {
+  const c = (AppData.clienteCargos || []).find(x => x.id === id);
   await DB.deleteWhere('cliente_cargos', 'id', id);
+  if (c && typeof _reabrirPorCambio === 'function')
+    await _reabrirPorCambio(c.cliente_cod, periodoClienteRango(c.cliente_cod, c.semana), 'un cargo quitado');
   AppData.clienteCargos = (AppData.clienteCargos || []).filter(c => c.id !== id);
   persistirCargosLocal();
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
@@ -1633,16 +1639,33 @@ async function borrarCargoCliente(id) {
 // El envío sigue perteneciendo a su fecha (el conductor cobra por la fecha
 // real); lo único que se mueve es en qué liquidación de cliente entra.
 async function arrastrarEnviosASemana(indices, semanaISO) {
+  // Un arrastre mueve el cobro entre DOS períodos: el que lo pierde y el que
+  // lo recibe. Los dos cambian de total, así que los dos se reabren.
+  const afectados = [];
   const ids = [];
   indices.forEach(i => {
     const r = AppData.records[i];
     if (!r || !r.id) return;
+    const cod = clienteCodDeRegistro(r);
+    const antes = String(r.factura_semana || '').slice(0, 10) ||
+      (typeof isoDeFecha === 'function' ? isoDeFecha(parseFechaReg(r.fecha)) : null);
+    if (cod && antes) afectados.push([cod, antes]);
+    if (cod && semanaISO) afectados.push([cod, semanaISO]);
     r.factura_semana = semanaISO || null;
     ids.push(r.id);
   });
   for (const id of ids) await DB.updateWhere('registros', 'id', id, { factura_semana: semanaISO || null });
   if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+  if (typeof _reabrirPorCambio === 'function') {
+    const vistos = new Set();
+    for (const [cod, iso] of afectados) {
+      const clave = clienteKey(cod) + '|' + iso;
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      await _reabrirPorCambio(cod, periodoClienteRango(cod, iso), 'un envío traído de otra semana');
+    }
+  }
   return ids.length;
 }
 

@@ -808,6 +808,7 @@ async function anularEnvioCliente(i) {
   try {
     await DB.updateWhere('registros', 'id', r.id, { anulado_cliente: true, motivo_anulacion: motivo.trim() });
     r.anulado_cliente = true; r.motivo_anulacion = motivo.trim();
+    await reabrirLiquidacionDeEnvio(r, 'una anulación');
     if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     renderDetalleCliente();
@@ -824,6 +825,7 @@ async function restituirEnvioCliente(i) {
   try {
     await DB.updateWhere('registros', 'id', r.id, { anulado_cliente: false, motivo_anulacion: '' });
     r.anulado_cliente = false; r.motivo_anulacion = '';
+    await reabrirLiquidacionDeEnvio(r, 'una restitución');
     if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     renderDetalleCliente();
