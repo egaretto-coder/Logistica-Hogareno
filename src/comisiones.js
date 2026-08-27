@@ -516,7 +516,12 @@ function renderComisionClientes() {
     const miDefault = ev.rango ? addMeses(mesDeFechaD(ev.rango.hastaD), 1) : mesActualYYYYMM();
     const mi = row.mes_inicio || miDefault;
     const meses = [0, 4].map(i => addMeses(mi, i));
-    const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[1]);
+    // Los 5 pagos arrancan el mes SIGUIENTE al cierre de la evaluación, así que
+    // el mes en que cierra es mi − 1. Se muestra al lado porque es la columna
+    // "Mes Inicio" de la planilla: sin eso, copiar ese mes al campo de la app
+    // corre los 5 pagos un mes para atrás.
+    const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[1]) +
+      '<div class="muted" style="font-size:10px">evaluado hasta ' + mesLabel(addMeses(mi, -1)) + '</div>';
 
     let estadoHtml, acciones;
     const baja = comisionEsBaja(row);
@@ -630,13 +635,22 @@ function actualizarPreviewComisionCliente() {
   if (!ev.tieneEscala) { box.innerHTML = '<span style="color:#b91c1c">⚠ No hay escala de categorización cargada. Importala en la solapa "Vendedores y escala".</span>'; return; }
   if (!ev.rango) { box.innerHTML = '<span style="color:#854d0e">Sin envíos entregados de este cliente todavía — no se puede evaluar aún.</span>'; return; }
   const estado = ev.completo ? '<span style="color:#166534">4 liquidaciones completas ✓</span>' : '<span style="color:#854d0e">Evaluación en curso (aún no pasaron las 4 semanas)</span>';
+  // Los 5 pagos empiezan una vez cerrada la evaluación, no desde el alta del
+  // cliente. Se deletrea porque en la planilla la columna "Mes Inicio" es el mes
+  // en que CIERRA la evaluación, y copiarlo al campo de abajo correría todo.
+  const mFin = mesDeFechaD(ev.rango.hastaD);
+  const m1 = addMeses(mFin, 1);
+  const cronograma = '<div style="margin-top:6px;font-size:11px;border-top:1px solid var(--border);padding-top:6px">' +
+    'La evaluación cierra en <strong>' + mesLabel(mFin) + '</strong> · los 5 pagos van de <strong>' +
+    mesLabel(m1) + '</strong> a <strong>' + mesLabel(addMeses(m1, 4)) + '</strong>.</div>';
   box.innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">' +
       '<div><div class="muted" style="font-size:10px">Facturación 4 liq.</div><div style="font-weight:700">' + fmtPeso(ev.facturacion) + '</div></div>' +
       '<div><div class="muted" style="font-size:10px">Categoría</div><div style="font-weight:700">' + (ev.categoria || '—') + '</div></div>' +
       '<div><div class="muted" style="font-size:10px">Monto fijo/mes</div><div style="font-weight:700">' + (ev.monto > 0 ? fmtPeso(ev.monto) : '—') + '</div></div>' +
     '</div>' +
-    '<div style="margin-top:6px;font-size:11px">' + estado + (ev.sinTarifa > 0 ? ' · <span style="color:#b45309">⚠ ' + ev.sinTarifa + ' envío(s) sin tarifa de venta</span>' : '') + '</div>';
+    '<div style="margin-top:6px;font-size:11px">' + estado + (ev.sinTarifa > 0 ? ' · <span style="color:#b45309">⚠ ' + ev.sinTarifa + ' envío(s) sin tarifa de venta</span>' : '') + '</div>' +
+    cronograma;
 }
 async function guardarComisionClienteModal() {
   const cliente = (document.getElementById('mcc-cliente').value || '').trim().toUpperCase();
