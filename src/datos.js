@@ -240,7 +240,8 @@ async function _hydrateFromSupabaseReal(opts) {
     contacto: c.contacto || '', telefono: c.telefono || '', email: c.email || '', obs: c.obs || '',
     // Cada cuánto se le factura, en días: 7 semanal · 14 quincenal · 28 mensual.
     periodo_dias: _num(c.periodo_dias) || 7,
-    activo: c.activo !== false
+    activo: c.activo !== false,
+    fecha_baja: String(c.fecha_baja || '').slice(0, 10), motivo_baja: c.motivo_baja || ''
   }));
   AppData.clienteTarifas = (data.cliente_tarifas || []).map(t => ({
     id: t.id, cliente: t.cliente, cliente_cod: (t.cliente_cod || '').toUpperCase(),

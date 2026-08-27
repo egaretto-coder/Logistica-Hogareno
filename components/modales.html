@@ -1034,6 +1034,40 @@
   </div>
 </div>
 
+<!-- MODAL BAJA DE UN CLIENTE (maestro). Es la baja que manda: la carga
+     Comercial, que es quien se entera, y arrastra la de comisiones. -->
+<div class="modal-backdrop" id="modal-cbaja-backdrop" onclick="cerrarBajaCliente(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:500px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-building"></i> <span id="mcbaja-title">Dar de baja el cliente</span></span>
+      <button class="modal-close" onclick="cerrarBajaCliente()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-alert"></i><div>El cliente deja de operar. <strong>No se borra nada</strong>: sus envíos, tarifas y
+        liquidaciones quedan como están y se puede seguir liquidando lo ya facturado. Solo deja de ofrecerse para
+        cargas nuevas y queda marcado en el padrón.</div>
+      </div>
+      <div id="mcbaja-cliente" style="font-size:12px;color:var(--text-muted)"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Fecha de la baja *</label>
+          <input type="date" id="mcbaja-fecha" class="form-input" style="width:100%" onchange="recalcBajaCliente()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Motivo *</label>
+          <input type="text" id="mcbaja-motivo" class="form-input" placeholder="Ej: se fue a la competencia" maxlength="140" style="width:100%" />
+        </div>
+      </div>
+      <div id="mcbaja-comision" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarBajaCliente()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarBajaCliente()"><i class="ic ic-check"></i> Dar de baja</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL BAJA DE UN CLIENTE EN COMISIÓN.
      Era un prompt() encadenado con otro: dos cajas del navegador para una
      decisión que mueve cinco meses de comisión. -->

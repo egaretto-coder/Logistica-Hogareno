@@ -373,7 +373,7 @@ function renderClientes() {
       '<div><span style="font-size:10px;color:var(--text-muted);display:block">' + etq + '</span>' +
       '<span style="font-size:12px;font-weight:600">' + val + '</span></div>';
 
-    return '<div class="card"' + (c.activo === false ? ' style="opacity:.6"' : '') + '>' +
+    return '<div class="card"' + (c.activo === false ? ' style="opacity:.6;box-shadow:inset 3px 0 0 #b91c1c"' : '') + '>' +
       '<div class="card-body">' +
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
           '<div class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:38px;height:38px;font-size:13px">' + initials(c.nombre) + '</div>' +
@@ -508,11 +508,129 @@ function verCardCliente(cod) {
       ' envío(s) en zonas sin tarifa — se facturan en $0</div>' : '') +
     (c.obs ? '<div style="font-size:12px;color:var(--text-secondary);padding:10px 0;border-top:1px solid var(--border)">📝 ' + c.obs + '</div>' : '') +
 
+    (c.activo === false && (c.fecha_baja || c.motivo_baja)
+      ? '<div style="margin-top:10px;padding:9px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fca5a5;font-size:11.5px;color:#991b1b">' +
+        '<strong>Dado de baja</strong>' + (c.fecha_baja ? ' el ' + cargoFechaTxt(c.fecha_baja) : '') +
+        (c.motivo_baja ? ' · ' + c.motivo_baja : '') + '</div>'
+      : '') +
     '<div style="display:flex;gap:6px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border)">' +
+      (c.activo === false
+        ? '<button class="btn btn-sm" onclick="reactivarCliente(' + c.id + ')"><i class="ic ic-undo"></i> Reactivar</button>'
+        : '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;margin-right:auto" onclick="darDeBajaCliente(' + c.id + ')">Dar de baja</button>') +
       '<button class="btn btn-sm" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
       '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')"><i class="ic ic-edit"></i> Editar datos</button>' +
     '</div>';
   document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// ── Baja del cliente (maestro) ─────────────────────────────────────────────
+// Es la baja que manda: la carga Comercial, que es quien se entera de que el
+// cliente se fue, y **arrastra la de comisiones** — el vendedor deja de
+// comisionar por un cliente que ya no está. La baja se puede cargar también
+// desde Comisiones, pero esa solo corta la comisión: acá se corta el cliente.
+let clienteBajaId = null;
+
+function darDeBajaCliente(id) {
+  const c = (AppData.clientes || []).find(x => x.id === id);
+  if (!c) return;
+  clienteBajaId = id;
+  document.getElementById('mcbaja-title').textContent = 'Baja de ' + c.nombre;
+  const info = document.getElementById('mcbaja-cliente');
+  if (info) info.innerHTML = '<strong style="color:var(--text-primary)">' + c.nombre + '</strong> · ' + clienteKey(c.codigo) +
+    (c.razon_social ? ' · ' + c.razon_social : '');
+  const hoy = new Date();
+  document.getElementById('mcbaja-fecha').value = c.fecha_baja ||
+    (hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0'));
+  document.getElementById('mcbaja-motivo').value = c.motivo_baja || '';
+  recalcBajaCliente();
+  document.getElementById('modal-cbaja-backdrop').style.display = 'flex';
+}
+
+function cerrarBajaCliente(e) {
+  if (!e || e.target.id === 'modal-cbaja-backdrop') {
+    document.getElementById('modal-cbaja-backdrop').style.display = 'none';
+    clienteBajaId = null;
+  }
+}
+
+// Adelanta qué pasa con la comisión: es el efecto que no se ve desde acá y el
+// que mueve plata de un vendedor.
+function recalcBajaCliente() {
+  const c = (AppData.clientes || []).find(x => x.id === clienteBajaId);
+  const box = document.getElementById('mcbaja-comision');
+  if (!c || !box) return;
+  const f = (document.getElementById('mcbaja-fecha') || {}).value || '';
+  const row = (typeof comisionDeCliente === 'function') ? comisionDeCliente(c.nombre) : null;
+  if (!row) { box.innerHTML = '<span class="muted">No tiene comisión asignada: la baja no afecta a ningún vendedor.</span>'; return; }
+  if (typeof comisionEsBaja === 'function' && comisionEsBaja(row)) {
+    box.innerHTML = '<span class="muted">Su comisión ya estaba dada de baja' +
+      (row.mes_baja ? ' desde ' + mesLabel(row.mes_baja) : '') + '.</span>';
+    return;
+  }
+  if (!row.bloqueado) {
+    box.innerHTML = '<strong>' + row.vendedor + '</strong> lo tenía en evaluación. Se le da de baja la comisión: deja de contar.';
+    return;
+  }
+  const m = (typeof mesBajaDeFecha === 'function') ? mesBajaDeFecha(f) : '';
+  if (!m) { box.innerHTML = '<span style="color:#b45309">Elegí la fecha de la baja.</span>'; return; }
+  const meses = mesesPagoComision(row);
+  const pagos = meses.filter(x => x < m).length;
+  const perdidos = meses.length - pagos;
+  box.innerHTML = '<div><strong>' + row.vendedor + '</strong> comisiona ' + fmtPeso(_num(row.monto)) + '/mes por este cliente.</div>' +
+    '<div style="margin-top:4px">Deja de comisionar desde <strong>' + mesLabel(m) + '</strong>' +
+    (perdidos > 0 ? ' · cobra ' + pagos + ' de sus 5 pagos y se pierden ' + perdidos + ' (' + fmtPeso(perdidos * _num(row.monto)) + ').'
+                  : ' · ya había cobrado sus 5 pagos.') + '</div>';
+}
+
+async function guardarBajaCliente() {
+  const id = clienteBajaId;
+  const c = (AppData.clientes || []).find(x => x.id === id);
+  if (!c) return;
+  const fecha = (document.getElementById('mcbaja-fecha') || {}).value || '';
+  const motivo = ((document.getElementById('mcbaja-motivo') || {}).value || '').trim();
+  if (!fecha) { alert('Elegí la fecha de la baja.'); return; }
+  if (!motivo) { alert('Poné el motivo: un cliente que desaparece del padrón sin explicación no se puede auditar después.'); return; }
+  try {
+    await DB.updateWhere('clientes', 'id', id, { activo: false, fecha_baja: fecha, motivo_baja: motivo });
+    Object.assign(c, { activo: false, fecha_baja: fecha, motivo_baja: motivo });
+    persistirClientesLocal();
+
+    // Arrastra la comisión: el vendedor deja de cobrar por un cliente que ya no
+    // está. Es el punto de la baja desde acá — si no, habría que acordarse de
+    // repetirla en el otro panel y ahí es donde se pierde.
+    let aviso = '';
+    const row = (typeof comisionDeCliente === 'function') ? comisionDeCliente(c.nombre) : null;
+    if (row && !(typeof comisionEsBaja === 'function' && comisionEsBaja(row))) {
+      const m = mesBajaDeFecha(fecha);
+      const campos = { estado: 'baja', fecha_baja: fecha, mes_baja: m, motivo_baja: motivo };
+      try {
+        await DB.updateWhere('comision_clientes', 'id', row.id, campos);
+        Object.assign(row, campos);
+        if (typeof persistirComisionesLocal === 'function') persistirComisionesLocal();
+        aviso = ' · ' + row.vendedor + ' deja de comisionar desde ' + mesLabel(m);
+      } catch (e) { console.warn('baja de comisión', e); aviso = ' · ⚠ no se pudo dar de baja la comisión'; }
+    }
+    document.getElementById('modal-cbaja-backdrop').style.display = 'none';
+    clienteBajaId = null;
+    if (document.getElementById('modal-backdrop')) document.getElementById('modal-backdrop').classList.remove('open');
+    renderClientes();
+    if (typeof renderComisionClientes === 'function' && document.getElementById('com-cli-rows')) renderComisionClientes();
+    showToast('✔ ' + c.nombre + ' dado de baja' + aviso);
+  } catch (e) { console.warn('guardarBajaCliente', e); alert('No se pudo dar de baja: ' + (e.message || e)); }
+}
+
+async function reactivarCliente(id) {
+  const c = (AppData.clientes || []).find(x => x.id === id);
+  if (!c) return;
+  if (!confirm('¿Reactivar a ' + c.nombre + '?' + String.fromCharCode(10) +
+    'Vuelve al padrón. Su comisión, si la tenía, NO se reactiva sola: eso se decide en Comisiones.')) return;
+  try {
+    await DB.updateWhere('clientes', 'id', id, { activo: true, fecha_baja: '', motivo_baja: '' });
+    Object.assign(c, { activo: true, fecha_baja: '', motivo_baja: '' });
+    persistirClientesLocal();
+    renderClientes();
+    showToast('↺ ' + c.nombre + ' reactivado');
+  } catch (e) { console.warn('reactivarCliente', e); alert('No se pudo reactivar: ' + (e.message || e)); }
 }
 
 // ── Vendedor que trajo al cliente ──────────────────────────────────────────
