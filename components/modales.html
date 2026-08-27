@@ -1034,6 +1034,41 @@
   </div>
 </div>
 
+<!-- MODAL BAJA DE UN CLIENTE EN COMISIÓN.
+     Era un prompt() encadenado con otro: dos cajas del navegador para una
+     decisión que mueve cinco meses de comisión. -->
+<div class="modal-backdrop" id="modal-baja-backdrop" onclick="cerrarBajaComision(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:500px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-user"></i> <span id="mbaja-title">Dar de baja</span></span>
+      <button class="modal-close" onclick="cerrarBajaComision()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-alert"></i><div>Se perdió el cliente: el vendedor <strong>deja de comisionar</strong>.
+        La fila <strong>no se borra</strong> — queda en el registro con el motivo, porque si desapareciera
+        el vendedor vería bajar su total sin ninguna explicación.</div>
+      </div>
+      <div id="mbaja-cliente" style="font-size:12px;color:var(--text-muted)"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Fecha de la baja *</label>
+          <input type="date" id="mbaja-fecha" class="form-input" style="width:100%" onchange="recalcBajaComision()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Motivo (opcional)</label>
+          <input type="text" id="mbaja-motivo" class="form-input" placeholder="Ej: se fue a la competencia" maxlength="120" style="width:100%" />
+        </div>
+      </div>
+      <div id="mbaja-resumen" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarBajaComision()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarBajaComision()"><i class="ic ic-check"></i> Dar de baja</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL FACTURAS DE LA EVALUACIÓN (Comisiones).
      La contabilización vive acá y no en "Liquidación de clientes": ese panel es
      del tesorero, que descarga: meterle controles de comisiones le agrega ruido

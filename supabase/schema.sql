@@ -278,7 +278,11 @@ create table if not exists public.comision_clientes (
   -- mes_baja (inclusive) pero la fila NO se borra: el registro tiene que explicar
   -- por qué el vendedor dejó de cobrar por ese cliente.
   estado text not null default 'activo',
-  mes_baja text default '',        -- YYYY-MM
+  mes_baja text default '',        -- YYYY-MM: mes DESDE EL QUE deja de comisionar
+  -- Fecha real de la baja. mes_baja sale de aplicarle la regla del 15: antes del
+  -- 15 ese mes no se paga; del 15 en adelante se cobra y corta el siguiente. Se
+  -- guardan las dos porque el mes es el resultado y la fecha es el hecho.
+  fecha_baja text default '',      -- YYYY-MM-DD
   motivo_baja text default '',
   created_at timestamptz not null default now()
 );

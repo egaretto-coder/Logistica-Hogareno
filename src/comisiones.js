@@ -139,6 +139,17 @@ function pagosRestantes(row) {
 // que poder ver POR QUÉ dejó de cobrar por ese cliente, y quitarlo del registro
 // haría desaparecer la explicación junto con el dato.
 function comisionEsBaja(row) { return String(row.estado || 'activo').toLowerCase() === 'baja'; }
+
+// Desde qué mes deja de comisionar, según CUÁNDO se dio de baja el cliente.
+// Antes del 15 el mes no se paga; del 15 en adelante el cliente estuvo la mitad
+// del mes y esa comisión se cobra, así que el corte pasa al mes siguiente.
+const BAJA_DIA_CORTE = 15;
+function mesBajaDeFecha(iso) {
+  const s = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const mes = s.slice(0, 7);
+  return (+s.slice(8, 10) < BAJA_DIA_CORTE) ? mes : addMeses(mes, 1);
+}
 // ¿Corresponde comisión de esta fila en `periodo`?
 function comisionaEnMes(row, periodo) {
   if (!mesesPagoComision(row).includes(periodo)) return false;
@@ -503,8 +514,11 @@ function renderComisionClientes() {
     let estadoHtml, acciones;
     const baja = comisionEsBaja(row);
     if (baja) {
-      estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c">Baja' + (row.mes_baja ? ' · ' + mesLabel(row.mes_baja) : '') + '</span>' +
-        (row.motivo_baja ? '<div class="muted" style="font-size:10px;margin-top:2px">' + row.motivo_baja + '</div>' : '');
+      estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c"' +
+        (row.fecha_baja ? ' title="Se dio de baja el ' + cargoFechaTxt(row.fecha_baja) + '"' : '') + '>Baja' +
+        (row.mes_baja ? ' · sin comisión desde ' + mesLabel(row.mes_baja) : '') + '</span>' +
+        (row.fecha_baja ? '<div class="muted" style="font-size:10px;margin-top:2px">baja el ' + cargoFechaTxt(row.fecha_baja) + '</div>' : '') +
+        (row.motivo_baja ? '<div class="muted" style="font-size:10px">' + row.motivo_baja + '</div>' : '');
       acciones = '<button class="btn btn-sm" style="white-space:nowrap" onclick="reactivarComisionCliente(' + row.id + ')" title="Vuelve a comisionar los meses que le queden">↺ Reactivar</button>';
     } else if (bloq) {
       estadoHtml = '<span class="badge" style="background:#dcfce7;color:#166534">✓ Activo</span>';
@@ -894,7 +908,7 @@ async function guardarComisionClienteModal() {
   const estado = (document.getElementById('mcc-estado')?.value === 'baja') ? 'baja' : 'activo';
   const mes_baja = estado === 'baja' ? (document.getElementById('mcc-mesbaja')?.value || '') : '';
   const motivo_baja = estado === 'baja' ? (document.getElementById('mcc-motivobaja')?.value || '').trim() : '';
-  if (estado === 'baja' && !mes_baja) { alert('Indicá desde qué mes el cliente deja de comisionar.'); return; }
+  if (estado === 'baja' && !mes_baja) { alert('Indicá desde qué mes el cliente deja de comisionar. Para cargar la fecha exacta usá "Dar de baja" en el listado.'); return; }
   if (!cliente) { alert('Elegí un cliente.'); return; }
   if (!vendedor) { alert('Elegí o escribí un vendedor.'); return; }
   const mes_inicio = mesManual || (catManual ? mesInicioDefaultCliente(cliente) : '');
@@ -965,28 +979,89 @@ async function confirmarComisionCliente(id) {
 // El cliente se dio de baja: deja de comisionar desde el mes elegido (ese mes ya
 // no se paga). La fila NO se borra — el registro tiene que explicar por qué el
 // vendedor dejó de cobrar por ese cliente.
-async function darDeBajaComisionCliente(id) {
+let bajaComisionId = null;
+
+function darDeBajaComisionCliente(id) {
   const row = AppData.comisionClientes.find(x => x.id === id);
   if (!row) return;
-  const mes = prompt('Baja de ' + row.cliente + '\n\n¿Desde qué mes deja de comisionar? (AAAA-MM)\nEse mes ya NO se paga.', mesActualYYYYMM());
-  if (mes === null) return;
-  const m = String(mes).trim();
-  if (!/^\d{4}-\d{2}$/.test(m)) { alert('Mes inválido. Usá el formato AAAA-MM (ejemplo: 2026-08).'); return; }
-  const motivo = (prompt('Motivo de la baja (opcional):', row.motivo_baja || '') || '').trim();
-  const campos = { estado: 'baja', mes_baja: m, motivo_baja: motivo };
+  bajaComisionId = id;
+  document.getElementById('mbaja-title').textContent = 'Baja de ' + row.cliente;
+  const info = document.getElementById('mbaja-cliente');
+  if (info) {
+    const meses = mesesPagoComision(row);
+    info.innerHTML = '<strong style="color:var(--text-primary)">' + row.cliente + '</strong> · ' + (row.vendedor || '—') +
+      ' · ' + fmtPeso(_num(row.monto)) + '/mes' +
+      '<div style="margin-top:2px">Sus 5 pagos: ' + mesLabel(meses[0]) + ' → ' + mesLabel(meses[4]) + '</div>';
+  }
+  const hoy = new Date();
+  document.getElementById('mbaja-fecha').value = row.fecha_baja ||
+    (hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0'));
+  document.getElementById('mbaja-motivo').value = row.motivo_baja || '';
+  recalcBajaComision();
+  document.getElementById('modal-baja-backdrop').style.display = 'flex';
+}
+
+function cerrarBajaComision(e) {
+  if (!e || e.target.id === 'modal-baja-backdrop') {
+    document.getElementById('modal-baja-backdrop').style.display = 'none';
+    bajaComisionId = null;
+  }
+}
+
+// Anticipa el efecto ANTES de guardar: qué mes corta, si el mes de la baja se
+// cobra o no y cuántos pagos se pierden. Es una decisión sobre cinco meses de
+// comisión y el vendedor va a preguntar por qué le falta uno.
+function recalcBajaComision() {
+  const row = AppData.comisionClientes.find(x => x.id === bajaComisionId);
+  const box = document.getElementById('mbaja-resumen');
+  if (!row || !box) return;
+  const f = (document.getElementById('mbaja-fecha') || {}).value || '';
+  const m = mesBajaDeFecha(f);
+  if (!m) { box.innerHTML = '<span style="color:#b45309">Elegí la fecha en que se dio de baja el cliente.</span>'; return; }
+  const dia = +String(f).slice(8, 10);
+  const antes = dia < BAJA_DIA_CORTE;
+  const meses = mesesPagoComision(row);
+  const pagos = meses.filter(x => x < m).length;          // los que se cobran igual
+  const perdidos = meses.length - pagos;
+  box.innerHTML =
+    '<div>Baja el <strong>' + cargoFechaTxt(f) + '</strong> — ' +
+      (antes ? 'antes del ' + BAJA_DIA_CORTE + ': <strong>' + mesLabel(f.slice(0, 7)) + ' NO se paga</strong>.'
+             : 'del ' + BAJA_DIA_CORTE + ' en adelante: <strong>' + mesLabel(f.slice(0, 7)) + ' se cobra</strong> y corta el siguiente.') +
+    '</div>' +
+    '<div style="margin-top:5px;border-top:1px solid var(--border);padding-top:5px">' +
+      'Deja de comisionar desde <strong>' + mesLabel(m) + '</strong>. ' +
+      (perdidos > 0
+        ? 'Cobra <strong>' + pagos + '</strong> de sus 5 pagos y se pierden <strong>' + perdidos + '</strong> (' + fmtPeso(perdidos * _num(row.monto)) + ').'
+        : 'Ya había cobrado sus 5 pagos: no cambia nada.') +
+    '</div>';
+}
+
+async function guardarBajaComision() {
+  const id = bajaComisionId;
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  const f = (document.getElementById('mbaja-fecha') || {}).value || '';
+  const m = mesBajaDeFecha(f);
+  if (!m) { alert('Elegí la fecha en que se dio de baja el cliente.'); return; }
+  const campos = {
+    estado: 'baja', fecha_baja: f, mes_baja: m,
+    motivo_baja: ((document.getElementById('mbaja-motivo') || {}).value || '').trim()
+  };
   try {
     await DB.updateWhere('comision_clientes', 'id', id, campos);
     Object.assign(row, campos);
     persistirComisionesLocal();
+    document.getElementById('modal-baja-backdrop').style.display = 'none';
+    bajaComisionId = null;
     renderComisionClientes();
     showToast('✔ ' + row.cliente + ' dado de baja · sin comisión desde ' + mesLabel(m));
-  } catch (e) { console.warn('darDeBajaComisionCliente', e); alert('No se pudo dar de baja: ' + (e.message || e)); }
+  } catch (e) { console.warn('guardarBajaComision', e); alert('No se pudo dar de baja: ' + (e.message || e)); }
 }
 async function reactivarComisionCliente(id) {
   const row = AppData.comisionClientes.find(x => x.id === id);
   if (!row) return;
   if (!confirm('¿Reactivar a ' + row.cliente + '?\nVuelve a comisionar los meses que le queden de los 5.')) return;
-  const campos = { estado: 'activo', mes_baja: '', motivo_baja: '' };
+  const campos = { estado: 'activo', mes_baja: '', motivo_baja: '', fecha_baja: '' };
   try {
     await DB.updateWhere('comision_clientes', 'id', id, campos);
     Object.assign(row, campos);

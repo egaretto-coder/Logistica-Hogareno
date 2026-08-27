@@ -262,7 +262,8 @@ async function _hydrateFromSupabaseReal(opts) {
     fecha_alta: c.fecha_alta || '', mes_inicio: c.mes_inicio || '',
     categoria: c.categoria || '', facturacion_eval: _num(c.facturacion_eval),
     monto: _num(c.monto), bloqueado: !!c.bloqueado,
-    estado: c.estado || 'activo', mes_baja: c.mes_baja || '', motivo_baja: c.motivo_baja || ''
+    estado: c.estado || 'activo', mes_baja: c.mes_baja || '', motivo_baja: c.motivo_baja || '',
+    fecha_baja: String(c.fecha_baja || '').slice(0, 10)
   }));
   AppData.comisionPagos = (data.comision_pagos || []).map(p => ({
     id: p.id, periodo: p.periodo, beneficiario: p.beneficiario,
