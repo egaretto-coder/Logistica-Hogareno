@@ -77,7 +77,20 @@
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-            <input type="search" id="com-cli-search" placeholder="🔍 Buscar cliente o vendedor..." style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderComisionClientes()">
+            <input type="search" id="com-cli-search" placeholder="🔍 Buscar cliente o vendedor..." style="width:260px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderComisionClientes()">
+            <select id="com-cli-vend" onchange="renderComisionClientes()" title="Filtrar por vendedor"
+              style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px"></select>
+            <select id="com-cli-cat" onchange="renderComisionClientes()" title="Filtrar por categoría"
+              style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px"></select>
+            <select id="com-cli-orden" onchange="renderComisionClientes()" title="Ordenar el listado"
+              style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <option value="restantes">Los que están por terminar primero</option>
+              <option value="inicio">Los más nuevos primero</option>
+              <option value="antiguos">Los más viejos primero</option>
+              <option value="monto">Mayor comisión primero</option>
+              <option value="cliente">Cliente (A-Z)</option>
+            </select>
+            <button class="btn btn-sm" id="com-cli-limpiar" onclick="limpiarFiltrosComision()" style="display:none"><i class="ic ic-x"></i> Limpiar</button>
             <span id="com-cli-count" style="font-size:12px;color:var(--text-muted)"></span>
           </div>
 
@@ -85,7 +98,7 @@
             <thead><tr>
               <th>Cliente</th><th>Vendedor</th><th style="text-align:right">Facturación 4 liq.</th>
               <th style="text-align:center">Cat.</th><th style="text-align:right">Monto/mes</th>
-              <th>Meses de pago</th><th style="text-align:center">Estado</th><th style="width:260px"></th>
+              <th>Meses de pago</th><th style="text-align:center">Quedan</th><th style="text-align:center">Estado</th><th style="width:200px"></th>
             </tr></thead>
             <tbody id="com-cli-rows"></tbody>
           </table></div></div>

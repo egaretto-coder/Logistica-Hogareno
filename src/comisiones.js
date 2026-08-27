@@ -190,6 +190,19 @@ function mesesPagoComision(row) {
 // Último mes que se cobra (el 5.º). Después de ese mes la comisión ya no corre.
 function mesFinComision(row) { return addMeses(row.mes_inicio || mesInicioDefaultCliente(row.cliente), 4); }
 
+// Cuántos de los 5 pagos le faltan, contado desde el mes en curso. Es lo que se
+// mira para saber a quién se le está por terminar la comisión: sobre 40 filas,
+// restar meses a ojo no es algo que nadie vaya a hacer.
+function pagosRestantes(row) {
+  if (!row.bloqueado) return null;
+  const meses = mesesPagoComision(row);
+  const hoy = mesActualYYYYMM();
+  if (hoy < meses[0]) return { estado: 'porArrancar', quedan: 5, mes: meses[0] };
+  if (hoy > meses[4]) return { estado: 'terminado', quedan: 0, mes: meses[4] };
+  const i = meses.indexOf(hoy);
+  return { estado: 'enCurso', quedan: 5 - i, nro: i + 1 };
+}
+
 // ── Estado del cliente en comisión ──────────────────────────────────────────
 // `activo` comisiona; `baja` es el cliente que se perdió: deja de comisionar
 // desde su mes de baja (inclusive) pero la fila NO se borra. El vendedor tiene
@@ -496,19 +509,43 @@ function renderComisionClientes() {
 
   const cont = document.getElementById('com-cli-rows');
   if (!cont) return;
+  _comSelectoresFiltro();
   const q = (document.getElementById('com-cli-search')?.value || '').toLowerCase().trim();
+  const fVend = document.getElementById('com-cli-vend')?.value || '';
+  const fCat = document.getElementById('com-cli-cat')?.value || '';
+  const orden = document.getElementById('com-cli-orden')?.value || 'restantes';
+
   const lista = AppData.comisionClientes
     .filter(c => !q || String(c.cliente).toLowerCase().includes(q) || String(c.vendedor).toLowerCase().includes(q))
-    .sort((a, b) => String(a.cliente).localeCompare(String(b.cliente)));
+    .filter(c => !fVend || normNombre(c.vendedor) === normNombre(fVend))
+    .filter(c => !fCat || String(c.categoria || '') === fCat);
+
+  // El orden por defecto es "los que están por terminar": es la pregunta que se
+  // le hace a esta tabla. Los que ya terminaron y los que no arrancaron van al
+  // final, porque no hay nada que hacer con ellos este mes.
+  const _rank = c => { const p = pagosRestantes(c); if (!p) return 900; if (p.estado === 'enCurso') return p.quedan; return p.estado === 'porArrancar' ? 100 : 200; };
+  const _ini = c => c.mes_inicio || '';
+  if (orden === 'restantes') lista.sort((a, b) => _rank(a) - _rank(b) || String(a.cliente).localeCompare(String(b.cliente)));
+  else if (orden === 'inicio') lista.sort((a, b) => String(_ini(b)).localeCompare(String(_ini(a))) || String(a.cliente).localeCompare(String(b.cliente)));
+  else if (orden === 'antiguos') lista.sort((a, b) => String(_ini(a)).localeCompare(String(_ini(b))) || String(a.cliente).localeCompare(String(b.cliente)));
+  else if (orden === 'monto') lista.sort((a, b) => _num(b.monto) - _num(a.monto) || String(a.cliente).localeCompare(String(b.cliente)));
+  else lista.sort((a, b) => String(a.cliente).localeCompare(String(b.cliente)));
 
   // Contador + clientes sin asignar
+  const total = AppData.comisionClientes.length;
+  const filtrando = !!(q || fVend || fCat);
   const asignados = new Set(AppData.comisionClientes.map(c => normCliente(c.cliente)));
   const sinAsignar = AppData.clientes.filter(c => !asignados.has(normCliente(c.nombre))).length;
   const cEl = document.getElementById('com-cli-count');
-  if (cEl) cEl.textContent = AppData.comisionClientes.length + ' en comisión' + (sinAsignar ? ' · ' + sinAsignar + ' cliente(s) sin asignar' : '');
+  if (cEl) cEl.textContent = (filtrando ? lista.length + ' de ' + total : total + ' en comisión') +
+    (sinAsignar ? ' · ' + sinAsignar + ' cliente(s) sin asignar' : '');
+  const bLimpiar = document.getElementById('com-cli-limpiar');
+  if (bLimpiar) bLimpiar.style.display = filtrando ? '' : 'none';
 
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">Sin clientes en comisión</div><div class="empty-sub">Asigná un cliente nuevo a un vendedor con "+ Asignar cliente"</div></div></td></tr>';
+    cont.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">' +
+      (filtrando ? 'Ningún cliente con esos filtros' : 'Sin clientes en comisión') + '</div><div class="empty-sub">' +
+      (filtrando ? 'Probá con otro vendedor o categoría, o limpiá los filtros.' : 'Asigná un cliente nuevo a un vendedor con "+ Asignar cliente"') + '</div></div></td></tr>';
     return;
   }
 
@@ -541,8 +578,7 @@ function renderComisionClientes() {
       acciones = '<button class="btn btn-sm" style="white-space:nowrap" onclick="reactivarComisionCliente(' + row.id + ')" title="Vuelve a comisionar los meses que le queden">↺ Reactivar</button>';
     } else if (bloq) {
       estadoHtml = '<span class="badge" style="background:#dcfce7;color:#166534">✓ Activo</span>';
-      acciones = '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;white-space:nowrap" onclick="darDeBajaComisionCliente(' + row.id + ')" title="El cliente se dio de baja: deja de comisionar">Dar de baja</button>' +
-        '<button class="btn btn-sm" onclick="desbloquearComisionCliente(' + row.id + ')" title="Volver a evaluar">↺</button>';
+      acciones = '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;white-space:nowrap" onclick="darDeBajaComisionCliente(' + row.id + ')" title="El cliente se dio de baja: deja de comisionar">Dar de baja</button>';
     } else if (!ev.tieneEscala) {
       estadoHtml = '<span class="badge" style="background:#fee2e2;color:#b91c1c">Falta escala</span>';
       acciones = '';
@@ -566,6 +602,7 @@ function renderComisionClientes() {
       '<td style="text-align:center">' + cat + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + montoTxt + '</td>' +
       '<td style="font-size:11px;color:var(--text-secondary)">' + mesesTxt + '</td>' +
+      '<td style="text-align:center">' + _comCeldaQuedan(row, baja) + '</td>' +
       '<td style="text-align:center">' + estadoHtml + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' + acciones +
         '<button class="btn btn-sm" onclick="editComisionCliente(' + row.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' +
@@ -579,6 +616,48 @@ function renderComisionClientes() {
   asegurarRecorridosParaEvaluar();
 }
 
+// Chip de cuántos pagos quedan. Se pinta en ámbar cuando quedan 2 o menos: es
+// el aviso de que hay que ir a buscar un cliente nuevo para ese vendedor.
+function _comCeldaQuedan(row, baja) {
+  if (baja) return '<span class="muted" style="font-size:11px">—</span>';
+  const p = pagosRestantes(row);
+  if (!p) return '<span class="muted" style="font-size:11px">—</span>';
+  if (p.estado === 'terminado') return '<span class="muted" style="font-size:10.5px">terminó ' + mesLabel(p.mes) + '</span>';
+  if (p.estado === 'porArrancar') return '<span style="font-size:10.5px;color:#854d0e">arranca ' + mesLabel(p.mes) + '</span>';
+  const alerta = p.quedan <= 2;
+  return '<span class="badge" style="font-size:10.5px;' +
+    (alerta ? 'background:#fef3c7;color:#92400e' : 'background:var(--surface-0);color:var(--text-secondary)') + '">' +
+    p.quedan + ' de 5</span>';
+}
+
+// Llena los selectores de vendedor y categoría con lo que realmente hay cargado,
+// conservando lo elegido: los repinta el render y si se reconstruyeran en blanco
+// el filtro se perdería a cada tecla del buscador.
+function _comSelectoresFiltro() {
+  const esc = s => String(s).replace(/"/g, '&quot;');
+  const selV = document.getElementById('com-cli-vend');
+  if (selV) {
+    const prev = selV.value;
+    const vends = Array.from(new Set((AppData.comisionClientes || []).map(c => String(c.vendedor || '').trim()).filter(Boolean))).sort();
+    selV.innerHTML = '<option value="">Todos los vendedores</option>' +
+      vends.map(v => '<option value="' + esc(v) + '"' + (v === prev ? ' selected' : '') + '>' + v + '</option>').join('');
+  }
+  const selC = document.getElementById('com-cli-cat');
+  if (selC) {
+    const prev = selC.value;
+    const orden = (AppData.comisionCategorias || []).slice().sort((a, b) => _num(b.fact_desde) - _num(a.fact_desde)).map(c => c.categoria);
+    const usadas = new Set((AppData.comisionClientes || []).map(c => String(c.categoria || '').trim()).filter(Boolean));
+    const cats = orden.filter(c => usadas.has(c)).concat(Array.from(usadas).filter(c => !orden.includes(c)).sort());
+    selC.innerHTML = '<option value="">Todas las categorías</option>' +
+      cats.map(c => '<option value="' + esc(c) + '"' + (c === prev ? ' selected' : '') + '>Categoría ' + c + '</option>').join('');
+  }
+}
+
+function limpiarFiltrosComision() {
+  ['com-cli-search', 'com-cli-vend', 'com-cli-cat'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderComisionClientes();
+}
+
 // ── Asignar / editar cliente en comisión ─────────────────────────────────────
 let comisionClienteEditId = null;
 function openAddComisionClienteModal() {
@@ -589,6 +668,7 @@ function openAddComisionClienteModal() {
   document.getElementById('mcc-vendedor').value = '';
   document.getElementById('mcc-fecha').value = '';
   document.getElementById('mcc-mesinicio').value = '';
+  _mccCategorias(''); document.getElementById('mcc-facturacion').value = '';
   _setEstadoComisionModal('activo', '', '');
   renderComisionClientes(); // refresca datalists
   actualizarPreviewComisionCliente();
@@ -605,10 +685,25 @@ function editComisionCliente(id) {
   document.getElementById('mcc-vendedor').value = row.vendedor || '';
   document.getElementById('mcc-fecha').value = row.fecha_alta && /^\d{4}-\d{2}-\d{2}$/.test(row.fecha_alta) ? row.fecha_alta : '';
   document.getElementById('mcc-mesinicio').value = row.mes_inicio || '';
+  _mccCategorias(row.bloqueado ? (row.categoria || '') : '');
+  document.getElementById('mcc-facturacion').value = row.bloqueado && _num(row.facturacion_eval) > 0 ? _num(row.facturacion_eval) : '';
   _setEstadoComisionModal(row.estado || 'activo', row.mes_baja || '', row.motivo_baja || '');
   actualizarPreviewComisionCliente();
   document.getElementById('modal-cc-backdrop').style.display = 'flex';
 }
+// Categorías de la escala para declarar a mano la evaluación de un cliente que
+// ya venía comisionando de antes. Sin esto, un cliente sin envíos en la ventana
+// que carga la app se quedaba "En evaluación" para siempre y nunca comisionaba.
+function _mccCategorias(actual) {
+  const sel = document.getElementById('mcc-categoria');
+  if (!sel) return;
+  const cats = (AppData.comisionCategorias || []).slice().sort((a, b) => _num(b.fact_desde) - _num(a.fact_desde));
+  const esc = s => String(s).replace(/"/g, '&quot;');
+  sel.innerHTML = '<option value="">Que la evalúe la app (4 primeras liquidaciones)</option>' +
+    cats.map(c => '<option value="' + esc(c.categoria) + '"' + (c.categoria === actual ? ' selected' : '') + '>' +
+      c.categoria + ' · ' + fmtPeso(_num(c.monto)) + '/mes</option>').join('');
+}
+
 // Estado del cliente dentro del modal (activo / baja + desde cuándo y por qué).
 function _setEstadoComisionModal(estado, mesBaja, motivo) {
   const sel = document.getElementById('mcc-estado');
@@ -635,6 +730,21 @@ function actualizarPreviewComisionCliente() {
   const box = document.getElementById('mcc-preview');
   const miInput = document.getElementById('mcc-mesinicio');
   if (!box) return;
+  // Categoría declarada a mano: manda sobre la evaluación automática y el
+  // preview tiene que decir eso mismo, para que nadie espere que la app la mueva.
+  const catManual = (document.getElementById('mcc-categoria') || {}).value || '';
+  if (catManual) {
+    const c = (AppData.comisionCategorias || []).find(x => x.categoria === catManual);
+    const mi = (miInput && miInput.value) || '';
+    box.innerHTML =
+      '<div><strong>Categoría ' + catManual + '</strong> declarada a mano · ' +
+      fmtPeso(_num(c && c.monto)) + '/mes durante 5 meses.</div>' +
+      '<div style="margin-top:4px;font-size:11px">' +
+      (mi ? 'Cobra de <strong>' + mesLabel(mi) + '</strong> a <strong>' + mesLabel(addMeses(mi, 4)) + '</strong>.'
+          : '<span style="color:#b45309">⚠ Poné el 1.er mes de pago: es lo que define los 5 meses que va a cobrar.</span>') +
+      '</div>';
+    return;
+  }
   if (!cliente) { box.innerHTML = '<span class="muted">Elegí un cliente para ver la evaluación de sus primeras 4 liquidaciones.</span>'; return; }
   // Si todavía no tenemos su historia completa, la pedimos y refrescamos el preview.
   if (!_comisionRecords.has(normCliente(cliente))) {
@@ -667,12 +777,17 @@ async function guardarComisionClienteModal() {
   const vendedor = (document.getElementById('mcc-vendedor').value || '').trim().toUpperCase();
   const fecha_alta = document.getElementById('mcc-fecha').value || '';
   const mes_inicio = document.getElementById('mcc-mesinicio').value || '';
+  const catManual = (document.getElementById('mcc-categoria')?.value || '').trim();
+  const factManual = parseFloat(document.getElementById('mcc-facturacion')?.value);
   const estado = (document.getElementById('mcc-estado')?.value === 'baja') ? 'baja' : 'activo';
   const mes_baja = estado === 'baja' ? (document.getElementById('mcc-mesbaja')?.value || '') : '';
   const motivo_baja = estado === 'baja' ? (document.getElementById('mcc-motivobaja')?.value || '').trim() : '';
   if (estado === 'baja' && !mes_baja) { alert('Indicá desde qué mes el cliente deja de comisionar.'); return; }
   if (!cliente) { alert('Elegí un cliente.'); return; }
   if (!vendedor) { alert('Elegí o escribí un vendedor.'); return; }
+  // Con la categoría a mano no hay evaluación de la que deducir el arranque, y
+  // ese mes define los 5 pagos: se pide en vez de inventarlo.
+  if (catManual && !mes_inicio) { alert('Poné el 1.er mes de pago: con la categoría declarada a mano es lo que define los 5 meses que va a cobrar.'); return; }
   const dup = AppData.comisionClientes.find(c => normCliente(c.cliente) === normCliente(cliente) && c.id !== comisionClienteEditId);
   if (dup) { alert('El cliente "' + cliente + '" ya está asignado a ' + dup.vendedor + '.'); return; }
   try {
@@ -682,11 +797,14 @@ async function guardarComisionClienteModal() {
     }
     if (comisionClienteEditId != null) {
       const campos = { vendedor, fecha_alta, mes_inicio, estado, mes_baja, motivo_baja };
+      Object.assign(campos, _camposCategoriaManual(catManual, factManual, AppData.comisionClientes.find(x => x.id === comisionClienteEditId)));
       await DB.updateWhere('comision_clientes', 'id', comisionClienteEditId, campos);
       const row = AppData.comisionClientes.find(x => x.id === comisionClienteEditId);
       if (row) Object.assign(row, campos);
     } else {
-      const rec = { cliente, vendedor, fecha_alta, mes_inicio, categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false, estado, mes_baja, motivo_baja };
+      const rec = Object.assign(
+        { cliente, vendedor, fecha_alta, mes_inicio, categoria: '', facturacion_eval: 0, monto: 0, bloqueado: false, estado, mes_baja, motivo_baja },
+        _camposCategoriaManual(catManual, factManual, null));
       const r = await DB.insertRow('comision_clientes', rec);
       AppData.comisionClientes.push(Object.assign({ id: r.id }, rec));
     }
@@ -696,6 +814,24 @@ async function guardarComisionClienteModal() {
     renderComisionClientes();
     showToast('✅ Asignación guardada');
   } catch (e) { console.warn('guardarComisionClienteModal', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// Qué campos escribe la categoría elegida a mano. Vacía = vuelve a manos de la
+// app (se desconfirma para que la evalúe); elegida = se congela igual que una
+// evaluación confirmada, porque eso es: una evaluación hecha por fuera.
+function _camposCategoriaManual(catManual, factManual, filaPrevia) {
+  if (!catManual) {
+    // Solo desconfirma lo que se había declarado a mano: una evaluación que hizo
+    // la app se reabre desde su propio botón, no borrando el select.
+    return (filaPrevia && filaPrevia.bloqueado) ? {} : { bloqueado: false };
+  }
+  const c = (AppData.comisionCategorias || []).find(x => x.categoria === catManual);
+  return {
+    categoria: catManual,
+    monto: _num(c && c.monto),
+    facturacion_eval: isNaN(factManual) ? _num(filaPrevia && filaPrevia.facturacion_eval) : factManual,
+    bloqueado: true,
+  };
 }
 
 // Confirma la evaluación: congela facturación/categoría/monto/mes_inicio y arranca los 5 pagos.
@@ -718,18 +854,6 @@ async function confirmarComisionCliente(id) {
     renderComisionClientes();
     showToast('✅ ' + row.cliente + ' confirmado · ' + fmtPeso(ev.monto) + '/mes × 5 (' + mesLabel(mesInicio) + '→' + mesLabel(addMeses(mesInicio, 4)) + ')');
   } catch (e) { console.warn('confirmarComisionCliente', e); alert('No se pudo confirmar: ' + (e.message || e)); }
-}
-async function desbloquearComisionCliente(id) {
-  const row = AppData.comisionClientes.find(x => x.id === id);
-  if (!row) return;
-  if (!confirm('¿Reabrir la evaluación de ' + row.cliente + '?\nDejará de contarse en los cierres mensuales hasta volver a confirmarlo.')) return;
-  try {
-    await DB.updateWhere('comision_clientes', 'id', id, { bloqueado: false });
-    row.bloqueado = false;
-    persistirComisionesLocal();
-    renderComisionClientes();
-    showToast('↺ Evaluación reabierta');
-  } catch (e) { console.warn('desbloquearComisionCliente', e); showToast('⛔ No se pudo reabrir'); }
 }
 // El cliente se dio de baja: deja de comisionar desde el mes elegido (ese mes ya
 // no se paga). La fila NO se borra — el registro tiene que explicar por qué el
