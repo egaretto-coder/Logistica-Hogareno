@@ -493,8 +493,12 @@ function renderComisionClientes() {
     // el mes en que cierra es mi − 1. Se muestra al lado porque es la columna
     // "Mes Inicio" de la planilla: sin eso, copiar ese mes al campo de la app
     // corre los 5 pagos un mes para atrás.
-    const mesesTxt = mesLabel(meses[0]) + ' → ' + mesLabel(meses[1]) +
-      '<div class="muted" style="font-size:10px">evaluado hasta ' + mesLabel(addMeses(mi, -1)) + '</div>';
+    // Mientras la evaluación no cierre no hay ventana que mostrar: un rango
+    // provisorio se lee como un compromiso que todavía no existe.
+    const mesesTxt = (!bloq && !ev.completo)
+      ? '<span class="muted">se define al cerrar la evaluación</span>'
+      : mesLabel(meses[0]) + ' → ' + mesLabel(meses[1]) +
+        '<div class="muted" style="font-size:10px">evaluado hasta ' + mesLabel(addMeses(mi, -1)) + '</div>';
 
     let estadoHtml, acciones;
     const baja = comisionEsBaja(row);
@@ -511,10 +515,11 @@ function renderComisionClientes() {
     } else if (!ev.completo) {
       estadoHtml = '<span class="badge" style="background:#fef9c3;color:#854d0e">' + ev.facturas + ' de ' + FACTURAS_EVALUACION + ' facturas</span>' +
         '<div class="muted" style="font-size:10px;margin-top:2px">faltan ' + ev.faltan + '</div>';
-      acciones = '';
+      acciones = '<button class="btn btn-sm" style="white-space:nowrap" onclick="abrirFacturasComision(' + row.id + ')" title="Elegir qué facturas entran en la evaluación"><i class="ic ic-receipt"></i> Facturas</button>';
     } else {
       estadoHtml = '<span class="badge" style="background:#e0e7ff;color:#3730a3">Listo p/ confirmar</span>';
-      acciones = '<button class="btn btn-sm btn-primary" onclick="confirmarComisionCliente(' + row.id + ')" title="Congela el monto y arranca los 5 pagos"><i class="ic ic-check"></i> Confirmar</button>';
+      acciones = '<button class="btn btn-sm" style="white-space:nowrap" onclick="abrirFacturasComision(' + row.id + ')" title="Ver las facturas que se evaluaron"><i class="ic ic-receipt"></i> Facturas</button>' +
+        '<button class="btn btn-sm btn-primary" onclick="confirmarComisionCliente(' + row.id + ')" title="Congela el monto y arranca los 5 pagos"><i class="ic ic-check"></i> Confirmar</button>';
     }
     const warnTarifa = '';
 
@@ -580,6 +585,149 @@ function _comSelectoresFiltro() {
 function limpiarFiltrosComision() {
   ['com-cli-search', 'com-cli-vend', 'com-cli-cat'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderComisionClientes();
+}
+
+// ── Facturas de la evaluación ───────────────────────────────────────────────
+// La contabilización vive en Comisiones y no en "Liquidación de clientes": ese
+// panel es del tesorero, que descarga, y meterle controles de comisión le agrega
+// ruido a otra tarea. Acá se ve en un solo lugar qué facturas entran, cuánto
+// suman y qué categoría dan.
+let facturasComisionId = null;
+
+// Las liquidaciones CERRADAS del cliente, contabilizadas o no, de la más vieja
+// a la más nueva: son las candidatas a entrar en la evaluación.
+function liquidacionesDeClienteComision(cliente) {
+  const k = comisionCodDe(cliente);
+  return (AppData.clienteLiquidaciones || [])
+    .filter(x => clienteCodCanonico(clienteKey(x.cliente_cod)) === k)
+    .sort((a, b) => String(a.semana_hasta).localeCompare(String(b.semana_hasta)));
+}
+
+// El rango de una liquidación guardada, para poder recalcular su total cuando
+// quedó sin monto congelado (liquidaciones cerradas antes de que existiera).
+function _rangoDeLiquidacion(x) {
+  const d1 = new Date(String(x.semana_desde || '').slice(0, 10) + 'T00:00:00');
+  const d2 = new Date(String(x.semana_hasta || '').slice(0, 10) + 'T00:00:00');
+  if (isNaN(d1) || isNaN(d2)) return null;
+  d2.setHours(23, 59, 59, 999);
+  const fmt = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+  return { desdeD: d1, hastaD: d2, desde: fmt(d1), hasta: fmt(d2) };
+}
+
+// Lo facturado en esa liquidación: el valor congelado al cerrarla y, si no lo
+// tiene, lo que da recalcularla. Se congela en cuanto se contabiliza.
+function montoDeLiquidacion(x, cod) {
+  const m = _num(x.monto);
+  if (m > 0) return m;
+  const r = _rangoDeLiquidacion(x);
+  return r ? _num(calcLiquidacionCliente(cod, r).total) : 0;
+}
+
+function abrirFacturasComision(id) {
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (!row) return;
+  facturasComisionId = id;
+  document.getElementById('mfac-title').textContent = 'Facturas de ' + row.cliente;
+  renderFacturasComision();
+  document.getElementById('modal-facturas-backdrop').style.display = 'flex';
+}
+
+function cerrarFacturasComision(e) {
+  if (!e || e.target.id === 'modal-facturas-backdrop') {
+    document.getElementById('modal-facturas-backdrop').style.display = 'none';
+    facturasComisionId = null;
+  }
+}
+
+function renderFacturasComision() {
+  const row = AppData.comisionClientes.find(x => x.id === facturasComisionId);
+  const cont = document.getElementById('mfac-lista');
+  if (!row || !cont) return;
+  const cod = comisionCodDe(row.cliente);
+  const liqs = liquidacionesDeClienteComision(row.cliente);
+  const ev = evalComisionCliente(row.cliente);
+
+  if (!liqs.length) {
+    cont.innerHTML = '<div class="empty-state" style="padding:22px"><div class="empty-icon"><i class="ic ic-receipt"></i></div>' +
+      '<div class="empty-title">Todavía no tiene facturas cerradas</div>' +
+      '<div class="empty-sub">Aparecen acá cuando se marca su liquidación como lista en Detalle de cliente.</div></div>';
+  } else {
+    // Las que entran son las 4 primeras CONTABILIZADAS; una 5.ª tildada queda
+    // registrada pero no mueve el número, y se atenúa para que no parezca que suma.
+    const cuentan = liqs.filter(x => x.cuenta_comision).slice(0, FACTURAS_EVALUACION).map(x => x.id);
+    cont.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto">' +
+      liqs.map(x => {
+        const dentro = cuentan.includes(x.id);
+        const extra = x.cuenta_comision && !dentro;
+        const r = _rangoDeLiquidacion(x);
+        return '<label style="display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;' +
+          (dentro ? 'background:var(--surface-0)' : extra ? 'opacity:.55' : '') + '">' +
+          '<input type="checkbox"' + (x.cuenta_comision ? ' checked' : '') +
+            ' onchange="toggleFacturaComision(' + x.id + ')">' +
+          '<div style="flex:1;font-size:12px">' +
+            '<strong>' + (r ? r.desde + ' → ' + r.hasta : String(x.semana_hasta).slice(0, 10)) + '</strong>' +
+            (dentro ? ' <span class="badge" style="background:#dcfce7;color:#166534;font-size:9.5px">entra ' + (cuentan.indexOf(x.id) + 1) + '.ª</span>' : '') +
+            (extra ? ' <span class="muted" style="font-size:10px">· fuera de las ' + FACTURAS_EVALUACION + ' que evalúan</span>' : '') +
+          '</div>' +
+          '<div class="mono" style="font-size:12px;font-weight:600">' + fmtPeso(montoDeLiquidacion(x, cod)) + '</div>' +
+        '</label>';
+      }).join('') + '</div>';
+  }
+
+  const res = document.getElementById('mfac-resumen');
+  const btn = document.getElementById('mfac-confirmar');
+  if (!ev.tieneEscala) {
+    res.innerHTML = '<span style="color:#b91c1c">⚠ No hay escala de categorización cargada.</span>';
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  if (ev.completo) {
+    const m1 = addMeses(ev.hasta.slice(0, 7), 1);
+    res.innerHTML =
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">' +
+        '<div><div class="muted" style="font-size:10px">Facturación evaluada</div><div style="font-weight:700">' + fmtPeso(ev.facturacion) + '</div></div>' +
+        '<div><div class="muted" style="font-size:10px">Categoría</div><div style="font-weight:700;font-size:17px">' + ev.categoria + '</div></div>' +
+        '<div><div class="muted" style="font-size:10px">Comisión</div><div style="font-weight:700">' + fmtPeso(ev.monto) + '/mes</div></div>' +
+      '</div>' +
+      '<div style="margin-top:7px;font-size:11.5px;border-top:1px solid var(--border);padding-top:7px">' +
+        'La 4.ª factura cierra el <strong>' + cargoFechaTxt(ev.hasta) + '</strong> · los 5 pagos van de <strong>' +
+        mesLabel(m1) + '</strong> a <strong>' + mesLabel(addMeses(m1, 4)) + '</strong>.</div>';
+    if (btn) btn.style.display = row.bloqueado ? 'none' : '';
+  } else {
+    res.innerHTML = '<div style="font-size:12.5px"><strong>' + ev.facturas + ' de ' + FACTURAS_EVALUACION + '</strong> facturas contabilizadas' +
+      (ev.facturacion > 0 ? ' · ' + fmtPeso(ev.facturacion) + ' acumulados' : '') + '.</div>' +
+      '<div class="muted" style="font-size:11px;margin-top:3px">Faltan ' + ev.faltan +
+      ' para cerrar la evaluación y categorizarlo.</div>';
+    if (btn) btn.style.display = 'none';
+  }
+}
+
+async function toggleFacturaComision(liqId) {
+  const row = AppData.comisionClientes.find(x => x.id === facturasComisionId);
+  const liq = (AppData.clienteLiquidaciones || []).find(x => x.id === liqId);
+  if (!row || !liq) return;
+  if (row.bloqueado) { showToast('La comisión ya está confirmada'); renderFacturasComision(); return; }
+  const cod = comisionCodDe(row.cliente);
+  const nuevo = !liq.cuenta_comision;
+  // Se congela el monto al contabilizarla: si más adelante se corrige una zona,
+  // la evaluación no se mueve para atrás.
+  const monto = nuevo ? montoDeLiquidacion(liq, cod) : _num(liq.monto);
+  try {
+    await DB.updateWhere('cliente_liquidaciones', 'id', liqId, { cuenta_comision: nuevo, monto });
+    liq.cuenta_comision = nuevo; liq.monto = monto;
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    renderFacturasComision();
+    renderComisionClientes();
+  } catch (e) { console.warn('toggleFacturaComision', e); showToast('⛔ No se pudo guardar'); renderFacturasComision(); }
+}
+
+async function confirmarDesdeFacturas() {
+  const id = facturasComisionId;
+  if (id == null) return;
+  await confirmarComisionCliente(id);
+  const row = AppData.comisionClientes.find(x => x.id === id);
+  if (row && row.bloqueado) cerrarFacturasComision();
+  else renderFacturasComision();
 }
 
 // ── Asignar / editar cliente en comisión ─────────────────────────────────────

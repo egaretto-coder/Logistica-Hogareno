@@ -1030,6 +1030,32 @@
   </div>
 </div>
 
+<!-- MODAL FACTURAS DE LA EVALUACIÓN (Comisiones).
+     La contabilización vive acá y no en "Liquidación de clientes": ese panel es
+     del tesorero, que descarga: meterle controles de comisiones le agrega ruido
+     a otra tarea. Toda la evaluación se mira y se decide en un solo lugar. -->
+<div class="modal-backdrop" id="modal-facturas-backdrop" onclick="cerrarFacturasComision(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-receipt"></i> <span id="mfac-title">Facturas de la evaluación</span></span>
+      <button class="modal-close" onclick="cerrarFacturasComision()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-alert"></i><div>Se evalúan las <strong>4 primeras facturas contabilizadas</strong>. A la 4.ª cierra la evaluación
+        y el cliente se categoriza por el <strong>total de esas 4</strong>. Tildá solo las que correspondan: no toda liquidación
+        cerrada cuenta.</div>
+      </div>
+      <div id="mfac-lista"></div>
+      <div id="mfac-resumen" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarFacturasComision()">Cerrar</button>
+        <button class="btn btn-primary" id="mfac-confirmar" onclick="confirmarDesdeFacturas()" style="display:none"><i class="ic ic-check"></i> Confirmar la comisión</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL ANULAR EL COBRO DE UN ENVÍO (gesto comercial con el cliente).
      Mismo formato que "Pagar la visita": las dos son decisiones sobre plata que
      se toman envío por envío y necesitan quedar registradas con su motivo. -->

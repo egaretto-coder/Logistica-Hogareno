@@ -65,46 +65,6 @@ async function desarmarLiquidacion(cod, rango) {
   } catch (e) { console.warn('desarmarLiquidacion', e); showToast('⛔ No se pudo reabrir'); }
 }
 
-// ── Contabilizar una factura para la evaluación de comisiones ───────────
-// La evaluación de un cliente nuevo se cuenta por FACTURAS emitidas: a la 4.ª
-// contabilizada cierra y se lo categoriza por el total de esas 4. Se marca a
-// mano —no toda liquidación cerrada cuenta: la primera puede ser una semana
-// suelta de prueba, o el cliente puede venir facturando de antes.
-async function toggleContabilizarFactura(cod, rango) {
-  const a = liquidacionArmada(cod, rango);
-  if (!a) { showToast('Primero marcá la liquidación como lista'); return; }
-  const fila = (typeof comisionPorCod === 'function') ? comisionPorCod(cod) : null;
-  if (!fila) { showToast('Este cliente no está asignado a ningún vendedor'); return; }
-  if (fila.bloqueado) { showToast('La comisión de este cliente ya está confirmada'); return; }
-
-  const nuevo = !a.cuenta_comision;
-  if (nuevo && !_num(a.monto)) {
-    // Liquidaciones cerradas antes de que existiera el campo: se les calcula el
-    // total ahora, que es lo mejor disponible, y se avisa.
-    a.monto = _num(calcLiquidacionCliente(cod, rango).total);
-  }
-  try {
-    await DB.updateWhere('cliente_liquidaciones', 'id', a.id, { cuenta_comision: nuevo, monto: _num(a.monto) });
-    a.cuenta_comision = nuevo;
-    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
-    renderClienteLiquidaciones();
-    if (typeof renderComisionClientes === 'function' && document.getElementById('com-cli-rows')) renderComisionClientes();
-
-    const ev = evalComisionCliente(fila.cliente);
-    if (!nuevo) { showToast('Factura descontabilizada · lleva ' + ev.facturas + ' de ' + FACTURAS_EVALUACION); return; }
-    if (ev.completo) {
-      const m1 = addMeses(String(ev.hasta).slice(0, 7), 1);
-      alert('Evaluación completa de ' + clienteNombreDe(cod) + '.' + String.fromCharCode(10) + String.fromCharCode(10) +
-        FACTURAS_EVALUACION + ' facturas por ' + fmtPeso(ev.facturacion) + ' → categoría ' + (ev.categoria || '—') +
-        ' · ' + fmtPeso(ev.monto) + '/mes.' + String.fromCharCode(10) +
-        'Los 5 pagos irían de ' + mesLabel(m1) + ' a ' + mesLabel(addMeses(m1, 4)) + '.' + String.fromCharCode(10) + String.fromCharCode(10) +
-        'Confirmala en Comisiones → "Clientes en comisión" para que empiece a liquidar.');
-    } else {
-      showToast('✅ Factura contabilizada · ' + ev.facturas + ' de ' + FACTURAS_EVALUACION + ' (faltan ' + ev.faltan + ')');
-    }
-  } catch (e) { console.warn('toggleContabilizarFactura', e); showToast('⛔ No se pudo contabilizar'); }
-}
-
 // ── Listado del panel ───────────────────────────────────────────────────
 // Todos los clientes con envíos contabilizables en la semana, armados o no.
 function cliqListado(rango) {
@@ -120,15 +80,11 @@ function cliqListado(rango) {
     const rc = periodoClienteRango(c.cod, iso);
     const liq = calcLiquidacionCliente(c.cod, rc);
     const armada = liquidacionArmada(c.cod, rc);
-    // Solo los clientes en evaluación muestran el botón de contabilizar: para
-    // los otros cien sería ruido en cada fila.
-    const com = (typeof comisionPorCod === 'function') ? comisionPorCod(c.cod) : null;
     return {
       cod: c.cod, nombre: clienteNombreDe(c.cod), rango: rc,
       periodo: periodoDiasDe(c.cod), periodoLabel: periodoLabel(periodoDiasDe(c.cod)),
       envios: liq.totalEnvios, total: liq.total,
-      sinTarifa: liq.sinTarifa, armada,
-      comision: (com && !com.bloqueado) ? com : null
+      sinTarifa: liq.sinTarifa, armada
     };
   }).filter(x => x.envios > 0)
     .sort((a, b) => (b.armada ? 1 : 0) - (a.armada ? 1 : 0) || b.total - a.total);
@@ -236,8 +192,7 @@ function renderClienteLiquidaciones() {
           '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' +
             (x.armada.armada_por ? 'por ' + x.armada.armada_por : '') +
             (x.armada.armada_en ? ' · ' + new Date(x.armada.armada_en).toLocaleDateString('es-AR') : '') + '</div>'
-        : '<span class="badge badge-gray">⏳ Sin armar</span>') +
-        _cliqBloqueComision(x, codEsc) + '</td>' +
+        : '<span class="badge badge-gray">⏳ Sin armar</span>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
         '<button class="btn btn-sm" onclick="verDetalleDesdeLiq(\'' + codEsc + '\')" title="Abrir en Detalle de cliente">Ver detalle</button>' +
         (x.armada
@@ -246,34 +201,6 @@ function renderClienteLiquidaciones() {
       '</div></td>' +
     '</tr>';
   }).join('');
-}
-
-// El control de "contabilizar factura", en la fila del cliente que está en
-// evaluación. Muestra en qué va la cuenta, porque es el dato que decide cuándo
-// se le puede confirmar la comisión al vendedor.
-function _cliqBloqueComision(x, codEsc) {
-  if (!x.comision || !x.armada) return '';
-  const ev = evalComisionCliente(x.comision.cliente);
-  const puesta = !!x.armada.cuenta_comision;
-  const cierra = puesta && ev.completo;
-  return '<div style="margin-top:5px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">' +
-    '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px;white-space:nowrap;' +
-      (puesta ? 'border-color:#86efac;color:#15803d' : '') + '" ' +
-      'title="' + (puesta ? 'Sacar esta factura de la evaluación de comisiones' : 'Contar esta factura para la evaluación de comisiones de ' + x.comision.vendedor) + '" ' +
-      'onclick="toggleContabilizarFactura(\'' + codEsc + '\', cliqRangoDe(\'' + codEsc + '\'))">' +
-      (puesta ? '✓ Contabilizada' : '+ Contabilizar factura') + '</button>' +
-    '<span style="font-size:10px;color:' + (cierra ? '#15803d' : 'var(--text-muted)') + '">' +
-      ev.facturas + ' de ' + FACTURAS_EVALUACION + (cierra ? ' · evaluación completa' : '') + '</span>' +
-  '</div>';
-}
-
-// El período que le toca a ese cliente para la fecha elegida en el panel.
-function cliqRangoDe(cod) {
-  const r = semanaClienteRango(cliqSemanaISO());
-  const iso = r && r.desdeD
-    ? r.desdeD.getFullYear() + '-' + String(r.desdeD.getMonth() + 1).padStart(2, '0') + '-' + String(r.desdeD.getDate()).padStart(2, '0')
-    : undefined;
-  return periodoClienteRango(cod, iso);
 }
 
 // Salta al panel de edición con ese cliente y esa semana ya puestos.
