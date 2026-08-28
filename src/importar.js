@@ -338,7 +338,11 @@ function processUpload() {
   // visita pagada, la dimensión asignada, la zona corregida, el precio pisado y
   // la anulación, sin ningún aviso. El operador lo notaba recién cuando faltaba
   // plata (bug real: una visita marcada desapareció con la carga siguiente).
-  const CAMPOS_A_MANO = ['contabiliza_manual', 'motivo_contab', 'zona_manual', 'precio_manual',
+  // La visita pagada NO está acá: no se hereda, se conserva como fila aparte
+  // (su clave V: no matchea ninguna del listado, así que la fusión ni la mira).
+  // Heredarla haría que la entrega del día 2 arrastre la visita del día 1 y se
+  // pagaría una sola vez, cuando son dos trabajos distintos.
+  const CAMPOS_A_MANO = ['zona_manual', 'precio_manual',
     'dim_especial', 'dim_cliente', 'anulado_cliente', 'motivo_anulacion', 'factura_semana', 'manual'];
   let _heredadas = 0;
   const heredarCorrecciones = (viejo, nuevo) => {

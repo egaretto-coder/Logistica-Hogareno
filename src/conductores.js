@@ -531,7 +531,11 @@ async function _persistirVisita(r) {
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     await DB.updateWhere('registros', 'id', r.id, {
       contabiliza_manual: !!r.contabiliza_manual,
-      motivo_contab: r.motivo_contab || ''
+      motivo_contab: r.motivo_contab || '',
+      // La clave cambia con la marca: una visita pagada pasa a V:tracking|fecha
+      // para que ningún listado posterior la reemplace. Si no se reescribe acá,
+      // el borrado por clave del próximo import se la lleva puesta.
+      clave: claveRegistro(r)
     });
     if (typeof condEditIdsSucios !== 'undefined') condEditIdsSucios.delete(r.id);
     return true;

@@ -1060,8 +1060,15 @@ function trackingValido(t) {
 //     visita son días distintos y deben reconocerse como el mismo envío.
 //   - Basura sin dirección -> huella por campos, para que re-importar el mismo
 //     archivo no duplique (caso muy marginal).
+// OJO: una VISITA PAGADA tiene clave propia (V:tracking|fecha). Es un evento
+// cerrado —el conductor fue ese día y se le paga— y el listado no puede volver
+// a pisarlo: al día siguiente otro conductor puede llevar el mismo envío y
+// lograr la entrega, y esos son DOS trabajos que se pagan y se facturan por
+// separado. Con la clave T: la fila del día 2 reemplazaba la del día 1 y el
+// primer conductor perdía su visita.
 function claveRegistro(r) {
   const t = String(r.tracking || '').trim();
+  if (r && r.contabiliza_manual && trackingValido(t)) return 'V:' + t + '|' + String(r.fecha || '').trim();
   if (trackingValido(t)) return 'T:' + t;
   const dir = _normTxt(r.direccion);
   const dest = _normTxt(r.destinatario);
