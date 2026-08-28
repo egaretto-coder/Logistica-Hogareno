@@ -689,6 +689,11 @@ function filaRegistroNube(r) {
     zona_manual: !!r.zona_manual,
     contabiliza_manual: !!r.contabiliza_manual,
     motivo_contab: r.motivo_contab || '',
+    // Decisiones del lado del cliente: si no se escriben acá, un reimport las
+    // borra aunque la fusión las haya conservado en memoria.
+    anulado_cliente: !!r.anulado_cliente,
+    motivo_anulacion: r.motivo_anulacion || '',
+    factura_semana: r.factura_semana || null,
     precio_manual: (r.precio_manual === null || r.precio_manual === undefined || r.precio_manual === '') ? null : _num(r.precio_manual)
   };
 }

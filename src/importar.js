@@ -332,11 +332,33 @@ function processUpload() {
   const tipoClave = c => c.startsWith('T:') ? 'tracking real' : c.startsWith('D:') ? 'dirección' : 'huella';
   const clavesExist = new Set(AppData.records.map(claveRegistro));
 
+  // Un reimport NO puede borrar lo que se corrigió a mano. El listado trae el
+  // envío de nuevo cada vez que cambia de estado —la 2.ª visita, la entrega del
+  // día siguiente— y la fila nueva reemplazaba la vieja ENTERA: se perdían la
+  // visita pagada, la dimensión asignada, la zona corregida, el precio pisado y
+  // la anulación, sin ningún aviso. El operador lo notaba recién cuando faltaba
+  // plata (bug real: una visita marcada desapareció con la carga siguiente).
+  const CAMPOS_A_MANO = ['contabiliza_manual', 'motivo_contab', 'zona_manual', 'precio_manual',
+    'dim_especial', 'dim_cliente', 'anulado_cliente', 'motivo_anulacion', 'factura_semana', 'manual'];
+  let _heredadas = 0;
+  const heredarCorrecciones = (viejo, nuevo) => {
+    let hubo = false;
+    CAMPOS_A_MANO.forEach(k => {
+      const v = viejo[k];
+      if (v === undefined || v === null || v === '' || v === false) return;
+      nuevo[k] = v; hubo = true;
+    });
+    // La zona corregida a mano gana sobre la del listado: por algo se corrigió.
+    if (viejo.zona_manual && viejo.zona) { nuevo.zona = viejo.zona; hubo = true; }
+    if (hubo) _heredadas++;
+  };
+
   const sup = [];
   const restantes = AppData.records.filter(r => {
     const ck = claveRegistro(r);
     const n = nuevoPorClave[ck];
     if (!n) return true;                 // no lo toca esta carga: se conserva
+    heredarCorrecciones(r, n);           // lo hecho a mano sobrevive al reemplazo
     sup.push({
       clave: (r.tracking || '(sin tracking)') + ' · por ' + tipoClave(ck),
       antes: resumenReg(r, r.carga_fecha),
@@ -348,6 +370,10 @@ function processUpload() {
   AppData.records = restantes.concat(nuevos);
   if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
   registrarSuperposiciones('registros', fechaCarga, sup);
+  if (_heredadas) {
+    console.warn('Import: ' + _heredadas + ' envío(s) conservaron sus correcciones a mano');
+    setTimeout(() => showToast('ℹ️ ' + _heredadas + ' envío(s) volvieron en el listado y conservaron lo corregido a mano'), 1200);
+  }
 
   // Registrar esta importación en el historial (solo si vino de un archivo real).
   if (AppData._importPend) {
