@@ -164,7 +164,6 @@ function renderPanelConductores() {
     </div>`;
   } else {
     body.innerHTML = lista.map((c, i) => {
-      const realIdx = AppData.panelConductores.indexOf(c);
       const cinfo = (c.condicion && CONDICION_INFO[c.condicion]) ? CONDICION_INFO[c.condicion] : { dia: 'Sin asignar', clase: 'badge-gray', emoji: '⚪' };
       const catinfo = CATEGORIA_INFO[c.categoria] || { label: c.categoria || '—', clase: 'cat-sla' };
       return `
@@ -184,8 +183,8 @@ function renderPanelConductores() {
           <span class="cat-badge ${catinfo.clase}">${catinfo.label}</span>
         </div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-sm" title="Editar conductor" style="padding:4px 8px;font-size:11px" onclick="editarConductorPanel(${realIdx})"><i class="ic ic-edit"></i></button>
-          <button class="btn btn-sm" title="Eliminar conductor" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5;background:#fef2f2" onclick="eliminarConductorPanel(${realIdx})"><i class="ic ic-trash"></i></button>
+          <button class="btn btn-sm" title="Editar conductor" style="padding:4px 8px;font-size:11px" onclick='editarConductorPanel(${JSON.stringify(String(c.id))})'><i class="ic ic-edit"></i></button>
+          <button class="btn btn-sm" title="Eliminar conductor" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5;background:#fef2f2" onclick='eliminarConductorPanel(${JSON.stringify(String(c.id))})'><i class="ic ic-trash"></i></button>
         </div>
       </div>`;
     }).join('');
@@ -216,17 +215,35 @@ function renderPanelConductores() {
   renderNuevosReconocidos();
 }
 
+// El conductor que se está editando, por ID. Ver el comentario del bloque.
+let conductorEditId = null;
+function _conductorEditando() {
+  if (conductorEditId == null) return null;
+  return AppData.panelConductores.find(c => String(c.id) === String(conductorEditId)) || null;
+}
+
+// Primer ID libre. "cantidad + 1" chocaba apenas se borraba un conductor:
+// con LH00001..LH00003, al borrar el 2 la próxima alta proponía LH00003, que ya
+// existía, y el operador tenía que corregirlo a mano.
+function _proximoIdPanel() {
+  const usados = new Set((AppData.panelConductores || []).map(c => String(c.id || '').toUpperCase()));
+  for (let n = 1; n <= usados.size + 1; n++) {
+    const id = 'LH' + String(n).padStart(5, '0');
+    if (!usados.has(id)) return id;
+  }
+  return 'LH' + String(usados.size + 1).padStart(5, '0');
+}
+
 function autoGenerarId() {
   // Solo genera ID automático cuando es un conductor nuevo (no edición)
-  if (conductorEditIdx >= 0) return;
-  const siguiente = AppData.panelConductores.length + 1;
-  document.getElementById('mc-id').value = 'LH' + String(siguiente).padStart(5, '0');
+  if (conductorEditId != null) return;
+  document.getElementById('mc-id').value = _proximoIdPanel();
 }
 
 function openAddConductorModal() {
-  conductorEditIdx = -1;
+  conductorEditIdx = -1; conductorEditId = null;
   document.getElementById('modal-conductor-title').textContent = 'Agregar conductor';
-  document.getElementById('mc-id').value = 'LH' + String(AppData.panelConductores.length + 1).padStart(5, '0');
+  document.getElementById('mc-id').value = _proximoIdPanel();
   document.getElementById('mc-nombre').value = '';
   document.getElementById('mc-condicion').value = '';
   document.getElementById('mc-categoria').value = '';
@@ -235,9 +252,11 @@ function openAddConductorModal() {
   document.getElementById('modal-conductor-backdrop').style.display = 'flex';
 }
 
-function editarConductorPanel(idx) {
-  conductorEditIdx = idx;
-  const c = AppData.panelConductores[idx];
+function editarConductorPanel(id) {
+  const c = (AppData.panelConductores || []).find(x => String(x.id) === String(id));
+  if (!c) { showToast('Ese conductor ya no está en el panel'); renderPanelConductores(); return; }
+  conductorEditId = c.id;
+  conductorEditIdx = AppData.panelConductores.indexOf(c);
   document.getElementById('modal-conductor-title').textContent = 'Editar conductor';
   document.getElementById('mc-id').value = c.id || '';
   document.getElementById('mc-nombre').value = c.nombre;
@@ -280,24 +299,38 @@ function guardarConductorModal() {
     if (!nombre) { alert('Ingresá el nombre del conductor.'); return; }
     if (!categoria) { alert('Seleccioná una categorización.'); return; }
 
-    const esEdicion = conductorEditIdx >= 0;
+    const editando = _conductorEditando();
+    const esEdicion = !!editando;
+    if (conductorEditId != null && !editando) {
+      alert('Ese conductor ya no está en el panel (lo pudo haber borrado otro usuario). Volvé a abrirlo.');
+      conductorEditId = null; conductorEditIdx = -1;
+      document.getElementById('modal-conductor-backdrop').style.display = 'none';
+      renderPanelConductores();
+      return;
+    }
 
-    // Verificar ID duplicado (solo en alta)
-    if (!esEdicion && AppData.panelConductores.some(c => c.id === id)) {
-      alert('El ID "' + id + '" ya está en uso. Verificá o editá el número.'); return;
+    // ID y nombre únicos, TAMBIÉN al editar (antes solo se validaba en el alta).
+    // Dos conductores con el mismo nombre son uno solo para el índice canónico:
+    // el segundo deja de liquidarse y nadie se entera. Se compara contra los
+    // demás, excluyendo al que se está editando.
+    const otros = (AppData.panelConductores || []).filter(c => c !== editando);
+    if (otros.some(c => String(c.id).toUpperCase() === id)) {
+      alert('El ID "' + id + '" ya está en uso por otro conductor.'); return;
+    }
+    if (otros.some(c => normNombre(c.nombre) === normNombre(nombre))) {
+      alert('Ya existe un conductor llamado "' + nombre + '". ' +
+        (esEdicion ? 'Dos conductores con el mismo nombre se liquidan como uno solo: usá los alias.'
+                   : 'Editá ese en vez de duplicarlo.'));
+      return;
     }
 
     const entrada = { id, nombre, condicion, categoria, alias };
 
     if (esEdicion) {
-      AppData.panelConductores[conductorEditIdx] = entrada;
+      // Se muta la fila que se estaba editando —no se pisa una posición— para
+      // que un re-render intermedio no le cambie los datos a otro conductor.
+      Object.assign(editando, entrada);
     } else {
-      // Nombres únicos: el conductor se identifica por nombre (una sola liquidación
-      // por persona). Si ya existe, no duplicamos — se edita el existente.
-      if (AppData.panelConductores.some(c => normNombre(c.nombre) === normNombre(nombre))) {
-        alert('Ya existe un conductor llamado "' + nombre + '". Editá ese en vez de duplicarlo.');
-        return;
-      }
       AppData.panelConductores.push(entrada);
     }
     invalidarIndicePanel();   // cambió nombre/alias/set → reconstruir el índice
@@ -311,7 +344,7 @@ function guardarConductorModal() {
     dbPush('panel_conductores');
 
     const msg = esEdicion ? '✅ Conductor actualizado y guardado' : '✅ Conductor agregado y guardado';
-    conductorEditIdx = -1;
+    conductorEditIdx = -1; conductorEditId = null;
     document.getElementById('modal-conductor-backdrop').style.display = 'none';
     renderPanelConductores();
     showToast(msg);
@@ -322,10 +355,12 @@ function guardarConductorModal() {
   }
 }
 
-function eliminarConductorPanel(idx) {
-  const nombre = AppData.panelConductores[idx].nombre;
+function eliminarConductorPanel(id) {
+  const c = (AppData.panelConductores || []).find(x => String(x.id) === String(id));
+  if (!c) { showToast('Ese conductor ya no está en el panel'); renderPanelConductores(); return; }
+  const nombre = c.nombre;
   if (!confirm(`¿Eliminar a ${nombre} del panel de conductores?\n\nSe borra su condición (día de pago) y categorización. Sus recorridos y liquidaciones NO se tocan; si vuelve a aparecer en los recorridos, podés recargarlo desde el aviso de "conductores reconocidos".`)) return;
-  AppData.panelConductores.splice(idx, 1);
+  AppData.panelConductores.splice(AppData.panelConductores.indexOf(c), 1);
   invalidarIndicePanel();   // se eliminó un conductor → reconstruir el índice
   localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
   dbPush('panel_conductores');
@@ -336,6 +371,7 @@ function eliminarConductorPanel(idx) {
 function closeConductorModal(e) {
   if (!e || e.target.id === 'modal-conductor-backdrop') {
     document.getElementById('modal-conductor-backdrop').style.display = 'none';
+    conductorEditIdx = -1; conductorEditId = null;
   }
 }
 

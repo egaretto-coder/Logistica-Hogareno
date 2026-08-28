@@ -693,7 +693,9 @@ function exportPDF(conductor, opts) {
     doc.setFontSize(8);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_NAVY);
-    doc.text(val, mx, Y + 26);
+    // String(): jsPDF tira si le llega un numero, y el ID del panel puede venir
+    // como tal. Un PDF que no se genera deja al conductor sin su liquidacion.
+    doc.text(String(val), mx, Y + 26);
     mx += 45;
   });
 

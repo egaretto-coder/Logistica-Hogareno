@@ -1172,8 +1172,21 @@ function _dcliBotonAnular(d) {
     'onclick="anularEnvioCliente(' + d.i + ')">Anular</button></div>';
 }
 
-// Índice del registro que se está anulando (el modal vive en components/modales.html).
-let anularEnvioIdx = -1;
+// Qué registro se está anulando (el modal vive en components/modales.html).
+// Se guarda el ID además del índice: el índice apunta a una posición de
+// AppData.records, y esa lista se reemplaza entera cada vez que se re-hidrata
+// desde la nube. Con el modal abierto el índice queda apuntando a OTRO envío y
+// se anulaba el cobro del equivocado — incluso el de otro cliente.
+let anularEnvioIdx = -1, anularEnvioId = null;
+
+// El registro del modal, resuelto por id (y por índice si todavía no tiene id).
+function _registroAnular() {
+  if (anularEnvioId != null) {
+    const r = AppData.records.find(x => x.id === anularEnvioId);
+    if (r) return r;
+  }
+  return AppData.records[anularEnvioIdx] || null;
+}
 
 function anularEnvioCliente(i) {
   const r = AppData.records[i];
@@ -1181,6 +1194,7 @@ function anularEnvioCliente(i) {
   if (!r.id) { alert('Este envío todavía no está sincronizado con la nube. Reintentá en unos segundos.'); return; }
   const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
   anularEnvioIdx = i;
+  anularEnvioId = r.id;
   const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
   set('manul-envio', (r.tracking || 's/tracking') + ' · ' + (r.destinatario || '') + ' · ' + (r.zona || r.localidad || ''));
   set('manul-cliente', clienteNombreDe(cod));
@@ -1196,13 +1210,12 @@ function anularEnvioCliente(i) {
 function cerrarAnularEnvio(e) {
   if (!e || e.target.id === 'modal-anular-backdrop') {
     document.getElementById('modal-anular-backdrop').style.display = 'none';
-    anularEnvioIdx = -1;
+    anularEnvioIdx = -1; anularEnvioId = null;
   }
 }
 
 async function guardarAnularEnvio() {
-  const i = anularEnvioIdx;
-  const r = AppData.records[i];
+  const r = _registroAnular();
   if (!r) return;
   const cod = clienteKey(document.getElementById('dcli-select')?.value || '');
   const monto = precioSinAnular(cod, r);
@@ -1216,7 +1229,7 @@ async function guardarAnularEnvio() {
     if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     document.getElementById('modal-anular-backdrop').style.display = 'none';
-    anularEnvioIdx = -1;
+    anularEnvioIdx = -1; anularEnvioId = null;
     renderDetalleCliente();
     showToast('✅ Envío anulado · se bonifican ' + fmtPeso(monto) + ' — al conductor se le paga igual');
   } catch (e) { console.warn('guardarAnularEnvio', e); alert('No se pudo anular: ' + (e.message || e)); }

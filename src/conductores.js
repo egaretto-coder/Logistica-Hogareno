@@ -903,7 +903,19 @@ function actualizarEstadoEdicion(txt) {
 // ── Asignar una DIMENSIÓN ESPECIAL a un envío (catálogo por cliente + zona) ──
 // Flujo: elegir Cliente → aparecen solo las dimensiones de ese cliente → al
 // elegir una, el precio del envío pasa a ser el de esa dimensión en su zona.
-let dimAsignarIdx = -1;
+// Se guarda el ID además del índice, por lo mismo que en "Pagar la visita":
+// AppData.records se reemplaza entera al re-hidratar y el índice queda
+// apuntando a otro envío, así que la condición especial —y con ella el precio—
+// se le asignaba al equivocado.
+let dimAsignarIdx = -1, dimAsignarId = null;
+
+function _registroDim() {
+  if (dimAsignarId != null) {
+    const r = AppData.records.find(x => x.id === dimAsignarId);
+    if (r) return r;
+  }
+  return AppData.records[dimAsignarIdx] || null;
+}
 function _dimJs(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
 
 function openDimAsignarModal(idx) {
@@ -911,6 +923,7 @@ function openDimAsignarModal(idx) {
   if (!r) return;
   if (r._historico) { showToast('🗄️ Registro archivado (solo lectura)'); return; }
   dimAsignarIdx = idx;
+  dimAsignarId = r.id != null ? r.id : null;
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim().toUpperCase() : (r.localidad || '').trim().toUpperCase();
   const info = document.getElementById('mda-envio');
   if (info) info.innerHTML = 'Tracking <strong>' + (r.tracking || '—') + '</strong> · Zona <strong>' + (zona || '—') + '</strong>';
@@ -930,7 +943,7 @@ function openDimAsignarModal(idx) {
 
 function renderDimAsignarOpciones() {
   const cont = document.getElementById('mda-opciones');
-  const r = AppData.records[dimAsignarIdx];
+  const r = _registroDim();
   if (!cont || !r) return;
   const cliente = document.getElementById('mda-cliente')?.value || '';
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim().toUpperCase() : (r.localidad || '').trim().toUpperCase();
@@ -949,15 +962,19 @@ function renderDimAsignarOpciones() {
 }
 
 function closeDimAsignarModal(e) {
-  if (!e || e.target.id === 'modal-dim-asignar-backdrop') document.getElementById('modal-dim-asignar-backdrop').style.display = 'none';
+  if (!e || e.target.id === 'modal-dim-asignar-backdrop') {
+    document.getElementById('modal-dim-asignar-backdrop').style.display = 'none';
+    dimAsignarIdx = -1; dimAsignarId = null;
+  }
 }
 
 function aplicarDimensionEnvio(cliente, nombre) {
-  const r = AppData.records[dimAsignarIdx];
+  const r = _registroDim();
   if (!r) return;
   r.dim_cliente = String(cliente).toUpperCase();
   r.dim_especial = String(nombre).toUpperCase();
   document.getElementById('modal-dim-asignar-backdrop').style.display = 'none';
+  dimAsignarIdx = -1; dimAsignarId = null;
   _marcarDimDirty(r, 'Dimensión "' + nombre + '" asignada');
 }
 
