@@ -596,10 +596,11 @@ function abrirTraerEnvios() {
   const chk = document.getElementById('mtraer-todos'); if (chk) chk.checked = false;
   const rango = dcliRango();
   const ctx = document.getElementById('mtraer-contexto');
-  if (ctx) ctx.innerHTML = 'Envíos <strong>entregados</strong> de ' + clienteNombreDe(cod) +
-    ' que quedaron <strong>fuera</strong> de la semana ' + rango.desde + ' → ' + rango.hasta + '. ' +
-    'Los que traigas se van a cobrar en <strong>esta</strong> liquidación y salen de la semana a la que ' +
-    'pertenecían, así no se facturan dos veces. Al conductor se le sigue pagando por la fecha real del envío.';
+  if (ctx) ctx.innerHTML = 'Un envío se factura solo en el período de su fecha de entrega, así que en el caso normal ' +
+    'no hay nada que traer. Acá aparecen los <strong>envíos colgados</strong> de ' + clienteNombreDe(cod) +
+    ': los que quedaron en una liquidación <strong>ya cerrada</strong> y por eso no se pueden cobrar donde les corresponde. ' +
+    'Los que traigas se cobran en <strong>esta</strong> liquidación (' + rango.desde + ' → ' + rango.hasta + ') y ' +
+    '<strong>salen</strong> de la anterior, así no se facturan dos veces. Al conductor se le sigue pagando por la fecha real.';
   document.getElementById('modal-traer-backdrop').style.display = 'flex';
   renderTraerEnvios();
 }
@@ -610,22 +611,44 @@ function cerrarTraerEnvios(e) {
 
 // Candidatos: envíos del cliente que contabilizan y NO caen en la semana actual
 // (ni por fecha ni por arrastre). Del más nuevo al más viejo.
+// Un envío se factura SOLO en el período de su fecha de entrega: los dos
+// paneles miran los mismos registros, así que no hay nada que "traer" en el
+// caso normal. Lo único que queda colgado es el envío que aparece DESPUÉS de
+// que su liquidación se cerró y se le mandó al cliente: ahí no se puede
+// facturar donde le corresponde —esa factura ya salió— y hay que cobrarlo en la
+// que se está armando. Ofrecer todos los envíos de otras semanas invitaba a
+// mover los que estaban perfectamente donde debían.
 function _traerCandidatos() {
   const cod = document.getElementById('dcli-select')?.value || '';
   const rango = dcliRango();
   const semana = viernesDeRango(rango);
   const cKey = clienteKey(cod);
   const out = [];
+  const cerradaCache = new Map();   // viernes del período -> liquidación cerrada
+  const periodoCerrado = (iso) => {
+    const rc = periodoClienteRango(cKey, iso);
+    const k = viernesDeRango(rc);
+    if (!cerradaCache.has(k)) {
+      cerradaCache.set(k, (typeof liquidacionArmada === 'function') ? liquidacionArmada(cKey, rc) : null);
+    }
+    return { rango: rc, armada: cerradaCache.get(k) };
+  };
   (AppData.records || []).forEach((r, i) => {
     if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
     if (!contabilizaRegistro(r)) return;
     const arr = String(r.factura_semana || '').slice(0, 10);
     if (arr === semana) return;                       // ya está en esta liquidación
+    let suPeriodo = null;
     if (!arr) {
       const f = parseFechaReg(r.fecha);
       if (f && f >= rango.desdeD && f <= rango.hastaD) return;   // ya entra por fecha
+      // Su liquidación todavía está abierta: se factura ahí, no se trae.
+      suPeriodo = periodoCerrado(_isoDeFechaReg(r.fecha));
+      if (!suPeriodo.armada) return;
     }
     out.push({ i, r, cod: cKey, arr,
+      periodo: suPeriodo ? suPeriodo.rango : null,
+      armadaEn: suPeriodo && suPeriodo.armada ? suPeriodo.armada.armada_en : '',
       cobra: precioVentaEnvio(cKey, r),
       zona: (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim() });
   });
@@ -654,9 +677,10 @@ function renderTraerEnvios() {
   if (!lista.length) {
     body.innerHTML = '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">' +
       (todos.length ? 'Ninguno coincide con la búsqueda'
-        : 'No hay envíos de este cliente fuera de la semana. Si el envío es más viejo que los ' +
+        : 'No hay envíos colgados: todo lo entregado se está facturando en el período de su fecha. ' +
+          'Si un envío viejo no aparece y es de hace más de ' +
           (typeof VENTANA_DIAS_REGISTROS !== 'undefined' ? VENTANA_DIAS_REGISTROS : 14) +
-          ' días cargados, traelo primero desde Importar datos → Archivo.') + '</td></tr>';
+          ' días, traelo primero desde Importar datos → Archivo.') + '</td></tr>';
     _actualizarResumenTraer();
     return;
   }
