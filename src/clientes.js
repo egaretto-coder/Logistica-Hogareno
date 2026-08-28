@@ -72,7 +72,7 @@ function clientesDeRegistros(rango) {
   const m = new Map();
   (AppData.records || []).forEach(r => {
     const k = clienteCodDeRegistro(r);
-    if (!k) return;
+    if (!k || !esClienteValido(k)) return;
     if (rango && (rango.desdeD || rango.hastaD)) {
       const f = parseFechaReg(r.fecha);
       if (!f) return;
@@ -1072,7 +1072,7 @@ function clientesDeRegistrosCrudo() {
   const m = new Map();
   (AppData.records || []).forEach(r => {
     const k = clienteKey(r && r.cliente_cod);
-    if (!k) return;
+    if (!k || !esClienteValido(k)) return;
     let x = m.get(k);
     if (!x) { x = { cod: k, nombre: String(r.cliente || '').trim() || k, envios: 0 }; m.set(k, x); }
     x.envios++;

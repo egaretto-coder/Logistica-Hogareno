@@ -265,6 +265,25 @@ function processUpload() {
   const fechaCargaISO = document.getElementById('upload-fecha-carga')?.value || '';
   const fechaCarga = fechaCargaISO ? isoToDMY(fechaCargaISO) : isoToDMY(hoyISO());
 
+  // Una fila de ENCABEZADOS importada como dato. Llega cuando el listado repite
+  // la fila de títulos más abajo, y se cuela porque tiene cadete ("Cadete") y
+  // tracking ("Número Tracking"), así que pasa el filtro de campos obligatorios.
+  // Después aparece como un cliente llamado "Nombre Fantasia", un conductor
+  // llamado "Cadete" y una zona "Zona" (bug real). Se piden DOS coincidencias:
+  // un envío de verdad no tiene dos campos con nombre de columna.
+  const _ENCAB = ['NUMERO TRACKING', 'NÚMERO TRACKING', 'N° TRACKING', 'NRO TRACKING', 'TRACKING',
+    'CADETE', 'CONDUCTOR', 'NOMBRE FANTASIA', 'RAZON SOCIAL', 'RAZÓN SOCIAL',
+    'NOMBRE DESTINATARIO', 'DESTINATARIO', 'FECHA ESTADO', 'FECHA', 'ESTADO',
+    'ZONA', 'LOCALIDAD', 'COD.CLIENTE', 'DIRECCION', 'DIRECCIÓN', 'DOMICILIO'];
+  const _esFilaEncabezado = rec => {
+    let n = 0;
+    ['tracking', 'cadete', 'cliente', 'destinatario', 'estado', 'zona', 'localidad', 'direccion'].forEach(k => {
+      if (_ENCAB.indexOf(String(rec[k] || '').trim().toUpperCase()) >= 0) n++;
+    });
+    return n >= 2;
+  };
+  let _encabezadosSalteados = 0;
+
   const parsed = AppData.rawRows.map(row => {
     const rec = {};
     Object.entries(mapping).forEach(([field, colIdx]) => {
@@ -286,7 +305,12 @@ function processUpload() {
     rec.carga_fecha = fechaCarga;
     rec.clave = claveRegistro(rec);
     return rec;
-  }).filter(r => r.cadete && (r.tracking || r.direccion));
+  }).filter(r => {
+    if (!r.cadete || !(r.tracking || r.direccion)) return false;
+    if (_esFilaEncabezado(r)) { _encabezadosSalteados++; return false; }
+    return true;
+  });
+  if (_encabezadosSalteados) console.warn('Import: ' + _encabezadosSalteados + ' fila(s) de encabezado salteadas');
 
   // Deduplicación DENTRO del archivo por clave: si dos filas comparten clave
   // (ej. 1ra y 2da visita del mismo envío en la misma carga), gana la última.

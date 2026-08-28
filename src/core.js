@@ -373,6 +373,19 @@ function esZonaValida(z) {
   return !!k && ZONAS_NO_VALIDAS.indexOf(k) < 0;
 }
 
+// Un ENCABEZADO colado como cliente. Mismo caso que "ZONA" en el tarifario: la
+// fila de títulos del listado entra como si fuera un envío y desde ahí aparece
+// un "cliente" llamado Nombre Fantasia, que se ofrece para dar de alta y para
+// cargarle tarifario (bug real: la fila traía además zona "Zona", estado
+// "Estado" y cadete "Cadete").
+const CLIENTES_NO_VALIDOS = ['NOMBRE FANTASIA', 'RAZON SOCIAL', 'RAZÓN SOCIAL',
+  'COD.CLIENTE', 'COD CLIENTE', 'CODIGO CLIENTE', 'CÓDIGO CLIENTE',
+  'CLIENTE', 'CLIENTES', 'NOMBRE', 'TOTAL'];
+function esClienteValido(c) {
+  const k = String(c == null ? '' : c).trim().toUpperCase();
+  return !!k && CLIENTES_NO_VALIDOS.indexOf(k) < 0;
+}
+
 // ── Alias de zona ───────────────────────────────────────────────────────────
 // Los tarifarios de los clientes traen la zona partida en sub-zonas que en los
 // envíos no existen: llega "LA PLATA NORTE" cuando la localidad del envío
