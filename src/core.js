@@ -837,7 +837,11 @@ function _tarifaIndex() {
 }
 
 function getPrecio(conductor, zona) {
-  const zNorm = normNombre(zona);
+  // La zona del envío pasa por el alias ANTES de buscar la tarifa. Hasta ahora
+  // el alias solo se aplicaba al guardar tarifarios, así que un envío en una
+  // zona con alias no lo usaba nunca: los dos lados tienen que resolver la zona
+  // igual, si no el conductor cobra por una zona y al cliente se le factura $0.
+  const zNorm = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
 
   // Categoría y nombre canónico desde el panel (resuelve alias). El super SLA se
   // guarda con el nombre del panel, así que hay que matchearlo por el canónico

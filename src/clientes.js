@@ -89,7 +89,10 @@ function clientesDeRegistros(rango) {
 
 // Tarifa de venta de un cliente (por CÓDIGO) para una zona. 0 = sin cargar.
 function clienteTarifaEnZona(cod, zona) {
-  const k = clienteKey(cod), z = normNombre(zona);
+  // Misma resolución que getPrecio: la zona del envío pasa por el alias antes de
+  // buscar la tarifa de venta. Las zonas del tarifario son las mismas de los dos
+  // lados y tienen que resolverse igual.
+  const k = clienteKey(cod), z = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
   const t = (AppData.clienteTarifas || []).find(x =>
     (clienteKey(x.cliente_cod) === k || (!x.cliente_cod && normCliente(x.cliente) === normCliente(k))) &&
     normNombre(x.zona) === z);
