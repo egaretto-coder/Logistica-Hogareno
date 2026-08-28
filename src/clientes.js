@@ -490,7 +490,7 @@ function renderClientes() {
           '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifas' + (nz ? ' (' + nz + ')' : '') + '</button>' +
           '<button class="btn btn-sm" style="padding:4px 8px;font-size:11px" onclick="verCardCliente(\'' + cod + '\')" title="Ver la ficha completa del cliente"><i class="ic ic-building"></i> Card</button>' +
           '<button class="btn btn-sm" style="margin-left:auto" onclick="editCliente(' + c.id + ')" title="Editar datos"><i class="ic ic-edit"></i></button>' +
-          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarCliente(' + c.id + ')" title="Dar de baja"><i class="ic ic-trash"></i></button>' +
+          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;white-space:nowrap" onclick="darDeBajaCliente(' + c.id + ')" title="El cliente dejó de operar. No se borra nada: sus envíos, tarifas y liquidaciones quedan como están.">Dar de baja</button>' +
         '</div>' +
       '</div></div>';
   }).join('');
@@ -594,6 +594,7 @@ function verCardCliente(cod) {
       (c.activo === false
         ? '<button class="btn btn-sm" onclick="reactivarCliente(' + c.id + ')"><i class="ic ic-undo"></i> Reactivar</button>'
         : '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;margin-right:auto" onclick="darDeBajaCliente(' + c.id + ')">Dar de baja</button>') +
+      '<button class="btn btn-sm" style="color:var(--text-muted)" onclick="eliminarCliente(' + c.id + ')" title="Borrar del padrón. Solo sirve para un cliente cargado por error: si tiene envíos o liquidaciones, no se permite."><i class="ic ic-trash"></i></button>' +
       '<button class="btn btn-sm" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
       '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')"><i class="ic ic-edit"></i> Editar datos</button>' +
     '</div>';
@@ -1346,10 +1347,29 @@ async function _guardarVendedorDeCliente(nombre) {
   }
 }
 
+// Borrado FÍSICO: solo para el cliente cargado por error, que no tiene nada
+// atrás. Si tiene envíos, liquidaciones o comisión, borrarlo se llevaría puesta
+// esa historia y no habría forma de recuperarla — para eso está la baja, que
+// deja todo en su lugar (bug real: el botón de la tarjeta decía "Dar de baja"
+// y borraba de verdad).
 async function eliminarCliente(id) {
   const c = AppData.clientes.find(x => x.id === id);
   if (!c) return;
-  if (!confirm('¿Eliminar el cliente ' + c.nombre + '?\nSe borra también su tarifario. Los recorridos NO se tocan.')) return;
+  const k = clienteCodCanonico(clienteKey(c.codigo));
+  const envios = (AppData.records || []).filter(r => clienteCodDeRegistro(r) === k).length;
+  const liqs = (AppData.clienteLiquidaciones || []).filter(x => clienteCodCanonico(clienteKey(x.cliente_cod)) === k).length;
+  const com = (typeof comisionDeCliente === 'function') ? comisionDeCliente(c.nombre) : null;
+  if (envios || liqs || com) {
+    const NL = String.fromCharCode(10);
+    alert('No se puede eliminar a ' + c.nombre + ': tiene historia que se perdería.' + NL + NL +
+      (envios ? '· ' + envios.toLocaleString('es-AR') + ' envío(s)' + NL : '') +
+      (liqs ? '· ' + liqs + ' liquidación(es) cerradas' + NL : '') +
+      (com ? '· comisión asignada a ' + com.vendedor + NL : '') + NL +
+      'Si dejó de operar, usá "Dar de baja": sale del padrón pero no se borra nada y se puede reincorporar cuando vuelva.');
+    return;
+  }
+  if (!confirm('¿Eliminar el cliente ' + c.nombre + '?' + String.fromCharCode(10) +
+    'No tiene envíos ni liquidaciones. Se borra también su tarifario.')) return;
   try {
     await DB.deleteWhere('cliente_tarifas', 'cliente', c.nombre);
     await DB.deleteWhere('clientes', 'id', id);
