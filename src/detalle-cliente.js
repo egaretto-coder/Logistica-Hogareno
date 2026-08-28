@@ -197,6 +197,12 @@ function renderDetalleCliente() {
     ? 'Mostrando ' + vista.length + ' de ' + detalle.length + ' envíos'
     : detalle.length + ' envío(s) en la semana';
 
+  // Una búsqueda que no encuentra nada NO puede terminar en "0 de 0": el envío
+  // casi siempre existe, solo que en otro período o de otro cliente, y el
+  // operador concluye que el panel no se sincronizó. Se busca en TODOS los
+  // envíos y se dice dónde está.
+  _dcliAvisoBusquedaVacia(q, vista.length, cod);
+
   const contab = detalle.filter(d => d.contab);
   const totEnvios = contab.reduce((s, d) => s + d.cobrado, 0);
   // Cargos que no vienen de un envío (colecta, viajes particulares, otros).
@@ -462,6 +468,78 @@ function _dcliChipDimension(d) {
 // dice "1 envío" y no se ve ninguno porque quedó dentro de un día plegado —
 // el mismo problema que ya había con "Sin tarifa". Lo consultan el render y el
 // plegado, así no pueden discrepar.
+// Dónde está el envío que el buscador no encontró en este período.
+function _dcliAvisoBusquedaVacia(q, encontrados, cod) {
+  const box = document.getElementById('dcli-aviso-busqueda');
+  if (!box) return;
+  if (!q || encontrados > 0) { box.innerHTML = ''; return; }
+
+  const k = clienteKey(cod);
+  const hits = (AppData.records || []).filter(r =>
+    String(r.tracking || '').toLowerCase().includes(q) ||
+    String(r.destinatario || '').toLowerCase().includes(q));
+
+  if (!hits.length) {
+    box.innerHTML = _dcliAviso('#fef9c3', '#854d0e', '#fde68a',
+      'No hay ningún envío con <strong>' + _esc(q) + '</strong> en los días cargados. ' +
+      'Puede estar fuera de la ventana de días que carga la app.');
+    return;
+  }
+
+  // ¿Es de este cliente pero de otro período?
+  const propio = hits.filter(r => clienteCodDeRegistro(r) === k);
+  if (propio.length) {
+    const r = propio[0];
+    const rc = periodoClienteRango(k, _isoDeFechaReg(r.fecha));
+    box.innerHTML = _dcliAviso('#eff6ff', '#1e40af', '#bfdbfe',
+      '<strong>' + _esc(r.tracking || q) + '</strong> es de este cliente pero está en otro período: <strong>' +
+      rc.desde + ' → ' + rc.hasta + '</strong> (entregado el ' + (r.fecha || '—') + ').' +
+      ' <button class="btn btn-sm" style="margin-left:6px" onclick="_dcliIrAPeriodo(' +
+      JSON.stringify(_isoDeFechaReg(r.fecha)).replace(/"/g, '&quot;') + ')">Ir a ese período</button>');
+    return;
+  }
+
+  // Es de OTRO cliente: el caso que hace pensar que "no impactó".
+  const r = hits[0];
+  const otro = clienteCodDeRegistro(r);
+  box.innerHTML = _dcliAviso('#fff7ed', '#9a3412', '#fdba74',
+    '<strong>' + _esc(r.tracking || q) + '</strong> no es de este cliente: es de <strong>' +
+    _esc(clienteNombreDe(otro) || otro || '(sin cliente)') + '</strong>' +
+    (r.fecha ? ', entregado el ' + r.fecha : '') + '.' +
+    (otro ? ' <button class="btn btn-sm" style="margin-left:6px" onclick="_dcliIrACliente(' +
+      JSON.stringify(otro).replace(/"/g, '&quot;') + ',' + JSON.stringify(_isoDeFechaReg(r.fecha)).replace(/"/g, '&quot;') + ')">Ver ese cliente</button>' : ''));
+}
+
+function _dcliAviso(bg, color, borde, html) {
+  return '<div class="alert" style="margin:0 0 12px;background:' + bg + ';color:' + color +
+    ';border:1px solid ' + borde + ';font-size:12px"><i class="ic ic-alert"></i><div>' + html + '</div></div>';
+}
+function _esc(s) { return String(s == null ? '' : s).replace(/</g, '&lt;'); }
+
+// DD/MM/AAAA -> AAAA-MM-DD, para mover el selector de período.
+function _isoDeFechaReg(f) {
+  const d = parseFechaReg(f);
+  if (!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function _dcliIrAPeriodo(iso) {
+  if (!iso) return;
+  const el = document.getElementById('dcli-semana');
+  if (el) { el.value = iso; if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana'); }
+  renderDetalleCliente();
+}
+
+function _dcliIrACliente(cod, iso) {
+  const sel = document.getElementById('dcli-select');
+  if (sel) sel.value = clienteKey(cod);
+  if (iso) {
+    const el = document.getElementById('dcli-semana');
+    if (el) { el.value = iso; if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana'); }
+  }
+  renderDetalleCliente();
+}
+
 function _dcliFiltroActivo() {
   if (dcliSoloSinTarifa) return true;
   return !!(document.getElementById('dcli-buscar')?.value || '').trim();
