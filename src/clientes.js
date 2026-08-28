@@ -189,8 +189,14 @@ function semanaClienteRango(iso) {
 
 // Liquidación de un cliente en un rango { desdeD, hastaD }: envíos ENTREGADOS
 // agrupados por zona × tarifa de venta de esa zona.
-function calcLiquidacionCliente(cliente, rango) {
+// opts.detalle = true junta además el detalle envío por envío (tracking,
+// destinatario, fecha) para el PDF que se le manda al cliente. Va detrás de una
+// opción porque el dashboard y el panel llaman a esta función una vez POR
+// CLIENTE en cada render y no necesitan las 400 filas de cada uno.
+function calcLiquidacionCliente(cliente, rango, opts) {
   const cKey = clienteKey(cliente);
+  const conDetalle = !!(opts && opts.detalle);
+  const envios = [];
   const desde = rango && rango.desdeD ? rango.desdeD : null;
   const hasta = rango && rango.hastaD ? rango.hastaD : null;
   const semana = viernesDeRango(rango);   // clave de la semana que se está facturando
@@ -223,6 +229,11 @@ function calcLiquidacionCliente(cliente, rango) {
       porZona[etq].bonificado += bonif;
       porZona[etq].pagado += precioPagadoConductor(r);   // al conductor se le paga igual
       totalEnvios++;
+      if (conDetalle) envios.push({
+        fecha: r.fecha || '', tracking: r.tracking || '', destinatario: r.destinatario || '',
+        zona: zona, dim: '', precio: 0, bonificado: bonif, anulado: true,
+        arrastrado: !!arr, visita: !!r.contabiliza_manual
+      });
       return;
     }
     // El precio es POR ENVÍO, no por zona: una dimensión especial asignada pisa
@@ -238,6 +249,11 @@ function calcLiquidacionCliente(cliente, rango) {
     porZona[etiqueta].subtotal += p;
     if (p <= 0) sinTarifa++;
     totalEnvios++; total += p;
+    if (conDetalle) envios.push({
+      fecha: r.fecha || '', tracking: r.tracking || '', destinatario: r.destinatario || '',
+      zona: zona, dim: nombreDim || '', precio: p, bonificado: 0, anulado: false,
+      arrastrado: !!arr, visita: !!r.contabiliza_manual
+    });
   });
   const filas = Object.values(porZona).sort((a, b) => b.subtotal - a.subtotal);
   const pagado = filas.reduce((s, f) => s + _num(f.pagado), 0);
@@ -249,7 +265,7 @@ function calcLiquidacionCliente(cliente, rango) {
   // por esos mismos envíos. Es el número que conecta las dos liquidaciones.
   const anulados = filas.filter(f => f.anulado);
   return {
-    filas, totalEnvios, total: total + totalCargos, totalEnvio: total,
+    filas, envios, totalEnvios, total: total + totalCargos, totalEnvio: total,
     sinTarifa, pagado, margen: (total + totalCargos) - pagado,
     arrastrados, cargos, totalCargos, semana,
     // Gestos comerciales de la semana: cuántos y cuánto se bonificó.
@@ -1820,76 +1836,351 @@ function _resumenImportTarifarios(resultados) {
     (provisionales.length ? ' · ⚠️ ' + provisionales.length + ' con código provisional' : ''));
 }
 
-// ── Liquidación de cliente ───────────────────────────────────────────────────
+// ── Liquidación de cliente (PDF) ────────────────────────────────────────────
+// Es el ÚNICO papel que sale de la app hacia afuera: se manda por mail junto
+// con la factura y lo abre alguien que no trabaja acá. Por eso lleva la marca
+// (`src/marca.js`), los datos del emisor y una sola lectura posible del total.
+//
+// Y por eso NO lleva una palabra interna: "cargá esas zonas en el tarifario del
+// cliente" es una instrucción para el operador, no algo que el cliente tenga
+// que leer en su liquidación. Lo que el cliente sí tiene que ver es el hecho
+// —"tarifa a definir"—, que es distinto.
+//
+// jsPDF escribe con Helvetica en WinAnsi: los acentos y el · entran, pero las
+// flechas (→) y los símbolos (⚠) NO — salen como basura. Por eso el rango se
+// escribe "del X al Y" y los avisos van sin ícono.
+const LIQCLI = { izq: 14, der: 196, ancho: 182, pieRegla: 277, tablaAbajo: 24 };
 
+// toLocaleDateString('es-AR') devuelve "28/8/2026": en un documento formal las
+// fechas van parejas, con dos dígitos siempre.
+function _fechaCorta(d) {
+  const x = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(x.getTime())) return '';
+  return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear();
+}
+
+// Recorta con puntos suspensivos. Los cuadros de arriba tienen alto fijo, y
+// tomar la primera línea de splitTextToSize dejaba el renglón cortado a la
+// mitad con el separador colgando ("Marcela Díaz · 11 4444-3333 ·"), que se lee
+// como un error de carga.
+function _recorte(doc, txt, ancho) {
+  let s = String(txt || '').trim();
+  if (!s || doc.getTextWidth(s) <= ancho) return s;
+  while (s.length > 1 && doc.getTextWidth(s + '…') > ancho) s = s.slice(0, -1);
+  return s.replace(/[\s·]+$/, '') + '…';
+}
+
+const _DIAS_LIQ = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO'];
+
+// Rótulo del día tal como se lee en el papel: "VIERNES 21/08/2026". Se arma a
+// partir de r.fecha, que viene DD/MM/AAAA de los recorridos.
+function _diaLiqLabel(fecha) {
+  const d = (typeof parseFechaReg === 'function') ? parseFechaReg(fecha) : null;
+  if (!d) return String(fecha || 'Sin fecha');
+  return _DIAS_LIQ[d.getDay()] + ' ' + _fechaCorta(d);
+}
+
+// Clave de orden del día: el ISO, para que los días salgan en orden cronológico
+// y no alfabético (con DD/MM/AAAA, el 03/09 iría antes que el 21/08).
+function _diaLiqOrden(fecha) {
+  const d = (typeof parseFechaReg === 'function') ? parseFechaReg(fecha) : null;
+  if (!d) return '9999-99-99';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+const _pdfTexto = (doc, c) => doc.setTextColor(c[0], c[1], c[2]);
+const _pdfRelleno = (doc, c) => doc.setFillColor(c[0], c[1], c[2]);
+const _pdfTrazo = (doc, c) => doc.setDrawColor(c[0], c[1], c[2]);
+
+// Identificador del documento. El mismo cliente y el mismo período dan siempre
+// el mismo número, se baje las veces que se baje: un número que cambiara en
+// cada descarga no serviría para citar el papel cuando el cliente lo reclame.
+// No hace falta un contador en la base — el par (cuenta, corte) ya es único.
+function _liqCliNumero(cod, rango) {
+  const c = clienteKey(cod).replace(/[^A-Z0-9]/g, '').slice(0, 10) || 'CLI';
+  return 'LH-' + c + '-' + String(isoDeRango(rango, 'hasta') || '').replace(/-/g, '');
+}
+
+// Encabezado de la primera página: marca a la izquierda, identificación del
+// documento a la derecha.
+function _liqCliEncabezado(doc, ctx) {
+  const L = LIQCLI.izq, R = LIQCLI.der;
+  try { doc.addImage(MARCA.logo, 'PNG', L, 12, 44, 44 / MARCA.logoRatio); } catch (e) {}
+  _pdfTexto(doc, MARCA.navy); doc.setFont(undefined, 'bold'); doc.setFontSize(13);
+  doc.text('LIQUIDACIÓN DE SERVICIOS', R, 16.5, { align: 'right' });
+  doc.setFont(undefined, 'normal'); doc.setFontSize(8); _pdfTexto(doc, MARCA.gris);
+  doc.text('N° ' + ctx.numero, R, 21.5, { align: 'right' });
+  doc.text('Emitida el ' + ctx.emitida, R, 25.5, { align: 'right' });
+  // Regla de marca: la barra navy a todo el ancho con el acento azul del logo.
+  _pdfRelleno(doc, MARCA.navy); doc.rect(L, 29.5, LIQCLI.ancho, 1.1, 'F');
+  _pdfRelleno(doc, MARCA.azul); doc.rect(L, 29.5, 46, 1.1, 'F');
+}
+
+// Encabezado reducido de las páginas 2 y siguientes: una liquidación de 300
+// envíos ocupa varias hojas y cada hoja tiene que poder identificarse sola —
+// si se imprime y se traspapela, una página suelta sin cliente no dice nada.
+function _liqCliEncabezadoCont(doc, ctx) {
+  const L = LIQCLI.izq, R = LIQCLI.der;
+  try { doc.addImage(MARCA.logo, 'PNG', L, 10, 30, 30 / MARCA.logoRatio); } catch (e) {}
+  _pdfTexto(doc, MARCA.navy); doc.setFont(undefined, 'bold'); doc.setFontSize(9);
+  doc.text(_recorte(doc, ctx.cliente, 110), R, 13.5, { align: 'right' });
+  doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.gris);
+  doc.text('N° ' + ctx.numero + '  ·  ' + ctx.periodoTxt, R, 17.5, { align: 'right' });
+  _pdfRelleno(doc, MARCA.navy); doc.rect(L, 20, LIQCLI.ancho, 0.6, 'F');
+}
+
+// Las dos fichas de arriba: a quién se le factura y qué período.
+function _liqCliFichas(doc, ctx) {
+  const L = LIQCLI.izq, W = 87, X2 = 109, Y = 35, H = 26;
+  _pdfRelleno(doc, MARCA.azulPapel);
+  doc.roundedRect(L, Y, W, H, 1.6, 1.6, 'F');
+  doc.roundedRect(X2, Y, W, H, 1.6, 1.6, 'F');
+
+  const ficha = (rotulo, titulo, lineas, x) => {
+    _pdfTexto(doc, MARCA.azul); doc.setFont(undefined, 'bold'); doc.setFontSize(6.5);
+    doc.text(_recorte(doc, rotulo, W - 10), x + 5, Y + 5.8);
+    _pdfTexto(doc, MARCA.navy); doc.setFontSize(10);
+    doc.text(_recorte(doc, titulo, W - 10), x + 5, Y + 12);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.texto);
+    let ly = Y + 17;
+    lineas.filter(Boolean).slice(0, 3).forEach(t => {
+      doc.text(_recorte(doc, t, W - 10), x + 5, ly); ly += 3.9;
+    });
+  };
+  ficha('FACTURAR A  ·  CUENTA ' + ctx.cuenta, ctx.cliente, ctx.datosCliente, L);
+  ficha('PERÍODO FACTURADO', ctx.periodoTxt, ctx.datosPeriodo, X2);
+}
+
+// Pie de página. Va en TODAS las hojas: es donde el documento dice quién lo
+// emite, que es lo que lo hace formal, y aclara que no reemplaza a la factura.
+function _liqCliPie(doc, pag, total) {
+  const L = LIQCLI.izq, R = LIQCLI.der, Y = LIQCLI.pieRegla;
+  _pdfTrazo(doc, MARCA.linea); doc.setLineWidth(0.2); doc.line(L, Y, R, Y);
+  const fiscal = empresaLineaFiscal(), contacto = empresaLineaContacto();
+  doc.setFont(undefined, 'bold'); doc.setFontSize(7); _pdfTexto(doc, MARCA.navy);
+  if (fiscal) doc.text(doc.splitTextToSize(fiscal, 140)[0], L, Y + 4.5);
+  doc.setFont(undefined, 'normal'); _pdfTexto(doc, MARCA.gris);
+  if (contacto) doc.text(doc.splitTextToSize(contacto, 140)[0], L, Y + 8);
+  doc.setFontSize(6.5);
+  doc.text('Detalle de servicios prestados. No válido como factura.', L, Y + 11.5);
+  doc.setFontSize(7.5);
+  doc.text('Página ' + pag + ' de ' + total, R, Y + 4.5, { align: 'right' });
+}
 
 // PDF de la liquidación de UN cliente. Recibe el CÓDIGO (no el nombre: el
-// nombre de fantasía tiene variantes y no es la identidad) y el rango de la
-// semana. opts.doc permite encadenar varias liquidaciones en un solo archivo.
+// nombre de fantasía tiene variantes y no es la identidad) y el rango del
+// período. opts.doc permite encadenar varias liquidaciones en un solo archivo.
 function exportLiquidacionClientePDF(cod, rango, opts) {
   opts = opts || {};
   const codK = clienteKey(cod);
   if (!codK) { alert('Elegí un cliente primero.'); return; }
   rango = rango || semanaClienteRango(hoyISO());
   const cliente = clienteNombreDe(codK);
-  const liq = calcLiquidacionCliente(codK, rango);
-  // Puede no haber envíos y sí cargos (una semana en la que solo se le cobró
+  const liq = calcLiquidacionCliente(codK, rango, { detalle: true });
+  // Puede no haber envíos y sí cargos (un período en el que solo se le cobró
   // una colecta o un viaje particular): esa liquidación también se emite.
   if (!liq.filas.length && !(liq.cargos || []).length) {
-    if (!opts.doc) alert('Sin envíos entregados ni cargos de este cliente en la semana ' + rango.desde + ' → ' + rango.hasta + '.');
+    if (!opts.doc) alert('Sin envíos entregados ni cargos de este cliente en el período ' + rango.desde + ' al ' + rango.hasta + '.');
     return;
   }
   const cli = (AppData.clientes || []).find(c => clienteKey(c.codigo) === codK);
   const { jsPDF } = window.jspdf;
   const doc = opts.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   if (opts.doc && opts.nuevaPagina) doc.addPage();
-  doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
-  doc.text('Liquidación de cliente', 14, 18);
-  doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.setTextColor(40, 50, 70);
-  doc.text(cliente, 14, 26);
-  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
-  let sub = 'Semana ' + rango.desde + ' → ' + rango.hasta + ' (corte jueves)';
-  if (cli && (cli.razon_social || cli.cuit)) sub = (cli.razon_social || '') + (cli.cuit ? ' · CUIT ' + cli.cuit : '') + '   ·   ' + sub;
-  doc.text(sub, 14, 31);
-  doc.text('Generado: ' + new Date().toLocaleString('es-AR'), 14, 35.5);
+  const pag0 = doc.internal.getCurrentPageInfo().pageNumber;
+  const conEncabezado = new Set([pag0]);
+  const encabezarPagina = () => {
+    const p = doc.internal.getCurrentPageInfo().pageNumber;
+    if (conEncabezado.has(p)) return;
+    conEncabezado.add(p);
+    _liqCliEncabezadoCont(doc, ctx);
+  };
 
-  const body = liq.filas.map(f => f.anulado
-    ? [f.zona, f.count, 'bonificado ' + fmtPeso(_num(f.bonificado)), fmtPeso(0)]
-    : [f.zona, f.count, f.precio > 0 ? fmtPeso(f.precio) : 'sin tarifa', fmtPeso(f.subtotal)]);
-  // Cargos que no vienen de un envío (colecta, viajes particulares): van con su
-  // propio concepto, no diluidos en una zona. En la factura el cliente tiene que
-  // ver por qué le cobran eso.
-  (liq.cargos || []).forEach(c => body.push([
-    cargoLabel(c.concepto) + (cargoDatosTxt(c) ? ' · ' + cargoDatosTxt(c) : ''),
-    _num(c.cantidad) !== 1 ? _num(c.cantidad) : '',
-    _num(c.cantidad) !== 1 ? fmtPeso(_num(c.precio_unitario)) : '',
-    fmtPeso(_num(c.monto))
-  ]));
-  doc.autoTable({
-    startY: 41,
-    head: [['Concepto', 'Envíos', 'Tarifa', 'Subtotal']],
-    body,
-    foot: [[{ content: 'TOTAL · ' + liq.totalEnvios + ' envíos' +
-      (liq.totalCargos ? ' + ' + (liq.cargos || []).length + ' cargo(s)' : ''),
-      colSpan: 3, styles: { halign: 'right' } }, fmtPeso(liq.total)]],
-    theme: 'striped',
-    headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
-    footStyles: { fillColor: [37, 79, 161], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 8.5, textColor: [40, 50, 70] },
-    alternateRowStyles: { fillColor: [244, 247, 252] },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-    margin: { left: 14, right: 14 }
+  const armada = (typeof liquidacionArmada === 'function') ? liquidacionArmada(codK, rango) : null;
+  const dias = (typeof periodoDiasDe === 'function') ? periodoDiasDe(codK) : 7;
+  const datosCliente = [];
+  if (cli && cli.razon_social && normCliente(cli.razon_social) !== normCliente(cliente)) datosCliente.push(cli.razon_social);
+  if (cli && cli.cuit) datosCliente.push('CUIT ' + cli.cuit);
+  if (cli && cli.contacto) datosCliente.push(cli.contacto + (cli.telefono ? '  ·  ' + cli.telefono : ''));
+  else if (cli && cli.telefono) datosCliente.push(cli.telefono);
+  if (cli && cli.email) datosCliente.push(cli.email);
+
+  const ctx = {
+    cliente: cliente,
+    numero: _liqCliNumero(codK, rango),
+    cuenta: codK,
+    emitida: _fechaCorta(new Date()),
+    periodoTxt: 'Del ' + rango.desde + ' al ' + rango.hasta,
+    datosCliente: datosCliente,
+    datosPeriodo: [
+      (typeof periodoLabel === 'function' ? periodoLabel(dias) : 'Semanal') + '  ·  ' +
+        (dias === 7 ? 'viernes a jueves' : (dias / 7) + ' semanas, viernes a jueves'),
+      liq.totalEnvios + ' servicio(s)' + ((liq.cargos || []).length ? '  ·  ' + liq.cargos.length + ' cargo(s)' : ''),
+      armada && armada.armada_en ? 'Preparada el ' + _fechaCorta(armada.armada_en) : ''
+    ]
+  };
+
+  _liqCliEncabezado(doc, ctx);
+  _liqCliFichas(doc, ctx);
+
+  // ── Detalle POR DÍA, envío por envío ─────────────────────────────────────
+  // El cliente concilia contra su propio sistema, y para eso necesita el
+  // TRACKING y el día: un resumen por zona le dice cuánto pagar pero no le deja
+  // ubicar un envío puntual cuando reclama uno. El resumen por zona sigue
+  // estando, más abajo, que es donde se lee el total de un vistazo.
+  // `meta` corre en paralelo al body para pintar cada fila según lo que es.
+  const body = [], meta = [];
+  const porDia = new Map();
+  (liq.envios || []).forEach(e => {
+    const k = _diaLiqOrden(e.fecha);
+    if (!porDia.has(k)) porDia.set(k, { fecha: e.fecha, envios: [], total: 0, n: 0 });
+    const g = porDia.get(k);
+    g.envios.push(e); g.total += _num(e.precio); g.n++;
   });
-  if (liq.anulados) {
-    const y0 = doc.lastAutoTable.finalY + 6;
-    doc.setFontSize(8.5); doc.setTextColor(21, 128, 61);
-    doc.text('Se bonificaron ' + liq.anulados + ' envío(s) por ' + fmtPeso(liq.bonificado) + ' — no se facturan.', 14, y0);
+  Array.from(porDia.keys()).sort().forEach(k => {
+    const g = porDia.get(k);
+    meta.push('dia');
+    body.push([_diaLiqLabel(g.fecha), String(g.n), '', fmtPeso(g.total)]);
+    // Dentro del día, por zona y después por tracking: así los envíos de una
+    // misma zona quedan juntos y el papel se recorre sin saltar.
+    g.envios.sort((a, b) => String(a.zona).localeCompare(String(b.zona)) ||
+                            String(a.tracking).localeCompare(String(b.tracking)));
+    g.envios.forEach(e => {
+      const partes = [e.tracking || '(sin tracking)', e.zona];
+      if (e.dim) partes.push(e.dim);
+      if (e.destinatario) partes.push(e.destinatario);
+      meta.push(e.anulado ? 'anulado' : (e.precio > 0 ? 'ok' : 'sintarifa'));
+      body.push([
+        '   ' + partes.join('  ·  '),
+        '1',
+        e.anulado ? 'Bonificado ' + fmtPeso(_num(e.bonificado)) : (e.precio > 0 ? fmtPeso(e.precio) : 'A definir'),
+        fmtPeso(_num(e.precio))
+      ]);
+    });
+  });
+  // Cargos que no vienen de un envío (colecta, viajes particulares): van con su
+  // propio concepto y en su propio bloque, no metidos en un día — su fecha es la
+  // del servicio y la imputación es al período. El cliente tiene que ver por qué
+  // le cobran eso y cuándo se le prestó.
+  if ((liq.cargos || []).length) {
+    meta.push('dia');
+    body.push(['CARGOS Y ADICIONALES', String(liq.cargos.length), '', fmtPeso(_num(liq.totalCargos))]);
+    liq.cargos.forEach(c => {
+      const cant = _num(c.cantidad) || 1;
+      meta.push('cargo');
+      body.push([
+        '   ' + cargoLabel(c.concepto) + (cargoDatosTxt(c) ? '  ·  ' + cargoDatosTxt(c) : ''),
+        String(cant),
+        fmtPeso(cant !== 1 ? _num(c.precio_unitario) : _num(c.monto)),
+        fmtPeso(_num(c.monto))
+      ]);
+    });
   }
-  if (liq.sinTarifa) {
-    const y = doc.lastAutoTable.finalY + (liq.anulados ? 11 : 6);
-    doc.setFontSize(8); doc.setTextColor(180, 83, 9);
-    doc.text('⚠ ' + liq.sinTarifa + ' envío(s) sin tarifa de venta cargada — no suman al total. Cargá esas zonas en el tarifario del cliente.', 14, y);
+
+  doc.autoTable({
+    startY: 66,
+    head: [['Detalle del servicio  ·  tracking, zona y destinatario', 'Env.', 'Tarifa', 'Importe']],
+    body: body,
+    theme: 'striped',
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: { top: 2.4, bottom: 2.4, left: 3, right: 3 }, lineWidth: 0 },
+    headStyles: { fillColor: MARCA.navy, textColor: 255, fontSize: 8, fontStyle: 'bold', cellPadding: { top: 3, bottom: 3, left: 3, right: 3 } },
+    bodyStyles: { textColor: MARCA.texto },
+    columnStyles: {
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 14, halign: 'right' },
+      2: { cellWidth: 30, halign: 'right' },
+      3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
+    },
+    margin: { left: LIQCLI.izq, right: LIQCLI.izq, top: 25, bottom: LIQCLI.tablaAbajo },
+    didParseCell: function (data) {
+      if (data.section !== 'body') return;
+      const m = meta[data.row.index];
+      if (m === 'dia') {
+        data.cell.styles.fillColor = MARCA.azulPapel;
+        data.cell.styles.textColor = MARCA.navy;
+        data.cell.styles.fontStyle = 'bold';
+      }
+      else if (m === 'anulado') { data.cell.styles.textColor = MARCA.gris; data.cell.styles.fontStyle = 'italic'; }
+      else if (m === 'sintarifa' && data.column.index >= 2) { data.cell.styles.textColor = MARCA.ambar; }
+      else if (m === 'cargo' && data.column.index === 0) { data.cell.styles.textColor = MARCA.azul; }
+    },
+    didDrawPage: function () { encabezarPagina(); }
+  });
+
+  // ── Resumen por zona ─────────────────────────────────────────────────────
+  // El detalle sirve para conciliar un envío; esto, para entender la factura de
+  // un vistazo: cuántos envíos por zona, a qué tarifa. Son las dos lecturas que
+  // se le hacen a una liquidación y ninguna reemplaza a la otra.
+  if (liq.filas.length) {
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 8,
+      head: [['Resumen por zona', 'Env.', 'Tarifa', 'Subtotal']],
+      body: liq.filas.map(f => f.anulado
+        ? [String(f.zona).replace(' · ANULADO', '') + '  ·  Sin cargo', String(f.count),
+           'Bonificado ' + fmtPeso(_num(f.bonificado)), fmtPeso(0)]
+        : [f.zona, String(f.count), f.precio > 0 ? fmtPeso(f.precio) : 'A definir', fmtPeso(f.subtotal)]),
+      theme: 'striped',
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: { top: 1.9, bottom: 1.9, left: 3, right: 3 }, lineWidth: 0 },
+      headStyles: { fillColor: MARCA.azul, textColor: 255, fontSize: 7.5, fontStyle: 'bold', cellPadding: { top: 2.4, bottom: 2.4, left: 3, right: 3 } },
+      bodyStyles: { textColor: MARCA.texto },
+      alternateRowStyles: { fillColor: [247, 249, 252] },
+      columnStyles: {
+        0: { cellWidth: 'auto' },
+        1: { cellWidth: 14, halign: 'right' },
+        2: { cellWidth: 30, halign: 'right' },
+        3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
+      },
+      margin: { left: LIQCLI.izq, right: LIQCLI.izq, top: 25, bottom: LIQCLI.tablaAbajo },
+      didDrawPage: function () { encabezarPagina(); }
+    });
   }
+
+  // ── Cierre: resumen a la izquierda, totales a la derecha ─────────────────
+  let y = doc.lastAutoTable.finalY + 8;
+  if (y + 34 > LIQCLI.pieRegla - 6) { doc.addPage(); encabezarPagina(); y = 28; }
+
+  const notas = [];
+  if (liq.arrastrados) notas.push({ t: 'Incluye ' + liq.arrastrados + ' servicio(s) de períodos anteriores.', c: MARCA.texto });
+  if (liq.anulados) notas.push({ t: liq.anulados + ' servicio(s) bonificados por ' + fmtPeso(liq.bonificado) + ': no se facturan.', c: MARCA.verde });
+  if (liq.sinTarifa) notas.push({ t: liq.sinTarifa + ' servicio(s) con tarifa a definir para su zona: se facturarán una vez acordada.', c: MARCA.ambar });
+  if (empresaDato('empresa_pago')) notas.push({ t: 'Pago: ' + empresaDato('empresa_pago'), c: MARCA.texto });
+  if (notas.length) {
+    _pdfTexto(doc, MARCA.azul); doc.setFont(undefined, 'bold'); doc.setFontSize(6.5);
+    doc.text('OBSERVACIONES', LIQCLI.izq, y + 3);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(7.5);
+    let ly = y + 8;
+    notas.forEach(n => {
+      _pdfTexto(doc, n.c);
+      doc.splitTextToSize(n.t, 90).forEach(l => { doc.text(l, LIQCLI.izq, ly); ly += 3.9; });
+    });
+  }
+
+  const RX = 112;
+  let ty = y + 3;
+  const renglon = (lab, val) => {
+    doc.setFont(undefined, 'normal'); doc.setFontSize(8.5); _pdfTexto(doc, MARCA.gris);
+    doc.text(lab, RX, ty);
+    _pdfTexto(doc, MARCA.texto);
+    doc.text(val, LIQCLI.der, ty, { align: 'right' });
+    ty += 5.4;
+  };
+  renglon('Subtotal servicios', fmtPeso(liq.totalEnvio));
+  if (liq.totalCargos) renglon('Cargos y adicionales', fmtPeso(liq.totalCargos));
+  _pdfTrazo(doc, MARCA.linea); doc.setLineWidth(0.2); doc.line(RX, ty - 3.2, LIQCLI.der, ty - 3.2);
+  _pdfRelleno(doc, MARCA.navy); doc.roundedRect(RX, ty, 84, 15, 1.8, 1.8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont(undefined, 'bold'); doc.setFontSize(7.5);
+  doc.text('TOTAL A FACTURAR', RX + 5, ty + 5.5);
+  doc.setFontSize(15);
+  doc.text(fmtPeso(liq.total), LIQCLI.der - 5, ty + 11.8, { align: 'right' });
+
+  // El pie se estampa al final porque recién acá se sabe cuántas hojas ocupó
+  // ESTA liquidación — en el PDF combinado la numeración es por cliente, no
+  // por archivo: al cliente se le manda su liquidación, no el lote entero.
+  const pagN = doc.internal.getCurrentPageInfo().pageNumber;
+  for (let p = pag0; p <= pagN; p++) { doc.setPage(p); _liqCliPie(doc, p - pag0 + 1, pagN - pag0 + 1); }
+  doc.setPage(pagN);
+
   if (opts.doc) return doc;   // el combinado guarda una sola vez, al final
   doc.save('Liquidacion_' + cliente.replace(/\s+/g, '_') + '_' + rango.hasta.replace(/\//g, '-') + '.pdf');
 }

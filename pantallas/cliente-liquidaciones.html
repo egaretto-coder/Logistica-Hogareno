@@ -8,6 +8,7 @@
               <span class="date-label">Semana Vie→Jue</span>
               <input type="date" id="cliq-semana" onchange="cliqCambioSemana()" aria-label="Semana de facturación (viernes a jueves)" title="Elegí cualquier día: se toma la semana Viernes→Jueves que lo contiene">
             </div>
+            <button class="btn btn-sm" onclick="abrirDatosEmpresa()" title="Razón social, CUIT y contacto: es lo que sale en el encabezado y el pie de la liquidación que se le manda al cliente"><i class="ic ic-building"></i> Datos de la empresa</button>
             <button class="btn btn-sm" id="cliq-btn-unpdf" onclick="descargarLiqClientesCombinado()" title="Todas las elegidas en un solo archivo, una por página"><i class="ic ic-file"></i> En un solo PDF</button>
             <button class="btn btn-sm btn-primary" id="cliq-btn-descargar" onclick="descargarLiqClientes()"><i class="ic ic-download"></i> Descargar</button>
           </div>
@@ -18,6 +19,8 @@
           Las que todavía no armó aparecen en gris: no se pueden bajar, para que no salga un PDF con datos a medio corregir.
           Los montos se calculan en vivo, así que si después se corrige una zona, el PDF sale con el número nuevo.</div>
         </div>
+
+        <div id="cliq-aviso-empresa"></div>
 
         <div class="metrics-grid" id="cliq-resumen" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
 

@@ -125,6 +125,8 @@ function renderClienteLiquidaciones() {
   // la fecha elegida y cada fila muestra el período que le toca.
   if (per) per.textContent = 'Períodos que contienen la semana ' + rango.desde + ' → ' + rango.hasta;
 
+  _cliqAvisoEmpresa();
+
   const q = (document.getElementById('cliq-search')?.value || '').toLowerCase().trim();
   const todas = cliqListado(rango);
   const lista = todas.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
@@ -210,6 +212,19 @@ function verDetalleDesdeLiq(cod) {
   const fecha = document.getElementById('dcli-semana');
   if (fecha) fecha.value = cliqSemanaISO();
   if (sel) { sel.value = clienteKey(cod); if (typeof renderDetalleCliente === 'function') renderDetalleCliente(); }
+}
+
+// La liquidación es el papel que se le manda al cliente: sin razón social ni
+// CUIT no se puede saber quién la emite, y eso se descubre del otro lado. Se
+// avisa acá, que es donde se bajan, y antes de bajar cuarenta.
+function _cliqAvisoEmpresa() {
+  const box = document.getElementById('cliq-aviso-empresa');
+  if (!box) return;
+  if (typeof empresaFaltaFiscal !== 'function' || !empresaFaltaFiscal()) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="alert" style="margin-bottom:16px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
+    '<i class="ic ic-alert"></i><div><strong>Faltan los datos de la empresa.</strong> El PDF que se le manda al cliente sale sin ' +
+    '<strong>razón social ni CUIT</strong> en el encabezado y el pie, así que no identifica a quién lo emite. ' +
+    '<button class="btn btn-sm" style="margin-left:6px" onclick="abrirDatosEmpresa()">Cargarlos</button></div></div>';
 }
 
 // ── Descarga ────────────────────────────────────────────────────────────
