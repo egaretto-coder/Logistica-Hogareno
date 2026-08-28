@@ -483,6 +483,21 @@ function renderComisionClientes() {
   const bLimpiar = document.getElementById('com-cli-limpiar');
   if (bLimpiar) bLimpiar.style.display = filtrando ? '' : 'none';
 
+  // Un cliente en comisión que no está en el maestro no se puede evaluar —sus
+  // liquidaciones cuelgan del maestro— ni sincronizar su baja con Panel
+  // Clientes. Se avisa arriba porque es la causa de que la evaluación no avance
+  // y de que una baja no aparezca del otro lado.
+  const huerfanos = AppData.comisionClientes.filter(c => !clienteMaestroDe(c.cliente));
+  const avisoEl = document.getElementById('com-cli-huerfanos');
+  if (avisoEl) avisoEl.innerHTML = !huerfanos.length ? '' :
+    '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:12px">' +
+      '<i class="ic ic-alert"></i><div><strong>' + huerfanos.length + ' cliente(s) en comisión no están en el maestro de clientes.</strong> ' +
+      'La app no puede contarles las facturas —cuelgan del maestro— ni sincronizar su baja con Panel Clientes. ' +
+      'Suelen ser diferencias de nombre: si el cliente existe con otra redacción, corregile el nombre acá o sumale esa cuenta desde su ficha.' +
+      '<div style="margin-top:5px;font-family:monospace;font-size:10.5px">' +
+      huerfanos.slice(0, 12).map(c => c.cliente).join(' · ') +
+      (huerfanos.length > 12 ? ' …y ' + (huerfanos.length - 12) + ' más' : '') + '</div></div></div>';
+
   if (!lista.length) {
     cont.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">' +
       (filtrando ? 'Ningún cliente con esos filtros' : 'Sin clientes en comisión') + '</div><div class="empty-sub">' +
@@ -1063,6 +1078,10 @@ function recalcBajaComision() {
   const meses = mesesPagoComision(row);
   const pagos = meses.filter(x => x < m).length;          // los que se cobran igual
   const perdidos = meses.length - pagos;
+  const cm = clienteMaestroDe(row.cliente);
+  const extra = cm
+    ? '<div style="margin-top:5px;font-size:11px;color:var(--text-muted)">También se da de baja en <strong>Panel Clientes</strong>.</div>'
+    : '<div style="margin-top:5px;font-size:11px;color:#b45309">⚠ <strong>' + row.cliente + '</strong> no está en el maestro de clientes: la baja solo corta la comisión.</div>';
   box.innerHTML =
     '<div>Baja el <strong>' + cargoFechaTxt(f) + '</strong> — ' +
       (antes ? 'antes del ' + BAJA_DIA_CORTE + ': <strong>' + mesLabel(f.slice(0, 7)) + ' NO se paga</strong>.'
@@ -1073,7 +1092,14 @@ function recalcBajaComision() {
       (perdidos > 0
         ? 'Cobra <strong>' + pagos + '</strong> de sus 5 pagos y se pierden <strong>' + perdidos + '</strong> (' + fmtPeso(perdidos * _num(row.monto)) + ').'
         : 'Ya había cobrado sus 5 pagos: no cambia nada.') +
-    '</div>';
+    '</div>' + extra;
+}
+
+// El cliente del maestro que corresponde a esta fila de comisión, si existe.
+// Sin él la baja no se puede sincronizar: la solapa "Bajas" de Panel Clientes
+// lista clientes del maestro, no filas de comisión.
+function clienteMaestroDe(cliente) {
+  return (AppData.clientes || []).find(x => normCliente(x.nombre) === normCliente(cliente)) || null;
 }
 
 async function guardarBajaComision() {
@@ -1091,10 +1117,29 @@ async function guardarBajaComision() {
     await DB.updateWhere('comision_clientes', 'id', id, campos);
     Object.assign(row, campos);
     persistirComisionesLocal();
+
+    // La baja es UN hecho: el cliente se perdió. Si está en el maestro, también
+    // se da de baja ahí, si no la solapa "Bajas" de Panel Clientes no lo muestra
+    // y los dos paneles cuentan historias distintas.
+    let aviso = '';
+    const c = clienteMaestroDe(row.cliente);
+    if (c && c.activo !== false) {
+      try {
+        await DB.updateWhere('clientes', 'id', c.id, { activo: false, fecha_baja: f, motivo_baja: campos.motivo_baja });
+        Object.assign(c, { activo: false, fecha_baja: f, motivo_baja: campos.motivo_baja });
+        if (typeof persistirClientesLocal === 'function') persistirClientesLocal();
+        if (typeof renderClientes === 'function' && document.getElementById('cli-cards')) renderClientes();
+        if (typeof renderClientesBajas === 'function') renderClientesBajas();
+        aviso = ' · también en Panel Clientes';
+      } catch (e) { console.warn('baja en el maestro', e); aviso = ' · ⚠ no se pudo dar de baja en Panel Clientes'; }
+    } else if (!c) {
+      aviso = ' · (no está en el maestro de clientes)';
+    }
+
     document.getElementById('modal-baja-backdrop').style.display = 'none';
     bajaComisionId = null;
     renderComisionClientes();
-    showToast('✔ ' + row.cliente + ' dado de baja · sin comisión desde ' + mesLabel(m));
+    showToast('✔ ' + row.cliente + ' dado de baja · sin comisión desde ' + mesLabel(m) + aviso);
   } catch (e) { console.warn('guardarBajaComision', e); alert('No se pudo dar de baja: ' + (e.message || e)); }
 }
 async function reactivarComisionCliente(id) {
