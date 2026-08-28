@@ -5,6 +5,11 @@
         </div>
 
 
+        <div class="tabs" id="cli-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="cli-btn-activos" onclick="switchClientesTab('activos')"><i class="ic ic-building"></i> Clientes</button>
+          <button class="tab" id="cli-btn-bajas" onclick="switchClientesTab('bajas')"><i class="ic ic-user"></i> Bajas<span id="cli-bajas-count"></span></button>
+        </div>
+
         <!-- ══════════ TAB: CLIENTES + TARIFARIO ══════════ -->
         <div id="cli-tab-lista">
           <div class="section-head" style="margin-bottom:8px">
@@ -33,6 +38,29 @@
 
           <div id="cli-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
         </div><!-- /cli lista -->
+
+        <!-- ══════════ TAB: BAJAS ══════════ -->
+        <!-- El cliente dado de baja no se borra: se saca del padrón operativo
+             pero sus envíos, tarifas y liquidaciones quedan como estaban. Acá se
+             lo ve con cuándo y por qué se fue, y se lo puede reincorporar. -->
+        <div id="cli-tab-bajas" style="display:none">
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-alert"></i><div>Clientes que <strong>dejaron de operar</strong>. No se borró nada: sus envíos, tarifas y
+            liquidaciones siguen ahí, y se puede seguir liquidando lo que quedó pendiente. Al <strong>reactivarlos</strong> vuelven al
+            padrón — su comisión, si la tenían, <strong>no se reactiva sola</strong>: eso se decide en Comisiones.</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="cli-bajas-search" placeholder="🔍 Buscar por nombre, código o motivo..." style="width:320px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderClientesBajas()">
+            <span id="cli-bajas-info" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Cliente</th><th>Baja</th><th>Motivo</th>
+              <th style="text-align:right">Sin liquidar</th><th style="width:190px"></th>
+            </tr></thead>
+            <tbody id="cli-bajas-rows"></tbody>
+          </table></div></div>
+        </div><!-- /cli bajas -->
 
 
       </div>

@@ -283,9 +283,77 @@ function switchClientesTab() { renderClientes(); }
 // El administrativo necesita cotejar sin salir del panel: con quién hablar, con
 // qué razón social se factura y —sobre todo— si hay zonas SIN TARIFA, que se
 // facturan en $0 y se comen el margen sin avisar.
+// Solapas del panel. La de bajas es una vista aparte y no un filtro de la
+// grilla: son dos preguntas distintas —"quién opera" y "quién se fue"— y
+// mezclarlas obliga a leer 121 tarjetas para encontrar 3.
+let cliTab = 'activos';
+function switchClientesTab(t) {
+  cliTab = t;
+  const lista = document.getElementById('cli-tab-lista');
+  const bajas = document.getElementById('cli-tab-bajas');
+  if (lista) lista.style.display = t === 'activos' ? '' : 'none';
+  if (bajas) bajas.style.display = t === 'bajas' ? '' : 'none';
+  const bA = document.getElementById('cli-btn-activos'), bB = document.getElementById('cli-btn-bajas');
+  if (bA) bA.classList.toggle('active', t === 'activos');
+  if (bB) bB.classList.toggle('active', t === 'bajas');
+  if (t === 'bajas') renderClientesBajas(); else renderClientes();
+}
+
+function clientesDadosDeBaja() {
+  return (AppData.clientes || []).filter(c => c.activo === false)
+    .sort((a, b) => String(b.fecha_baja || '').localeCompare(String(a.fecha_baja || '')) ||
+                    String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+function renderClientesBajas() {
+  const cont = document.getElementById('cli-bajas-rows');
+  if (!cont) return;
+  const q = (document.getElementById('cli-bajas-search')?.value || '').toLowerCase().trim();
+  const todos = clientesDadosDeBaja();
+  const lista = todos.filter(c => !q || String(c.nombre).toLowerCase().includes(q) ||
+    String(c.codigo || '').toLowerCase().includes(q) || String(c.motivo_baja || '').toLowerCase().includes(q));
+
+  const info = document.getElementById('cli-bajas-info');
+  if (info) info.textContent = q ? lista.length + ' de ' + todos.length : todos.length + ' cliente(s) de baja';
+
+  if (!lista.length) {
+    cont.innerHTML = '<tr><td colspan="5"><div class="empty-state" style="padding:26px"><div class="empty-icon"><i class="ic ic-check-circle"></i></div>' +
+      '<div class="empty-title">' + (q ? 'Ningún cliente con esa búsqueda' : 'No hay clientes de baja') + '</div>' +
+      '<div class="empty-sub">' + (q ? 'Probá con otro nombre o motivo.' : 'Los que des de baja desde su ficha aparecen acá.') + '</div></div></td></tr>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(c => {
+    const k = clienteKey(c.codigo);
+    // Lo que quedó sin liquidar es la plata que se pierde de verdad: a un cliente
+    // que ya no opera nadie vuelve a mirarlo.
+    const pend = (typeof periodosSinLiquidar === 'function') ? periodosSinLiquidar(k, c.fecha_baja || '') : [];
+    const montoPend = pend.reduce((s, p) => s + _num(p.total), 0);
+    return '<tr>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(c.nombre) + '</div>' +
+        '<div><strong>' + c.nombre + '</strong><div class="muted" style="font-size:10px">' + k + '</div></div></div></td>' +
+      '<td style="font-size:12px">' + (c.fecha_baja ? cargoFechaTxt(c.fecha_baja) : '<span class="muted">—</span>') + '</td>' +
+      '<td style="font-size:12px">' + (c.motivo_baja ? String(c.motivo_baja).replace(/</g, '&lt;') : '<span class="muted">—</span>') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (pend.length
+        ? '<span style="color:#b45309;font-weight:600" title="' + pend.length + ' período(s) cerrados con envíos y sin liquidación">' + fmtPeso(montoPend) + '</span>' +
+          '<div class="muted" style="font-size:10px">' + pend.length + ' período(s)</div>'
+        : '<span class="muted">—</span>') + '</td>' +
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
+        '<button class="btn btn-sm" onclick="verCardCliente(' + JSON.stringify(k).replace(/"/g, '&quot;') + ')"><i class="ic ic-file"></i> Ficha</button>' +
+        '<button class="btn btn-sm" style="border-color:#86efac;color:#15803d;white-space:nowrap" onclick="reactivarCliente(' + c.id + ')"><i class="ic ic-undo"></i> Reactivar</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+
 function renderClientes() {
   const cont = document.getElementById('cli-cards');
   if (!cont) return;
+  // El contador de la solapa se mantiene al día desde acá: es el render que
+  // corre en cada cambio del padrón.
+  const nBajas = clientesDadosDeBaja().length;
+  const bc = document.getElementById('cli-bajas-count');
+  if (bc) bc.textContent = nBajas ? ' · ' + nBajas : '';
   const q = (document.getElementById('cli-search')?.value || '').toLowerCase().trim();
 
   // Semana en curso, para mostrar actividad reciente.
@@ -299,12 +367,14 @@ function renderClientes() {
                  String(c.codigo || '').toLowerCase().includes(q) ||
                  String(c.razon_social || '').toLowerCase().includes(q))
     .filter(c => !cliSoloPendientes || idsPendientes.has(c.id))
+    // Los dados de baja viven en su propia solapa: acá estorban.
+    .filter(c => c.activo !== false)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
   const countEl = document.getElementById('cli-count');
   if (countEl) {
     const sinTarifa = (AppData.clientes || []).filter(c => clienteNZonas(c.codigo) === 0).length;
-    countEl.textContent = (AppData.clientes || []).length + ' cliente(s)' +
+    countEl.textContent = ((AppData.clientes || []).filter(c => c.activo !== false).length) + ' cliente(s)' +
       (cliSoloPendientes ? ' · mostrando solo los pendientes' : '') +
       (idsPendientes.size ? ' · ' + idsPendientes.size + ' con código pendiente' : '') +
       (sinTarifa ? ' · ' + sinTarifa + ' sin tarifario' : '');
@@ -704,6 +774,7 @@ async function guardarBajaCliente() {
     clienteBajaId = null;
     if (document.getElementById('modal-backdrop')) document.getElementById('modal-backdrop').classList.remove('open');
     renderClientes();
+    renderClientesBajas();
     if (typeof renderComisionClientes === 'function' && document.getElementById('com-cli-rows')) renderComisionClientes();
     showToast('✔ ' + c.nombre + ' dado de baja' + aviso);
   } catch (e) { console.warn('guardarBajaCliente', e); alert('No se pudo dar de baja: ' + (e.message || e)); }
@@ -719,6 +790,7 @@ async function reactivarCliente(id) {
     Object.assign(c, { activo: true, fecha_baja: '', motivo_baja: '' });
     persistirClientesLocal();
     renderClientes();
+    renderClientesBajas();
     showToast('↺ ' + c.nombre + ' reactivado');
   } catch (e) { console.warn('reactivarCliente', e); alert('No se pudo reactivar: ' + (e.message || e)); }
 }
