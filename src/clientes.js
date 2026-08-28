@@ -202,6 +202,13 @@ function calcLiquidacionCliente(cliente, rango, opts) {
   const semana = viernesDeRango(rango);   // clave de la semana que se está facturando
   const porZona = {};
   let totalEnvios = 0, total = 0, sinTarifa = 0, arrastrados = 0;
+  // Condición especial asignada al envío que NO tiene precio de venta cargado:
+  // se factura con la tarifa común de la zona. NO es "sin tarifa" —factura más
+  // de $0— así que ningún control lo contaba y el panel del cliente daba todo
+  // en verde mientras el acuerdo no se estaba aplicando (bug real: BS FIT
+  // mostraba "0 en zonas sin tarifa" y facturaba $7.641 un envío pactado en
+  // $18.000, pagándole $9.000 al conductor).
+  let dimSinVenta = 0, dimSinVentaMonto = 0, dimSinVentaPagado = 0;
   AppData.records.forEach(r => {
     if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
     const estadoNorm = (r.estado || '').toUpperCase().trim();
@@ -244,14 +251,19 @@ function calcLiquidacionCliente(cliente, rango, opts) {
     const nombreDim = dimVentaNombre(cKey, r);
     const etiqueta = nombreDim ? (zona + ' · ' + nombreDim) : zona;
     if (!porZona[etiqueta]) porZona[etiqueta] = { zona: etiqueta, count: 0, precio: p, subtotal: 0, pagado: 0, dim: !!nombreDim };
-    porZona[etiqueta].pagado += precioPagadoConductor(r);   // para el margen
+    const pagadoR = precioPagadoConductor(r);
+    porZona[etiqueta].pagado += pagadoR;   // para el margen
     porZona[etiqueta].count++;
     porZona[etiqueta].subtotal += p;
     if (p <= 0) sinTarifa++;
+    // Tiene condición asignada y no se le está aplicando: se cobra la zona.
+    const dimHuerfana = !!String(r.dim_especial || '').trim() && !nombreDim;
+    if (dimHuerfana) { dimSinVenta++; dimSinVentaMonto += p; dimSinVentaPagado += pagadoR; }
     totalEnvios++; total += p;
     if (conDetalle) envios.push({
       fecha: r.fecha || '', tracking: r.tracking || '', destinatario: r.destinatario || '',
       zona: zona, dim: nombreDim || '', precio: p, bonificado: 0, anulado: false,
+      dimSinVenta: dimHuerfana, dimAsignada: String(r.dim_especial || '').trim(),
       arrastrado: !!arr, visita: !!r.contabiliza_manual
     });
   });
@@ -267,6 +279,7 @@ function calcLiquidacionCliente(cliente, rango, opts) {
   return {
     filas, envios, totalEnvios, total: total + totalCargos, totalEnvio: total,
     sinTarifa, pagado, margen: (total + totalCargos) - pagado,
+    dimSinVenta, dimSinVentaMonto, dimSinVentaPagado,
     arrastrados, cargos, totalCargos, semana,
     // Gestos comerciales de la semana: cuántos y cuánto se bonificó.
     anulados: anulados.reduce((s, f) => s + f.count, 0),
@@ -505,6 +518,10 @@ function renderClientes() {
 
         '</div>' +
 
+        (liq && liq.dimSinVenta
+          ? '<div style="font-size:11px;color:#b45309;padding:6px 0"><i class="ic ic-alert"></i> ' + liq.dimSinVenta +
+            ' envío(s) con condición especial <strong>sin precio de venta</strong> — se facturan con la tarifa de la zona</div>'
+          : '') +
         (liq && liq.sinTarifa
           ? '<div style="font-size:11px;color:#b45309;padding:6px 0"><i class="ic ic-alert"></i> ' + liq.sinTarifa + ' envío(s) en zonas sin tarifa — se facturan en $0</div>'
           : '') +
@@ -598,6 +615,8 @@ function verCardCliente(cod) {
       dato('A facturar', fmtPeso(liq.total)) +
 
     '</div>' +
+    (liq.dimSinVenta ? '<div style="font-size:11px;color:#b45309;padding:4px 0"><i class="ic ic-alert"></i> ' + liq.dimSinVenta +
+      ' con condición sin precio de venta — se facturan con la tarifa de la zona</div>' : '') +
     (liq.sinTarifa ? '<div style="font-size:11px;color:#b45309;padding:4px 0"><i class="ic ic-alert"></i> ' + liq.sinTarifa +
       ' envío(s) en zonas sin tarifa — se facturan en $0</div>' : '') +
     (c.obs ? '<div style="font-size:12px;color:var(--text-secondary);padding:10px 0;border-top:1px solid var(--border)">📝 ' + c.obs + '</div>' : '') +

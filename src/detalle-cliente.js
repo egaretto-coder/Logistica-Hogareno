@@ -43,8 +43,16 @@ function dcliCambioSemana() {
 function dcliSemanaAnterior() { dcliMoverSemana(-7); }
 function dcliSemanaSiguiente() { dcliMoverSemana(7); }
 
+let dcliSoloSinDim = false;
+function toggleDcliSinDim() {
+  dcliSoloSinDim = !dcliSoloSinDim;
+  if (dcliSoloSinDim) dcliSoloSinTarifa = false;
+  renderDetalleCliente();
+}
+
 function toggleDcliSinTarifa() {
   dcliSoloSinTarifa = !dcliSoloSinTarifa;
+  if (dcliSoloSinTarifa) dcliSoloSinDim = false;
   renderDetalleCliente();
 }
 
@@ -179,6 +187,18 @@ function renderDetalleCliente() {
     btn.style.background = dcliSoloSinTarifa ? '#fffbeb' : '';
     btn.style.fontWeight = dcliSoloSinTarifa ? '700' : '';
   }
+  // Condición especial asignada sin precio de venta: factura la tarifa de la
+  // zona en vez de lo pactado. Se cuenta solo sobre los que facturan.
+  const sinDim = detalle.filter(d => d.dimSinPrecioVenta && d.contab && !d.anulado).length;
+  const badgeDim = document.getElementById('dcli-sindim-count');
+  if (badgeDim) badgeDim.textContent = sinDim ? (' · ' + sinDim) : '';
+  const btnDim = document.getElementById('dcli-btn-sindim');
+  if (btnDim) {
+    btnDim.style.display = (sinDim || dcliSoloSinDim) ? '' : 'none';
+    btnDim.style.borderColor = dcliSoloSinDim ? '#f59e0b' : '';
+    btnDim.style.background = dcliSoloSinDim ? '#fffbeb' : '';
+    btnDim.style.fontWeight = dcliSoloSinDim ? '700' : '';
+  }
 
   // Buscador: tracking, destinatario o zona. Busca sobre TODOS los envíos de la
   // semana, sin importar en qué día estén ni si el día está plegado.
@@ -187,13 +207,14 @@ function renderDetalleCliente() {
   if (btnLimpiar) btnLimpiar.style.display = q ? '' : 'none';
 
   let vista = dcliSoloSinTarifa ? detalle.filter(d => d.sinTarifa) : detalle;
+  if (dcliSoloSinDim) vista = vista.filter(d => d.dimSinPrecioVenta && d.contab && !d.anulado);
   if (q) vista = vista.filter(d =>
     String(d.r.tracking || '').toLowerCase().includes(q) ||
     String(d.r.destinatario || '').toLowerCase().includes(q) ||
     String(d.zona || '').toLowerCase().includes(q));
 
   const cont = document.getElementById('dcli-count');
-  if (cont) cont.textContent = (q || dcliSoloSinTarifa)
+  if (cont) cont.textContent = (q || dcliSoloSinTarifa || dcliSoloSinDim)
     ? 'Mostrando ' + vista.length + ' de ' + detalle.length + ' envíos'
     : detalle.length + ' envío(s) en la semana';
 
@@ -301,6 +322,7 @@ function renderDetalleCliente() {
           '<div class="conductor-meta"><strong>' + cod + '</strong> · ' + detalle.length + ' envíos · ' +
             contab.length + ' facturan · ' + clienteNZonas(cod) + ' zonas con tarifa' +
             (sinTarifa ? ' · ⚠ ' + sinTarifa + ' sin tarifa' : '') +
+            (sinDim ? ' · ⚠ ' + sinDim + ' con condición sin precio' : '') +
             (anulados.length ? ' · ' + anulados.length + ' bonificado(s) por ' + fmtPeso(totBonificado) : '') + '</div>' +
         '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
@@ -322,6 +344,15 @@ function renderDetalleCliente() {
           '<div class="metric-label">En zonas sin tarifa</div>' +
           '<div class="metric-value"' + (sinTarifa ? ' style="color:#b45309"' : '') + '>' + sinTarifa + '</div>' +
           '<div class="metric-sub">se facturan en $0 — cargá esas zonas</div></div>' +
+        // No es lo mismo que "sin tarifa": estos SÍ facturan, pero la tarifa
+        // común de la zona en lugar de la condición pactada. Sin este número el
+        // panel daba todo en verde mientras el acuerdo no se aplicaba.
+        '<div class="metric-card"' + (sinDim ? ' style="border-color:#f5d97a"' : '') + '><div class="metric-ic"><i class="ic ic-box"></i></div>' +
+          '<div class="metric-label">Condición sin precio de venta</div>' +
+          '<div class="metric-value"' + (sinDim ? ' style="color:#b45309"' : '') + '>' + sinDim + '</div>' +
+          '<div class="metric-sub">' + (sinDim
+            ? 'se facturan con la tarifa de la zona — cargá el precio en Dimensiones Especiales'
+            : 'las condiciones asignadas tienen su precio') + '</div></div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
         '<span>' + (q
@@ -564,7 +595,7 @@ function _dcliIrACliente(cod, iso) {
 }
 
 function _dcliFiltroActivo() {
-  if (dcliSoloSinTarifa) return true;
+  if (dcliSoloSinTarifa || dcliSoloSinDim) return true;
   return !!(document.getElementById('dcli-buscar')?.value || '').trim();
 }
 

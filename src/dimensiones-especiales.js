@@ -156,6 +156,67 @@ function dimFaltantesEnSolapa() {
     String(a.cliente).localeCompare(String(b.cliente)) || String(a.nombre).localeCompare(String(b.nombre)));
 }
 
+// Lo que el hueco está costando AHORA, contado sobre los envíos cargados.
+// "14 condiciones · 499 precios" es abstracto y no mueve a nadie; "3 envíos se
+// están facturando con la tarifa de la zona" es lo que hace que alguien cargue
+// el precio. Un envío con condición asignada y sin precio en ESTE tarifario se
+// liquida con la tarifa común de la zona: cobra (o paga) MÁS de $0, así que no
+// cae en ningún control de "sin tarifa" y hasta ahora no lo contaba nadie.
+function dimImpactoEnEnvios(tipo) {
+  const t = tipo === 'cliente' ? 'cliente' : 'conductor';
+  const res = { envios: 0, facturado: 0, pagado: 0, condiciones: new Map() };
+  // Índice de lo que SÍ tiene precio en este tarifario: sin él serían 22.000
+  // envíos por 6.800 filas de catálogo en cada render.
+  const conPrecio = new Set();
+  (AppData.dimCatalogo || []).forEach(d => {
+    if ((d.tipo || 'conductor') !== t || !(_num(d.precio) > 0)) return;
+    conPrecio.add(normNombre(d.cliente) + '|' + normNombre(d.nombre) + '|' +
+      normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(d.zona) : d.zona));
+  });
+  (AppData.records || []).forEach(r => {
+    const nom = String(r.dim_especial || '').trim();
+    if (!nom) return;
+    if (typeof contabilizaRegistro === 'function' && !contabilizaRegistro(r)) return;
+    if (typeof envioAnuladoCliente === 'function' && envioAnuladoCliente(r)) return;
+    const zonaRaw = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
+    const zk = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zonaRaw) : zonaRaw);
+    const nk = normNombre(nom);
+    // Mismos candidatos de cliente que usa el cálculo real.
+    const cands = [r.dim_cliente, r.cliente];
+    if (cands.some(c => c && conPrecio.has(normNombre(c) + '|' + nk + '|' + zk))) return;
+    res.envios++;
+    const cod = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
+    if (typeof precioVentaEnvio === 'function' && cod) res.facturado += _num(precioVentaEnvio(cod, r));
+    if (typeof precioPagadoConductor === 'function') res.pagado += _num(precioPagadoConductor(r));
+    const k = (r.dim_cliente || r.cliente || '(sin cliente)') + ' · ' + nom;
+    res.condiciones.set(k, (res.condiciones.get(k) || 0) + 1);
+  });
+  return res;
+}
+
+// El cartel. Va SUELTO y no dentro del aviso de faltantes: el hueco también
+// existe cuando la condición SÍ está registrada acá pero en $0 —la fila que
+// crea "Registrarlas acá sin precio"— y ese caso no lo cubre ningún otro.
+function _dimImpactoTxt() {
+  const imp = dimImpactoEnEnvios(dimTipo);
+  if (!imp.envios) return '';
+  const top = Array.from(imp.condiciones.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const esCliente = dimTipo === 'cliente';
+  return '<div class="alert" style="margin:0 0 12px;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5">' +
+    '<i class="ic ic-alert"></i><div><strong>' + imp.envios.toLocaleString('es-AR') + ' envío(s) ya cargados no están ' +
+    (esCliente ? 'facturando' : 'pagando') + ' la condición pactada.</strong> ' +
+    'Tienen una condición especial asignada que en este tarifario no tiene precio para su zona, así que se liquidan con la ' +
+    '<strong>tarifa común de la zona</strong>. Hoy se facturan ' + fmtPeso(imp.facturado) +
+    ' y se le pagan ' + fmtPeso(imp.pagado) + ' al conductor.' +
+    '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">' +
+    top.map(function (e) {
+      return '<span class="tag" style="background:#fff;border:1px solid #fca5a5;color:#991b1b;font-size:11px">' +
+        e[0] + ' <span style="opacity:.7">(' + e[1] + ' envío' + (e[1] === 1 ? '' : 's') + ')</span></span>';
+    }).join('') +
+    (imp.condiciones.size > 5 ? '<span style="font-size:11px;align-self:center;opacity:.8">…y ' + (imp.condiciones.size - 5) + ' más</span>' : '') +
+    '</div></div></div>';
+}
+
 // ── Condiciones escritas DISTINTO en cada tarifario ─────────────────────────
 // Las dos planillas las carga gente distinta y la misma condición termina con
 // otra redacción de cada lado: "COMPRESORES" / "COMPRESORES 25000",
@@ -304,6 +365,7 @@ function _dimBloqueAvisos() {
       '</div></div>';
   }
 
+  html += _dimImpactoTxt();
   const faltan = dimFaltantesEnSolapa();
   if (faltan.length) {
     const nZonas = faltan.reduce((s, g) => s + g.zonas.length, 0);

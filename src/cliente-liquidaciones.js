@@ -84,7 +84,7 @@ function cliqListado(rango) {
       cod: c.cod, nombre: clienteNombreDe(c.cod), rango: rc,
       periodo: periodoDiasDe(c.cod), periodoLabel: periodoLabel(periodoDiasDe(c.cod)),
       envios: liq.totalEnvios, total: liq.total,
-      sinTarifa: liq.sinTarifa, armada
+      sinTarifa: liq.sinTarifa, dimSinVenta: liq.dimSinVenta, armada
     };
   }).filter(x => x.envios > 0)
     .sort((a, b) => (b.armada ? 1 : 0) - (a.armada ? 1 : 0) || b.total - a.total);
@@ -186,7 +186,10 @@ function renderClienteLiquidaciones() {
       '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.total) + '</td>' +
 
-      '<td>' + (x.sinTarifa
+      '<td>' + (x.dimSinVenta
+        ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74" title="Envíos con una condición especial asignada que no tiene precio de venta cargado: se les factura la tarifa común de la zona, no lo pactado">' + x.dimSinVenta + ' sin precio de condición</span> '
+        : '') +
+      (x.sinTarifa
         ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74" title="Envíos en zonas sin tarifa de venta: se facturan en $0">' + x.sinTarifa + ' sin tarifa</span>'
         : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
       '<td>' + (x.armada

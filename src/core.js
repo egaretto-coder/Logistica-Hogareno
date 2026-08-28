@@ -992,7 +992,12 @@ function dimNombresDe(cliente) {
 // El tipo elige el tarifario; 'conductor' por defecto, que es el uso histórico.
 function dimPrecioEnZona(cliente, nombre, zona, tipo) {
   const t = tipo === 'cliente' ? 'cliente' : 'conductor';
-  const ck = normNombre(cliente), nk = normNombre(nombre), zk = normNombre(zona);
+  // La zona pasa por el alias antes de buscar, igual que en getPrecio y en
+  // clienteTarifaEnZona: los tres tienen que resolver la zona IGUAL. Si no, un
+  // envío en PRESIDENTE PERON no encontraría su condición cargada en GUERNICA y
+  // se liquidaría con la tarifa común sin que nadie lo note.
+  const ck = normNombre(cliente), nk = normNombre(nombre);
+  const zk = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
   const row = AppData.dimCatalogo.find(d => (d.tipo || 'conductor') === t &&
     normNombre(d.cliente) === ck && normNombre(d.nombre) === nk && normNombre(d.zona) === zk);
   return row ? _num(row.precio) : null;

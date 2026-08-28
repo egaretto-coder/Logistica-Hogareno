@@ -31,6 +31,11 @@
             <button class="btn btn-sm" onclick="dcliSemanaSiguiente()" title="Semana siguiente">▶</button>
             <button class="btn btn-sm" id="dcli-btn-sinzona" onclick="toggleDcliSinTarifa()" title="Mostrar solo los envíos cuya zona no tiene tarifa de venta cargada">
               <i class="ic ic-alert"></i> Sin tarifa<span id="dcli-sintarifa-count"></span></button>
+            <!-- Una condición especial asignada SIN precio de venta factura la
+                 tarifa común de la zona: cobra más de $0, así que no cae en
+                 "Sin tarifa" y hasta ahora no la contaba nadie. -->
+            <button class="btn btn-sm" id="dcli-btn-sindim" onclick="toggleDcliSinDim()" title="Mostrar solo los envíos con una condición especial asignada que no tiene precio de venta cargado: se les factura la tarifa común de la zona, no lo pactado">
+              <i class="ic ic-box"></i> Condición sin precio<span id="dcli-sindim-count"></span></button>
             <!-- Con 400+ envíos por semana, encontrar uno por tracking a mano es
                  imposible: los días arrancan plegados y hay que abrirlos todos. -->
             <input type="search" id="dcli-buscar" placeholder="🔍 Tracking, destinatario o zona" oninput="renderDetalleCliente()"
