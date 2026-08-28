@@ -320,6 +320,7 @@ function renderConductorDetail() {
         <div class="big-avatar" style="background:rgba(255,255,255,0.25)">${initials(cond)}</div>
         <div>
           <div class="conductor-name">${cond}</div>
+          ${_chipsCargaConductor(cond)}
           <div class="conductor-meta"><strong>${diasTrabajados} día${diasTrabajados === 1 ? '' : 's'} trabajado${diasTrabajados === 1 ? '' : 's'}</strong> · ${idxs.length} recorridos en el período · ${entregados} contabilizan · ${noEntregados} no suman${corregidos ? ' · ✏️ ' + corregidos + ' corregidos a mano' : ''}</div>
         </div>
         <div style="margin-left:auto;text-align:right">
@@ -371,6 +372,42 @@ function visitaPagaHTML(i, r) {
     '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="abrirMotivoVisita(' + i + ')" ' +
       'title="El conductor fue al domicilio pero no pudo entregar: se le paga la visita sin cambiar el estado del envío">' +
       '<i class="ic ic-truck"></i> Pagar visita</button>' +
+  '</div>';
+}
+
+// Cómo quedó cargado el conductor en el Panel: su CONDICIÓN (que es su día de
+// pago) y su categorización (que es su tier de precio). Se muestran acá porque
+// es donde el administrativo revisa sus recorridos, y son los dos datos que
+// deciden cuánto y cuándo cobra. **Sin condición no entra en ningún lote de
+// liquidación**: el cadete reparte, sus envíos se le facturan al cliente y no
+// se le paga a nadie — y hasta ahora eso no se veía desde acá.
+const _DIA_PAGO = { 'TITULAR': 'viernes', 'SEMI TITULAR': 'lunes', 'SUPLENTE': 'martes' };
+function _chipsCargaConductor(cond) {
+  const p = (typeof panelConductorDe === 'function') ? panelConductorDe(cond) : null;
+  const chip = (txt, bg, col, tit) =>
+    '<span class="tag" style="background:' + bg + ';color:' + col + ';border:1px solid ' + col + '33;font-size:10.5px;padding:2px 8px"' +
+    (tit ? ' title="' + String(tit).replace(/"/g, '&quot;') + '"' : '') + '>' + txt + '</span>';
+
+  if (!p) {
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:5px 0 2px">' +
+      chip('⚠ No está en el Panel de conductores', '#fef2f2', '#b91c1c',
+        'Sus envíos se le facturan al cliente pero no entra en ninguna liquidación. Cargalo en Panel de conductores.') +
+      '</div>';
+  }
+  const cond2 = String(p.condicion || '').trim();
+  const dia = _DIA_PAGO[cond2.toUpperCase()] || '';
+  const cat = String(p.categoria || '').trim();
+  const catTxt = (typeof tipoLabel === 'function') ? tipoLabel(cat === 'super_sla' ? 'sla' : cat) : cat;
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:5px 0 2px">' +
+    (cond2
+      ? chip('👤 ' + cond2 + (dia ? ' · cobra los ' + dia : ''), 'rgba(255,255,255,0.22)', '#fff', 'Condición cargada en el Panel de conductores: define su día de pago.')
+      : chip('⚠ Sin condición · no se liquida', '#fef2f2', '#b91c1c',
+          'Sin condición no tiene día de pago, así que no entra en ningún lote de liquidación. Cargásela en Panel de conductores.')) +
+    (cat === 'super_sla'
+      ? chip('⭐ Super SLA', 'rgba(255,255,255,0.22)', '#fff', 'Cobra tarifa especial en las zonas que tenga cargadas en Super SLA; en el resto, SLA Cumplido.')
+      : chip('🏷 ' + (catTxt || '—'), 'rgba(255,255,255,0.22)', '#fff', 'Categorización cargada en el Panel de conductores: define su tier de precio.')) +
+    (p.alias ? chip('🔗 ' + String(p.alias).split(';').filter(Boolean).length + ' alias', 'rgba(255,255,255,0.22)', '#fff',
+      'Otras grafías con las que aparece en los recorridos: ' + p.alias) : '') +
   '</div>';
 }
 
