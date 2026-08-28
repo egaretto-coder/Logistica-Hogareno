@@ -122,12 +122,13 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, cliCargos] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, cliCargos] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
         this.selectAll('dimensiones_especiales'),
         this.selectAll('km_desvio'),
+        this.selectAll('recorrido_especial'),
         this.selectAll('km_tarifas', 'vigente_desde'),
         sinRegistros ? Promise.resolve(null) : this.selectRegistrosVentana(desdeISO),
         this.selectAll('config'),
@@ -160,7 +161,7 @@ const DB = {
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
         dimensiones_especiales: dim,
-        km_desvio: km, km_tarifas: kmTar, registros, config,
+        km_desvio: km, recorrido_especial: recEsp, km_tarifas: kmTar, registros, config,
         rol_permisos: rolPerm, roles, adelantos, adelanto_cuotas: adelantoCuotas,
         descuentos_items: descItems, descuento_cuotas: descItemCuotas,
         clientes,

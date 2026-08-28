@@ -14,7 +14,7 @@
 // Tablas a las que nos suscribimos (deben estar en la publicación supabase_realtime).
 const RT_TABLAS = [
   'registros', 'panel_conductores', 'tarifas', 'super_sla', 'dimensiones_especiales',
-  'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio',
+  'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial',
   'km_tarifas', 'config', 'rol_permisos', 'roles',
   'clientes', 'cliente_tarifas',
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
@@ -39,7 +39,7 @@ const RT_PANTALLA_TABLAS = {
   'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo'],
   'upload':                 ['registros', 'importaciones'],
   'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
-                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'km_tarifas'],
+                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas'],
   'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo'],
   'panel-conductores':      ['panel_conductores'],
   'config-tarifas':         ['tarifas'],

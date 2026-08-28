@@ -267,7 +267,8 @@ function renderConductorDetail() {
               '<strong style="font-size:13px"><i class="ic ic-calendar"></i> ' + dow + _dia + '</strong>' +
               '<span class="muted">' + rd.contab + ' de ' + rd.envios + ' contabilizan</span>' +
               '<span class="muted cond-dia-hint"' + (_abierto ? ' style="display:none"' : '') + '>· tocá para ver los ' + rd.envios + '</span>' +
-              '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(rd.total) + '</strong>' +
+              _btnRecorridoEspecial(cond, _dia, _diaAttr) +
+              '<strong style="margin-left:auto;font-family:monospace;order:9">' + fmtPeso(rd.total) + '</strong>' +
             '</div>' +
           '</td>' +
         '</tr>';
@@ -370,6 +371,138 @@ function visitaPagaHTML(i, r) {
       'title="El conductor fue al domicilio pero no pudo entregar: se le paga la visita sin cambiar el estado del envío">' +
       '<i class="ic ic-truck"></i> Pagar visita</button>' +
   '</div>';
+}
+
+// ── Recorrido especial ─────────────────────────────────────────────────────
+// Rutas de envíos problemáticos (5 a 10 direcciones muy dispersas) que se pactan
+// a un monto fijo por recorrido. Lo que se guarda es el DIFERENCIAL contra lo que
+// ese día ya paga por tarifa de zona: así el conductor termina cobrando la ruta
+// completa y en la liquidación se ve de dónde salió.
+function _btnRecorridoEspecial(cond, dia, diaAttr) {
+  if (!dia || dia === 'Sin fecha') return '';
+  const re = recorridoEspecialDe(cond, dia);
+  const attr = 'data-dia="' + diaAttr + '" onclick="event.stopPropagation();abrirRecorridoEspecial(this.dataset.dia)"';
+  return re
+    ? '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px;border-color:#86efac;color:#15803d;white-space:nowrap" ' +
+      'title="Recorrido especial · ruta pactada en ' + fmtPeso(_num(re.valor_ruta)) + '" ' + attr + '>' +
+      '⚡ especial +' + fmtPeso(_num(re.monto)) + '</button>'
+    : '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px;white-space:nowrap" ' +
+      'title="Ruta de envíos problemáticos pactada a monto fijo: se paga la diferencia" ' + attr + '>+ Recorrido especial</button>';
+}
+
+// Lo que ese día ya paga por tarifa: la base del diferencial. Sale de los mismos
+// recorridos que muestra el panel, no de la vista filtrada: un filtro de
+// búsqueda puesto no puede cambiar lo que se le paga al conductor.
+function _baseDelDiaConductor(cond, dia) {
+  let total = 0, n = 0;
+  indicesConductorFiltrados(cond).forEach(i => {
+    const r = AppData.records[i];
+    if (String(r.fecha || '').trim() !== String(dia).trim()) return;
+    if (!contabilizaRegistro(r)) return;
+    const m = precioManualDe(r);
+    total += (m !== null ? m : precioAutoDe(r).precio);
+    n++;
+  });
+  return { total, n };
+}
+
+let respDia = null, respBase = 0;
+
+function abrirRecorridoEspecial(dia) {
+  const cond = document.getElementById('cond-select')?.value || '';
+  if (!cond || !dia) return;
+  respDia = dia;
+  const b = _baseDelDiaConductor(cond, dia);
+  respBase = b.total;
+  const re = recorridoEspecialDe(cond, dia);
+  document.getElementById('mresp-title').textContent = 'Recorrido especial · ' + dia;
+  document.getElementById('mresp-ctx').innerHTML =
+    '<strong style="color:var(--text-primary)">' + cond + '</strong> · ' + dia +
+    '<div style="margin-top:2px">Los envíos de ese día suman <strong>' + fmtPeso(b.total) + '</strong> (' + b.n + ' contabilizan).</div>';
+  document.getElementById('mresp-valor').value = re ? _num(re.valor_ruta) : '';
+  document.getElementById('mresp-detalle').value = re ? (re.detalle || '') : '';
+  document.getElementById('mresp-quitar').style.display = re ? '' : 'none';
+  recalcRecorridoEspecial();
+  document.getElementById('modal-resp-backdrop').style.display = 'flex';
+}
+
+function cerrarRecorridoEspecial(e) {
+  if (!e || e.target.id === 'modal-resp-backdrop') {
+    document.getElementById('modal-resp-backdrop').style.display = 'none';
+    respDia = null;
+  }
+}
+
+function recalcRecorridoEspecial() {
+  const box = document.getElementById('mresp-calc');
+  if (!box) return;
+  const valor = parseFloat(document.getElementById('mresp-valor').value);
+  if (isNaN(valor) || valor <= 0) { box.innerHTML = '<span class="muted">Poné cuánto se pactó por la ruta.</span>'; return; }
+  const dif = valor - respBase;
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between"><span>Ruta pactada</span><strong class="mono">' + fmtPeso(valor) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;color:var(--text-muted)"><span>Ya paga el día</span><span class="mono">− ' + fmtPeso(respBase) + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);margin-top:5px;padding-top:5px">' +
+      '<strong>Diferencial a pagar</strong>' +
+      '<strong class="mono" style="color:' + (dif > 0 ? '#15803d' : '#b45309') + '">' + (dif > 0 ? '+' : '') + fmtPeso(dif) + '</strong></div>' +
+    (dif <= 0 ? '<div style="margin-top:5px;color:#b45309;font-size:11px">El día ya paga eso o más: no hay diferencia que agregar.</div>' : '');
+}
+
+async function guardarRecorridoEspecial() {
+  const cond = document.getElementById('cond-select')?.value || '';
+  const dia = respDia;
+  if (!cond || !dia) return;
+  const valor = parseFloat(document.getElementById('mresp-valor').value);
+  if (isNaN(valor) || valor <= 0) { alert('Poné el valor pactado de la ruta.'); return; }
+  const dif = valor - respBase;
+  if (dif <= 0) { alert('El día ya paga ' + fmtPeso(respBase) + ': con una ruta de ' + fmtPeso(valor) + ' no hay diferencia que agregar.'); return; }
+  const detalle = (document.getElementById('mresp-detalle').value || '').trim();
+  const rec = {
+    conductor: cond, fecha: dia, valor_ruta: valor, base: respBase, monto: dif,
+    detalle, imputar: true,
+    creado_por: (typeof currentUser !== 'undefined' && currentUser && currentUser.usuario) || ''
+  };
+  const previo = recorridoEspecialDe(cond, dia);
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    if (previo) {
+      await DB.updateWhere('recorrido_especial', 'id', previo.id, rec);
+      Object.assign(previo, rec);
+    } else {
+      const row = await DB.insertRow('recorrido_especial', rec);
+      AppData.recorridosEspeciales.push(Object.assign({ id: row && row.id }, rec));
+    }
+    _persistirRecEspLocal();
+    document.getElementById('modal-resp-backdrop').style.display = 'none';
+    respDia = null;
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    renderConductorDetail();
+    showToast('⚡ Recorrido especial de ' + dia + ' · se le suman ' + fmtPeso(dif));
+  } catch (e) { console.warn('guardarRecorridoEspecial', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+async function quitarRecorridoEspecial() {
+  const cond = document.getElementById('cond-select')?.value || '';
+  const dia = respDia;
+  const re = recorridoEspecialDe(cond, dia);
+  if (!re) return;
+  if (!confirm('¿Quitar el recorrido especial del ' + dia + '?' + String.fromCharCode(10) +
+    'Deja de sumarse ' + fmtPeso(_num(re.monto)) + ' a la liquidación.')) return;
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.deleteWhere('recorrido_especial', 'id', re.id);
+    AppData.recorridosEspeciales = AppData.recorridosEspeciales.filter(x => x.id !== re.id);
+    _persistirRecEspLocal();
+    document.getElementById('modal-resp-backdrop').style.display = 'none';
+    respDia = null;
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    renderConductorDetail();
+    showToast('Recorrido especial quitado');
+  } catch (e) { console.warn('quitarRecorridoEspecial', e); alert('No se pudo quitar: ' + (e.message || e)); }
+}
+
+function _persistirRecEspLocal() {
+  try { localStorage.setItem('liq_recorridos_especiales', JSON.stringify(AppData.recorridosEspeciales || [])); } catch (e) {}
 }
 
 // Índice del registro que se está marcando (el modal vive en components/modales.html).

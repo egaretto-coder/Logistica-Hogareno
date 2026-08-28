@@ -245,6 +245,7 @@ function renderLiquidaciones() {
     // bruto parece un error de cálculo en vez de un descuento aplicado.
     const partes = [];
     if (imp.km > 0) partes.push('<span style="color:#059669">+' + fmtPeso(imp.km) + ' km</span>');
+    if (imp.especial > 0) partes.push('<span style="color:#059669">+' + fmtPeso(imp.especial) + ' recorrido especial</span>');
     if (imp.descuentos > 0) partes.push('<span style="color:#b91c1c">−' + fmtPeso(imp.descuentos) + '</span>');
     const subTotal = imp.hay
       ? '<div style="font-size:10px;color:var(--text-muted);white-space:nowrap">bruto ' + fmtPeso(d.total) + ' · ' + partes.join(' ') + '</div>'

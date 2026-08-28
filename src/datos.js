@@ -15,6 +15,8 @@ function loadSavedConfig() {
   if (dCuotas) {
     try { AppData.descItemCuotas = JSON.parse(dCuotas) || []; } catch(e) {}
   }
+  const rge = localStorage.getItem('liq_recorridos_especiales');
+  if (rge) { try { AppData.recorridosEspeciales = JSON.parse(rge) || []; } catch(e) {} }
   const kmd = localStorage.getItem('liq_km_desvio');
   if (kmd) {
     try { AppData.kmDesvio = JSON.parse(kmd); } catch(e) {}
@@ -193,6 +195,11 @@ async function _hydrateFromSupabaseReal(opts) {
   // Cuotas de extravíos cuoteados (descuento_cuotas)
   AppData.descItemCuotas = (data.descuento_cuotas || []).map(c => ({
     id: c.id, item_id: c.item_id, nro: _num(c.nro), monto: _num(c.monto), fecha: c.fecha || ''
+  }));
+  AppData.recorridosEspeciales = (data.recorrido_especial || []).map(d => ({
+    id: d.id, conductor: d.conductor || '', fecha: d.fecha || '',
+    valor_ruta: _num(d.valor_ruta), base: _num(d.base), monto: _num(d.monto),
+    detalle: d.detalle || '', imputar: d.imputar !== false, creado_por: d.creado_por || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
     id: d.id, conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
@@ -422,6 +429,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems));
     localStorage.setItem('liq_desc_cuotas', JSON.stringify(AppData.descItemCuotas));
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
+    localStorage.setItem('liq_recorridos_especiales', JSON.stringify(AppData.recorridosEspeciales || []));
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
     localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));

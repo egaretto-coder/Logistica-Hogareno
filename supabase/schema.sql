@@ -156,6 +156,29 @@ create table if not exists public.descuento_cuotas (
 create index if not exists idx_descuento_cuotas_item on public.descuento_cuotas (item_id);
 create index if not exists idx_descuento_cuotas_fecha on public.descuento_cuotas (fecha_date);
 
+-- ---------- RECORRIDO ESPECIAL ----------
+-- Rutas para sacar envíos problemáticos: 5 a 10 direcciones muy dispersas, que
+-- se pactan a un MONTO FIJO por recorrido sin relación con lo que suman esos
+-- envíos por tarifa de zona. Se guarda el DIFERENCIAL (lo pactado − lo que el
+-- día ya paga) y SUMA a la liquidación de ese día, igual que km_desvio.
+create table if not exists public.recorrido_especial (
+  id bigint generated always as identity primary key,
+  conductor text not null,
+  fecha text default '',                    -- DD/MM/YYYY: el día del recorrido
+  valor_ruta numeric not null default 0,    -- lo pactado por la ruta
+  base numeric not null default 0,          -- lo que sumaban los envíos al registrarlo
+  monto numeric not null default 0,         -- el diferencial que se paga
+  detalle text default '',
+  imputar boolean not null default true,
+  creado_por text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_recorrido_esp_cond on public.recorrido_especial (conductor);
+create index if not exists idx_recorrido_esp_fecha on public.recorrido_especial (fecha);
+alter table public.recorrido_especial enable row level security;
+create policy recorrido_especial_all on public.recorrido_especial
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
 -- ---------- KM DESVÍO ----------
 -- fecha: día del desvío (DD/MM/YYYY). valor_km: tarifa aplicada (snapshot, no se
 -- recalcula si la tarifa cambia después). monto = km × valor_km.

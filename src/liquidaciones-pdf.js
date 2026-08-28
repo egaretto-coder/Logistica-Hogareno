@@ -373,6 +373,19 @@ function recalcLiqModal() {
     }
   }
 
+  // Recorridos especiales del período (rutas pactadas a monto fijo). SUMAN.
+  const respAd = recorridoEspecialConductor(liqModalConductor, getLiqRangoFechasLabel());
+  const respMonto = respAd.monto;
+  const respWrap = document.getElementById('liq-modal-linea-resp-wrap');
+  if (respWrap) {
+    respWrap.style.display = respMonto > 0 ? 'flex' : 'none';
+    if (respMonto > 0) {
+      document.getElementById('liq-modal-linea-resp-label').textContent =
+        'Recorridos especiales' + (respAd.n > 1 ? ' (' + respAd.n + ')' : '');
+      document.getElementById('liq-modal-linea-resp').textContent = '+' + fmtPeso(respMonto);
+    }
+  }
+
   // Cuota(s) de adelanto imputadas al período (deducción, igual que el PDF).
   // Al monto ya registrado le sumamos/restamos lo que el operador acaba de
   // tildar o destildar en el modal (se aplica recién al confirmar).
@@ -403,7 +416,7 @@ function recalcLiqModal() {
     }
   }
 
-  const totalNeto = d.total + kmMonto - totalDesc - advMonto - extMonto;
+  const totalNeto = d.total + kmMonto + respMonto - totalDesc - advMonto - extMonto;
 
   document.getElementById('liq-modal-linea-bruto').textContent = fmtPeso(d.total);
   document.getElementById('liq-modal-linea-desc').textContent = '-' + fmtPeso(totalDesc);
@@ -884,6 +897,13 @@ function exportPDF(conductor, opts) {
   const kmKms = kmAd.km;
   const kmOffset = kmMonto > 0 ? 6 : 0; // renglón extra en la caja si hay adicional
 
+  // Recorridos especiales del período: rutas de envíos problemáticos pactadas a
+  // un monto fijo. Se paga el DIFERENCIAL contra lo que el día ya liquidaba.
+  // SUMA al total.
+  const respAd = recorridoEspecialConductor(conductor, rangoImput);
+  const respMonto = respAd.monto;
+  const respOffset = respMonto > 0 ? 6 : 0;
+
   // Cuota(s) de adelanto imputadas al período liquidado: préstamo que el conductor
   // devuelve en cuotas. RESTA al total. Cada cuota fue registrada explícitamente en
   // el panel Adelantos con su fecha de imputación (misma lógica que el modal en pantalla).
@@ -897,7 +917,7 @@ function exportPDF(conductor, opts) {
   const extMonto = extAd.monto;
   const extOffset = extMonto > 0 ? 6 : 0;
 
-  const totalNeto = d.total + kmMonto - totalDescuentos - advMonto - extMonto;
+  const totalNeto = d.total + kmMonto + respMonto - totalDescuentos - advMonto - extMonto;
 
   let descY = doc.lastAutoTable.finalY + 8;
   // Si no cabe el bloque en la página actual, saltar de página
@@ -915,7 +935,7 @@ function exportPDF(conductor, opts) {
 
   // Caja con fondo claro (altura dinámica según cantidad de ítems de descuento)
   const descItemsCount = 3;
-  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + advOffset + extOffset;
+  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + respOffset + advOffset + extOffset;
   doc.setFillColor(248, 249, 252);
   doc.roundedRect(MARGIN, descY, W - MARGIN*2, boxH, 2, 2, 'F');
   doc.setDrawColor(220, 226, 240);
@@ -944,36 +964,51 @@ function exportPDF(conductor, opts) {
     doc.text('+' + fmtPeso(kmMonto), W - MARGIN - 6, descY + 14, { align: 'right' });
   }
 
+  // Renglón: Recorridos especiales (suma al total). El conductor tiene derecho a
+  // saber por qué le sumaron esa plata, así que se nombran los días.
+  if (respMonto > 0) {
+    drawDescIcon('R', MARGIN + 6, descY + 15.6 + kmOffset, 4.4, LH_GREEN);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...LH_GRAY);
+    const dias = respAd.detalle.map(x => x.fecha).filter(Boolean);
+    const diasTxt = dias.length > 3 ? dias.slice(0, 3).join(', ') + ' y ' + (dias.length - 3) + ' más' : dias.join(', ');
+    doc.text('Recorrido especial' + (respAd.n > 1 ? 's' : '') + (diasTxt ? ' (' + diasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...LH_GREEN);
+    doc.text('+' + fmtPeso(respMonto), W - MARGIN - 6, descY + 14 + kmOffset, { align: 'right' });
+  }
+
   // Renglón: Cuota(s) de adelanto (resta al total) — misma lógica que el modal
   if (advMonto > 0) {
-    drawDescIcon('A', MARGIN + 6, descY + 15.6 + kmOffset, 4.4, LH_BLUE);
+    drawDescIcon('A', MARGIN + 6, descY + 15.6 + kmOffset + respOffset, 4.4, LH_BLUE);
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxt = _txtCuotasAdelanto(advAd.detalle);
-    doc.text('Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset);
+    doc.text('Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + respOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
-    doc.text('-' + fmtPeso(advMonto), W - MARGIN - 6, descY + 14 + kmOffset, { align: 'right' });
+    doc.text('-' + fmtPeso(advMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset, { align: 'right' });
   }
 
   // Renglón: Cuota(s) de extravío cuoteado (resta al total)
   if (extMonto > 0) {
-    drawDescIcon('E', MARGIN + 6, descY + 15.6 + kmOffset + advOffset, 4.4, LH_RED);
+    drawDescIcon('E', MARGIN + 6, descY + 15.6 + kmOffset + respOffset + advOffset, 4.4, LH_RED);
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxtE = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
-    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoImput), MARGIN + 13, descY + 14 + kmOffset + advOffset);
+    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoImput), MARGIN + 13, descY + 14 + kmOffset + respOffset + advOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
-    doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + advOffset, { align: 'right' });
+    doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset + advOffset, { align: 'right' });
   }
 
   // Separador
   doc.setDrawColor(220, 226, 240);
   doc.setLineWidth(0.2);
-  doc.line(MARGIN + 6, descY + 11 + kmOffset + advOffset + extOffset, W - MARGIN - 6, descY + 11 + kmOffset + advOffset + extOffset);
+  doc.line(MARGIN + 6, descY + 11 + kmOffset + respOffset + advOffset + extOffset, W - MARGIN - 6, descY + 11 + kmOffset + respOffset + advOffset + extOffset);
 
   // Descuentos individuales (mismos conceptos que en el detalle previo a descargar)
   const descItems = [
@@ -981,7 +1016,7 @@ function exportPDF(conductor, opts) {
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores' + _refsDeItems('proveedores', conductor, rangoImput), val: descuentos.proveedores || 0 },
   ];
-  let dY = descY + 17 + kmOffset + advOffset + extOffset;
+  let dY = descY + 17 + kmOffset + respOffset + advOffset + extOffset;
   descItems.forEach(item => {
     drawDescIcon(item.letter, MARGIN + 6, dY + 1.6, 4.4, item.color);
     doc.setFontSize(8);

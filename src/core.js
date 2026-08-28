@@ -229,6 +229,9 @@ let AppData = {
   // Km de desvío: compensación adicional por kilómetros recorridos fuera de ruta.
   // Formato: { conductor, km, fecha, valor_km, monto, obs }
   kmDesvio: [],
+  // Recorridos especiales: rutas de envíos problemáticos pactadas a monto fijo.
+  // [{ id, conductor, fecha, valor_ruta, base, monto, detalle, imputar }]
+  recorridosEspeciales: [],
 
   // Liquidaciones de cliente ya ARMADAS por el administrativo (el operador
   // solo descarga las que están acá).
@@ -589,6 +592,46 @@ function extravioCuotaDescuento(conductor, rango) {
 // le terminaba pagando al conductor.
 // descuentosOverride: los montos que el operador dejó tildados en el modal;
 // sin él se calculan por fecha, igual que en la descarga masiva.
+// Diferencial por recorridos ESPECIALES del período. Son rutas de envíos
+// problemáticos —5 a 10 direcciones muy dispersas— que se pactan a un monto fijo
+// que no tiene relación con lo que suman esos envíos por tarifa de zona. Lo que
+// se guarda es la DIFERENCIA entre lo pactado y lo que el día ya paga, así el
+// conductor termina cobrando la ruta completa. SUMA al neto, igual que los km.
+function recorridoEspecialConductor(conductor, rango, incluirExcluidos) {
+  const key = conductorKey(conductor);
+  const desde = rango && rango.desde ? parseFechaReg(rango.desde) : null;
+  let hasta = rango && rango.hasta ? parseFechaReg(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  let monto = 0, n = 0;
+  const detalle = [];
+  (AppData.recorridosEspeciales || []).forEach(d => {
+    if (conductorKey(d.conductor) !== key) return;
+    if (desde || hasta) {
+      const f = parseFechaReg(d.fecha);
+      if (!f) return;
+      if (desde && f < desde) return;
+      if (hasta && f > hasta) return;
+    }
+    const imputa = d.imputar !== false;
+    if (imputa) { monto += _num(d.monto); n++; }
+    if (incluirExcluidos || imputa) {
+      detalle.push({ id: d.id, fecha: d.fecha || '', valor_ruta: _num(d.valor_ruta),
+                     base: _num(d.base), monto: _num(d.monto), detalle: d.detalle || '', imputar: imputa });
+    }
+  });
+  detalle.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  return { monto, n, detalle };
+}
+
+// El recorrido especial ya cargado para ese conductor y ese día, si lo hay.
+function recorridoEspecialDe(conductor, fecha) {
+  const key = conductorKey(conductor);
+  const f = String(fecha || '').trim();
+  return (AppData.recorridosEspeciales || []).find(d =>
+    conductorKey(d.conductor) === key && String(d.fecha || '').trim() === f) || null;
+}
+
 function imputacionesConductor(conductor, rango, descuentosOverride) {
   const d = descuentosOverride || {
     combustible: descItemDescuentoConductor('combustible', conductor, rango).monto,
@@ -597,16 +640,17 @@ function imputacionesConductor(conductor, rango, descuentosOverride) {
   };
   const items = _num(d.combustible) + _num(d.extraviados) + _num(d.proveedores);
   const km  = kmAdicionalConductor(conductor, rango).monto;
+  const especial = recorridoEspecialConductor(conductor, rango).monto;
   const adelanto = adelantoDescuentoConductor(conductor, rango).monto;
   const extravioCuota = extravioCuotaDescuento(conductor, rango).monto;
   const descuentos = items + adelanto + extravioCuota;
-  return { km, items, adelanto, extravioCuota, descuentos, hay: km > 0 || descuentos > 0 };
+  return { km, especial, items, adelanto, extravioCuota, descuentos, hay: km > 0 || especial > 0 || descuentos > 0 };
 }
 // bruto + adicionales − descuentos. Nunca baja de 0: un neto negativo en el
 // papel sería plata que el conductor le debe a la empresa, y eso se arrastra
 // como saldo, no se paga en negativo.
 function netoLiquidacion(bruto, imp) {
-  return Math.max(0, _num(bruto) + _num(imp && imp.km) - _num(imp && imp.descuentos));
+  return Math.max(0, _num(bruto) + _num(imp && imp.km) + _num(imp && imp.especial) - _num(imp && imp.descuentos));
 }
 
 // Tarifa de km VIGENTE HOY (la más reciente del historial). 0 si no hay ninguna.
