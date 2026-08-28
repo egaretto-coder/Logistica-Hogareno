@@ -291,15 +291,20 @@ function switchClientesTab() { renderClientes(); }
 // mezclarlas obliga a leer 121 tarjetas para encontrar 3.
 let cliTab = 'activos';
 function switchClientesTab(t) {
-  cliTab = t;
+  // Cualquier valor que no sea "bajas" es la lista de clientes. El router la
+  // llamaba con 'lista' —el nombre de cuando había una sola solapa— y con una
+  // comparación estricta contra 'activos' eso escondía LAS DOS: el panel entero
+  // quedaba en blanco al entrar (bug real).
+  const esBajas = t === 'bajas';
+  cliTab = esBajas ? 'bajas' : 'activos';
   const lista = document.getElementById('cli-tab-lista');
   const bajas = document.getElementById('cli-tab-bajas');
-  if (lista) lista.style.display = t === 'activos' ? '' : 'none';
-  if (bajas) bajas.style.display = t === 'bajas' ? '' : 'none';
+  if (lista) lista.style.display = esBajas ? 'none' : '';
+  if (bajas) bajas.style.display = esBajas ? '' : 'none';
   const bA = document.getElementById('cli-btn-activos'), bB = document.getElementById('cli-btn-bajas');
-  if (bA) bA.classList.toggle('active', t === 'activos');
-  if (bB) bB.classList.toggle('active', t === 'bajas');
-  if (t === 'bajas') renderClientesBajas(); else renderClientes();
+  if (bA) bA.classList.toggle('active', !esBajas);
+  if (bB) bB.classList.toggle('active', esBajas);
+  if (esBajas) renderClientesBajas(); else renderClientes();
 }
 
 function clientesDadosDeBaja() {

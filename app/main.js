@@ -66,7 +66,7 @@ function showPage(id) {
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
-  if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('lista');
+  if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('activos');
   if (id === 'detalle-cliente' && typeof renderDetalleClientePagina === 'function') renderDetalleClientePagina();
   if (id === 'cliente-liquidaciones' && typeof renderClienteLiquidacionesPagina === 'function') renderClienteLiquidacionesPagina();
   if (id === 'comisiones' && typeof switchComisionesTab === 'function') switchComisionesTab('vend');
