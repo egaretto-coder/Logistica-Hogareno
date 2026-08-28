@@ -822,7 +822,11 @@ function editComisionCliente(id) {
   document.getElementById('modal-cc-title').textContent = 'Editar asignación';
   const cliInput = document.getElementById('mcc-cliente');
   cliInput.value = row.cliente || '';
-  cliInput.setAttribute('disabled', 'disabled'); // no se cambia el cliente al editar
+  // El nombre SÍ se puede corregir: es lo que enlaza la fila con el maestro de
+  // clientes, y una diferencia de redacción (GLARE CARS / GLARE CARS DETAILING)
+  // deja la comisión sin poder evaluarse ni sincronizar su baja. Bloquearlo
+  // obligaba a borrar la fila y volver a crearla, perdiendo su evaluación.
+  cliInput.removeAttribute('disabled');
   document.getElementById('mcc-vendedor').value = row.vendedor || '';
   document.getElementById('mcc-fecha').value = row.fecha_alta && /^\d{4}-\d{2}-\d{2}$/.test(row.fecha_alta) ? row.fecha_alta : '';
   _mccResetMesPago(row.bloqueado ? (row.mes_inicio || '') : '');
@@ -908,6 +912,15 @@ function actualizarPreviewComisionCliente() {
   const box = document.getElementById('mcc-preview');
   const miInput = document.getElementById('mcc-mesinicio');
   _mccPintarMesPago(cliente);
+  // Si el nombre no engancha con el maestro, la fila no se puede evaluar ni
+  // sincronizar su baja. Se dice acá, mientras se escribe, y no después.
+  const mEl = document.getElementById('mcc-cliente-match');
+  if (mEl) {
+    const c = cliente ? clienteMaestroDe(cliente) : null;
+    mEl.innerHTML = !cliente ? ''
+      : c ? '<span style="color:#166534">✓ Enlazado con <strong>' + c.nombre + '</strong> del maestro de clientes.</span>'
+          : '<span style="color:#b45309">⚠ No hay ningún cliente con ese nombre en el maestro: la app no va a poder contarle las facturas ni sincronizar su baja. Elegilo de la lista.</span>';
+  }
   if (!box) return;
   // Categoría declarada a mano: manda sobre la evaluación automática y el
   // preview tiene que decir eso mismo, para que nadie espere que la app la mueva.
@@ -975,7 +988,7 @@ async function guardarComisionClienteModal() {
       try { const vr = await DB.insertRow('vendedores', { nombre: vendedor, activo: true }); AppData.vendedores.push({ id: vr.id, nombre: vendedor, activo: true }); } catch (e) {}
     }
     if (comisionClienteEditId != null) {
-      const campos = { vendedor, fecha_alta, mes_inicio, estado, mes_baja, motivo_baja };
+      const campos = { cliente, vendedor, fecha_alta, mes_inicio, estado, mes_baja, motivo_baja };
       Object.assign(campos, _camposCategoriaManual(catManual, factManual, AppData.comisionClientes.find(x => x.id === comisionClienteEditId)));
       await DB.updateWhere('comision_clientes', 'id', comisionClienteEditId, campos);
       const row = AppData.comisionClientes.find(x => x.id === comisionClienteEditId);
