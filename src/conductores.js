@@ -505,14 +505,48 @@ function _persistirRecEspLocal() {
   try { localStorage.setItem('liq_recorridos_especiales', JSON.stringify(AppData.recorridosEspeciales || [])); } catch (e) {}
 }
 
-// Índice del registro que se está marcando (el modal vive en components/modales.html).
-let visitaPagaIdx = -1;
+// Qué registro se está marcando. Se guarda el ID además del índice: el índice
+// apunta a una posición de AppData.records, y esa lista se reemplaza entera cada
+// vez que se re-hidrata desde la nube. Si eso pasa con el modal abierto, el
+// índice queda apuntando a OTRO envío y la visita se le pagaría al equivocado.
+let visitaPagaIdx = -1, visitaPagaId = null;
+
+// El registro del modal, resuelto por id (y por índice si todavía no tiene id).
+function _registroVisita() {
+  if (visitaPagaId != null) {
+    const r = AppData.records.find(x => x.id === visitaPagaId);
+    if (r) return r;
+  }
+  return AppData.records[visitaPagaIdx] || null;
+}
+
+// Guarda la marca EN EL MOMENTO. No va por el autosave de 2,5 s: pagar una
+// visita es una decisión sobre plata que se toma una vez, no una tecla en un
+// campo de texto, y en esa ventana cambiar de panel o recargar la perdía sin
+// ningún aviso — el envío quedaba en $0 y parecía que el panel no sincronizaba.
+async function _persistirVisita(r) {
+  if (!r) return false;
+  if (!r.id) { alert('Este envío todavía no está sincronizado con la nube. Reintentá en unos segundos.'); return false; }
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.updateWhere('registros', 'id', r.id, {
+      contabiliza_manual: !!r.contabiliza_manual,
+      motivo_contab: r.motivo_contab || ''
+    });
+    if (typeof condEditIdsSucios !== 'undefined') condEditIdsSucios.delete(r.id);
+    return true;
+  } catch (e) {
+    console.warn('_persistirVisita', e);
+    return false;
+  }
+}
 
 function abrirMotivoVisita(i) {
   const r = AppData.records[i];
   if (!r) return;
   if (r._historico) { showToast('🗄️ Registro archivado (solo lectura)'); return; }
   visitaPagaIdx = i;
+  visitaPagaId = r.id != null ? r.id : null;
   const sel = document.getElementById('mvisita-motivo');
   if (sel) {
     sel.innerHTML = MOTIVOS_CONTAB.map(m => '<option value="' + m.replace(/"/g, '&quot;') + '">' + m + '</option>').join('');
@@ -530,14 +564,14 @@ function abrirMotivoVisita(i) {
 function cerrarMotivoVisita(e) {
   if (!e || e.target.id === 'modal-visita-backdrop') {
     document.getElementById('modal-visita-backdrop').style.display = 'none';
-    visitaPagaIdx = -1;
+    visitaPagaIdx = -1; visitaPagaId = null;
   }
 }
 
-function guardarMotivoVisita() {
-  const i = visitaPagaIdx;
-  const r = AppData.records[i];
+async function guardarMotivoVisita() {
+  const r = _registroVisita();
   if (!r) return;
+  const i = AppData.records.indexOf(r);
   const sel = document.getElementById('mvisita-motivo');
   const det = document.getElementById('mvisita-detalle');
   let motivo = (sel && sel.value) || '';
@@ -550,20 +584,41 @@ function guardarMotivoVisita() {
   }
   r.contabiliza_manual = true;
   r.motivo_contab = motivo;
-  editarRegistroConductor(i, '_visitaPaga', true);   // marca sucio y programa el autosave
   document.getElementById('modal-visita-backdrop').style.display = 'none';
-  visitaPagaIdx = -1;
-  showToast('✅ Se paga la visita — el envío sigue como "' + (r.estado || 'no entregado') + '"');
+  visitaPagaIdx = -1; visitaPagaId = null;
+
+  const ok = await _persistirVisita(r);
+  if (!ok) {
+    // Si no se guardó, la pantalla no puede decir que sí: se revierte.
+    r.contabiliza_manual = false; r.motivo_contab = '';
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    _repintarPanelDeEnvios();
+    alert('No se pudo guardar la visita en la nube. El envío NO quedó marcado — reintentá.');
+    return;
+  }
+  if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+  _repintarPanelDeEnvios();
+  _avisarImpactoCobro(r, 'Se paga la visita');
+  if (typeof reabrirLiquidacionDeEnvio === 'function') reabrirLiquidacionDeEnvio(r, 'una visita pagada');
 }
 
-function quitarVisitaPaga(i) {
+async function quitarVisitaPaga(i) {
   const r = AppData.records[i];
   if (!r) return;
   if (!confirm('¿Dejar de pagar esta visita? El envío deja de contabilizar en la liquidación.')) return;
+  const motivoPrevio = r.motivo_contab || '';
   r.contabiliza_manual = false;
   r.motivo_contab = '';
-  editarRegistroConductor(i, '_visitaPaga', false);
-  showToast('Visita quitada de la liquidación');
+  const ok = await _persistirVisita(r);
+  if (!ok) {
+    r.contabiliza_manual = true; r.motivo_contab = motivoPrevio;
+    alert('No se pudo guardar el cambio en la nube. La visita sigue pagada — reintentá.');
+    return;
+  }
+  if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+  _repintarPanelDeEnvios();
+  _avisarImpactoCobro(r, 'Visita quitada');
+  if (typeof reabrirLiquidacionDeEnvio === 'function') reabrirLiquidacionDeEnvio(r, 'una visita quitada');
 }
 
 // ─── Plegado por día ────────────────────────────────────────────────────────
