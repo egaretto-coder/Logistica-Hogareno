@@ -213,6 +213,10 @@ function renderDetalleCliente() {
     String(d.r.destinatario || '').toLowerCase().includes(q) ||
     String(d.zona || '').toLowerCase().includes(q));
 
+  const nCorr = correccionesDeLiquidacion(cod, rango).length;
+  const badgeCorr = document.getElementById('dcli-corr-count');
+  if (badgeCorr) badgeCorr.textContent = nCorr ? (' · ' + nCorr) : '';
+
   const cont = document.getElementById('dcli-count');
   if (cont) cont.textContent = (q || dcliSoloSinTarifa || dcliSoloSinDim)
     ? 'Mostrando ' + vista.length + ' de ' + detalle.length + ' envíos'
@@ -592,6 +596,190 @@ function _dcliIrACliente(cod, iso) {
     if (el) { el.value = iso; if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana'); }
   }
   renderDetalleCliente();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  CORRECCIONES QUE MOVIERON ESTA LIQUIDACIÓN
+//
+//  Los envíos los editan DOS personas desde DOS paneles —el administrativo de
+//  conductores y el de clientes— sobre los MISMOS registros. Cuando un total no
+//  cierra contra lo esperado, la pregunta es siempre la misma: *qué se tocó a
+//  mano acá*. Hasta ahora había que ir envío por envío mirando chips.
+//
+//  Lo que se muestra es QUÉ se corrigió y CUÁNTO movió, no QUIÉN lo hizo: la
+//  app no lleva auditoría por fila. El modal lo dice, para que nadie lea el
+//  listado como si fuera un registro de responsables.
+// ════════════════════════════════════════════════════════════════════════
+
+// Un envío puede tener varias marcas a la vez (cargado a mano Y con dimensión).
+// El EFECTO se calcula una sola vez por envío, con la marca dominante, para no
+// contar dos veces la misma plata: si el envío entero no existiría sin la
+// corrección, el efecto es su importe completo y la dimensión ya está adentro.
+function correccionesDeLiquidacion(cod, rango) {
+  const cKey = clienteKey(cod);
+  if (!cKey) return [];
+  const semana = viernesDeRango(rango);
+  const desde = rango && rango.desdeD, hasta = rango && rango.hastaD;
+  const out = [];
+
+  (AppData.records || []).forEach((r, i) => {
+    if (clienteCodDeRegistro(r) !== cKey) return;
+    const arr = String(r.factura_semana || '').slice(0, 10);
+    const f = parseFechaReg(r.fecha);
+    const enSuFecha = !!f && (!desde || f >= desde) && (!hasta || f <= hasta);
+    const entra = arr ? (!!semana && arr === semana) : enSuFecha;
+    // Un envío cuya fecha cae en este período pero que se factura en otro SALIÓ
+    // de acá: no está en la tabla, y sin embargo explica plata que falta.
+    const salio = !!arr && enSuFecha && arr !== semana;
+    if (!entra && !salio) return;
+    if (!contabilizaRegistro(r) && !envioAnuladoCliente(r)) return;
+
+    const marcas = [];
+    const anulado = envioAnuladoCliente(r);
+    const cobrado = anulado ? 0 : precioVentaEnvio(cKey, r);
+    let efecto = 0, calculable = false;
+
+    if (salio) {
+      marcas.push({ txt: 'Movido a la semana del ' + _dcliFechaCorta(arr), tipo: 'arrastre' });
+      efecto = -precioVentaEnvio(cKey, r); calculable = true;
+    } else if (anulado) {
+      marcas.push({ txt: 'Cobro anulado' + (r.motivo_anulacion ? ' · ' + r.motivo_anulacion : ''), tipo: 'anulado' });
+      efecto = -precioSinAnular(cKey, r); calculable = true;
+    } else if (arr) {
+      marcas.push({ txt: 'Traído de otro período (' + (r.fecha || '—') + ')', tipo: 'arrastre' });
+      efecto = cobrado; calculable = true;
+    } else if (r.manual) {
+      marcas.push({ txt: 'Envío cargado a mano' + (String(r.cadete || '').trim() ? '' : ' · sin conductor'), tipo: 'manual' });
+      efecto = cobrado; calculable = true;
+    } else if (r.contabiliza_manual) {
+      marcas.push({ txt: 'Visita pagada' + (r.motivo_contab ? ' · ' + r.motivo_contab : ''), tipo: 'visita' });
+      efecto = cobrado; calculable = true;
+    } else if (String(r.dim_especial || '').trim()) {
+      // La condición reemplaza la tarifa de la zona: lo que movió es la
+      // diferencia. Si no tiene precio de venta cargado no movió nada —se está
+      // facturando la zona— y eso es justamente lo que hay que ver.
+      const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
+      const base = _num(clienteTarifaEnZona(cKey, zona));
+      const aplica = !!dimVentaNombre(cKey, r);
+      marcas.push({ txt: 'Condición especial: ' + r.dim_especial + (aplica ? '' : ' · SIN precio de venta, se factura la tarifa de la zona'),
+                    tipo: aplica ? 'dim' : 'dim-sin' });
+      if (aplica) { efecto = cobrado - base; calculable = true; }
+    }
+    // Las que acompañan pero no definen el efecto.
+    if (!salio && r.zona_manual) marcas.push({ txt: 'Zona corregida a mano → ' + (r.zona || '—'), tipo: 'zona' });
+    if (!salio && r.manual && !marcas.some(m => m.tipo === 'manual')) marcas.push({ txt: 'Envío cargado a mano', tipo: 'manual' });
+    if (!salio && r.contabiliza_manual && !marcas.some(m => m.tipo === 'visita')) {
+      marcas.push({ txt: 'Visita pagada' + (r.motivo_contab ? ' · ' + r.motivo_contab : ''), tipo: 'visita' });
+    }
+    if (!salio && String(r.dim_especial || '').trim() && !marcas.some(m => m.tipo.startsWith('dim'))) {
+      marcas.push({ txt: 'Condición especial: ' + r.dim_especial, tipo: 'dim' });
+    }
+    if (!marcas.length) return;
+    out.push({ i, r, marcas, efecto, calculable, cobrado, salio,
+               fecha: r.fecha || '', tracking: r.tracking || '' });
+  });
+
+  return out.sort((a, b) => Math.abs(b.efecto) - Math.abs(a.efecto));
+}
+
+// El precio pisado a mano es una corrección del lado del CONDUCTOR: cambia lo
+// que se le paga, no lo que se factura. Se lista aparte para que el operador vea
+// todo lo que se tocó sin que ensucie la columna de plata.
+function _correccionesSoloPago(cod, rango) {
+  const cKey = clienteKey(cod);
+  const semana = viernesDeRango(rango);
+  const desde = rango && rango.desdeD, hasta = rango && rango.hastaD;
+  return (AppData.records || []).filter(r => {
+    if (clienteCodDeRegistro(r) !== cKey) return false;
+    if (precioManualDe(r) === null || precioManualDe(r) === undefined) return false;
+    const arr = String(r.factura_semana || '').slice(0, 10);
+    if (arr) return !!semana && arr === semana;
+    const f = parseFechaReg(r.fecha);
+    return !!f && (!desde || f >= desde) && (!hasta || f <= hasta);
+  });
+}
+
+function _dcliFechaCorta(iso) {
+  const s = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s || '—';
+  return s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
+}
+
+// fmtPeso(-8000) devuelve "$-8.000", que se lee mal en una columna de plata.
+const _corrPeso = n => (n < 0 ? '-' : (n > 0 ? '+' : '')) + fmtPeso(Math.abs(n));
+
+const _CORR_COLOR = {
+  anulado: '#15803d', arrastre: '#0e7490', manual: '#7c3aed',
+  visita: '#b45309', dim: '#7c3aed', 'dim-sin': '#b45309', zona: '#0369a1'
+};
+
+function verCorreccionesCliente() {
+  const cod = document.getElementById('dcli-select')?.value || '';
+  if (!cod) { alert('Elegí un cliente primero.'); return; }
+  const rango = dcliRango();
+  const lista = correccionesDeLiquidacion(cod, rango);
+  const soloPago = _correccionesSoloPago(cod, rango);
+
+  const neto = lista.filter(c => c.calculable).reduce((s, c) => s + c.efecto, 0);
+  const suman = lista.filter(c => c.calculable && c.efecto > 0).reduce((s, c) => s + c.efecto, 0);
+  const restan = lista.filter(c => c.calculable && c.efecto < 0).reduce((s, c) => s + c.efecto, 0);
+
+  const filas = lista.map(c =>
+    '<tr' + (c.salio ? ' style="opacity:.72"' : '') + '>' +
+      '<td class="mono" style="font-size:11px">' + (c.tracking || '(sin tracking)') +
+        (c.r.destinatario ? '<div class="muted" style="font-size:10px;font-family:inherit">' + c.r.destinatario + '</div>' : '') + '</td>' +
+      '<td class="mono muted" style="font-size:11px;white-space:nowrap">' + (c.fecha || '—') + '</td>' +
+      '<td style="font-size:11px">' + c.marcas.map(m =>
+        '<div style="color:' + (_CORR_COLOR[m.tipo] || 'inherit') + '">' + m.txt + '</div>').join('') + '</td>' +
+      '<td class="mono" style="text-align:right;font-size:11.5px;white-space:nowrap">' +
+        (c.calculable
+          ? '<span style="font-weight:700;color:' + (c.efecto < 0 ? '#b91c1c' : '#15803d') + '">' +
+            _corrPeso(c.efecto) + '</span>'
+          : '<span class="muted" style="font-size:10.5px">factura ' + fmtPeso(c.cobrado) + '</span>') + '</td>' +
+      '<td style="text-align:right">' + (c.salio ? '' :
+        '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="_irACorreccion(' + JSON.stringify(c.tracking || '') + ')">Ver</button>') + '</td>' +
+    '</tr>').join('');
+
+  document.getElementById('modal-title').textContent = 'Correcciones sobre esta liquidación';
+  document.getElementById('modal-body').innerHTML =
+    '<div class="alert alert-info" style="margin-bottom:12px"><i class="ic ic-edit"></i><div>' +
+    'Todo lo que se <strong>tocó a mano</strong> sobre los envíos de <strong>' + clienteNombreDe(cod) + '</strong> en el período <strong>' +
+    rango.desde + ' → ' + rango.hasta + '</strong>, lo haya hecho el administrativo de <strong>conductores</strong> desde su panel o el de <strong>clientes</strong> desde acá. ' +
+    'La app no guarda <em>quién</em> hizo cada cambio: muestra <strong>qué</strong> se cambió y <strong>cuánto movió</strong> lo que se factura.' +
+    '</div></div>' +
+    (lista.length
+      ? '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;font-size:13px">' +
+          '<div>Correcciones: <strong>' + lista.length + '</strong></div>' +
+          '<div style="color:#15803d">Suman: <strong>' + _corrPeso(suman) + '</strong></div>' +
+          '<div style="color:#b91c1c">Restan: <strong>' + _corrPeso(restan) + '</strong></div>' +
+          '<div>Efecto neto: <strong style="color:' + (neto < 0 ? '#b91c1c' : '#15803d') + '">' +
+            _corrPeso(neto) + '</strong></div>' +
+        '</div>' +
+        '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr>' +
+          '<th>Envío</th><th>Fecha</th><th>Qué se corrigió</th>' +
+          '<th style="text-align:right">Movió</th><th></th>' +
+        '</tr></thead><tbody>' + filas + '</tbody></table></div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">' +
+        'La <strong>zona corregida a mano</strong> no muestra cuánto movió: no se guarda la zona anterior, así que no hay contra qué compararla.</div>'
+      : '<div class="empty-state"><div class="empty-sub">Ningún envío de este período se tocó a mano.</div></div>') +
+    (soloPago.length
+      ? '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">' +
+        '<div style="font-size:12px;font-weight:600;margin-bottom:4px">No mueven lo que se factura (' + soloPago.length + ')</div>' +
+        '<div style="font-size:11px;color:var(--text-muted)">' +
+        '<strong>Precio pisado a mano</strong> en ' + soloPago.length + ' envío(s): cambia lo que se le <strong>paga al conductor</strong>, no lo que se le cobra al cliente. ' +
+        'Se listan para que se vea todo lo que se tocó: ' +
+        soloPago.slice(0, 8).map(r => '<span class="mono">' + (r.tracking || '(sin tracking)') + '</span>').join(' · ') +
+        (soloPago.length > 8 ? ' …y ' + (soloPago.length - 8) + ' más' : '') + '</div></div>'
+      : '');
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// Lleva el buscador al envío y cierra el modal: la corrección se revisa en la
+// fila, que es donde están los controles para deshacerla.
+function _irACorreccion(tracking) {
+  closeModal();
+  const el = document.getElementById('dcli-buscar');
+  if (el) { el.value = tracking || ''; renderDetalleCliente(); }
 }
 
 function _dcliFiltroActivo() {

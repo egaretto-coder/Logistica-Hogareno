@@ -44,7 +44,9 @@
             <span id="dcli-count" style="font-size:11px;color:var(--text-muted)"></span>
             <!-- Herramientas de armado: traer envíos colgados de semanas anteriores
                  y agregar cargos que no vienen de un envío (colecta, viajes). -->
-            <button class="btn btn-sm" style="margin-left:auto" onclick="abrirTraerEnvios()" title="Traer envíos de semanas anteriores para cobrarlos en esta liquidación"><i class="ic ic-undo"></i> Traer envíos</button>
+            <button class="btn btn-sm" style="margin-left:auto" id="dcli-btn-correcciones" onclick="verCorreccionesCliente()" title="Todo lo que se tocó a mano sobre los envíos de este período y cuánto movió lo que se factura"><i class="ic ic-edit"></i> Correcciones<span id="dcli-corr-count"></span></button>
+            <button class="btn btn-sm" onclick="openAddEnvioModal('cliente')" title="Cargar un envío que no vino en el listado. El conductor es opcional."><i class="ic ic-plus"></i> Agregar envío</button>
+            <button class="btn btn-sm" onclick="abrirTraerEnvios()" title="Traer envíos de semanas anteriores para cobrarlos en esta liquidación"><i class="ic ic-undo"></i> Traer envíos</button>
             <button class="btn btn-sm" onclick="abrirCargoCliente()" title="Colecta, viaje particular u otro cargo que se le factura al cliente"><i class="ic ic-plus"></i> Agregar cargo</button>
           </div>
         </div>

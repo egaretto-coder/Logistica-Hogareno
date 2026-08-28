@@ -540,24 +540,26 @@
   </div>
 </div>
 
-<!-- MODAL AGREGAR ENVÍOS (masivo) — desde el editor de Conductores -->
+<!-- MODAL AGREGAR ENVÍOS (masivo). Lo abren los DOS paneles: desde
+     Conductores el conductor está fijo y se elige el cliente por fila; desde
+     Detalle de cliente es al revés. Es el mismo alta —un envío que no vino en
+     el listado— y partirlo en dos modales habría duplicado la validación, el
+     alta en la nube y la reapertura de la liquidación. -->
 <div class="modal-backdrop" id="modal-addenvio-backdrop" onclick="closeAddEnvioModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
   <div class="modal" style="max-width:720px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <span class="modal-title"><i class="ic ic-plus"></i> Agregar envíos · <span id="addenvio-conductor"></span></span>
+      <span class="modal-title"><i class="ic ic-plus"></i> Agregar envíos · <span id="addenvio-contexto"></span></span>
       <button class="modal-close" onclick="closeAddEnvioModal()">✕</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
-      <div class="alert alert-info" style="margin:0;font-size:12px">
-        <i class="ic ic-calendar"></i> Cargá los envíos que hizo el conductor y no figuran. Se agregan como <strong>Entregado</strong> (contabilizan) y la <strong>fecha</strong> los mete en la liquidación de esa semana. Elegí la <strong>zona</strong> de la lista (sale de <strong>Tarifas</strong> + el <strong>Super SLA</strong> del conductor, así no hay errores de tipeo). Dejá el <strong>precio</strong> vacío para usar la tarifa de esa zona. Elegí también el <strong>cliente</strong>: sin él, el envío se le paga al conductor pero <strong>no se le factura a nadie</strong>.
-      </div>
+      <div class="alert alert-info" style="margin:0;font-size:12px" id="addenvio-ayuda"></div>
 
-      <div style="display:grid;grid-template-columns:120px 1fr 1fr 1fr 100px 34px;gap:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);padding:0 2px">
+      <div id="addenvio-head" style="display:grid;grid-template-columns:120px 1fr 1fr 1fr 100px 34px;gap:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);padding:0 2px">
         <span><i class="ic ic-calendar"></i> Fecha</span>
         <span><i class="ic ic-box"></i> Tracking (opcional)</span>
         <span><i class="ic ic-pin"></i> Zona</span>
-        <span><i class="ic ic-building"></i> Cliente</span>
-        <span style="text-align:right"><i class="ic ic-dollar"></i> Precio</span>
+        <span id="addenvio-col4"><i class="ic ic-building"></i> Cliente</span>
+        <span id="addenvio-col5" style="text-align:right"><i class="ic ic-dollar"></i> Precio</span>
         <span></span>
       </div>
       <div id="addenvio-rows" style="display:flex;flex-direction:column;gap:8px"></div>

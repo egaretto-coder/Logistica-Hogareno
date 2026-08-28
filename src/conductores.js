@@ -1104,6 +1104,7 @@ function zonaSelectHTML(catalogo, idx, current, cond, previewFn) {
 // aparecen en los envíos. Sin cliente el envío se le paga al conductor pero no
 // se le factura a nadie, así que se elige de una lista y no se tipea.
 let _aeClienteOpts = '';
+let _aeCadeteOpts = '';
 function clienteOptionsHTML() {
   const vistos = new Map();
   (AppData.clientes || []).forEach(c => {
@@ -1119,26 +1120,91 @@ function clienteOptionsHTML() {
       .map(([cod, nombre]) => '<option value="' + String(cod).replace(/"/g, '&quot;') + '">' + nombre + '</option>').join('');
 }
 
+// Conductores del Panel para elegir en el alta desde Detalle de cliente. Solo
+// los del Panel: son los únicos que liquidan, y dejar escribir un nombre suelto
+// crearía una grafía nueva que no matchea a nadie. La opción vacía es explícita
+// —"sin conductor asignado"— porque es una decisión, no un olvido: el envío se
+// le factura al cliente igual y no se le paga a nadie.
+function conductorOptionsHTML() {
+  const nombres = Array.from(new Set((AppData.panelConductores || [])
+    .map(c => String(c.nombre || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  return '<option value="">— sin conductor asignado —</option>' +
+    nombres.map(n => '<option value="' + n.replace(/"/g, '&quot;') + '">' + n + '</option>').join('');
+}
+
+// De qué panel se abrió el alta: 'conductor' (el conductor está fijo, se elige
+// el cliente por fila) o 'cliente' (al revés).
+let _aeOrigen = 'conductor';
+let _aeCliente = '';
+
+// Grilla de la fila. Desde el panel del cliente no va la columna de precio.
+function _aeGrilla() {
+  return _aeOrigen === 'cliente' ? '120px 1fr 1fr 1fr 34px' : '120px 1fr 1fr 1fr 100px 34px';
+}
+
 function envioRowHTML(fechaISO) {
-  return '<div class="addenvio-row" style="display:grid;grid-template-columns:120px 1fr 1fr 1fr 100px 34px;gap:8px;align-items:center">' +
+  return '<div class="addenvio-row" style="display:grid;grid-template-columns:' + _aeGrilla() + ';gap:8px;align-items:center">' +
     '<input type="date" class="ae-fecha" value="' + (fechaISO || '') + '" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px">' +
     '<input type="text" class="ae-tracking" placeholder="Nº tracking" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:monospace">' +
     '<select class="ae-zona" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeZonaOpts + '</select>' +
-    '<select class="ae-cliente" title="A quién se le factura este envío" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeClienteOpts + '</select>' +
-    '<input type="number" class="ae-precio" placeholder="auto" min="0" step="1" title="Vacío = precio automático de la zona elegida" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-align:right;font-family:monospace">' +
+    (_aeOrigen === 'cliente'
+      ? '<select class="ae-cadete" title="Quién lo llevó. Sin conductor, el envío se le factura al cliente y no se le paga a nadie." style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeCadeteOpts + '</select>'
+      : '<select class="ae-cliente" title="A quién se le factura este envío" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-1);max-width:100%">' + _aeClienteOpts + '</select>') +
+    (_aeOrigen === 'cliente' ? ''
+      : '<input type="number" class="ae-precio" placeholder="auto" min="0" step="1" title="Vacío = precio automático de la zona elegida" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;text-align:right;font-family:monospace">') +
     '<button class="btn btn-sm" onclick="removeEnvioRow(this)" title="Quitar fila" style="padding:5px 8px"><i class="ic ic-x"></i></button>' +
   '</div>';
 }
 
-function openAddEnvioModal() {
-  const conductor = document.getElementById('cond-select').value;
-  if (!conductor) { alert('Primero seleccioná un conductor arriba.'); return; }
-  document.getElementById('addenvio-conductor').textContent = conductor;
-  // Opciones de zona sincronizadas con Tarifas + Super SLA de ESTE conductor.
-  _aeZonaOpts = zonaOptionsHTML(conductor);
-  _aeClienteOpts = clienteOptionsHTML();
-  // Fecha por defecto: el "Desde" del período que se está liquidando (o hoy).
-  const desde = document.getElementById('cond-fecha-desde')?.value || hoyISO();
+// Fecha por defecto de una fila nueva: el arranque del período que se está
+// mirando en el panel desde el que se abrió el alta.
+function _aeFechaDefecto() {
+  if (_aeOrigen === 'cliente') {
+    const r = (typeof dcliRango === 'function') ? dcliRango() : null;
+    return (r && typeof isoDeRango === 'function' && isoDeRango(r, 'desde')) || hoyISO();
+  }
+  return document.getElementById('cond-fecha-desde')?.value || hoyISO();
+}
+
+function openAddEnvioModal(origen) {
+  _aeOrigen = origen === 'cliente' ? 'cliente' : 'conductor';
+  let conductor = '';
+  if (_aeOrigen === 'cliente') {
+    _aeCliente = document.getElementById('dcli-select')?.value || '';
+    if (!_aeCliente) { alert('Primero elegí un cliente arriba.'); return; }
+    document.getElementById('addenvio-contexto').textContent = clienteNombreDe(_aeCliente);
+    // Las zonas se etiquetan con el precio DE VENTA de este cliente, no con el
+    // del conductor: acá el operador factura, y ver el costo del cadete —con su
+    // categoría al lado— hace pensar que el tarifario del cliente está mal
+    // cargado. Mismo criterio que el selector de zona de las filas.
+    _aeZonaOpts = '<option value="">— Elegir zona —</option>' +
+      ((typeof zonaCatalogoCliente === 'function' ? zonaCatalogoCliente(_aeCliente) : zonaCatalogoDe('')))
+        .map(o => '<option value="' + o.val.replace(/"/g, '&quot;') + '">' + o.label + '</option>').join('');
+    _aeCadeteOpts = conductorOptionsHTML();
+    document.getElementById('addenvio-col4').innerHTML = '<i class="ic ic-truck"></i> Conductor';
+    document.getElementById('addenvio-col5').style.display = 'none';
+    document.getElementById('addenvio-head').style.gridTemplateColumns = _aeGrilla();
+    document.getElementById('addenvio-ayuda').innerHTML =
+      '<i class="ic ic-calendar"></i> Cargá los envíos que se le hicieron a <strong>' + clienteNombreDe(_aeCliente) +
+      '</strong> y no figuran en el listado. Se agregan como <strong>Entregado</strong> (facturan) y la <strong>fecha</strong> los mete en la liquidación de ese período. ' +
+      'El <strong>conductor</strong> es opcional: si lo asignás, el envío también entra en <strong>su</strong> liquidación; si lo dejás en ' +
+      '<em>sin conductor asignado</em>, se le factura al cliente y <strong>no se le paga a nadie</strong> — que es lo correcto cuando lo hizo alguien de afuera.';
+  } else {
+    conductor = document.getElementById('cond-select').value;
+    if (!conductor) { alert('Primero seleccioná un conductor arriba.'); return; }
+    document.getElementById('addenvio-contexto').textContent = conductor;
+    // Opciones de zona sincronizadas con Tarifas + Super SLA de ESTE conductor.
+    _aeZonaOpts = zonaOptionsHTML(conductor);
+    _aeClienteOpts = clienteOptionsHTML();
+    document.getElementById('addenvio-col4').innerHTML = '<i class="ic ic-building"></i> Cliente';
+    document.getElementById('addenvio-col5').style.display = '';
+    document.getElementById('addenvio-head').style.gridTemplateColumns = _aeGrilla();
+    document.getElementById('addenvio-ayuda').innerHTML =
+      '<i class="ic ic-calendar"></i> Cargá los envíos que hizo el conductor y no figuran. Se agregan como <strong>Entregado</strong> (contabilizan) y la <strong>fecha</strong> los mete en la liquidación de esa semana. ' +
+      'Elegí la <strong>zona</strong> de la lista (sale de <strong>Tarifas</strong> + el <strong>Super SLA</strong> del conductor, así no hay errores de tipeo). ' +
+      'Dejá el <strong>precio</strong> vacío para usar la tarifa de esa zona. Elegí también el <strong>cliente</strong>: sin él, el envío se le paga al conductor pero <strong>no se le factura a nadie</strong>.';
+  }
+  const desde = _aeFechaDefecto();
   const cont = document.getElementById('addenvio-rows');
   cont.innerHTML = envioRowHTML(desde) + envioRowHTML(desde) + envioRowHTML(desde);
   const est = document.getElementById('addenvio-estado'); if (est) est.textContent = '';
@@ -1146,8 +1212,7 @@ function openAddEnvioModal() {
 }
 
 function addEnvioRow() {
-  const desde = document.getElementById('cond-fecha-desde')?.value || hoyISO();
-  document.getElementById('addenvio-rows').insertAdjacentHTML('beforeend', envioRowHTML(desde));
+  document.getElementById('addenvio-rows').insertAdjacentHTML('beforeend', envioRowHTML(_aeFechaDefecto()));
 }
 
 function removeEnvioRow(btn) {
@@ -1166,8 +1231,10 @@ function closeAddEnvioModal(e) {
 }
 
 async function guardarEnviosModal() {
-  const conductor = document.getElementById('cond-select').value;
-  if (!conductor) { alert('Seleccioná un conductor.'); return; }
+  const desdeCliente = _aeOrigen === 'cliente';
+  const conductor = desdeCliente ? '' : document.getElementById('cond-select').value;
+  if (!desdeCliente && !conductor) { alert('Seleccioná un conductor.'); return; }
+  if (desdeCliente && !_aeCliente) { alert('Elegí un cliente.'); return; }
   if (!window.DB || !DB.ready) { alert('Sin conexión con la nube: no se pueden agregar envíos ahora (se perderían al recargar). Reintentá con conexión.'); return; }
 
   const filas = Array.from(document.querySelectorAll('#addenvio-rows .addenvio-row'));
@@ -1177,15 +1244,19 @@ async function guardarEnviosModal() {
     const iso = row.querySelector('.ae-fecha').value;
     const tracking = row.querySelector('.ae-tracking').value.trim();
     const zona = row.querySelector('.ae-zona').value.trim().toUpperCase();
-    const precioV = row.querySelector('.ae-precio').value.trim();
-    const clienteCod = (row.querySelector('.ae-cliente')?.value || '').trim().toUpperCase();
+    const precioV = (row.querySelector('.ae-precio')?.value || '').trim();
+    const clienteCod = desdeCliente
+      ? clienteKey(_aeCliente)
+      : (row.querySelector('.ae-cliente')?.value || '').trim().toUpperCase();
+    const cadete = desdeCliente ? (row.querySelector('.ae-cadete')?.value || '').trim() : conductor;
     row.querySelector('.ae-fecha').style.borderColor = 'var(--border)';
-    // Fila sin datos reales (solo la fecha por defecto) → se ignora.
-    const tieneContenido = tracking || zona || precioV !== '' || clienteCod;
+    // Fila sin datos reales (solo la fecha por defecto) → se ignora. Desde el
+    // panel del cliente el cliente viene fijo, así que no cuenta como contenido.
+    const tieneContenido = tracking || zona || precioV !== '' || (desdeCliente ? cadete : clienteCod);
     if (!tieneContenido) return;
     if (!iso) { faltaFecha++; row.querySelector('.ae-fecha').style.borderColor = '#e11d48'; return; }
     recs.push({
-      cadete: conductor, tracking, fecha: isoToDMY(iso),
+      cadete: cadete, tracking, fecha: isoToDMY(iso),
       localidad: zona, zona: zona, zona_precio: '',
       direccion: '', destinatario: '',
       // A quién se le factura. cliente_cod es la IDENTIDAD (el nombre
@@ -1217,6 +1288,19 @@ async function guardarEnviosModal() {
       'Aceptar = guardarlos igual · Cancelar = volver y elegir el cliente')) return;
   }
 
+  // La contracara del aviso de arriba: un envío sin conductor se le factura al
+  // cliente y no se le paga a NADIE. A veces es exactamente lo que se quiere
+  // (lo hizo alguien de afuera), por eso se avisa y se puede seguir.
+  const sinCadete = recs.filter(r => !String(r.cadete || '').trim());
+  if (sinCadete.length) {
+    const lista = sinCadete.slice(0, 5).map(r => '· ' + (r.tracking || '(sin tracking)') + ' — ' + (r.zona || 'sin zona')).join(String.fromCharCode(10));
+    if (!confirm(sinCadete.length + ' de los ' + recs.length + ' envíos NO tienen conductor asignado:' + String.fromCharCode(10) +
+      lista + (sinCadete.length > 5 ? String.fromCharCode(10) + '…y ' + (sinCadete.length - 5) + ' más' : '') +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Se le facturan al cliente pero no se le pagan a nadie.' + String.fromCharCode(10) +
+      'Aceptar = guardarlos igual · Cancelar = volver y elegir el conductor')) return;
+  }
+
   const btn = document.getElementById('addenvio-guardar');
   const est = document.getElementById('addenvio-estado');
   btn.disabled = true;
@@ -1237,7 +1321,12 @@ async function guardarEnviosModal() {
       }
     }
     document.getElementById('modal-addenvio-backdrop').style.display = 'none';
-    renderConductorDetail();
+    _repintarPanelDeEnvios();
+    if (desdeCliente) {
+      showToast('✅ ' + recs.length + ' envío(s) agregados a la liquidación de ' + clienteNombreDe(_aeCliente) +
+        (sinCadete.length ? ' — ⚠️ ' + sinCadete.length + ' sin conductor: no se le paga(n) a nadie' : ' · se le pagan al conductor'));
+      return;
+    }
     // Cuánto de lo que se acaba de cargar se le factura a alguien.
     let seCobran = 0, noSeCobran = 0;
     if (typeof diagnosticoCobroEnvio === 'function') {
