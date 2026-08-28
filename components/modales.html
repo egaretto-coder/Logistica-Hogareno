@@ -1066,10 +1066,13 @@
         </div>
       </div>
       <div id="mresp-calc" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <div id="mresp-estado"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
         <button class="btn" id="mresp-quitar" onclick="quitarRecorridoEspecial()" style="margin-right:auto;border-color:#fca5a5;color:#b91c1c;display:none"><i class="ic ic-trash"></i> Quitar</button>
+        <button class="btn" id="mresp-rechazar" onclick="resolverRecorridoEspecial(false)" style="border-color:#fca5a5;color:#b91c1c;display:none"><i class="ic ic-x"></i> Rechazar</button>
+        <button class="btn" id="mresp-aprobar" onclick="resolverRecorridoEspecial(true)" style="border-color:#86efac;color:#15803d;display:none"><i class="ic ic-check"></i> Aprobar</button>
         <button class="btn" onclick="cerrarRecorridoEspecial()">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarRecorridoEspecial()"><i class="ic ic-save"></i> Guardar</button>
+        <button class="btn btn-primary" id="mresp-guardar" onclick="guardarRecorridoEspecial()"><i class="ic ic-save"></i> Guardar</button>
       </div>
     </div>
   </div>

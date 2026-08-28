@@ -199,7 +199,8 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.recorridosEspeciales = (data.recorrido_especial || []).map(d => ({
     id: d.id, conductor: d.conductor || '', fecha: d.fecha || '',
     valor_ruta: _num(d.valor_ruta), base: _num(d.base), monto: _num(d.monto),
-    detalle: d.detalle || '', imputar: d.imputar !== false, creado_por: d.creado_por || ''
+    detalle: d.detalle || '', imputar: d.imputar !== false, creado_por: d.creado_por || '',
+    estado: d.estado || 'autorizado', autorizado_por: d.autorizado_por || '', autorizado_en: d.autorizado_en || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
     id: d.id, conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',

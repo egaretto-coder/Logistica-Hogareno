@@ -170,6 +170,11 @@ create table if not exists public.recorrido_especial (
   monto numeric not null default 0,         -- el diferencial que se paga
   detalle text default '',
   imputar boolean not null default true,
+  -- Maker-checker: lo carga el administrativo y queda pendiente hasta que un
+  -- supervisor lo aprueba. Mientras tanto NO entra en la liquidación.
+  estado text not null default 'autorizado',   -- pendiente | autorizado | rechazado
+  autorizado_por text default '',
+  autorizado_en timestamptz,
   creado_por text default '',
   created_at timestamptz not null default now()
 );

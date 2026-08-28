@@ -168,6 +168,7 @@ function renderConductorDetail() {
     return;
   }
 
+  _avisoRecorridosPendientes();
   const idxs = indicesConductorFiltrados(cond);
   const color = avatarColor(cond);
 
@@ -378,16 +379,50 @@ function visitaPagaHTML(i, r) {
 // a un monto fijo por recorrido. Lo que se guarda es el DIFERENCIAL contra lo que
 // ese día ya paga por tarifa de zona: así el conductor termina cobrando la ruta
 // completa y en la liquidación se ve de dónde salió.
+// Los pendientes de aprobación, arriba del panel: sin esto el supervisor
+// tendría que abrir conductor por conductor para encontrarlos.
+function _avisoRecorridosPendientes() {
+  const box = document.getElementById('cond-aviso-resp');
+  if (!box) return;
+  const pend = recorridosEspecialesPendientes();
+  if (!pend.length) { box.innerHTML = ''; return; }
+  const total = pend.reduce((s, d) => s + _num(d.monto), 0);
+  const puede = (typeof puedeAutorizar === 'function') && puedeAutorizar();
+  box.innerHTML = '<div class="alert" style="margin:0 0 12px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
+    '<i class="ic ic-alert"></i><div><strong>' + pend.length + ' recorrido(s) especial(es) pendientes de aprobación</strong> por ' +
+    fmtPeso(total) + '. No se están pagando hasta que ' + (puede ? 'los apruebes' : 'los apruebe un supervisor') + '.' +
+    '<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">' +
+    pend.slice(0, 10).map(d => '<button class="btn btn-sm" style="padding:2px 7px;font-size:10.5px" ' +
+      'onclick="_irARecorridoPendiente(' + JSON.stringify(d.conductor).replace(/"/g, '&quot;') + ',' +
+      JSON.stringify(d.fecha).replace(/"/g, '&quot;') + ')">' + d.conductor + ' · ' + d.fecha + ' · ' + fmtPeso(_num(d.monto)) + '</button>').join('') +
+    (pend.length > 10 ? '<span class="muted" style="font-size:11px">…y ' + (pend.length - 10) + ' más</span>' : '') +
+    '</div></div></div>';
+}
+
+function _irARecorridoPendiente(cond, dia) {
+  const sel = document.getElementById('cond-select');
+  if (sel) sel.value = cond;
+  renderConductorDetail();
+  abrirRecorridoEspecial(dia);
+}
+
 function _btnRecorridoEspecial(cond, dia, diaAttr) {
   if (!dia || dia === 'Sin fecha') return '';
   const re = recorridoEspecialDe(cond, dia);
   const attr = 'data-dia="' + diaAttr + '" onclick="event.stopPropagation();abrirRecorridoEspecial(this.dataset.dia)"';
-  return re
-    ? '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px;border-color:#86efac;color:#15803d;white-space:nowrap" ' +
-      'title="Recorrido especial · ruta pactada en ' + fmtPeso(_num(re.valor_ruta)) + '" ' + attr + '>' +
-      '⚡ especial +' + fmtPeso(_num(re.monto)) + '</button>'
-    : '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px;white-space:nowrap" ' +
-      'title="Ruta de envíos problemáticos pactada a monto fijo: se paga la diferencia" ' + attr + '>+ Recorrido especial</button>';
+  if (!re) return '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px;white-space:nowrap" ' +
+    'title="Ruta de envíos problemáticos pactada a monto fijo: se paga la diferencia" ' + attr + '>+ Recorrido especial</button>';
+  const est = String(re.estado || 'autorizado');
+  const estilo = est === 'pendiente' ? 'border-color:#fcd34d;color:#92400e;background:#fffbeb'
+    : est === 'rechazado' ? 'border-color:#fca5a5;color:#b91c1c;text-decoration:line-through'
+    : 'border-color:#86efac;color:#15803d';
+  const txt = est === 'pendiente' ? '⏳ especial ' + fmtPeso(_num(re.monto)) + ' · a aprobar'
+    : est === 'rechazado' ? '⚡ especial rechazado'
+    : '⚡ especial +' + fmtPeso(_num(re.monto));
+  const tit = est === 'pendiente' ? 'Cargado por ' + (re.creado_por || 'el operador') + ' · NO se está pagando hasta que lo apruebe un supervisor'
+    : est === 'rechazado' ? 'Rechazado por ' + (re.autorizado_por || 'un supervisor') + ' · no se paga'
+    : 'Recorrido especial · ruta pactada en ' + fmtPeso(_num(re.valor_ruta));
+  return '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px;white-space:nowrap;' + estilo + '" title="' + tit + '" ' + attr + '>' + txt + '</button>';
 }
 
 // Lo que ese día ya paga por tarifa: la base del diferencial. Sale de los mismos
@@ -422,8 +457,80 @@ function abrirRecorridoEspecial(dia) {
   document.getElementById('mresp-valor').value = re ? _num(re.valor_ruta) : '';
   document.getElementById('mresp-detalle').value = re ? (re.detalle || '') : '';
   document.getElementById('mresp-quitar').style.display = re ? '' : 'none';
+  _mrespEstado(re);
   recalcRecorridoEspecial();
   document.getElementById('modal-resp-backdrop').style.display = 'flex';
+}
+
+// Estado de autorización dentro del modal. Los botones de aprobar/rechazar solo
+// los ve quien puede autorizar; el que lo cargó ve en qué quedó su solicitud.
+function _mrespEstado(re) {
+  const box = document.getElementById('mresp-estado');
+  const bA = document.getElementById('mresp-aprobar'), bR = document.getElementById('mresp-rechazar');
+  const bG = document.getElementById('mresp-guardar');
+  const puede = (typeof puedeAutorizar === 'function') && puedeAutorizar();
+  if (bA) bA.style.display = 'none';
+  if (bR) bR.style.display = 'none';
+  if (bG) bG.style.display = '';
+  if (!box) return;
+  if (!re) {
+    box.innerHTML = puede ? ''
+      : '<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px">' +
+        'Al guardarlo queda <strong>pendiente de aprobación</strong>: no se le paga al conductor hasta que un supervisor lo apruebe.</div>';
+    return;
+  }
+  const est = String(re.estado || 'autorizado');
+  if (est === 'pendiente') {
+    box.innerHTML = '<div style="font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px">' +
+      '⏳ <strong>Pendiente de aprobación</strong>' + (re.creado_por ? ' · cargado por ' + re.creado_por : '') +
+      '. Todavía <strong>no se está pagando</strong>.' +
+      (puede ? '' : ' Lo tiene que aprobar un supervisor.') + '</div>';
+    if (puede) { if (bA) bA.style.display = ''; if (bR) bR.style.display = ''; if (bG) bG.style.display = 'none'; }
+  } else if (est === 'rechazado') {
+    box.innerHTML = '<div style="font-size:11.5px;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:9px 12px">' +
+      '⛔ <strong>Rechazado</strong>' + (re.autorizado_por ? ' por ' + re.autorizado_por : '') + ' · no se paga.' +
+      (puede ? ' Podés aprobarlo si corresponde.' : '') + '</div>';
+    if (puede && bA) bA.style.display = '';
+    if (bG) bG.style.display = puede ? 'none' : '';
+  } else {
+    box.innerHTML = '<div style="font-size:11.5px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:9px 12px">' +
+      '✓ <strong>Aprobado</strong>' + (re.autorizado_por ? ' por ' + re.autorizado_por : '') + ' · se está pagando.</div>';
+    if (puede && bR) bR.style.display = '';
+  }
+}
+
+async function resolverRecorridoEspecial(aprueba) {
+  const cond = document.getElementById('cond-select')?.value || '';
+  const re = recorridoEspecialDe(cond, respDia);
+  if (!re) return;
+  if (!puedeAutorizar()) { showToast('Solo un supervisor o analista puede aprobar'); return; }
+  if (!aprueba && !confirm('¿Rechazar el recorrido especial del ' + respDia + '?' + String.fromCharCode(10) +
+    'Deja de sumarse ' + fmtPeso(_num(re.monto)) + ' a la liquidación.')) return;
+  const campos = {
+    estado: aprueba ? 'autorizado' : 'rechazado',
+    autorizado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || '',
+    autorizado_en: new Date().toISOString()
+  };
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.updateWhere('recorrido_especial', 'id', re.id, campos);
+    Object.assign(re, campos);
+    _persistirRecEspLocal();
+    document.getElementById('modal-resp-backdrop').style.display = 'none';
+    respDia = null;
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    renderConductorDetail();
+    showToast(aprueba ? '✓ Recorrido especial aprobado · se le suman ' + fmtPeso(_num(re.monto))
+                      : '⛔ Recorrido especial rechazado · no se paga');
+  } catch (e) { console.warn('resolverRecorridoEspecial', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// Recorridos especiales pendientes de aprobación, de todos los conductores. El
+// supervisor no puede ir conductor por conductor a buscarlos.
+function recorridosEspecialesPendientes() {
+  return (AppData.recorridosEspeciales || [])
+    .filter(d => String(d.estado || 'autorizado') === 'pendiente')
+    .sort((a, b) => String(a.conductor).localeCompare(String(b.conductor)));
 }
 
 function cerrarRecorridoEspecial(e) {
@@ -460,6 +567,9 @@ async function guardarRecorridoEspecial() {
   const rec = {
     conductor: cond, fecha: dia, valor_ruta: valor, base: respBase, monto: dif,
     detalle, imputar: true,
+    // Lo pacta el administrativo pero lo aprueba el supervisor: hasta entonces
+    // queda pendiente y no entra en la liquidación.
+    estado: (typeof estadoNuevaOperacion === 'function') ? estadoNuevaOperacion() : 'autorizado',
     creado_por: (typeof currentUser !== 'undefined' && currentUser && currentUser.usuario) || ''
   };
   const previo = recorridoEspecialDe(cond, dia);
@@ -477,7 +587,9 @@ async function guardarRecorridoEspecial() {
     respDia = null;
     if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
     renderConductorDetail();
-    showToast('⚡ Recorrido especial de ' + dia + ' · se le suman ' + fmtPeso(dif));
+    showToast(rec.estado === 'pendiente'
+      ? '⏳ Recorrido especial de ' + dia + ' cargado por ' + fmtPeso(dif) + ' — queda PENDIENTE hasta que lo apruebe un supervisor'
+      : '⚡ Recorrido especial de ' + dia + ' · se le suman ' + fmtPeso(dif));
   } catch (e) { console.warn('guardarRecorridoEspecial', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }
 

@@ -626,11 +626,14 @@ function recorridoEspecialConductor(conductor, rango, incluirExcluidos) {
       if (desde && f < desde) return;
       if (hasta && f > hasta) return;
     }
-    const imputa = d.imputar !== false;
+    // Solo suma lo AUTORIZADO: un recorrido pendiente de aprobación no puede
+    // entrar en la liquidación, igual que un adelanto o un extravío.
+    const imputa = d.imputar !== false && esAutorizado(d);
     if (imputa) { monto += _num(d.monto); n++; }
     if (incluirExcluidos || imputa) {
       detalle.push({ id: d.id, fecha: d.fecha || '', valor_ruta: _num(d.valor_ruta),
-                     base: _num(d.base), monto: _num(d.monto), detalle: d.detalle || '', imputar: imputa });
+                     base: _num(d.base), monto: _num(d.monto), detalle: d.detalle || '',
+                     estado: d.estado || 'autorizado', imputar: imputa });
     }
   });
   detalle.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
