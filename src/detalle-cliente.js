@@ -434,8 +434,17 @@ function _dcliEstadoSelect(d) {
   // y una fila que factura, y parece un error.
   const chip = r.contabiliza_manual
     ? '<div style="margin-top:3px"><span class="tag" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-size:9.5px" ' +
-      'title="' + String(r.motivo_contab || 'Visita hecha sin entrega').replace(/"/g, '&quot;') + '">visita pagada · factura igual</span></div>'
-    : '';
+      'title="' + String(r.motivo_contab || 'Visita hecha sin entrega').replace(/"/g, '&quot;') + '">visita pagada · factura igual</span> ' +
+      '<button class="btn btn-sm" style="padding:1px 5px;font-size:9.5px" title="Dejar de pagar la visita: el envío deja de facturarse" ' +
+      'onclick="quitarVisitaPaga(' + i + ')">✕</button></div>'
+    // El envío no factura porque no se entregó. Si el conductor fue igual, la
+    // visita se paga Y se factura: es la misma acción que en Conductores, con su
+    // motivo, y deja el estado como está en vez de falsearlo a "Entregado".
+    : (!d.contab
+      ? '<div style="margin-top:3px"><button class="btn btn-sm" style="padding:1px 6px;font-size:9.5px;white-space:nowrap" ' +
+        'title="El conductor fue al domicilio y no pudo entregar por una causa ajena a él: se le paga el viaje y al cliente se le factura" ' +
+        'onclick="abrirMotivoVisita(' + i + ')"><i class="ic ic-truck"></i> Pagar visita</button></div>'
+      : '');
   return sel + chip;
 }
 
