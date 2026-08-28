@@ -477,7 +477,10 @@ function _dcliChipDimension(d) {
 // dice "1 envío" y no se ve ninguno porque quedó dentro de un día plegado —
 // el mismo problema que ya había con "Sin tarifa". Lo consultan el render y el
 // plegado, así no pueden discrepar.
-// Dónde está el envío que el buscador no encontró en este período.
+// El buscador RESUELVE el envío: igual que en Conductores, donde tipear un
+// tracking te lleva al conductor que lo hizo, acá te lleva al cliente y al
+// período donde está. Sin esto había que saber de antemano de qué cliente era y
+// de qué quincena, y una búsqueda vacía se leía como "no se sincronizó".
 function _dcliAvisoBusquedaVacia(q, encontrados, cod) {
   const box = document.getElementById('dcli-aviso-busqueda');
   if (!box) return;
@@ -495,28 +498,39 @@ function _dcliAvisoBusquedaVacia(q, encontrados, cod) {
     return;
   }
 
-  // ¿Es de este cliente pero de otro período?
-  const propio = hits.filter(r => clienteCodDeRegistro(r) === k);
-  if (propio.length) {
-    const r = propio[0];
-    const rc = periodoClienteRango(k, _isoDeFechaReg(r.fecha));
-    box.innerHTML = _dcliAviso('#eff6ff', '#1e40af', '#bfdbfe',
-      '<strong>' + _esc(r.tracking || q) + '</strong> es de este cliente pero está en otro período: <strong>' +
-      rc.desde + ' → ' + rc.hasta + '</strong> (entregado el ' + (r.fecha || '—') + ').' +
-      ' <button class="btn btn-sm" style="margin-left:6px" onclick="_dcliIrAPeriodo(' +
-      JSON.stringify(_isoDeFechaReg(r.fecha)).replace(/"/g, '&quot;') + ')">Ir a ese período</button>');
+  // Un solo envío y una búsqueda concreta: se salta solo. Con menos de 8
+  // caracteres no, porque a mitad de tipear un tracking la lista se achica a uno
+  // y el panel se movería solo mientras el operador todavía escribe.
+  const _saltar = hits.length === 1 && q.length >= 8;
+  const destino = r => ({ cod: clienteCodDeRegistro(r), iso: _isoDeFechaReg(r.fecha) });
+
+  if (_saltar) {
+    const d = destino(hits[0]);
+    const mismoCliente = d.cod === k;
+    setTimeout(() => {
+      if (mismoCliente) _dcliIrAPeriodo(d.iso); else _dcliIrACliente(d.cod, d.iso);
+      showToast('🔍 ' + (hits[0].tracking || q) + ' · ' +
+        (mismoCliente ? 'está en otro período' : 'es de ' + (clienteNombreDe(d.cod) || d.cod)) +
+        ' — ' + (hits[0].fecha || ''));
+    }, 0);
+    box.innerHTML = _dcliAviso('#eff6ff', '#1e40af', '#bfdbfe', 'Buscando <strong>' + _esc(q) + '</strong>…');
     return;
   }
 
-  // Es de OTRO cliente: el caso que hace pensar que "no impactó".
-  const r = hits[0];
-  const otro = clienteCodDeRegistro(r);
-  box.innerHTML = _dcliAviso('#fff7ed', '#9a3412', '#fdba74',
-    '<strong>' + _esc(r.tracking || q) + '</strong> no es de este cliente: es de <strong>' +
-    _esc(clienteNombreDe(otro) || otro || '(sin cliente)') + '</strong>' +
-    (r.fecha ? ', entregado el ' + r.fecha : '') + '.' +
-    (otro ? ' <button class="btn btn-sm" style="margin-left:6px" onclick="_dcliIrACliente(' +
-      JSON.stringify(otro).replace(/"/g, '&quot;') + ',' + JSON.stringify(_isoDeFechaReg(r.fecha)).replace(/"/g, '&quot;') + ')">Ver ese cliente</button>' : ''));
+  // Varios candidatos: se listan con su cliente y su fecha para elegir.
+  const filas = hits.slice(0, 8).map(r => {
+    const d = destino(r);
+    return '<div style="margin-top:4px">' +
+      '<button class="btn btn-sm" style="padding:1px 7px;font-size:10.5px" onclick="_dcliIrACliente(' +
+      JSON.stringify(d.cod).replace(/"/g, '&quot;') + ',' + JSON.stringify(d.iso).replace(/"/g, '&quot;') + ')">Ver</button> ' +
+      '<span style="font-family:monospace">' + _esc(r.tracking || '(sin tracking)') + '</span> · ' +
+      _esc(clienteNombreDe(d.cod) || d.cod || '(sin cliente)') + ' · ' + _esc(r.fecha || '—') +
+      (_esc(r.destinatario) ? ' · ' + _esc(r.destinatario) : '') + '</div>';
+  }).join('');
+  box.innerHTML = _dcliAviso('#eff6ff', '#1e40af', '#bfdbfe',
+    '<strong>' + hits.length + ' envío(s)</strong> coinciden con <strong>' + _esc(q) +
+    '</strong> pero ninguno cae en el período que estás viendo:' + filas +
+    (hits.length > 8 ? '<div class="muted" style="margin-top:4px;font-size:11px">…y ' + (hits.length - 8) + ' más — afiná la búsqueda</div>' : ''));
 }
 
 function _dcliAviso(bg, color, borde, html) {
