@@ -619,6 +619,10 @@ function liquidacionesDeClienteComision(cliente) {
 
 // El rango de una liquidación guardada, para poder recalcular su total cuando
 // quedó sin monto congelado (liquidaciones cerradas antes de que existiera).
+function _isoDe(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function _rangoDeLiquidacion(x) {
   const d1 = new Date(String(x.semana_desde || '').slice(0, 10) + 'T00:00:00');
   const d2 = new Date(String(x.semana_hasta || '').slice(0, 10) + 'T00:00:00');
@@ -635,6 +639,36 @@ function montoDeLiquidacion(x, cod) {
   if (m > 0) return m;
   const r = _rangoDeLiquidacion(x);
   return r ? _num(calcLiquidacionCliente(cod, r).total) : 0;
+}
+
+// Día del primer envío del cliente. Un cliente arranca cuando quiere —un 7, un
+// 17, un 22— así que su PRIMERA liquidación casi nunca es una semana entera:
+// factura menos días y meterla en la evaluación arrastra la categoría para
+// abajo. Se marca para que el operador la deje afuera; la app no la excluye
+// sola porque a veces el arranque cae justo el viernes y esa sí es completa.
+function _primerEnvioDeCliente(cod) {
+  const k = clienteCodCanonico(clienteKey(cod));
+  let min = null;
+  (AppData.records || []).forEach(r => {
+    if (clienteCodDeRegistro(r) !== k) return;
+    if (!contabilizaRegistro(r)) return;
+    const f = parseFechaReg(r.fecha);
+    if (f && (!min || f < min)) min = f;
+  });
+  return min;
+}
+
+// ¿Esa liquidación arranca DESPUÉS del inicio de su período? Entonces es la
+// semana parcial del arranque.
+function _liqParcial(x, primerEnvio) {
+  if (!primerEnvio) return null;
+  const r = _rangoDeLiquidacion(x);
+  if (!r) return null;
+  if (primerEnvio <= r.desdeD || primerEnvio > r.hastaD) return null;
+  // floor, no round: hastaD cierra a las 23:59:59 y redondear sumaba un día de más.
+  const dias = Math.floor((r.hastaD - primerEnvio) / 86400000) + 1;
+  const total = Math.floor((r.hastaD - r.desdeD) / 86400000) + 1;
+  return { dias, total, desde: primerEnvio };
 }
 
 function abrirFacturasComision(id) {
@@ -669,6 +703,7 @@ function renderFacturasComision() {
     // Las que entran son las 4 primeras CONTABILIZADAS; una 5.ª tildada queda
     // registrada pero no mueve el número, y se atenúa para que no parezca que suma.
     const cuentan = liqs.filter(x => x.cuenta_comision).slice(0, FACTURAS_EVALUACION).map(x => x.id);
+    const primerEnvio = _primerEnvioDeCliente(cod);
     cont.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto">' +
       liqs.map(x => {
         const dentro = cuentan.includes(x.id);
@@ -682,6 +717,11 @@ function renderFacturasComision() {
             '<strong>' + (r ? r.desde + ' → ' + r.hasta : String(x.semana_hasta).slice(0, 10)) + '</strong>' +
             (dentro ? ' <span class="badge" style="background:#dcfce7;color:#166534;font-size:9.5px">entra ' + (cuentan.indexOf(x.id) + 1) + '.ª</span>' : '') +
             (extra ? ' <span class="muted" style="font-size:10px">· fuera de las ' + FACTURAS_EVALUACION + ' que evalúan</span>' : '') +
+            (function () {
+              const p = _liqParcial(x, primerEnvio);
+              return p ? '<div style="font-size:10px;color:#b45309;margin-top:2px">⚠ Semana parcial: el cliente arrancó el ' +
+                cargoFechaTxt(_isoDe(p.desde)) + ' y facturó ' + p.dias + ' de ' + p.total + ' días</div>' : '';
+            })() +
           '</div>' +
           '<div class="mono" style="font-size:12px;font-weight:600">' + fmtPeso(montoDeLiquidacion(x, cod)) + '</div>' +
         '</label>';
