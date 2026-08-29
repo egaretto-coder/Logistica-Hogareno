@@ -18,6 +18,42 @@ const RRHH_MESES_AJUSTE = 3;
 // sumar un área acá no necesita tocar la base.
 const RRHH_AREAS = ['Gerencia', 'Administracion', 'Coordinacion', 'Logistica', 'Asesoria Comercial', 'Ventas'];
 
+// Puestos válidos de cada área. Escrito a mano, el mismo puesto entra como
+// "COORDINADOR NOCHE", "Coordinacion nocturna" y "coordinador", y después no se
+// puede agrupar ni comparar a nadie. Se elige de la lista del área elegida.
+// Un área sin lista (Gerencia todavía no la tiene definida) deja escribir a
+// mano: es preferible a inventar puestos que después haya que corregir.
+const RRHH_PUESTOS = {
+  'Coordinacion':       ['Control y Seguimiento Envíos', 'Coordinador', 'Carga y Descarga', 'Escaneo', 'Supervisor'],
+  'Logistica':          ['Supervisor', 'Operador', 'Reclutador y Capacitador', 'Colectador'],
+  'Asesoria Comercial': ['Supervisor', 'Asesor Comercial', 'Ejecutivo de Cuentas Ecommerce', 'Asesor Nocturno'],
+  'Ventas':             ['Vendedor Flex', 'Supervisor', 'Vendedor Reparto'],
+  'Administracion':     ['Supervisor', 'Tesorero', 'Administrativo'],
+};
+function puestosDeArea(area) { return RRHH_PUESTOS[String(area || '').trim()] || null; }
+
+// ¿El puesto que tiene cargado está en la lista de su área? Los legajos viejos
+// se cargaron a mano, así que muchos no van a estar: NO se les borra el puesto
+// —se conserva y se marca— para que alguien lo corrija sabiendo qué decía.
+function puestoFueraDeLista(e) {
+  const lista = puestosDeArea(e && e.area);
+  const p = String((e && e.puesto) || '').trim();
+  if (!lista || !p) return false;
+  return !lista.some(x => normNombre(x) === normNombre(p));
+}
+
+// <option>s del área, conservando el valor actual aunque no esté en la lista.
+function puestoOptionsHTML(area, actual) {
+  const lista = puestosDeArea(area);
+  const cur = String(actual || '').trim();
+  if (!lista) return null;   // el área no tiene lista: se escribe a mano
+  const enLista = lista.some(x => normNombre(x) === normNombre(cur));
+  return '<option value="">— Elegí un puesto —</option>' +
+    (cur && !enLista ? '<option value="' + cur.replace(/"/g, '&quot;') + '" selected>' + cur + ' — fuera de la lista</option>' : '') +
+    lista.map(p => '<option value="' + p.replace(/"/g, '&quot;') + '"' +
+      (normNombre(p) === normNombre(cur) ? ' selected' : '') + '>' + p + '</option>').join('');
+}
+
 // ── Helpers de fecha ────────────────────────────────────────────────────────
 function _empFecha(iso) { return iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00') : null; }
 function _empFmt(iso) {
@@ -245,6 +281,11 @@ function toggleFiltroAjuste() { empSoloAjuste = !empSoloAjuste; renderEmpleados(
 // 'todos' | 'si' (en blanco) | 'no'. Se lee del <select> en cada render para
 // que sobreviva al re-render de realtime, igual que el resto de los filtros.
 let empFiltroReg = 'todos';
+// Los legajos se cargaron con el puesto escrito a mano, así que la mayoría no
+// va a estar en la lista de su área. No se les borra el puesto: se marcan para
+// que alguien los reasigne sabiendo qué decía cada uno.
+let empSoloPuestoFuera = false;
+function toggleFiltroPuesto() { empSoloPuestoFuera = !empSoloPuestoFuera; renderEmpleados(); }
 function setFiltroRegistrado(v) {
   empFiltroReg = v;
   const sel = document.getElementById('emp-filtro-registrado');
@@ -264,6 +305,7 @@ function renderEmpleados() {
     .filter(e => !empSoloAjuste || leTocaAjuste(e))
     .filter(e => empFiltroReg === 'todos' ||
                  (empFiltroReg === 'no' ? e.registrado === false : e.registrado !== false))
+    .filter(e => !empSoloPuestoFuera || puestoFueraDeLista(e))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
   // Resumen
@@ -281,7 +323,21 @@ function renderEmpleados() {
 
   const cEl = document.getElementById('emp-count');
   if (cEl) cEl.textContent = lista.length + ' de ' + todos.length + ' empleados' +
-    (empFiltroReg === 'si' ? ' · registrados' : empFiltroReg === 'no' ? ' · sin registrar' : '');
+    (empFiltroReg === 'si' ? ' · registrados' : empFiltroReg === 'no' ? ' · sin registrar' : '') +
+    (empSoloPuestoFuera ? ' · con el puesto fuera de la lista' : '');
+
+  // Puestos que no están en la lista de su área: hay que reasignarlos, pero
+  // no se pierde el que tenían — sin eso no habría con qué reconstruirlo.
+  const fueraLista = todos.filter(puestoFueraDeLista);
+  const avP = document.getElementById('emp-aviso-puestos');
+  if (avP) avP.innerHTML = fueraLista.length
+    ? '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+      '<i class="ic ic-alert"></i><div><strong>' + fueraLista.length + ' empleado(s) tienen un puesto que no está en la lista de su área.</strong> ' +
+      'Los puestos ahora se eligen de una lista cerrada por área; lo que estaba cargado a mano se conserva y hay que reasignarlo. ' +
+      'Se edita desde su ficha. ' +
+      '<button class="btn btn-sm" style="margin-left:6px" onclick="toggleFiltroPuesto()">' +
+      (empSoloPuestoFuera ? 'Ver todos' : 'Ver los ' + fueraLista.length) + '</button></div></div>'
+    : '';
 
   const btnF = document.getElementById('emp-filtro-ajuste');
   if (btnF) {
@@ -324,7 +380,13 @@ function renderEmpleados() {
         '<div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:40px;height:40px;font-size:13px">' + initials(e.nombre) + '</div>' +
         '<div style="flex:1;min-width:0">' +
           '<div style="font-size:14px;font-weight:700">' + e.nombre + '</div>' +
-          '<div style="font-size:11px;color:var(--text-muted)">' + (e.puesto || 'Sin puesto') + (e.dni ? ' · DNI ' + e.dni : '') + '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted)">' +
+            (e.puesto
+              ? (puestoFueraDeLista(e)
+                  ? '<span style="color:#b45309" title="Ese puesto no está en la lista de ' + (e.area || 'su área') + '. Editá la ficha para reasignarlo.">' + e.puesto + ' ⚠</span>'
+                  : e.puesto)
+              : 'Sin puesto') +
+            (e.dni ? ' · DNI ' + e.dni : '') + '</div>' +
           (e.area ? '<span class="tag" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:9.5px;margin-top:3px;display:inline-block">' + e.area + '</span>' : '') +
         '</div>' +
         '<div style="display:flex;gap:4px">' +
@@ -554,11 +616,48 @@ function poblarAreasEmpleado(sel) {
   el.value = sel || '';
 }
 
+// El puesto sale de la lista del área elegida. Si el área todavía no tiene
+// lista definida, se cae al campo de texto en vez de dejar un select vacío que
+// no deja cargar a nadie.
+function _poblarPuestos(actual) {
+  const area = document.getElementById('memp-area')?.value || '';
+  const sel = document.getElementById('memp-puesto-sel');
+  const txt = document.getElementById('memp-puesto');
+  const ayuda = document.getElementById('memp-puesto-ayuda');
+  if (!sel || !txt) return;
+  const cur = actual !== undefined ? actual : (sel.style.display === 'none' ? txt.value : sel.value);
+  const html = puestoOptionsHTML(area, cur);
+  if (html === null) {
+    sel.style.display = 'none'; sel.innerHTML = '';
+    txt.style.display = ''; txt.value = cur || '';
+    if (ayuda) ayuda.textContent = area
+      ? 'El área "' + area + '" todavía no tiene puestos definidos: se escribe a mano.'
+      : 'Elegí un área para ver sus puestos.';
+    return;
+  }
+  txt.style.display = 'none';
+  sel.style.display = ''; sel.innerHTML = html;
+  const fuera = cur && !(puestosDeArea(area) || []).some(x => normNombre(x) === normNombre(cur));
+  if (ayuda) ayuda.textContent = fuera
+    ? 'El puesto cargado no está en la lista de ' + area + ': elegí el que corresponda.'
+    : '';
+  if (ayuda) ayuda.style.color = fuera ? '#b45309' : 'var(--text-muted)';
+}
+
+// Lo que quedó elegido, venga del select o del campo libre.
+function _puestoElegido() {
+  const sel = document.getElementById('memp-puesto-sel');
+  const txt = document.getElementById('memp-puesto');
+  if (sel && sel.style.display !== 'none') return (sel.value || '').trim();
+  return ((txt && txt.value) || '').trim();
+}
+
 function openAddEmpleadoModal() {
   empleadoEditId = null;
   document.getElementById('modal-emp-title').textContent = 'Nuevo empleado';
   ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   poblarAreasEmpleado('');
+  _poblarPuestos('');
   document.getElementById('memp-registrado').value = 'si';
   document.getElementById('memp-ingreso').value = '';
   document.getElementById('memp-sueldo').value = '';
@@ -579,8 +678,8 @@ function editEmpleado(id) {
   document.getElementById('memp-telefono').value = e.telefono || '';
   document.getElementById('memp-email').value = e.email || '';
   document.getElementById('memp-direccion').value = e.direccion || '';
-  document.getElementById('memp-puesto').value = e.puesto || '';
   poblarAreasEmpleado(e.area || '');
+  _poblarPuestos(e.puesto || '');
   document.getElementById('memp-registrado').value = e.registrado === false ? 'no' : 'si';
   document.getElementById('memp-ingreso').value = e.fecha_ingreso ? String(e.fecha_ingreso).slice(0, 10) : '';
   document.getElementById('memp-sueldo').value = _num(e.sueldo) || '';
@@ -637,7 +736,7 @@ async function guardarEmpleadoModal() {
     telefono: (document.getElementById('memp-telefono').value || '').trim(),
     email: (document.getElementById('memp-email').value || '').trim(),
     direccion: (document.getElementById('memp-direccion').value || '').trim(),
-    puesto: (document.getElementById('memp-puesto').value || '').trim(),
+    puesto: _puestoElegido(),
     area: (document.getElementById('memp-area') || {}).value || '',
     registrado: document.getElementById('memp-registrado').value === 'si',
     fecha_ingreso: document.getElementById('memp-ingreso').value || null,

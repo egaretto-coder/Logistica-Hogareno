@@ -942,13 +942,15 @@
           <label class="form-label">DNI</label>
           <input type="text" id="memp-dni" class="form-input" placeholder="30111222" style="width:100%" />
         </div>
-        <div class="form-group" style="margin:0;flex:1;min-width:140px">
-          <label class="form-label">Puesto / área</label>
-          <input type="text" id="memp-puesto" class="form-input" placeholder="Administración" style="width:100%" />
-        </div>
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label">Área</label>
-          <select id="memp-area" class="form-input" style="width:100%"></select>
+          <select id="memp-area" class="form-input" style="width:100%" onchange="_poblarPuestos()"></select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Puesto</label>
+          <select id="memp-puesto-sel" class="form-input" style="width:100%"></select>
+          <input type="text" id="memp-puesto" class="form-input" placeholder="Puesto" style="width:100%;display:none" />
+          <span id="memp-puesto-ayuda" style="font-size:10px;color:var(--text-muted)"></span>
         </div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
