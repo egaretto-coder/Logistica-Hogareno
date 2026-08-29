@@ -297,9 +297,12 @@ async function _hydrateFromSupabaseReal(opts) {
     direccion: e.direccion || '', puesto: e.puesto || '', area: e.area || '',
     registrado: e.registrado !== false,
     fecha_ingreso: e.fecha_ingreso || '', sueldo: _num(e.sueldo),
-    // Jornada: horas por día y días por semana. Las horas SEMANALES salen de
-    // multiplicarlos — cargar el producto además de los factores es la forma
-    // de que queden en desacuerdo.
+    // Jornada. Los HECHOS son el horario (entrada, salida, almuerzo) y los
+    // días por semana; las horas diarias, las semanales y el valor de la hora
+    // son cuentas que salen de ahí. `horas_diarias` queda como respaldo para
+    // los legajos viejos que todavía no tienen horario cargado.
+    hora_entrada: e.hora_entrada || '', hora_salida: e.hora_salida || '',
+    almuerzo_min: _num(e.almuerzo_min) || 0,
     horas_diarias: e.horas_diarias === null || e.horas_diarias === undefined ? 8 : _num(e.horas_diarias),
     dias_laborales: e.dias_laborales === null || e.dias_laborales === undefined ? 5 : _num(e.dias_laborales),
     pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),

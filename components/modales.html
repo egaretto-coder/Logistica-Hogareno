@@ -948,10 +948,6 @@
           <input type="number" id="memp-sueldo" class="form-input" placeholder="800000" min="0" step="1000" style="width:100%" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
-          <label class="form-label"><i class="ic ic-calendar"></i> Horas por día</label>
-          <input type="number" id="memp-horas" class="form-input" placeholder="8" min="0" max="24" step="0.5" style="width:100%" oninput="_previewJornada()" />
-        </div>
-        <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label">Días de trabajo</label>
           <select id="memp-dias" class="form-input" style="width:100%" onchange="_previewJornada()">
             <option value="5">Lunes a viernes</option>
@@ -961,6 +957,27 @@
             <option value="3">3 días por semana</option>
             <option value="2">2 días por semana</option>
             <option value="1">1 día por semana</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:110px">
+          <label class="form-label"><i class="ic ic-calendar"></i> Entrada</label>
+          <input type="time" id="memp-entrada" class="form-input" style="width:100%" onchange="_previewJornada()" oninput="_previewJornada()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:110px">
+          <label class="form-label">Salida</label>
+          <input type="time" id="memp-salida" class="form-input" style="width:100%" onchange="_previewJornada()" oninput="_previewJornada()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Almuerzo</label>
+          <select id="memp-almuerzo" class="form-input" style="width:100%" onchange="_previewJornada()">
+            <option value="0">Sin horario de almuerzo</option>
+            <option value="30">30 minutos</option>
+            <option value="45">45 minutos</option>
+            <option value="60">1 hora</option>
+            <option value="90">1 hora y media</option>
+            <option value="120">2 horas</option>
           </select>
         </div>
       </div>
@@ -996,6 +1013,7 @@
         <div class="form-group" style="margin:0;flex:1;min-width:120px">
           <label class="form-label">Valor por hora ($)</label>
           <input type="number" id="msld-valor-hora" class="form-input" placeholder="0" min="0" step="100" style="width:100%" oninput="recalcSueldoModal()" />
+        <div id="msld-vh-info" style="font-size:10.5px;color:var(--text-muted);margin-top:4px"></div>
         </div>
         <div style="flex:1;min-width:140px;font-size:11px;color:var(--text-secondary);padding-bottom:8px" id="msld-extras-calc">—</div>
       </div>

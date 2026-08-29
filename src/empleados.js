@@ -50,16 +50,76 @@ const JORNADA_DIAS = {
   6: 'Lunes a sábados',
   7: 'Todos los días',
 };
+// "HH:MM" → minutos desde medianoche. Vacío/ inválido → null.
+function _minDeHora(h) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(h || '').trim());
+  if (!m) return null;
+  const hh = +m[1], mm = +m[2];
+  if (hh > 23 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+function _horaTxt(h) { const m = _minDeHora(h); return m == null ? '' : String(h).trim(); }
+
+// Horas efectivas de un día, del horario. El turno que cruza la medianoche
+// (entra 22:00, sale 06:00) suma 24 h: es el caso de coordinación nocturna y
+// sin esto daría negativo.
+function horasDelHorario(e) {
+  const ent = _minDeHora(e && e.hora_entrada), sal = _minDeHora(e && e.hora_salida);
+  if (ent == null || sal == null) return null;
+  let min = sal - ent;
+  if (min <= 0) min += 24 * 60;
+  min -= Math.max(0, _num(e.almuerzo_min));
+  if (min <= 0) return null;
+  return Math.round((min / 60) * 100) / 100;
+}
+
+// Horas por día que se usan en todos lados: las del horario si está cargado, y
+// si no las que quedaron guardadas de antes (los legajos viejos).
+function horasDiariasDe(e) {
+  const h = horasDelHorario(e);
+  return h != null ? h : _num(e && e.horas_diarias);
+}
+
+function horarioTexto(e) {
+  const ent = _horaTxt(e && e.hora_entrada), sal = _horaTxt(e && e.hora_salida);
+  if (!ent || !sal) return '';
+  const alm = _num(e && e.almuerzo_min);
+  return ent + ' a ' + sal + (alm ? ' · ' + _almuerzoTxt(alm) + ' de almuerzo' : ' · sin almuerzo');
+}
+function _almuerzoTxt(min) {
+  const m = _num(min);
+  if (!m) return 'sin almuerzo';
+  if (m % 60 === 0) return (m / 60) + (m === 60 ? ' h' : ' h');
+  return m + ' min';
+}
+
+// ── Valor de la hora ────────────────────────────────────────────────────────
+// El sueldo es mensual y el horario da las horas semanales: las mensuales son
+// las semanales por 52/12 (4,333 semanas por mes), que es la conversión que se
+// usa para el valor hora. No se guarda: si cambia el sueldo o el horario tiene
+// que cambiar sola, y un número congelado se desactualiza sin que nadie lo note.
+const SEMANAS_POR_MES = 52 / 12;
+function horasMensuales(e) {
+  const hs = horasSemanales(e);
+  return hs ? Math.round(hs * SEMANAS_POR_MES * 100) / 100 : 0;
+}
+function valorHoraDe(e, sueldo) {
+  const hm = horasMensuales(e);
+  const s = sueldo === undefined ? _num(e && e.sueldo) : _num(sueldo);
+  if (!hm || !s) return 0;
+  return Math.round(s / hm);
+}
+
 function diasLaboralesTexto(e) {
   const d = _num(e && e.dias_laborales) || 0;
   if (!d) return 'sin definir';
   return JORNADA_DIAS[d] || (d + (d === 1 ? ' día' : ' días') + ' por semana');
 }
 function horasSemanales(e) {
-  return Math.round(_num(e && e.horas_diarias) * _num(e && e.dias_laborales) * 10) / 10;
+  return Math.round(horasDiariasDe(e) * _num(e && e.dias_laborales) * 10) / 10;
 }
 function jornadaTexto(e) {
-  const h = _num(e && e.horas_diarias);
+  const h = horasDiariasDe(e);
   if (!h) return 'Jornada sin definir';
   const hs = horasSemanales(e);
   return h + ' h por día · ' + diasLaboralesTexto(e) + (hs ? ' · ' + hs + ' h semanales' : '');
@@ -301,9 +361,15 @@ function renderEmpleados() {
             '<i class="ic ic-calendar"></i> Postergar</button>'
           : '') +
       '</div>' +
-      '<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
-        '<span' + (_num(e.horas_diarias) ? '' : ' style="color:#b45309"') + '><i class="ic ic-calendar"></i> ' + jornadaTexto(e) + '</span>' +
-        (e.telefono ? '<span>' + e.telefono + '</span>' : '') +
+      // El horario es el hecho; las horas y el valor de la hora son lo que sale
+      // de él. Se muestran juntos para que se vea de dónde salen.
+      '<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:3px">' +
+        (horarioTexto(e)
+          ? '<span><i class="ic ic-calendar"></i> ' + horarioTexto(e) + '</span>'
+          : '<span style="color:#b45309"><i class="ic ic-alert"></i> Sin horario cargado</span>') +
+        '<span' + (horasDiariasDe(e) ? '' : ' style="color:#b45309"') + '>' + jornadaTexto(e) +
+          (valorHoraDe(e) ? ' · hora <strong>' + fmtPeso(valorHoraDe(e)) + '</strong>' : '') + '</span>' +
+        (e.telefono ? '<span class="muted">' + e.telefono + '</span>' : '') +
       '</div>' +
     '</div>';
   }).join('');
@@ -495,7 +561,9 @@ function openAddEmpleadoModal() {
   document.getElementById('memp-registrado').value = 'si';
   document.getElementById('memp-ingreso').value = '';
   document.getElementById('memp-sueldo').value = '';
-  document.getElementById('memp-horas').value = 8;
+  document.getElementById('memp-entrada').value = '';
+  document.getElementById('memp-salida').value = '';
+  document.getElementById('memp-almuerzo').value = '0';
   document.getElementById('memp-dias').value = '5';
   _previewJornada();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
@@ -515,22 +583,39 @@ function editEmpleado(id) {
   document.getElementById('memp-registrado').value = e.registrado === false ? 'no' : 'si';
   document.getElementById('memp-ingreso').value = e.fecha_ingreso ? String(e.fecha_ingreso).slice(0, 10) : '';
   document.getElementById('memp-sueldo').value = _num(e.sueldo) || '';
-  document.getElementById('memp-horas').value = _num(e.horas_diarias) || '';
+  document.getElementById('memp-entrada').value = _horaTxt(e.hora_entrada);
+  document.getElementById('memp-salida').value = _horaTxt(e.hora_salida);
+  document.getElementById('memp-almuerzo').value = String(_num(e.almuerzo_min) || 0);
   document.getElementById('memp-dias').value = String(_num(e.dias_laborales) || 5);
   _previewJornada();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
 
-// Anticipa las horas semanales mientras se carga la jornada: es el número que
-// después se compara entre empleados, y no se guarda —se calcula.
+// Anticipa lo que se desprende del horario: horas por día, horas semanales y
+// el valor de la hora. Ninguno de los tres se guarda —se calculan— así que el
+// operador tiene que poder verlos antes de guardar para saber si cargó bien.
 function _previewJornada() {
   const box = document.getElementById('memp-jornada');
   if (!box) return;
-  const h = parseFloat(document.getElementById('memp-horas')?.value) || 0;
-  const d = parseInt(document.getElementById('memp-dias')?.value, 10) || 0;
-  box.innerHTML = (h && d)
-    ? 'Son <strong>' + (Math.round(h * d * 10) / 10) + ' horas semanales</strong> (' + (JORNADA_DIAS[d] || d + ' días').toLowerCase() + ').'
-    : 'Cargá las horas por día para ver las horas semanales.';
+  const fake = {
+    hora_entrada: document.getElementById('memp-entrada')?.value || '',
+    hora_salida: document.getElementById('memp-salida')?.value || '',
+    almuerzo_min: parseInt(document.getElementById('memp-almuerzo')?.value, 10) || 0,
+    dias_laborales: parseInt(document.getElementById('memp-dias')?.value, 10) || 0,
+    sueldo: parseFloat(document.getElementById('memp-sueldo')?.value) || 0,
+  };
+  const h = horasDelHorario(fake);
+  if (h == null) {
+    box.innerHTML = 'Cargá la <strong>entrada</strong> y la <strong>salida</strong> para que salgan las horas y el valor de la hora.';
+    return;
+  }
+  const hs = horasSemanales(Object.assign({}, fake, { horas_diarias: h }));
+  const vh = valorHoraDe(Object.assign({}, fake, { horas_diarias: h }));
+  const cruza = _minDeHora(fake.hora_salida) <= _minDeHora(fake.hora_entrada);
+  box.innerHTML = 'Son <strong>' + h + ' h por día</strong>' + (cruza ? ' (turno que cruza la medianoche)' : '') +
+    ' · <strong>' + hs + ' h semanales</strong> (' + (JORNADA_DIAS[fake.dias_laborales] || fake.dias_laborales + ' días').toLowerCase() + ')' +
+    (vh ? ' · valor hora <strong>' + fmtPeso(vh) + '</strong> (' + fmtPeso(fake.sueldo) + ' ÷ ' +
+      (Math.round(hs * SEMANAS_POR_MES * 10) / 10) + ' h mensuales)' : '');
 }
 function closeEmpleadoModal(ev) {
   if (!ev || ev.target.id === 'modal-emp-backdrop') document.getElementById('modal-emp-backdrop').style.display = 'none';
@@ -538,9 +623,13 @@ function closeEmpleadoModal(ev) {
 async function guardarEmpleadoModal() {
   const nombre = (document.getElementById('memp-nombre').value || '').trim().toUpperCase();
   if (!nombre) { alert('El nombre es obligatorio.'); return; }
-  let horas = parseFloat(document.getElementById('memp-horas').value);
-  if (isNaN(horas) || horas < 0) horas = 0; if (horas > 24) horas = 24;
+  const entrada = _horaTxt(document.getElementById('memp-entrada').value);
+  const salida = _horaTxt(document.getElementById('memp-salida').value);
+  const almuerzo = parseInt(document.getElementById('memp-almuerzo').value, 10) || 0;
   const dias = parseInt(document.getElementById('memp-dias').value, 10) || 0;
+  // horas_diarias se GUARDA calculada, no cargada: así los cálculos que ya la
+  // leían siguen andando, pero el dato de verdad es el horario.
+  const horas = horasDelHorario({ hora_entrada: entrada, hora_salida: salida, almuerzo_min: almuerzo }) || 0;
   const rec = {
     nombre,
     dni: (document.getElementById('memp-dni').value || '').trim(),
@@ -552,6 +641,9 @@ async function guardarEmpleadoModal() {
     registrado: document.getElementById('memp-registrado').value === 'si',
     fecha_ingreso: document.getElementById('memp-ingreso').value || null,
     sueldo: parseFloat(document.getElementById('memp-sueldo').value) || 0,
+    hora_entrada: entrada,
+    hora_salida: salida,
+    almuerzo_min: almuerzo,
     horas_diarias: horas,
     dias_laborales: dias,
     activo: true
@@ -1115,16 +1207,48 @@ function openSueldoModal(empId) {
     '<br><span class="muted">Período ' + periodo + ' · ingreso ' + _empFmt(e.fecha_ingreso) + '</span>';
   document.getElementById('msld-base').value = s ? _num(s.sueldo_base) : _num(e.sueldo);
   document.getElementById('msld-horas').value = s ? _num(s.horas_extra) : '';
-  document.getElementById('msld-valor-hora').value = s ? _num(s.valor_hora_extra) : '';
+  // El valor de la hora sale del horario y del sueldo: se propone calculado y
+  // el operador solo anota CUÁNTAS horas extras se hicieron.
+  const vhCalc = valorHoraDe(e, s ? _num(s.sueldo_base) : _num(e.sueldo));
+  document.getElementById('msld-valor-hora').value = (s && _num(s.valor_hora_extra)) ? _num(s.valor_hora_extra) : (vhCalc || '');
   document.getElementById('msld-bono').value = s ? _num(s.bono_eficiencia) : '';
   document.getElementById('msld-desc-adelanto').checked = s ? !!s.descuenta_adelanto : false;
   document.getElementById('msld-adelanto').value = s ? _num(s.monto_adelanto) : '';
   document.getElementById('msld-pct-transf').value = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(empId);
   document.getElementById('msld-obs').value = s ? (s.obs || '') : '';
+  _pintarValorHora(e, s);
   renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
+// De dónde sale el valor de la hora, y los atajos del recargo. Se muestra
+// porque un número que aparece solo, sin explicación, no se puede auditar: si
+// el operador no ve la cuenta no sabe si el horario está bien cargado.
+function _pintarValorHora(e, s) {
+  const box = document.getElementById('msld-vh-info');
+  if (!box) return;
+  const base = s ? _num(s.sueldo_base) : _num(e.sueldo);
+  const vh = valorHoraDe(e, base);
+  if (!vh) {
+    box.innerHTML = '<span style="color:#b45309">Sin horario cargado no se puede calcular el valor de la hora. ' +
+      'Cargale la entrada y la salida en su ficha.</span>';
+    return;
+  }
+  const hm = horasMensuales(e);
+  box.innerHTML = '<strong>' + fmtPeso(vh) + '</strong> por hora = ' + fmtPeso(base) + ' ÷ ' + hm + ' h mensuales ' +
+    '<span class="muted">(' + horasSemanales(e) + ' h semanales × 4,33)</span>' +
+    '<div style="margin-top:4px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">' +
+      '<span class="muted">Con recargo:</span>' +
+      '<button type="button" class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="_ponerValorHora(' + Math.round(vh * 1.5) + ')">+50% · ' + fmtPeso(Math.round(vh * 1.5)) + '</button>' +
+      '<button type="button" class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="_ponerValorHora(' + (vh * 2) + ')">+100% · ' + fmtPeso(vh * 2) + '</button>' +
+      '<button type="button" class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="_ponerValorHora(' + vh + ')">Sin recargo</button>' +
+    '</div>';
+}
+function _ponerValorHora(v) {
+  const el = document.getElementById('msld-valor-hora');
+  if (el) { el.value = v; recalcSueldoModal(); }
+}
+
 function closeSueldoModal(ev) {
   if (!ev || ev.target.id === 'modal-sueldo-backdrop') document.getElementById('modal-sueldo-backdrop').style.display = 'none';
 }
@@ -1306,7 +1430,7 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
     datosEmp: [
       (e.puesto || '') + (e.area ? '  ·  ' + e.area : ''),
       (e.dni ? 'DNI ' + e.dni : '') + (e.registrado === false ? (e.dni ? '  ·  ' : '') + 'No registrado' : ''),
-      'Ingreso ' + _empFmt(e.fecha_ingreso) + '  ·  ' + antiguedadTexto(e)
+      'Ingreso ' + _empFmt(e.fecha_ingreso) + (horasSemanales(e) ? '  ·  ' + horasSemanales(e) + ' h semanales' : '')
     ],
     datosPer: [
       'Del ' + _iniDeMesISO(periodo) + ' al ' + _finDeMesISO(periodo),
@@ -1320,7 +1444,7 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
   // ── Conceptos ────────────────────────────────────────────────────────────
   const body = [];
   body.push(['Sueldo básico', _mesTexto(periodo), fmtPeso(d.base), '']);
-  if (d.extras) body.push(['Horas extras', d.horas + ' h x ' + fmtPeso(d.vh), fmtPeso(d.extras), '']);
+  if (d.extras) body.push(['Horas extras', d.horas + ' h x ' + fmtPeso(d.vh) + ' por hora', fmtPeso(d.extras), '']);
   if (d.bono) body.push(['Bono de eficiencia', '', fmtPeso(d.bono), '']);
   if (d.adel) body.push(['Adelanto descontado', 'a cuenta de haberes', '', fmtPeso(d.adel)]);
 

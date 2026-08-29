@@ -1160,3 +1160,16 @@ create policy empleado_postergaciones_all on public.empleado_postergaciones
 alter table public.empleados
   add column if not exists horas_diarias numeric not null default 8,
   add column if not exists dias_laborales int not null default 5;
+
+-- ---------- HORARIO ----------
+-- Las horas por día no se cargan a mano: se desprenden del horario. Entrada,
+-- salida y el descanso de almuerzo son los hechos; las horas diarias, las
+-- semanales y el valor de la hora son cuentas que salen de ahí. Cargar el
+-- resultado además de los factores es la forma de que queden en desacuerdo.
+-- almuerzo_min = 0 significa que NO tiene horario de almuerzo.
+-- El turno que cruza la medianoche (entra 22:00, sale 06:00) se resuelve al
+-- calcular, no se guarda distinto.
+alter table public.empleados
+  add column if not exists hora_entrada text not null default '',
+  add column if not exists hora_salida  text not null default '',
+  add column if not exists almuerzo_min int not null default 0;
