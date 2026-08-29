@@ -1084,9 +1084,13 @@
       </div>
 
       <div class="form-group" style="margin:0">
-        <label class="form-label">% por transferencia (el resto, efectivo)</label>
-        <input type="number" id="msld-pct-transf" class="form-input" min="0" max="100" step="5" style="width:100%" oninput="recalcSueldoModal()" />
-        <span style="font-size:10px;color:var(--text-muted)">El resto se paga en efectivo. Se define acá, con los recibos del mes a la vista.</span>
+        <label class="form-label"><i class="ic ic-card"></i> Se paga por transferencia ($)</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="msld-transf" class="form-input" min="0" step="1000" style="flex:1;min-width:150px" oninput="recalcSueldoModal()" />
+          <button type="button" class="btn btn-sm" style="padding:4px 9px;font-size:11px" onclick="_transfTodo()" title="Poner el total del mes">Todo</button>
+          <button type="button" class="btn btn-sm" style="padding:4px 9px;font-size:11px" onclick="_transfCero()" title="Todo en efectivo">Nada</button>
+        </div>
+        <div id="msld-efectivo-calc" style="font-size:11px;color:var(--text-muted);margin-top:5px"></div>
       </div>
 
       <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:12px 14px">

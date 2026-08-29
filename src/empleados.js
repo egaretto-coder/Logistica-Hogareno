@@ -1034,7 +1034,6 @@ function renderSueldosPanel() {
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
     const total = s ? _num(s.total) : base;
     // Sin liquidación cargada no hay forma de pago: se define al liquidar.
-    const pctT = s ? _num(s.pct_transferencia) : null;
     const mT = s ? _num(s.monto_transferencia) : 0;
     const mE = s ? _num(s.monto_efectivo) : 0;
     const est = estadoAjuste(e);
@@ -1060,7 +1059,7 @@ function renderSueldosPanel() {
       '<td class="mono" style="text-align:right;color:#b91c1c">' + (adel ? '-' + fmtPeso(adel) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(total) + '</td>' +
       '<td style="font-size:11px">' + (s
-          ? fmtPeso(mT) + ' <span class="muted">transf. (' + pctT + '%)</span><br>' + fmtPeso(mE) + ' <span class="muted">efvo.</span>'
+          ? fmtPeso(mT) + ' <span class="muted">transf.</span><br>' + fmtPeso(mE) + ' <span class="muted">efvo.</span>'
           : '<span class="muted">a definir al liquidar</span>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">' +
         (leToca ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#fcd34d;color:#92400e" onclick="abrirAjusteIndividual(' + e.id + ')" title="Aplicarle el aumento trimestral ahora, sin salir de esta pantalla">$ Ajustar</button>' +
@@ -1339,7 +1338,15 @@ function openSueldoModal(empId) {
   document.getElementById('msld-bono').value = s ? _num(s.bono_eficiencia) : '';
   document.getElementById('msld-desc-adelanto').checked = s ? !!s.descuenta_adelanto : false;
   document.getElementById('msld-adelanto').value = s ? _num(s.monto_adelanto) : '';
-  document.getElementById('msld-pct-transf').value = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(empId);
+  // Se propone el MONTO: el guardado si ya se liquidó, y si no el que sale de
+  // aplicarle al total el corte de la última liquidación. Es una propuesta —el
+  // operador la pisa con lo que dice el comprobante.
+  if (s) {
+    document.getElementById('msld-transf').value = _num(s.monto_transferencia);
+  } else {
+    const baseProp = _num(e.sueldo) + (hsReg ? Math.round(hsReg * (valorHoraDe(e) || 0)) : 0);
+    document.getElementById('msld-transf').value = Math.round(baseProp * ultimoPctTransferencia(empId) / 100);
+  }
   document.getElementById('msld-obs').value = s ? (s.obs || '') : '';
   _pintarValorHora(e, s);
   _pintarHorasExtra(empId, periodo, s);
@@ -1402,6 +1409,17 @@ function _ponerValorHora(v) {
   if (el) { el.value = v; recalcSueldoModal(); }
 }
 
+// Atajos: lo más común es que vaya todo por transferencia o todo en efectivo.
+function _transfTodo() {
+  const c = recalcSueldoModal();
+  const el = document.getElementById('msld-transf');
+  if (el) { el.value = c.total; recalcSueldoModal(); }
+}
+function _transfCero() {
+  const el = document.getElementById('msld-transf');
+  if (el) { el.value = 0; recalcSueldoModal(); }
+}
+
 function closeSueldoModal(ev) {
   if (!ev || ev.target.id === 'modal-sueldo-backdrop') document.getElementById('modal-sueldo-backdrop').style.display = 'none';
 }
@@ -1416,17 +1434,33 @@ function recalcSueldoModal() {
   const periodoMod = document.getElementById('emp-sueldo-periodo')?.value || '';
   const adelCuotas = _totalCuotasSueldo(periodoMod);
   const adel = adelManual + adelCuotas;
-  let pct = parseFloat(document.getElementById('msld-pct-transf').value); if (isNaN(pct)) pct = 100;
-  pct = Math.max(0, Math.min(100, pct));
   const extras = Math.round(horas * vh);
   const total = Math.round(base + extras + bono - adel);
-  const mT = Math.round(total * pct / 100);
+  // La transferencia se ESCRIBE en pesos (el operador tiene el comprobante a la
+  // vista) y el efectivo es la diferencia. El porcentaje se sigue guardando,
+  // pero calculado: es para los reportes, no para cargar.
+  const elT = document.getElementById('msld-transf');
+  let mT = parseFloat(elT && elT.value);
+  if (isNaN(mT)) mT = total;                     // sin cargar todavía: todo por transferencia
+  mT = Math.max(0, Math.round(mT));
   const mE = total - mT;
+  const pct = total > 0 ? Math.round(mT * 1000 / total) / 10 : 100;
+
   document.getElementById('msld-extras-calc').textContent = horas && vh ? (horas + ' h × ' + fmtPeso(vh) + ' = ' + fmtPeso(extras)) : '—';
   document.getElementById('msld-total').textContent = fmtPeso(total);
+
+  // La diferencia, al instante y debajo del campo: es el número que el
+  // operador tiene que contar en efectivo.
+  const elEf = document.getElementById('msld-efectivo-calc');
+  if (elEf) elEf.innerHTML = mE < 0
+    ? '<span style="color:#b91c1c"><strong>Se pasa por ' + fmtPeso(-mE) + '</strong> del total de ' + fmtPeso(total) +
+      '. Revisá el monto: no puede transferirse más de lo que se le paga.</span>'
+    : 'Quedan <strong style="color:var(--text)">' + fmtPeso(mE) + '</strong> en efectivo' +
+      (total > 0 ? ' <span style="opacity:.75">(' + pct + '% transferencia · ' + (Math.round((100 - pct) * 10) / 10) + '% efectivo)</span>' : '');
+
   document.getElementById('msld-split').innerHTML =
-    '<span><i class="ic ic-card"></i> Transferencia (' + pct + '%): <strong>' + fmtPeso(mT) + '</strong></span>' +
-    '<span style="margin-left:14px"><i class="ic ic-dollar"></i> Efectivo (' + (100 - pct) + '%): <strong>' + fmtPeso(mE) + '</strong></span>';
+    '<span><i class="ic ic-card"></i> Transferencia: <strong>' + fmtPeso(mT) + '</strong></span>' +
+    '<span style="margin-left:14px;color:' + (mE < 0 ? '#b91c1c' : 'inherit') + '"><i class="ic ic-dollar"></i> Efectivo: <strong>' + fmtPeso(mE) + '</strong></span>';
   return { base, horas, vh, extras, bono, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE };
 }
 async function guardarSueldo(marcarPagado, conRecibo) {
@@ -1587,7 +1621,7 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
     ],
     datosPer: [
       'Del ' + _iniDeMesISO(periodo) + ' al ' + _finDeMesISO(periodo),
-      'Pago: ' + d.pct + '% transferencia  ·  ' + (100 - d.pct) + '% efectivo',
+      'Pago: ' + fmtPeso(d.mT) + ' transferencia  ·  ' + fmtPeso(d.mE) + ' efectivo',
       d.pagado ? 'Abonado' : 'Pendiente de pago'
     ]
   };
@@ -1644,8 +1678,8 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
   doc.text('FORMA DE PAGO', RECIBO.izq, y + 3);
   doc.setFont(undefined, 'normal'); doc.setFontSize(8); _pdfTexto(doc, MARCA.texto);
   let ly = y + 8;
-  doc.text('Transferencia (' + d.pct + '%): ' + fmtPeso(d.mT), RECIBO.izq, ly); ly += 4.6;
-  doc.text('Efectivo (' + (100 - d.pct) + '%): ' + fmtPeso(d.mE), RECIBO.izq, ly); ly += 4.6;
+  doc.text('Transferencia: ' + fmtPeso(d.mT), RECIBO.izq, ly); ly += 4.6;
+  doc.text('Efectivo: ' + fmtPeso(d.mE), RECIBO.izq, ly); ly += 4.6;
   if (empresaDato('empresa_pago')) {
     _pdfTexto(doc, MARCA.gris); doc.setFontSize(7);
     doc.splitTextToSize(empresaDato('empresa_pago'), 90).forEach(t => { doc.text(t, RECIBO.izq, ly); ly += 3.6; });
