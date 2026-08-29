@@ -49,6 +49,45 @@ function ultimoAjusteDe(empId) {
   return lista.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0];
 }
 
+// ── Postergaciones ──────────────────────────────────────────────────────────
+// A veces la empresa decide no dar el aumento cuando toca. Antes eso no se
+// registraba: el empleado quedaba "vencido" para siempre y nadie podía decir
+// por qué. Ahora se posterga N meses CON justificación, la fecha del próximo
+// ajuste se corre sola y el motivo queda a la vista en su tarjeta.
+function postergacionesDe(empId) {
+  return (AppData.empleadoPostergaciones || [])
+    .filter(p => p.empleado_id === empId)
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+}
+
+// La postergación que MANDA hoy: la más lejana de las decididas después del
+// último aumento. Una vez que el aumento se aplica, las anteriores dejan de
+// contar — el ciclo arranca de nuevo desde ese aumento.
+function postergacionVigente(emp) {
+  if (!emp) return null;
+  const ult = ultimoAjusteDe(emp.id);
+  const corte = ult ? String(ult.fecha).slice(0, 10) : String(emp.fecha_ingreso || '').slice(0, 10);
+  const posts = postergacionesDe(emp.id)
+    .filter(p => p.mes_nuevo && (!corte || String(p.fecha).slice(0, 10) >= corte));
+  if (!posts.length) return null;
+  return posts.slice().sort((a, b) => String(b.mes_nuevo).localeCompare(String(a.mes_nuevo)))[0];
+}
+
+// AAAA-MM → Date del día 1 de ese mes.
+function _mesFecha(yyyymm) {
+  const p = String(yyyymm || '').split('-');
+  if (p.length < 2) return null;
+  const d = new Date(+p[0], (+p[1]) - 1, 1);
+  return isNaN(d.getTime()) ? null : d;
+}
+// AAAA-MM + n meses.
+function _mesMas(yyyymm, n) {
+  const d = _mesFecha(yyyymm);
+  if (!d) return '';
+  const x = new Date(d.getFullYear(), d.getMonth() + _num(n), 1);
+  return _yyyymm(x);
+}
+
 function proximoAjuste(emp) {
   // Se ajusta 3 meses DESPUÉS del último aumento; si nunca tuvo uno, desde el
   // ingreso. El ciclo se cuenta POR MES: el día no importa, así que siempre
@@ -57,7 +96,14 @@ function proximoAjuste(emp) {
   const ult = ultimoAjusteDe(emp.id);
   const base = ult ? _empFecha(ult.fecha) : _empFecha(emp.fecha_ingreso);
   if (!base) return null;
-  return new Date(base.getFullYear(), base.getMonth() + RRHH_MESES_AJUSTE, 1);
+  let prox = new Date(base.getFullYear(), base.getMonth() + RRHH_MESES_AJUSTE, 1);
+  // Si se postergó, la fecha es la que dejó la postergación (nunca hacia atrás).
+  const post = postergacionVigente(emp);
+  if (post) {
+    const d = _mesFecha(post.mes_nuevo);
+    if (d && d > prox) prox = d;
+  }
+  return prox;
 }
 
 // { estado: 'vencido' | 'toca' | 'al_dia', dias, fecha }
@@ -82,6 +128,7 @@ function persistirEmpleadosLocal() {
   try {
     localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
+    localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
   } catch (e) {}
 }
@@ -148,6 +195,14 @@ function renderEmpleados() {
 
   cont.innerHTML = lista.map(e => {
     const est = estadoAjuste(e);
+    const post = postergacionVigente(e);
+    // Un ajuste postergado NO es un ajuste vencido: la fecha ya se corrió a
+    // propósito y hay una justificación detrás. Se muestra como lo que es.
+    const badgePost = post
+      ? '<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fde68a" title="' +
+        String(post.motivo || '').replace(/"/g, '&quot;') + '"><i class="ic ic-calendar"></i> Postergado a ' +
+        _mesTexto(post.mes_nuevo) + '</span>'
+      : '';
     const badgeAjuste = est.estado === 'vencido'
       ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5"><i class="ic ic-alert"></i> Ajuste vencido — ' + _mesTexto(_yyyymm(est.fecha)) + '</span>'
       : est.estado === 'toca'
@@ -159,6 +214,7 @@ function renderEmpleados() {
       ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74">No registrado</span>'
       : '<span class="badge" style="background:#eef2ff;color:#3730a3">Registrado</span>';
     const ult = ultimoAjusteDe(e.id);
+    const nMov = historialEmpleado(e.id).length;
     const pctT = _num(e.pct_transferencia);
     return '<div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
@@ -173,12 +229,35 @@ function renderEmpleados() {
           '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarEmpleado(' + e.id + ')" title="Dar de baja"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + badgeReg + badgeAjuste + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + badgeReg + badgePost + badgeAjuste + '</div>' +
+      // La justificación va COMPLETA en la tarjeta, no solo en un tooltip: es
+      // la respuesta a "por qué este no cobró el aumento" y tiene que leerse
+      // sin tener que abrir nada.
+      (post
+        ? '<div style="font-size:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:7px 10px;color:#854d0e">' +
+          '<strong>Ajuste postergado ' + _mesesTexto(post.meses) + '</strong> (de ' + _mesTexto(post.mes_original) + ' a ' + _mesTexto(post.mes_nuevo) + ')' +
+          '<div style="margin-top:2px">' + (post.motivo || 'sin justificación') + '</div>' +
+          '<div style="font-size:10px;opacity:.8;margin-top:2px">' + _empFmt(post.fecha) + (post.creado_por ? ' · ' + post.creado_por : '') + '</div>' +
+          '</div>'
+        : '') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">' +
         '<div><div style="font-size:10px;color:var(--text-muted)">Ingreso</div><strong>' + _empFmt(e.fecha_ingreso) + '</strong><div style="font-size:10px;color:var(--text-muted)">' + antiguedadTexto(e) + '</div></div>' +
         '<div><div style="font-size:10px;color:var(--text-muted)">Sueldo</div><strong style="font-size:15px">' + fmtPeso(_num(e.sueldo)) + '</strong>' +
-          (ult ? '<div style="font-size:10px;color:var(--text-muted)">últ. ajuste ' + _empFmt(ult.fecha) + (ult.pct ? ' (+' + ult.pct + '%)' : '') + '</div>' : '<div style="font-size:10px;color:var(--text-muted)">sin ajustes</div>') +
+          (ult
+            ? '<div style="font-size:10px;color:var(--text-muted)">últ. ajuste ' + _empFmt(ult.fecha) +
+              (_num(ult.sueldo_anterior) > 0 ? ' · ' + fmtPeso(_num(ult.sueldo_anterior)) + ' → ' + fmtPeso(_num(ult.sueldo_nuevo)) : (ult.pct ? ' (+' + ult.pct + '%)' : '')) + '</div>'
+            : '<div style="font-size:10px;color:var(--text-muted)">sin ajustes</div>') +
         '</div>' +
+      '</div>' +
+      // El historial completo: cuántos aumentos tuvo y cuándo. Un sueldo se
+      // explica por lo que se le fue haciendo, no por el último renglón.
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm" style="padding:3px 9px;font-size:11px" onclick="verHistorialEmpleado(' + e.id + ')" title="Todos sus aumentos y postergaciones, con fecha y motivo">' +
+          '<i class="ic ic-file"></i> Historial' + (nMov ? ' · ' + nMov : '') + '</button>' +
+        (leTocaAjuste(e)
+          ? '<button class="btn btn-sm" style="padding:3px 9px;font-size:11px;border-color:#fcd34d;color:#92400e" onclick="abrirPostergarAjuste(' + e.id + ')" title="Si no se le da el aumento ahora, se posterga con una justificación">' +
+            '<i class="ic ic-calendar"></i> Postergar</button>'
+          : '') +
       '</div>' +
       '<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
         '<span><i class="ic ic-card"></i> Transferencia ' + pctT + '% · Efectivo ' + (100 - pctT) + '%</span>' +
@@ -186,6 +265,173 @@ function renderEmpleados() {
       '</div>' +
     '</div>';
   }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  POSTERGAR EL AJUSTE (con justificación) + HISTORIAL
+// ════════════════════════════════════════════════════════════════════════
+let _postergIds = [];   // a quién(es) se está postergando
+
+// Abre el modal para uno o para un lote (los que quedaron sin ajustar).
+function abrirPostergarAjuste(ids) {
+  const lista = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Boolean);
+  const emps = lista.map(id => (AppData.empleados || []).find(e => e.id === id)).filter(Boolean);
+  if (!emps.length) return;
+  _postergIds = emps.map(e => e.id);
+  const box = document.getElementById('mpost-quien');
+  if (box) {
+    box.innerHTML = emps.length === 1
+      ? '<i class="ic ic-user"></i><div>Se posterga el ajuste de <strong>' + emps[0].nombre + '</strong>, que le toca en <strong>' +
+        _mesTexto(_yyyymm(proximoAjuste(emps[0]) || new Date())) + '</strong>.</div>'
+      : '<i class="ic ic-user"></i><div>Se posterga el ajuste de <strong>' + emps.length + ' empleado(s)</strong>: ' +
+        emps.map(e => e.nombre).join(' · ') + '.</div>';
+  }
+  const m = document.getElementById('mpost-meses'); if (m) m.value = '1';
+  const t = document.getElementById('mpost-motivo'); if (t) t.value = '';
+  recalcPostergar();
+  document.getElementById('modal-posterg-backdrop').style.display = 'flex';
+}
+
+function cerrarPostergar(e) {
+  if (!e || e.target.id === 'modal-posterg-backdrop') {
+    document.getElementById('modal-posterg-backdrop').style.display = 'none';
+    _postergIds = [];
+  }
+}
+
+function recalcPostergar() {
+  const box = document.getElementById('mpost-preview');
+  const btn = document.getElementById('mpost-guardar');
+  if (!box) return;
+  const meses = Math.max(1, parseInt(document.getElementById('mpost-meses')?.value, 10) || 0);
+  const motivo = (document.getElementById('mpost-motivo')?.value || '').trim();
+  if (btn) btn.disabled = !motivo;
+  const emps = _postergIds.map(id => (AppData.empleados || []).find(e => e.id === id)).filter(Boolean);
+  const filas = emps.map(e => {
+    const orig = _yyyymm(proximoAjuste(e) || new Date());
+    return '<div style="display:flex;justify-content:space-between;gap:10px">' +
+      '<span>' + e.nombre + '</span>' +
+      '<span><span class="muted">' + _mesTexto(orig) + '</span> → <strong>' + _mesTexto(_mesMas(orig, meses)) + '</strong></span></div>';
+  }).join('');
+  box.innerHTML = filas +
+    '<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">' +
+    (motivo ? 'La justificación queda en la ficha de cada uno y en su historial.'
+            : '<span style="color:#b91c1c">Escribí la justificación para poder postergar.</span>') + '</div>';
+}
+
+async function guardarPostergacion() {
+  const meses = Math.max(1, parseInt(document.getElementById('mpost-meses')?.value, 10) || 0);
+  const motivo = (document.getElementById('mpost-motivo')?.value || '').trim();
+  if (!motivo) { alert('La justificación es obligatoria: es lo que explica por qué no se dio el aumento.'); return; }
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const hoy = new Date().toISOString().slice(0, 10);
+  let ok = 0;
+  for (const id of _postergIds) {
+    const e = (AppData.empleados || []).find(x => x.id === id); if (!e) continue;
+    const orig = _yyyymm(proximoAjuste(e) || new Date());
+    const rec = { empleado_id: id, fecha: hoy, mes_original: orig, meses,
+                  mes_nuevo: _mesMas(orig, meses), motivo, creado_por: quien };
+    try {
+      if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+      const row = await DB.insertRow('empleado_postergaciones', rec);
+      AppData.empleadoPostergaciones.push(Object.assign({ id: row && row.id }, rec));
+      ok++;
+    } catch (err) { console.warn('guardarPostergacion ' + id, err); }
+  }
+  persistirEmpleadosLocal();
+  document.getElementById('modal-posterg-backdrop').style.display = 'none';
+  _postergIds = [];
+  renderEmpleados();
+  if (document.getElementById('emp-tab-ajustes')?.style.display !== 'none') renderAjustesPanel();
+  showToast(ok === 1 ? '⏸ Ajuste postergado ' + _mesesTexto(meses) : '⏸ ' + ok + ' ajuste(s) postergados ' + _mesesTexto(meses));
+}
+
+// Deshacer: vuelve a quedar como estaba, sin borrar el registro de las otras.
+async function quitarPostergacion(id) {
+  const p = (AppData.empleadoPostergaciones || []).find(x => x.id === id);
+  if (!p) return;
+  const e = (AppData.empleados || []).find(x => x.id === p.empleado_id);
+  if (!confirm('¿Deshacer la postergación de ' + (e ? e.nombre : 'este empleado') + '?' + String.fromCharCode(10) +
+    'El ajuste vuelve a ' + _mesTexto(p.mes_original) + '.')) return;
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.deleteWhere('empleado_postergaciones', 'id', id);
+    AppData.empleadoPostergaciones = AppData.empleadoPostergaciones.filter(x => x.id !== id);
+    persistirEmpleadosLocal();
+    renderEmpleados();
+    if (document.getElementById('emp-tab-ajustes')?.style.display !== 'none') renderAjustesPanel();
+    if (document.getElementById('modal-backdrop')?.classList.contains('open')) verHistorialEmpleado(p.empleado_id);
+    showToast('Postergación deshecha · el ajuste vuelve a ' + _mesTexto(p.mes_original));
+  } catch (err) { console.warn('quitarPostergacion', err); alert('No se pudo deshacer: ' + (err.message || err)); }
+}
+
+// ── Historial: aumentos y postergaciones, en una sola línea de tiempo ─────
+// Un sueldo se explica por lo que se le fue haciendo. Verlo salteado —solo el
+// último aumento— no deja responder "¿hace cuánto que no le aumentan y por qué?".
+function historialEmpleado(empId) {
+  const ajustes = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === empId)
+    .map(a => ({ tipo: 'ajuste', fecha: String(a.fecha || '').slice(0, 10), row: a }));
+  const posts = (AppData.empleadoPostergaciones || []).filter(p => p.empleado_id === empId)
+    .map(p => ({ tipo: 'postergacion', fecha: String(p.fecha || '').slice(0, 10), row: p }));
+  return ajustes.concat(posts).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+}
+
+function verHistorialEmpleado(empId) {
+  const e = (AppData.empleados || []).find(x => x.id === empId);
+  if (!e) return;
+  const hist = historialEmpleado(empId);
+  const vig = postergacionVigente(e);
+  const filas = hist.map(h => {
+    if (h.tipo === 'ajuste') {
+      const a = h.row;
+      const de = _num(a.sueldo_anterior), aa = _num(a.sueldo_nuevo);
+      const pct = de > 0 ? Math.round(((aa - de) / de) * 1000) / 10 : _num(a.pct);
+      return '<tr>' +
+        '<td class="mono" style="font-size:11px;white-space:nowrap">' + _empFmt(a.fecha) + '</td>' +
+        '<td><span class="badge" style="background:#dcfce7;color:#166534">Aumento</span></td>' +
+        '<td style="font-size:12px">' + (de > 0 ? fmtPeso(de) + ' → <strong>' + fmtPeso(aa) + '</strong>' : fmtPeso(aa)) +
+          (pct ? ' <span class="muted">(+' + pct + '%)</span>' : '') +
+          (a.motivo ? '<div style="font-size:10.5px;color:var(--text-muted)">' + a.motivo + '</div>' : '') + '</td>' +
+        '<td class="muted" style="font-size:10.5px">' + (a.aplicado_por || '—') + '</td>' +
+        '<td></td></tr>';
+    }
+    const p = h.row;
+    const esVig = vig && vig.id === p.id;
+    return '<tr' + (esVig ? '' : ' style="opacity:.62"') + '>' +
+      '<td class="mono" style="font-size:11px;white-space:nowrap">' + _empFmt(p.fecha) + '</td>' +
+      '<td><span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fde68a">Postergado</span></td>' +
+      '<td style="font-size:12px">' + _mesTexto(p.mes_original) + ' → <strong>' + _mesTexto(p.mes_nuevo) + '</strong> ' +
+        '<span class="muted">(' + _mesesTexto(p.meses) + ')</span>' +
+        '<div style="font-size:10.5px;color:var(--text-secondary)">' + (p.motivo || 'sin justificación') + '</div></td>' +
+      '<td class="muted" style="font-size:10.5px">' + (p.creado_por || '—') + '</td>' +
+      '<td style="text-align:right">' + (esVig
+        ? '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="quitarPostergacion(' + p.id + ')">Deshacer</button>' : '') + '</td></tr>';
+  }).join('');
+
+  const est = estadoAjuste(e);
+  document.getElementById('modal-title').textContent = 'Historial de ' + e.nombre;
+  document.getElementById('modal-body').innerHTML =
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;font-size:13px">' +
+      '<div>Ingreso: <strong>' + _empFmt(e.fecha_ingreso) + '</strong></div>' +
+      '<div>Sueldo actual: <strong>' + fmtPeso(_num(e.sueldo)) + '</strong></div>' +
+      '<div>Aumentos: <strong>' + hist.filter(h => h.tipo === 'ajuste').length + '</strong></div>' +
+      '<div>Próximo ajuste: <strong>' + (est.fecha ? _mesTexto(_yyyymm(est.fecha)) : '—') + '</strong></div>' +
+    '</div>' +
+    (vig
+      ? '<div class="alert" style="margin-bottom:12px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a">' +
+        '<i class="ic ic-calendar"></i><div><strong>Ajuste postergado ' + _mesesTexto(vig.meses) + '</strong> — de ' +
+        _mesTexto(vig.mes_original) + ' a ' + _mesTexto(vig.mes_nuevo) + '.<br><em>' + (vig.motivo || 'sin justificación') + '</em></div></div>'
+      : '') +
+    (hist.length
+      ? '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr>' +
+        '<th>Fecha</th><th>Qué pasó</th><th>Detalle</th><th>Quién</th><th></th>' +
+        '</tr></thead><tbody>' + filas + '</tbody></table></div>'
+      : '<div class="empty-state"><div class="empty-sub">Todavía no tiene aumentos ni postergaciones registrados.</div></div>') +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      (leTocaAjuste(e) ? '<button class="btn" onclick="closeModal(); abrirPostergarAjuste(' + e.id + ')"><i class="ic ic-calendar"></i> Postergar el ajuste</button>' : '') +
+      '<button class="btn" onclick="closeModal()">Cerrar</button>' +
+    '</div>';
+  document.getElementById('modal-backdrop').classList.add('open');
 }
 
 // ── ABM empleado ─────────────────────────────────────────────────────────────
@@ -312,7 +558,7 @@ function renderAjustesPanel() {
     : 'Nadie tiene ajuste pendiente hasta ' + _mesTexto(mesSel);
 
   if (!alcanzados.length) {
-    cont.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✓</div>' +
+    cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">✓</div>' +
       '<div class="empty-title">Nadie ajusta en ' + _mesTexto(mesSel) + '</div>' +
       '<div class="empty-sub">Cada uno ajusta 3 meses después de su último aumento — probá con otro mes</div></div></td></tr>';
     _actualizarPreviewAjuste();
@@ -331,6 +577,7 @@ function renderAjustesPanel() {
             : (ult.pct ? '+' + ult.pct + '%' : 'sin detalle')) + '</div>'
       : '<span class="muted" style="font-size:11px">Nunca ajustado</span>';
     const vencido = est.estado === 'vencido';
+    const post = postergacionVigente(e);
     return '<tr>' +
       '<td><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
         '<input type="checkbox" class="emp-ajuste-chk" data-id="' + e.id + '" checked onchange="_actualizarPreviewAjuste()">' +
@@ -341,9 +588,15 @@ function renderAjustesPanel() {
       '<td style="font-size:12px">' + ultTxt + '</td>' +
       '<td style="font-size:12px">' +
         '<div style="font-weight:600;color:' + (vencido ? '#b91c1c' : '#854d0e') + '">' + (prox ? _mesTexto(_yyyymm(prox)) : '—') + '</div>' +
-        '<div style="font-size:10px;color:var(--text-muted)">' + (vencido ? 'atrasado ' + _mesesTexto(est.meses) : (est.meses === 0 ? 'le toca este mes' : 'en ' + _mesesTexto(est.meses))) + '</div></td>' +
+        '<div style="font-size:10px;color:var(--text-muted)">' + (vencido ? 'atrasado ' + _mesesTexto(est.meses) : (est.meses === 0 ? 'le toca este mes' : 'en ' + _mesesTexto(est.meses))) + '</div>' +
+        (post ? '<div style="font-size:10px;color:#854d0e;margin-top:2px" title="' + String(post.motivo || '').replace(/"/g, '&quot;') + '">' +
+          '⏸ postergado ' + _mesesTexto(post.meses) + ' · ' + (post.motivo || 'sin motivo').slice(0, 40) + '</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(_num(e.sueldo)) + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700" id="emp-prev-' + e.id + '">—</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="verHistorialEmpleado(' + e.id + ')" title="Aumentos y postergaciones">Historial</button> ' +
+        '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px;border-color:#fcd34d;color:#92400e" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento ahora: se posterga con una justificación">Postergar</button>' +
+      '</td>' +
     '</tr>';
   }).join('');
   _actualizarPreviewAjuste();
@@ -483,6 +736,24 @@ async function aplicarAjusteSueldos() {
   document.getElementById('emp-ajuste-motivo').value = '';
   renderAjustesPanel();
   showToast('✅ Ajuste aplicado a ' + ok + ' empleado(s)');
+
+  // Los que quedaron DESTILDADOS son, por definición, los que no se ajustaron
+  // cuando les tocaba. Sin registrar por qué, quedan "vencidos" para siempre y
+  // dentro de tres meses nadie va a poder decir si fue una decisión o un olvido.
+  const fuera = Array.from(document.querySelectorAll('.emp-ajuste-chk'))
+    .filter(c => !c.checked).map(c => parseInt(c.dataset.id, 10))
+    .filter(id => { const e = (AppData.empleados || []).find(x => x.id === id); return e && !postergacionVigente(e); });
+  if (fuera.length) {
+    const nombres = fuera.map(id => (AppData.empleados.find(x => x.id === id) || {}).nombre).filter(Boolean);
+    if (confirm(fuera.length + ' empleado(s) quedaron SIN ajustar:' + String.fromCharCode(10) +
+      nombres.slice(0, 8).map(n => '· ' + n).join(String.fromCharCode(10)) +
+      (nombres.length > 8 ? String.fromCharCode(10) + '…y ' + (nombres.length - 8) + ' más' : '') +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Si no se les da el aumento, conviene postergarlo con una justificación: si no, quedan vencidos y en tres meses nadie va a saber por qué.' +
+      String.fromCharCode(10) + 'Aceptar = postergar ahora · Cancelar = dejarlos como están')) {
+      abrirPostergarAjuste(fuera);
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════

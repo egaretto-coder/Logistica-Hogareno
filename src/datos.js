@@ -71,6 +71,8 @@ function loadSavedConfig() {
   if (emp) { try { AppData.empleados = JSON.parse(emp) || []; } catch(e) {} }
   const empa = localStorage.getItem('liq_empleado_ajustes');
   if (empa) { try { AppData.empleadoAjustes = JSON.parse(empa) || []; } catch(e) {} }
+  const empp = localStorage.getItem('liq_empleado_postergaciones');
+  if (empp) { try { AppData.empleadoPostergaciones = JSON.parse(empp) || []; } catch(e) {} }
   const emps = localStorage.getItem('liq_empleado_sueldos');
   if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
   const rend = localStorage.getItem('liq_rendiciones');
@@ -303,6 +305,11 @@ async function _hydrateFromSupabaseReal(opts) {
     id: a.id, empleado_id: a.empleado_id, fecha: a.fecha || '', periodo: a.periodo || '',
     pct: _num(a.pct), sueldo_anterior: _num(a.sueldo_anterior), sueldo_nuevo: _num(a.sueldo_nuevo),
     motivo: a.motivo || '', aplicado_por: a.aplicado_por || ''
+  }));
+  AppData.empleadoPostergaciones = (data.empleado_postergaciones || []).map(p => ({
+    id: p.id, empleado_id: p.empleado_id, fecha: p.fecha || '',
+    mes_original: p.mes_original || '', meses: _num(p.meses) || 0, mes_nuevo: p.mes_nuevo || '',
+    motivo: p.motivo || '', creado_por: p.creado_por || ''
   }));
   AppData.empleadoSueldos = (data.empleado_sueldos || []).map(s => ({
     id: s.id, empleado_id: s.empleado_id, periodo: s.periodo,

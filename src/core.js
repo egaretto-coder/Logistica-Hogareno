@@ -292,6 +292,7 @@ let AppData = {
   // Cuelga de empleados: el plantel y la fecha de ingreso salen de ahí.
   vacaciones: [],
   empleadoAjustes: [],
+  empleadoPostergaciones: [],   // ajustes que se decidió NO dar todavía, con su justificación
   empleadoSueldos: [],
 
   // Rendicion de envios con cobro en destino (el conductor cobra y rinde al dia siguiente).

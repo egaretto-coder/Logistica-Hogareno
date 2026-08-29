@@ -122,7 +122,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, cliCargos] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, cliCargos] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -150,6 +150,7 @@ const DB = {
         this.selectAll('dimensiones_catalogo', 'id'),
         this.selectAll('empleados', 'nombre'),
         this.selectAll('empleado_ajustes', 'id'),
+        this.selectAll('empleado_postergaciones', 'id'),
         this.selectAll('empleado_sueldos', 'id'),
         this.selectAll('vacaciones', 'id'),
         this.selectAll('rendiciones', 'id'),
@@ -170,7 +171,8 @@ const DB = {
         comision_clientes: comisionClientes, comision_pagos: comisionPagos,
         importaciones, supersla_solicitudes: superSlaSolic,
         dimensiones_catalogo: dimCatalogo,
-        empleados, empleado_ajustes: empleadoAjustes, empleado_sueldos: empleadoSueldos, vacaciones,
+        empleados, empleado_ajustes: empleadoAjustes, empleado_postergaciones: empleadoPosterg,
+        empleado_sueldos: empleadoSueldos, vacaciones,
         rendiciones, zona_alias: zonaAlias, cliente_cuentas: cuentas, cliente_liquidaciones: cliLiq, cliente_cargos: cliCargos,
       };
     } catch (e) {

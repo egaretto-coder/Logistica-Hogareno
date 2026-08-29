@@ -1127,3 +1127,26 @@ create policy cliente_liquidaciones_all on public.cliente_liquidaciones
 alter table public.dimensiones_catalogo
   add column if not exists tipo text not null default 'conductor';
 create index if not exists idx_dim_catalogo_tipo on public.dimensiones_catalogo (tipo);
+
+-- ---------- POSTERGACIÓN DEL AJUSTE DE SUELDO ----------
+-- El ajuste va cada 3 meses, pero a veces la empresa decide no darlo todavía.
+-- Hasta ahora eso no se registraba en ningún lado: el empleado quedaba
+-- "vencido" para siempre y nadie podía saber por qué no se le había ajustado.
+-- La postergación corre la fecha del próximo ajuste los meses que se indiquen
+-- y EXIGE una justificación: es una decisión sobre el sueldo de alguien y
+-- tiene que poder explicarse después.
+create table if not exists public.empleado_postergaciones (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  fecha date not null default current_date,   -- cuándo se tomó la decisión
+  mes_original text not null default '',      -- AAAA-MM en el que le tocaba
+  meses int not null default 1,               -- cuántos meses se corre
+  mes_nuevo text not null default '',         -- AAAA-MM al que pasa
+  motivo text not null default '',            -- la justificación (obligatoria)
+  creado_por text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_emp_posterg_empleado on public.empleado_postergaciones (empleado_id);
+alter table public.empleado_postergaciones enable row level security;
+create policy empleado_postergaciones_all on public.empleado_postergaciones
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
