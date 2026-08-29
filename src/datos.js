@@ -297,6 +297,11 @@ async function _hydrateFromSupabaseReal(opts) {
     direccion: e.direccion || '', puesto: e.puesto || '', area: e.area || '',
     registrado: e.registrado !== false,
     fecha_ingreso: e.fecha_ingreso || '', sueldo: _num(e.sueldo),
+    // Jornada: horas por día y días por semana. Las horas SEMANALES salen de
+    // multiplicarlos — cargar el producto además de los factores es la forma
+    // de que queden en desacuerdo.
+    horas_diarias: e.horas_diarias === null || e.horas_diarias === undefined ? 8 : _num(e.horas_diarias),
+    dias_laborales: e.dias_laborales === null || e.dias_laborales === undefined ? 5 : _num(e.dias_laborales),
     pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),
     activo: e.activo !== false, obs: e.obs || '',
     fecha_baja: e.fecha_baja || null, motivo_baja: e.motivo_baja || ''

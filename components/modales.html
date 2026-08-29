@@ -948,15 +948,23 @@
           <input type="number" id="memp-sueldo" class="form-input" placeholder="800000" min="0" step="1000" style="width:100%" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
-          <label class="form-label">% por transferencia</label>
-          <input type="number" id="memp-pct-transf" class="form-input" placeholder="100" min="0" max="100" step="5" style="width:100%" />
-          <span style="font-size:10px;color:var(--text-muted)">El resto se paga en efectivo.</span>
+          <label class="form-label"><i class="ic ic-calendar"></i> Horas por día</label>
+          <input type="number" id="memp-horas" class="form-input" placeholder="8" min="0" max="24" step="0.5" style="width:100%" oninput="_previewJornada()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Días de trabajo</label>
+          <select id="memp-dias" class="form-input" style="width:100%" onchange="_previewJornada()">
+            <option value="5">Lunes a viernes</option>
+            <option value="6">Lunes a sábados</option>
+            <option value="7">Todos los días</option>
+            <option value="4">4 días por semana</option>
+            <option value="3">3 días por semana</option>
+            <option value="2">2 días por semana</option>
+            <option value="1">1 día por semana</option>
+          </select>
         </div>
       </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Observaciones</label>
-        <textarea id="memp-obs" class="form-input" rows="2" style="width:100%;resize:vertical"></textarea>
-      </div>
+      <div id="memp-jornada" style="font-size:11px;color:var(--text-muted);margin-top:-4px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button class="btn" onclick="closeEmpleadoModal()">Cancelar</button>
         <button class="btn btn-primary" onclick="guardarEmpleadoModal()"><i class="ic ic-save"></i> Guardar empleado</button>
@@ -1020,6 +1028,7 @@
       <div class="form-group" style="margin:0">
         <label class="form-label">% por transferencia (el resto, efectivo)</label>
         <input type="number" id="msld-pct-transf" class="form-input" min="0" max="100" step="5" style="width:100%" oninput="recalcSueldoModal()" />
+        <span style="font-size:10px;color:var(--text-muted)">El resto se paga en efectivo. Se define acá, con los recibos del mes a la vista.</span>
       </div>
 
       <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:12px 14px">

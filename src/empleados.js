@@ -40,6 +40,31 @@ function antiguedadTexto(emp) {
   return m + (m === 1 ? ' mes' : ' meses');
 }
 
+// ── Jornada ─────────────────────────────────────────────────────────────────
+// Dos ejes independientes: cuántas horas hace por día y cuántos días por
+// semana. Uno hace 6 horas de lunes a sábados y otro 8 de lunes a viernes:
+// con un solo número no se distinguen, y las horas semanales —que es lo que
+// se compara— salen de multiplicarlos.
+const JORNADA_DIAS = {
+  5: 'Lunes a viernes',
+  6: 'Lunes a sábados',
+  7: 'Todos los días',
+};
+function diasLaboralesTexto(e) {
+  const d = _num(e && e.dias_laborales) || 0;
+  if (!d) return 'sin definir';
+  return JORNADA_DIAS[d] || (d + (d === 1 ? ' día' : ' días') + ' por semana');
+}
+function horasSemanales(e) {
+  return Math.round(_num(e && e.horas_diarias) * _num(e && e.dias_laborales) * 10) / 10;
+}
+function jornadaTexto(e) {
+  const h = _num(e && e.horas_diarias);
+  if (!h) return 'Jornada sin definir';
+  const hs = horasSemanales(e);
+  return h + ' h por día · ' + diasLaboralesTexto(e) + (hs ? ' · ' + hs + ' h semanales' : '');
+}
+
 // ── Estado de ajuste ────────────────────────────────────────────────────────
 // Próxima fecha de ajuste = ingreso + N×3 meses, posterior al ÚLTIMO ajuste
 // aplicado (o al ingreso si nunca se ajustó).
@@ -215,7 +240,6 @@ function renderEmpleados() {
       : '<span class="badge" style="background:#eef2ff;color:#3730a3">Registrado</span>';
     const ult = ultimoAjusteDe(e.id);
     const nMov = historialEmpleado(e.id).length;
-    const pctT = _num(e.pct_transferencia);
     return '<div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
         '<div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:40px;height:40px;font-size:13px">' + initials(e.nombre) + '</div>' +
@@ -260,7 +284,7 @@ function renderEmpleados() {
           : '') +
       '</div>' +
       '<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
-        '<span><i class="ic ic-card"></i> Transferencia ' + pctT + '% · Efectivo ' + (100 - pctT) + '%</span>' +
+        '<span' + (_num(e.horas_diarias) ? '' : ' style="color:#b45309"') + '><i class="ic ic-calendar"></i> ' + jornadaTexto(e) + '</span>' +
         (e.telefono ? '<span>' + e.telefono + '</span>' : '') +
       '</div>' +
     '</div>';
@@ -448,12 +472,14 @@ function poblarAreasEmpleado(sel) {
 function openAddEmpleadoModal() {
   empleadoEditId = null;
   document.getElementById('modal-emp-title').textContent = 'Nuevo empleado';
-  ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto','memp-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   poblarAreasEmpleado('');
   document.getElementById('memp-registrado').value = 'si';
   document.getElementById('memp-ingreso').value = '';
   document.getElementById('memp-sueldo').value = '';
-  document.getElementById('memp-pct-transf').value = 100;
+  document.getElementById('memp-horas').value = 8;
+  document.getElementById('memp-dias').value = '5';
+  _previewJornada();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
 function editEmpleado(id) {
@@ -468,12 +494,25 @@ function editEmpleado(id) {
   document.getElementById('memp-direccion').value = e.direccion || '';
   document.getElementById('memp-puesto').value = e.puesto || '';
   poblarAreasEmpleado(e.area || '');
-  document.getElementById('memp-obs').value = e.obs || '';
   document.getElementById('memp-registrado').value = e.registrado === false ? 'no' : 'si';
   document.getElementById('memp-ingreso').value = e.fecha_ingreso ? String(e.fecha_ingreso).slice(0, 10) : '';
   document.getElementById('memp-sueldo').value = _num(e.sueldo) || '';
-  document.getElementById('memp-pct-transf').value = _num(e.pct_transferencia);
+  document.getElementById('memp-horas').value = _num(e.horas_diarias) || '';
+  document.getElementById('memp-dias').value = String(_num(e.dias_laborales) || 5);
+  _previewJornada();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
+}
+
+// Anticipa las horas semanales mientras se carga la jornada: es el número que
+// después se compara entre empleados, y no se guarda —se calcula.
+function _previewJornada() {
+  const box = document.getElementById('memp-jornada');
+  if (!box) return;
+  const h = parseFloat(document.getElementById('memp-horas')?.value) || 0;
+  const d = parseInt(document.getElementById('memp-dias')?.value, 10) || 0;
+  box.innerHTML = (h && d)
+    ? 'Son <strong>' + (Math.round(h * d * 10) / 10) + ' horas semanales</strong> (' + (JORNADA_DIAS[d] || d + ' días').toLowerCase() + ').'
+    : 'Cargá las horas por día para ver las horas semanales.';
 }
 function closeEmpleadoModal(ev) {
   if (!ev || ev.target.id === 'modal-emp-backdrop') document.getElementById('modal-emp-backdrop').style.display = 'none';
@@ -481,8 +520,9 @@ function closeEmpleadoModal(ev) {
 async function guardarEmpleadoModal() {
   const nombre = (document.getElementById('memp-nombre').value || '').trim().toUpperCase();
   if (!nombre) { alert('El nombre es obligatorio.'); return; }
-  let pct = parseFloat(document.getElementById('memp-pct-transf').value);
-  if (isNaN(pct) || pct < 0) pct = 0; if (pct > 100) pct = 100;
+  let horas = parseFloat(document.getElementById('memp-horas').value);
+  if (isNaN(horas) || horas < 0) horas = 0; if (horas > 24) horas = 24;
+  const dias = parseInt(document.getElementById('memp-dias').value, 10) || 0;
   const rec = {
     nombre,
     dni: (document.getElementById('memp-dni').value || '').trim(),
@@ -491,11 +531,11 @@ async function guardarEmpleadoModal() {
     direccion: (document.getElementById('memp-direccion').value || '').trim(),
     puesto: (document.getElementById('memp-puesto').value || '').trim(),
     area: (document.getElementById('memp-area') || {}).value || '',
-    obs: (document.getElementById('memp-obs').value || '').trim(),
     registrado: document.getElementById('memp-registrado').value === 'si',
     fecha_ingreso: document.getElementById('memp-ingreso').value || null,
     sueldo: parseFloat(document.getElementById('memp-sueldo').value) || 0,
-    pct_transferencia: pct,
+    horas_diarias: horas,
+    dias_laborales: dias,
     activo: true
   };
   try {
@@ -783,9 +823,10 @@ function renderSueldosPanel() {
     const bono = s ? _num(s.bono_eficiencia) : 0;
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
     const total = s ? _num(s.total) : base;
-    const pctT = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
-    const mT = s ? _num(s.monto_transferencia) : Math.round(total * pctT / 100);
-    const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pctT / 100);
+    // Sin liquidación cargada no hay forma de pago: se define al liquidar.
+    const pctT = s ? _num(s.pct_transferencia) : null;
+    const mT = s ? _num(s.monto_transferencia) : 0;
+    const mE = s ? _num(s.monto_efectivo) : 0;
     const est = estadoAjuste(e);
     const leToca = leTocaAjuste(e);
     const post = postergacionVigente(e);
@@ -802,7 +843,9 @@ function renderSueldosPanel() {
       '<td class="mono" style="text-align:right">' + (bono ? '+' + fmtPeso(bono) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;color:#b91c1c">' + (adel ? '-' + fmtPeso(adel) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(total) + '</td>' +
-      '<td style="font-size:11px">' + fmtPeso(mT) + ' <span class="muted">transf.</span><br>' + fmtPeso(mE) + ' <span class="muted">efvo.</span></td>' +
+      '<td style="font-size:11px">' + (s
+          ? fmtPeso(mT) + ' <span class="muted">transf. (' + pctT + '%)</span><br>' + fmtPeso(mE) + ' <span class="muted">efvo.</span>'
+          : '<span class="muted">a definir al liquidar</span>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">' +
         (leToca ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#fcd34d;color:#92400e" onclick="abrirAjusteIndividual(' + e.id + ')" title="Aplicarle el aumento trimestral ahora, sin salir de esta pantalla">$ Ajustar</button>' +
           '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento: se posterga con una justificación">Postergar</button>' : '') +
@@ -827,11 +870,18 @@ function renderSueldosPanel() {
       '</div></div>'
     : '';
 
+  // Transferencia y efectivo suman SOLO lo liquidado: de lo que falta liquidar
+  // todavía no se sabe con qué corte se paga, y meterlo con un reparto supuesto
+  // daría un número que nadie puede usar para preparar la plata.
+  const sinLiq = lista.filter(e => !sueldoDe(e.id, periodo)).length;
   const tot = document.getElementById('emp-sueldos-total');
   if (tot) tot.innerHTML =
-    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-card"></i></div><div class="metric-label">Transferencia</div><div class="metric-value">' + fmtPeso(totT) + '</div></div>' +
-    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Efectivo</div><div class="metric-value">' + fmtPeso(totE) + '</div></div>' +
-    '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-file"></i></div><div class="metric-label">Total del mes</div><div class="metric-value">' + fmtPeso(totG) + '</div></div>';
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-card"></i></div><div class="metric-label">Transferencia</div><div class="metric-value">' + fmtPeso(totT) + '</div>' +
+      '<div class="metric-sub">de lo ya liquidado</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Efectivo</div><div class="metric-value">' + fmtPeso(totE) + '</div>' +
+      '<div class="metric-sub">de lo ya liquidado</div></div>' +
+    '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-file"></i></div><div class="metric-label">Total del mes</div><div class="metric-value">' + fmtPeso(totG) + '</div>' +
+      '<div class="metric-sub">' + (sinLiq ? sinLiq + ' sin liquidar — su forma de pago se define al liquidar' : 'todo liquidado') + '</div></div>';
 }
 
 // ── Ajuste de UN empleado, desde la liquidación mensual ────────────────────
@@ -924,6 +974,16 @@ async function aplicarAjusteIndividual() {
     renderSueldosPanel();
     showToast('✅ ' + e.nombre + ': ' + fmtPeso(anterior) + ' a ' + fmtPeso(nuevo));
   } catch (err) { console.warn('aplicarAjusteIndividual', err); alert('No se pudo aplicar: ' + (err.message || err)); }
+}
+
+// Con qué corte se le pagó la última vez. Es el mejor punto de partida para
+// el mes nuevo: el reparto no suele cambiar de un mes al otro, pero es una
+// PROPUESTA, no un dato del legajo — se confirma al liquidar.
+function ultimoPctTransferencia(empId) {
+  const prev = (AppData.empleadoSueldos || [])
+    .filter(s => s.empleado_id === empId)
+    .sort((a, b) => String(b.periodo).localeCompare(String(a.periodo)))[0];
+  return prev ? _num(prev.pct_transferencia) : 100;
 }
 
 // ── Adelantos del empleado dentro de la liquidación de sueldo ───────────────
@@ -1041,7 +1101,7 @@ function openSueldoModal(empId) {
   document.getElementById('msld-bono').value = s ? _num(s.bono_eficiencia) : '';
   document.getElementById('msld-desc-adelanto').checked = s ? !!s.descuenta_adelanto : false;
   document.getElementById('msld-adelanto').value = s ? _num(s.monto_adelanto) : '';
-  document.getElementById('msld-pct-transf').value = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
+  document.getElementById('msld-pct-transf').value = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(empId);
   document.getElementById('msld-obs').value = s ? (s.obs || '') : '';
   renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
@@ -1147,7 +1207,7 @@ function _datosRecibo(e, periodo) {
   const bono = s ? _num(s.bono_eficiencia) : 0;
   const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
   const total = s ? _num(s.total) : base;
-  const pct = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
+  const pct = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(e.id);
   const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
   const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pct / 100);
   return { s, base, horas, vh, extras, bono, adel, total, pct, mT, mE,
@@ -1340,7 +1400,7 @@ function exportSueldosPDF() {
   const body = lista.map(e => {
     const s = sueldoDe(e.id, periodo);
     const total = s ? _num(s.total) : _num(e.sueldo);
-    const pct = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
+    const pct = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(e.id);
     const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
     const mE = s ? _num(s.monto_efectivo) : total - mT;
     tT += mT; tE += mE; tG += total;

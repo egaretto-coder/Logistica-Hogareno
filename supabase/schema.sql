@@ -1150,3 +1150,13 @@ create index if not exists idx_emp_posterg_empleado on public.empleado_postergac
 alter table public.empleado_postergaciones enable row level security;
 create policy empleado_postergaciones_all on public.empleado_postergaciones
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- JORNADA DE TRABAJO ----------
+-- No todos trabajan lo mismo: unos hacen 6 horas y otros 8, unos de lunes a
+-- viernes y otros de lunes a sábados. Sin esos dos datos no se puede saber si
+-- un sueldo es de jornada completa ni calcular el valor de la hora extra.
+-- Las horas semanales salen de multiplicarlos, no se cargan aparte: cargar el
+-- producto además de los factores es la forma de que queden en desacuerdo.
+alter table public.empleados
+  add column if not exists horas_diarias numeric not null default 8,
+  add column if not exists dias_laborales int not null default 5;
