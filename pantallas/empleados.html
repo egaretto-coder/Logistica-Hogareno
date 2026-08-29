@@ -19,6 +19,15 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
             <input type="search" id="emp-search" placeholder="🔍 Buscar por nombre, puesto o DNI..." style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderEmpleados()">
             <button class="btn btn-sm" id="emp-filtro-ajuste" onclick="toggleFiltroAjuste()"><i class="ic ic-alert"></i> Solo los que necesitan ajuste</button>
+            <!-- Quién está en blanco y quién no es el corte que se mira para
+                 cualquier trámite de personal; con 31 tarjetas hay que poder
+                 aislarlo sin leerlas una por una. -->
+            <select id="emp-filtro-registrado" onchange="renderEmpleados()" title="Filtrar por situación de registro"
+              style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;background:var(--surface-1)">
+              <option value="todos">Registrados y no registrados</option>
+              <option value="si">Solo registrados</option>
+              <option value="no">Solo NO registrados</option>
+            </select>
             <span id="emp-count" style="font-size:12px;color:var(--text-muted)"></span>
           </div>
 

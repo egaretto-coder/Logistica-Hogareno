@@ -181,14 +181,28 @@ function renderEmpleadosPagina() { switchEmpleadosTab('plantel'); }
 let empSoloAjuste = false;
 function toggleFiltroAjuste() { empSoloAjuste = !empSoloAjuste; renderEmpleados(); }
 
+// 'todos' | 'si' (en blanco) | 'no'. Se lee del <select> en cada render para
+// que sobreviva al re-render de realtime, igual que el resto de los filtros.
+let empFiltroReg = 'todos';
+function setFiltroRegistrado(v) {
+  empFiltroReg = v;
+  const sel = document.getElementById('emp-filtro-registrado');
+  if (sel) sel.value = v;
+  renderEmpleados();
+}
+
 function renderEmpleados() {
   const cont = document.getElementById('emp-cards');
   if (!cont) return;
   const q = (document.getElementById('emp-search')?.value || '').toLowerCase().trim();
+  const selReg = document.getElementById('emp-filtro-registrado');
+  if (selReg) { if (selReg.value !== empFiltroReg) empFiltroReg = selReg.value || 'todos'; else selReg.value = empFiltroReg; }
   const todos = (AppData.empleados || []).filter(e => e.activo !== false);
   const lista = todos
     .filter(e => !q || String(e.nombre).toLowerCase().includes(q) || String(e.puesto || '').toLowerCase().includes(q) || String(e.area || '').toLowerCase().includes(q) || String(e.dni || '').includes(q))
     .filter(e => !empSoloAjuste || leTocaAjuste(e))
+    .filter(e => empFiltroReg === 'todos' ||
+                 (empFiltroReg === 'no' ? e.registrado === false : e.registrado !== false))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
   // Resumen
@@ -197,12 +211,16 @@ function renderEmpleados() {
   const noRegistrados = todos.filter(e => e.registrado === false).length;
   const res = document.getElementById('emp-resumen');
   if (res) res.innerHTML =
-    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-user"></i></div><div class="metric-label">Empleados activos</div><div class="metric-value">' + todos.length + '</div><div class="metric-sub">' + noRegistrados + ' sin registrar</div></div>' +
+    '<div class="metric-card"' + (noRegistrados ? ' style="cursor:pointer" title="Ver solo los que no están registrados" onclick="setFiltroRegistrado(\'' + (empFiltroReg === 'no' ? 'todos' : 'no') + '\')"' : '') +
+      '><div class="metric-ic"><i class="ic ic-user"></i></div><div class="metric-label">Empleados activos</div><div class="metric-value">' + todos.length + '</div>' +
+      '<div class="metric-sub"' + (noRegistrados ? ' style="color:#9a3412;font-weight:600"' : '') + '>' + noRegistrados + ' sin registrar' +
+      (noRegistrados ? (empFiltroReg === 'no' ? ' — mostrando solo esos' : ' — tocá para verlos') : '') + '</div></div>' +
     '<div class="metric-card"' + (nTocan ? ' style="border-color:#f5d97a"' : '') + '><div class="metric-ic"><i class="ic ic-alert"></i></div><div class="metric-label">Les toca ajuste</div><div class="metric-value"' + (nTocan ? ' style="color:#b45309"' : '') + '>' + nTocan + '</div><div class="metric-sub">cada ' + RRHH_MESES_AJUSTE + ' meses desde su ingreso</div></div>' +
     '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Masa salarial</div><div class="metric-value">' + fmtPeso(masaSalarial) + '</div><div class="metric-sub">suma de sueldos vigentes</div></div>';
 
   const cEl = document.getElementById('emp-count');
-  if (cEl) cEl.textContent = lista.length + ' de ' + todos.length + ' empleados';
+  if (cEl) cEl.textContent = lista.length + ' de ' + todos.length + ' empleados' +
+    (empFiltroReg === 'si' ? ' · registrados' : empFiltroReg === 'no' ? ' · sin registrar' : '');
 
   const btnF = document.getElementById('emp-filtro-ajuste');
   if (btnF) {
