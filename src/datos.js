@@ -348,7 +348,9 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.vacaciones = (data.vacaciones || []).map(v => ({
     id: v.id, empleado_id: v.empleado_id, periodo: _num(v.periodo),
     fecha_desde: v.fecha_desde || '', fecha_hasta: v.fecha_hasta || '',
-    dias: _num(v.dias), estado: v.estado || 'planificada', obs: v.obs || ''
+    dias: _num(v.dias), estado: v.estado || 'planificada', obs: v.obs || '',
+    // 'corrida' (bloque, gasta sábados y domingos) | 'salteada' (días sueltos)
+    modalidad: v.modalidad === 'salteada' ? 'salteada' : 'corrida'
   }));
 
   // Rendiciones de cobros en destino.

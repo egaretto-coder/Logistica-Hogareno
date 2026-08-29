@@ -1465,6 +1465,13 @@
           <label class="form-label">Corresponde al período</label>
           <select id="mvac-periodo" class="form-input" style="width:100%" onchange="recalcVacModal()"></select>
         </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:160px">
+          <label class="form-label">Cómo se toman</label>
+          <select id="mvac-modalidad" class="form-input" style="width:100%" onchange="recalcVacModal()">
+            <option value="corrida">Corridos — bloque seguido</option>
+            <option value="salteada">Salteados — días sueltos</option>
+          </select>
+        </div>
         <div class="form-group" style="margin:0;flex:1;min-width:140px">
           <label class="form-label">Estado</label>
           <select id="mvac-estado" class="form-input" style="width:100%" onchange="recalcVacModal()">

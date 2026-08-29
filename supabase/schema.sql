@@ -1193,3 +1193,13 @@ create index if not exists idx_emp_hs_extra_fecha on public.empleado_horas_extra
 alter table public.empleado_horas_extra enable row level security;
 create policy empleado_horas_extra_all on public.empleado_horas_extra
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- POLÍTICA DE VACACIONES: CORRIDAS vs SALTEADAS ----------
+-- Los días del art. 150 son CORRIDOS: incluyen sábados y domingos. La política
+-- de la empresa es que los primeros 7 van sí o sí de una vez, y el resto se
+-- puede tomar corrido o salteado. Tomarlos salteados evita gastar los fines de
+-- semana, así que ese mismo bloque de 7 corridos rinde 5 días salteados.
+alter table public.vacaciones
+  add column if not exists modalidad text not null default 'corrida';
+-- Backfill de lo ya cargado: un bloque de 7 o más es el corrido obligatorio.
+-- update public.vacaciones set modalidad = 'salteada' where dias < 7;

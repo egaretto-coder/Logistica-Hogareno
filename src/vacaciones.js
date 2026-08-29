@@ -104,6 +104,24 @@ function vacCorresponden(emp, periodo) {
   };
 }
 
+// ── Política de la empresa: corridas vs salteadas ───────────────────────────
+// Los días del art. 150 son CORRIDOS: incluyen sábados y domingos. La empresa
+// exige que los primeros 7 se tomen de una vez, y el resto queda a elección:
+// corrido o salteado. Tomarlos salteados no gasta los fines de semana, así que
+// el mismo bloque de 7 corridos rinde 5 días salteados.
+//
+// Sin esta distinción el saldo daba mal: a quien tomó 7 corridos + 2 salteados
+// le figuraban 5 pendientes cuando le quedan 3 (de los 5 salteados que valía su
+// segundo bloque, usó 2).
+const VAC_BLOQUE_OBLIG = 7;     // días corridos que van sí o sí juntos
+const VAC_SALTEADOS_X_BLOQUE = 5;   // esos mismos 7 corridos, salteados, son 5
+
+// Cuántos días SALTEADOS rinde un tramo de días corridos.
+function vacCorridosASalteados(corridos) {
+  return Math.round(_num(corridos) * VAC_SALTEADOS_X_BLOQUE / VAC_BLOQUE_OBLIG);
+}
+function vacEsSalteada(v) { return v && v.modalidad === 'salteada'; }
+
 // ── Saldo por empleado y período ────────────────────────────────────────────
 function vacacionesDe(empId, periodo) {
   return (AppData.vacaciones || []).filter(v => v.empleado_id === empId &&
@@ -112,10 +130,58 @@ function vacacionesDe(empId, periodo) {
 function vacTomados(empId, periodo) {
   return vacacionesDe(empId, periodo).filter(vacCuenta).reduce((s, v) => s + _num(v.dias), 0);
 }
+
+// El saldo se lleva en las DOS monedas porque el que queda depende de cómo se
+// tome: lo que resta puede ser N corridos o los mismos días en salteados.
+//   corridos      días del bloque obligatorio + cualquier otro bloque corrido
+//   salteados     días sueltos ya tomados
+//   obligPendiente  cuánto falta del bloque de 7 que va sí o sí
+//   restoCorridos / restoSalteados  lo que queda, en cada moneda
 function vacSaldo(emp, periodo) {
   const c = vacCorresponden(emp, periodo);
-  const tomados = vacTomados(emp.id, periodo);
-  return { corresponden: c.dias, base: c.base, detalle: c.detalle, tomados, pendientes: c.dias - tomados };
+  const lics = vacacionesDe(emp.id, periodo).filter(vacCuenta);
+  const corridos = lics.filter(v => !vacEsSalteada(v)).reduce((s, v) => s + _num(v.dias), 0);
+  const salteados = lics.filter(vacEsSalteada).reduce((s, v) => s + _num(v.dias), 0);
+  const tomados = corridos + salteados;
+
+  // Con menos de 7 días (art. 153, quien entró a mitad de año) no hay bloque
+  // obligatorio que imponer: se toman como se puedan.
+  const oblig = Math.min(VAC_BLOQUE_OBLIG, c.dias);
+  const obligPendiente = Math.max(0, oblig - corridos);
+  const corridosExtra = Math.max(0, corridos - oblig);
+  const restoCorridos = Math.max(0, c.dias - oblig - corridosExtra);
+  const restoSalteados = Math.max(0, vacCorridosASalteados(restoCorridos) - salteados);
+  // Una vez que empezó a tomarlos salteados, lo que queda se cuenta así; si
+  // todavía no eligió, se muestra en corridos (que es como los da la ley).
+  const modoResto = salteados > 0 ? 'salteada' : (corridosExtra > 0 ? 'corrida' : '');
+  const pendientes = obligPendiente + (modoResto === 'salteada' ? restoSalteados : restoCorridos);
+
+  return {
+    corresponden: c.dias, base: c.base, detalle: c.detalle,
+    tomados, corridos, salteados,
+    oblig, obligPendiente, obligCubierto: obligPendiente === 0 && oblig > 0,
+    restoCorridos, restoSalteados, modoResto, pendientes
+  };
+}
+
+// Cómo se lee el saldo en una línea. El número solo no alcanza: "le quedan 3"
+// no significa lo mismo si son corridos o salteados.
+function vacSaldoTexto(s) {
+  if (!s.corresponden) return '';
+  const partes = [];
+  if (s.obligPendiente > 0) {
+    partes.push('le falta el bloque obligatorio de ' + s.obligPendiente + ' día' + (s.obligPendiente === 1 ? '' : 's') + ' corrido' + (s.obligPendiente === 1 ? '' : 's'));
+  } else if (s.oblig > 0) {
+    partes.push('bloque obligatorio de ' + s.oblig + ' días corridos cumplido');
+  }
+  if (s.restoCorridos > 0 || s.restoSalteados > 0) {
+    partes.push(s.modoResto === 'salteada'
+      ? 'le quedan ' + s.restoSalteados + ' día' + (s.restoSalteados === 1 ? '' : 's') + ' salteado' + (s.restoSalteados === 1 ? '' : 's')
+      : 'el resto son ' + s.restoCorridos + ' corridos o ' + s.restoSalteados + ' salteados');
+  } else if (!s.obligPendiente) {
+    partes.push('sin días pendientes');
+  }
+  return partes.join(' · ');
 }
 
 function empleadoDeVac(id) { return (AppData.empleados || []).find(e => e.id === id) || null; }
@@ -413,8 +479,10 @@ function renderVacSaldos() {
       .sort((a, b) => String(a.fecha_desde).localeCompare(String(b.fecha_desde)));
     const chips = vs.map(v => {
       const st = VAC_ESTADOS[v.estado] || VAC_ESTADOS.planificada;
-      return '<span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + ';font-size:10.5px">' +
-        vacFmt(v.fecha_desde) + ' → ' + vacFmt(v.fecha_hasta) + ' · ' + v.dias + 'd</span>';
+      return '<span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + ';font-size:10.5px" ' +
+        'title="' + (vacEsSalteada(v) ? 'Días salteados: no gastan el fin de semana' : 'Bloque corrido: incluye sábados y domingos') + '">' +
+        vacFmt(v.fecha_desde) + ' → ' + vacFmt(v.fecha_hasta) + ' · ' + v.dias + 'd ' +
+        (vacEsSalteada(v) ? '<span style="opacity:.75">salt.</span>' : '<span style="opacity:.75">corr.</span>') + '</span>';
     }).join(' ');
 
     return '<div class="card"><div class="card-body">' +
@@ -433,7 +501,21 @@ function renderVacSaldos() {
       '</div>' +
       '<div style="height:6px;background:var(--border);border-radius:99px;overflow:hidden;margin-bottom:8px">' +
         '<div style="height:100%;width:' + pct + '%;background:' + colorBarra + '"></div></div>' +
-      '<div style="font-size:10.5px;color:var(--text-muted);margin-bottom:8px">' + s.detalle + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-muted);margin-bottom:6px">' + s.detalle + '</div>' +
+      // La política: por qué el pendiente es el que es. "Le quedan 3" no
+      // significa lo mismo si son corridos o salteados, y el número solo no
+      // deja reconstruir de dónde salió.
+      (s.corresponden
+        ? '<div style="font-size:10.5px;background:var(--surface-0);border:1px solid var(--border);border-radius:7px;padding:6px 9px;margin-bottom:8px">' +
+          (s.obligCubierto
+            ? '<span style="color:#166534">✓ Bloque de ' + s.oblig + ' días corridos cumplido</span>'
+            : (s.oblig ? '<span style="color:#b45309">Faltan ' + s.obligPendiente + ' día(s) del bloque de ' + s.oblig + ' corridos (van juntos)</span>' : '')) +
+          (s.restoCorridos > 0 || s.restoSalteados > 0
+            ? '<div style="margin-top:2px">Resto: <strong>' + s.restoSalteados + ' salteados</strong>' +
+              (s.modoResto === 'salteada' ? ' <span class="muted">(ya tomó ' + s.salteados + ')</span>' : ' o <strong>' + s.restoCorridos + ' corridos</strong>') + '</div>'
+            : '<div style="margin-top:2px;color:#166534">Sin días pendientes</div>') +
+          '</div>'
+        : '') +
       (s.pendientes < 0 ? '<div style="font-size:11px;color:#b91c1c;margin-bottom:8px"><strong>Tomó ' + Math.abs(s.pendientes) +
         ' día(s) de más</strong> para este período — revisá si alguno corresponde a otro año.</div>' : '') +
       (chips ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + chips + '</div>' : '') +
@@ -507,7 +589,7 @@ function renderVacCalendario() {
       '<td><strong>' + _vacNombre(v.empleado_id) + '</strong>' +
         (e && e.area ? '<div style="font-size:10.5px;color:var(--text-muted)">' + e.area + '</div>' : '') + '</td>' +
       '<td>' + vacFmt(v.fecha_desde) + ' → ' + vacFmt(v.fecha_hasta) + '</td>' +
-      '<td style="text-align:right"><strong>' + v.dias + '</strong></td>' +
+      '<td style="text-align:right"><strong>' + v.dias + '</strong>' + '<div class="muted" style="font-size:9.5px">' + (vacEsSalteada(v) ? 'salteados' : 'corridos') + '</div></td>' +
       '<td>' + v.periodo + '</td>' +
       '<td><span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + '">' + st.label + '</span></td>' +
       '<td style="text-align:right"><button class="btn btn-sm" onclick="openVacModal(' + v.id + ')"><i class="ic ic-edit"></i></button></td>' +
@@ -564,7 +646,7 @@ function renderVacHistorial() {
         (e && e.activo === false ? ' <span class="tag" style="background:#fef2f2;color:#991b1b;font-size:9.5px">baja</span>' : '') + '</td>' +
       '<td>' + vacFmt(v.fecha_desde) + '</td>' +
       '<td>' + vacFmt(v.fecha_hasta) + '</td>' +
-      '<td style="text-align:right"><strong>' + v.dias + '</strong></td>' +
+      '<td style="text-align:right"><strong>' + v.dias + '</strong>' + '<div class="muted" style="font-size:9.5px">' + (vacEsSalteada(v) ? 'salteados' : 'corridos') + '</div></td>' +
       '<td>' + v.periodo + '</td>' +
       '<td><span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + '">' + st.label + '</span>' +
         (v.obs ? '<div style="font-size:10.5px;color:var(--text-muted)">' + v.obs + '</div>' : '') + '</td>' +
@@ -612,6 +694,18 @@ function openVacModal(id, empIdSugerido) {
   document.getElementById('mvac-desde').value = v ? String(v.fecha_desde).slice(0, 10) : '';
   document.getElementById('mvac-hasta').value = v ? String(v.fecha_hasta).slice(0, 10) : '';
   document.getElementById('mvac-estado').value = v ? v.estado : 'planificada';
+  // Al cargar una nueva se propone lo que manda la política: mientras falte el
+  // bloque obligatorio, corridos; después, salteados, que es como se toma el
+  // resto casi siempre.
+  const mMod = document.getElementById('mvac-modalidad');
+  if (mMod) {
+    if (v) mMod.value = vacEsSalteada(v) ? 'salteada' : 'corrida';
+    else {
+      const emp = empleadoDeVac(v ? v.empleado_id : empIdSugerido);
+      const sa = emp ? vacSaldo(emp, vacPeriodo) : null;
+      mMod.value = (sa && sa.obligPendiente === 0) ? 'salteada' : 'corrida';
+    }
+  }
   document.getElementById('mvac-obs').value = v ? (v.obs || '') : '';
   document.getElementById('modal-vac-title').textContent = v ? 'Editar licencia' : 'Cargar vacaciones';
   document.getElementById('modal-vac-backdrop').style.display = 'flex';
@@ -633,32 +727,63 @@ function recalcVacModal() {
   const hasta = document.getElementById('mvac-hasta').value;
   const dias = (desde && hasta) ? vacDiasEntre(desde, hasta) : 0;
   const cancelada = document.getElementById('mvac-estado').value === 'cancelada';
+  const salteada = (document.getElementById('mvac-modalidad') || {}).value === 'salteada';
 
   const elDias = document.getElementById('mvac-dias');
-  if (elDias) elDias.textContent = dias > 0 ? dias + (dias === 1 ? ' día corrido' : ' días corridos') : '—';
+  if (elDias) elDias.textContent = dias > 0
+    ? dias + (dias === 1 ? ' día' : ' días') + (salteada ? ' salteados' : ' corridos')
+    : '—';
 
   const info = document.getElementById('mvac-info');
   if (!info) return;
   const emp = empleadoDeVac(empId);
   if (!emp || !periodo) { info.innerHTML = ''; return; }
 
+  // El saldo se recalcula SIN esta licencia (al editar, sus propios días no
+  // cuentan como ya tomados) y después se le aplica lo que se está cargando,
+  // con la política: un bloque corrido gasta días corridos, los salteados
+  // gastan del resto convertido a 5 de cada 7.
+  const sinEsta = { corridos: 0, salteados: 0 };
+  vacacionesDe(empId, periodo).filter(vacCuenta).forEach(v => {
+    if (vacEditId != null && v.id === vacEditId) return;
+    if (vacEsSalteada(v)) sinEsta.salteados += _num(v.dias); else sinEsta.corridos += _num(v.dias);
+  });
   const s = vacSaldo(emp, periodo);
-  // Al editar, sus propios días no cuentan como ya tomados.
-  const propios = vacEditId != null
-    ? (AppData.vacaciones.find(x => x.id === vacEditId && vacCuenta(x)) || { dias: 0 }).dias : 0;
-  const tomadosOtros = s.tomados - _num(propios);
-  const quedan = s.corresponden - tomadosOtros - (cancelada ? 0 : dias);
+  const corridosNuevo = sinEsta.corridos + (cancelada || salteada ? 0 : dias);
+  const salteadosNuevo = sinEsta.salteados + (cancelada || !salteada ? 0 : dias);
+  const oblig = Math.min(VAC_BLOQUE_OBLIG, s.corresponden);
+  const obligPend = Math.max(0, oblig - corridosNuevo);
+  const extraCorr = Math.max(0, corridosNuevo - oblig);
+  const restoCorr = Math.max(0, s.corresponden - oblig - extraCorr);
+  const restoSalt = vacCorridosASalteados(restoCorr) - salteadosNuevo;
+  const tomadosOtros = sinEsta.corridos + sinEsta.salteados;
 
   const v154 = vacVentanaGoce(periodo);
   const fueraVentana = desde && (desde < v154.desde || desde > v154.hasta);
 
   let html = '<div style="font-size:11.5px;line-height:1.6">' +
     '<div>' + s.detalle + '</div>' +
-    '<div>Le corresponden <strong>' + s.corresponden + '</strong> · ya tiene <strong>' + tomadosOtros + '</strong> cargados' +
-    (dias && !cancelada ? ' · con esta licencia quedarían <strong>' + quedan + '</strong>' : '') + '</div>';
-  if (dias && !cancelada && quedan < 0) {
-    html += '<div style="color:#b91c1c;margin-top:4px"><strong>Se pasa por ' + Math.abs(quedan) + ' día(s)</strong> ' +
+    '<div>Le corresponden <strong>' + s.corresponden + '</strong> días corridos · ya tiene <strong>' + tomadosOtros + '</strong> cargados' +
+    (sinEsta.salteados ? ' <span class="muted">(' + sinEsta.corridos + ' corridos + ' + sinEsta.salteados + ' salteados)</span>' : '') + '</div>';
+  if (dias && !cancelada) {
+    html += '<div style="margin-top:3px">Con esta licencia le quedarían: ' +
+      (obligPend > 0 ? '<strong>' + obligPend + '</strong> del bloque obligatorio + ' : '') +
+      '<strong>' + Math.max(0, restoSalt) + '</strong> salteados' +
+      (salteadosNuevo === 0 ? ' <span class="muted">(o ' + restoCorr + ' corridos)</span>' : '') + '</div>';
+  }
+  if (dias && !cancelada && restoSalt < 0) {
+    html += '<div style="color:#b91c1c;margin-top:4px"><strong>Se pasa por ' + Math.abs(restoSalt) + ' día(s) salteado(s)</strong> ' +
       'del período ' + periodo + '. Se puede guardar igual (puede ser un adelanto o una licencia de otro tipo), pero revisá el período.</div>';
+  }
+  // La política: el primer tramo va corrido. Cargar salteados antes de cubrirlo
+  // no se bloquea —puede haber una excepción— pero se avisa.
+  if (dias && !cancelada && salteada && obligPend > 0) {
+    html += '<div style="color:#9a3412;margin-top:4px">Todavía le faltan <strong>' + obligPend + ' día(s)</strong> del ' +
+      'bloque de <strong>' + oblig + ' corridos</strong> que va de una sola vez. Estos días salteados se cargan igual, pero el bloque sigue pendiente.</div>';
+  }
+  if (dias && !cancelada && !salteada && dias < oblig && obligPend > 0) {
+    html += '<div style="color:#9a3412;margin-top:4px">Un bloque corrido de menos de <strong>' + oblig + ' días</strong> no cubre el ' +
+      'tramo obligatorio. Si son días sueltos, marcalos como <strong>salteados</strong>: rinden más (5 de cada 7).</div>';
   }
   if (fueraVentana) {
     html += '<div style="color:#9a3412;margin-top:4px">La fecha de inicio queda <strong>fuera del 1/10/' + periodo +
@@ -675,6 +800,7 @@ async function guardarVacacion() {
   const fecha_desde = document.getElementById('mvac-desde').value;
   const fecha_hasta = document.getElementById('mvac-hasta').value;
   const estado = document.getElementById('mvac-estado').value;
+  const modalidad = (document.getElementById('mvac-modalidad') || {}).value === 'salteada' ? 'salteada' : 'corrida';
   const obs = (document.getElementById('mvac-obs').value || '').trim();
 
   if (!empleado_id) { alert('Elegí el empleado.'); return; }
@@ -689,7 +815,7 @@ async function guardarVacacion() {
   if (choca && !confirm('Ya tiene una licencia del ' + vacFmt(choca.fecha_desde) + ' al ' + vacFmt(choca.fecha_hasta) +
       ', que se superpone con estas fechas.' + String.fromCharCode(10) + String.fromCharCode(10) + '¿Guardar igual?')) return;
 
-  const rec = { empleado_id, periodo, fecha_desde, fecha_hasta, dias, estado, obs };
+  const rec = { empleado_id, periodo, fecha_desde, fecha_hasta, dias, estado, modalidad, obs };
   try {
     if (vacEditId != null) {
       await DB.updateWhere('vacaciones', 'id', vacEditId, rec);
@@ -703,7 +829,7 @@ async function guardarVacacion() {
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     closeVacModal();
     switchVacacionesTab(vacTab);
-    showToast('✅ Licencia guardada — ' + dias + ' día(s)');
+    showToast('✅ Licencia guardada — ' + dias + ' día(s) ' + (modalidad === 'salteada' ? 'salteados' : 'corridos'));
   } catch (e) { console.warn('guardarVacacion', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }
 
