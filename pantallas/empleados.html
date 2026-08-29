@@ -82,9 +82,12 @@
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes a liquidar</label>
                 <input type="month" id="emp-sueldo-periodo" onchange="renderSueldosPanel()">
               </div>
-              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="exportSueldosPDF()"><i class="ic ic-download"></i> Descargar PDF</button>
+              <button class="btn btn-sm" style="margin-left:auto" onclick="exportSueldosPDF()"><i class="ic ic-download"></i> Planilla del mes</button>
+              <button class="btn btn-sm btn-primary" onclick="exportRecibosDelMes()" title="Un recibo por empleado, uno por página, para firmar al momento del pago"><i class="ic ic-file"></i> Recibos para firmar</button>
             </div>
           </div>
+
+          <div id="emp-sueldo-aviso"></div>
 
           <div class="metrics-grid" id="emp-sueldos-total" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
 

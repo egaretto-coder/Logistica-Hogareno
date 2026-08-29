@@ -786,10 +786,16 @@ function renderSueldosPanel() {
     const pctT = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
     const mT = s ? _num(s.monto_transferencia) : Math.round(total * pctT / 100);
     const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pctT / 100);
+    const est = estadoAjuste(e);
+    const leToca = leTocaAjuste(e);
+    const post = postergacionVigente(e);
     totT += mT; totE += mE; totG += total;
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div><div><strong>' + e.nombre + '</strong>' +
         (e.registrado === false ? ' <span class="badge" style="background:#fff7ed;color:#9a3412;font-size:9px">no reg.</span>' : '') +
+        (leToca ? ' <span class="badge" style="background:' + (est.estado === 'vencido' ? '#fee2e2;color:#b91c1c' : '#fef9c3;color:#854d0e') + ';font-size:9px" title="Le corresponde el aumento trimestral. Se puede aplicar desde acá.">' +
+          (est.estado === 'vencido' ? 'ajuste vencido' : 'le toca ajuste') + '</span>' : '') +
+        (post ? ' <span class="badge" style="background:#fef9c3;color:#854d0e;font-size:9px" title="' + String(post.motivo || '').replace(/"/g, '&quot;') + '">postergado a ' + _mesTexto(post.mes_nuevo) + '</span>' : '') +
         '<div class="muted" style="font-size:10px">' + (e.puesto || '') + '</div></div></div></td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(base) + '</td>' +
       '<td class="mono" style="text-align:right">' + (extras ? '+' + fmtPeso(extras) : '—') + '</td>' +
@@ -797,20 +803,127 @@ function renderSueldosPanel() {
       '<td class="mono" style="text-align:right;color:#b91c1c">' + (adel ? '-' + fmtPeso(adel) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(total) + '</td>' +
       '<td style="font-size:11px">' + fmtPeso(mT) + ' <span class="muted">transf.</span><br>' + fmtPeso(mE) + ' <span class="muted">efvo.</span></td>' +
-      '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">' +
+        (leToca ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#fcd34d;color:#92400e" onclick="abrirAjusteIndividual(' + e.id + ')" title="Aplicarle el aumento trimestral ahora, sin salir de esta pantalla">$ Ajustar</button>' +
+          '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento: se posterga con una justificación">Postergar</button>' : '') +
         (s && s.pagado
           ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span>'
           : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="openSueldoModal(' + e.id + ')"><i class="ic ic-edit"></i> Liquidar</button>') +
-        (s ? '<button class="btn btn-sm" style="padding:4px 6px;font-size:11px" onclick="openSueldoModal(' + e.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' : '') +
+        (s ? '<button class="btn btn-sm" style="padding:4px 6px;font-size:11px" onclick="openSueldoModal(' + e.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' +
+             '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="exportReciboSueldoPDF(' + e.id + ')" title="Recibo para firmar al momento del pago"><i class="ic ic-download"></i> Recibo</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
+
+  // Liquidar el mes es el momento en que se paga: si alguien tiene el aumento
+  // pendiente, se le está por pagar de menos. Se avisa acá, no en otra solapa.
+  const pend = lista.filter(leTocaAjuste);
+  const av = document.getElementById('emp-sueldo-aviso');
+  if (av) av.innerHTML = pend.length
+    ? '<div class="alert" style="margin:0 0 14px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
+      '<i class="ic ic-alert"></i><div><strong>' + pend.length + ' empleado(s) tienen el ajuste trimestral pendiente.</strong> ' +
+      'Si se liquida así, se les paga con el sueldo viejo. Ajustalos o postergalos desde su fila: ' +
+      pend.slice(0, 6).map(x => x.nombre).join(' · ') + (pend.length > 6 ? ' …y ' + (pend.length - 6) + ' más' : '') +
+      '</div></div>'
+    : '';
 
   const tot = document.getElementById('emp-sueldos-total');
   if (tot) tot.innerHTML =
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-card"></i></div><div class="metric-label">Transferencia</div><div class="metric-value">' + fmtPeso(totT) + '</div></div>' +
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Efectivo</div><div class="metric-value">' + fmtPeso(totE) + '</div></div>' +
     '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-file"></i></div><div class="metric-label">Total del mes</div><div class="metric-value">' + fmtPeso(totG) + '</div></div>';
+}
+
+// ── Ajuste de UN empleado, desde la liquidación mensual ────────────────────
+// El aumento se decide por lote en su propia solapa, pero cuando se está
+// liquidando el mes y alguien tiene el ajuste pendiente hay que poder dárselo
+// sin salir de acá: ir a la otra solapa y volver es donde se pierde.
+let _aj1Id = null;
+
+function abrirAjusteIndividual(empId) {
+  const e = (AppData.empleados || []).find(x => x.id === empId); if (!e) return;
+  _aj1Id = empId;
+  const est = estadoAjuste(e);
+  const box = document.getElementById('maj1-info');
+  if (box) box.innerHTML = '<i class="ic ic-user"></i><div><strong>' + e.nombre + '</strong> · ' + (e.puesto || 'sin puesto') +
+    '<br>Sueldo actual <strong>' + fmtPeso(_num(e.sueldo)) + '</strong> · ' +
+    (est.estado === 'vencido' ? '<span style="color:#b91c1c">ajuste vencido desde ' + _mesTexto(_yyyymm(est.fecha)) + '</span>'
+     : est.estado === 'toca' ? '<span style="color:#92400e">le toca este mes</span>'
+     : 'próximo ajuste ' + (est.fecha ? _mesTexto(_yyyymm(est.fecha)) : '—')) + '</div>';
+  ['maj1-pct', 'maj1-monto', 'maj1-motivo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  recalcAjusteIndividual();
+  document.getElementById('modal-ajuste1-backdrop').style.display = 'flex';
+}
+
+function cerrarAjusteIndividual(e) {
+  if (!e || e.target.id === 'modal-ajuste1-backdrop') {
+    document.getElementById('modal-ajuste1-backdrop').style.display = 'none';
+    _aj1Id = null;
+  }
+}
+
+function recalcAjusteIndividual() {
+  const box = document.getElementById('maj1-preview');
+  const btn = document.getElementById('maj1-guardar');
+  if (!box) return;
+  const e = (AppData.empleados || []).find(x => x.id === _aj1Id);
+  const pct = parseFloat(document.getElementById('maj1-pct')?.value) || 0;
+  const monto = parseFloat(document.getElementById('maj1-monto')?.value) || 0;
+  if (btn) btn.disabled = !e || (!pct && !monto);
+  if (!e) { box.innerHTML = ''; return; }
+  const nuevo = _nuevoSueldo(_num(e.sueldo), pct, monto);
+  const periodo = (document.getElementById('emp-sueldo-periodo') || {}).value || '';
+  const s = sueldoDe(e.id, periodo);
+  box.innerHTML = (pct || monto)
+    ? '<div style="display:flex;justify-content:space-between"><span>Sueldo</span>' +
+      '<span><span class="muted">' + fmtPeso(_num(e.sueldo)) + '</span> a <strong>' + fmtPeso(nuevo) + '</strong> ' +
+      '<span style="color:#166534">(+' + fmtPeso(nuevo - _num(e.sueldo)) + ')</span></span></div>' +
+      '<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">El aumento se fecha en <strong>' + _mesTexto(periodo) +
+      '</strong>, así el ciclo de ' + RRHH_MESES_AJUSTE + ' meses arranca en ese mes.</div>' +
+      (s && s.pagado
+        ? '<div style="margin-top:6px;font-size:11px;color:#b45309">Este mes ya está marcado como <strong>pagado</strong>: el aumento no lo cambia. Si corresponde pagarlo en este mes, reabrí la liquidación y volvé a liquidarla.</div>'
+        : (s ? '<div style="margin-top:6px;font-size:11px;color:#0369a1">La liquidación de este mes ya está cargada: se actualiza con el sueldo nuevo.</div>' : ''))
+    : '<span class="muted">Cargá el % o el monto del aumento.</span>';
+}
+
+async function aplicarAjusteIndividual() {
+  const e = (AppData.empleados || []).find(x => x.id === _aj1Id); if (!e) return;
+  const pct = parseFloat(document.getElementById('maj1-pct')?.value) || 0;
+  const monto = parseFloat(document.getElementById('maj1-monto')?.value) || 0;
+  if (!pct && !monto) { alert('Cargá el % de aumento o un monto fijo.'); return; }
+  const motivo = (document.getElementById('maj1-motivo')?.value || '').trim();
+  const periodo = (document.getElementById('emp-sueldo-periodo') || {}).value || '';
+  const anterior = _num(e.sueldo);
+  const nuevo = _nuevoSueldo(anterior, pct, monto);
+  if (!confirm('¿Aumentar el sueldo de ' + e.nombre + '?' + String.fromCharCode(10) +
+    fmtPeso(anterior) + ' a ' + fmtPeso(nuevo) + String.fromCharCode(10) + String.fromCharCode(10) +
+    'Queda en su historial, fechado en ' + _mesTexto(periodo) + '.')) return;
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const rec = { empleado_id: e.id, fecha: (periodo ? periodo + '-01' : new Date().toISOString().slice(0, 10)),
+                periodo, pct, sueldo_anterior: anterior, sueldo_nuevo: nuevo, motivo, aplicado_por: quien };
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.updateWhere('empleados', 'id', e.id, { sueldo: nuevo });
+    const row = await DB.insertRow('empleado_ajustes', rec);
+    e.sueldo = nuevo;
+    AppData.empleadoAjustes.push(Object.assign({ id: row && row.id }, rec));
+    // La liquidación del mes en curso, si está cargada y NO pagada, tiene que
+    // quedar con el sueldo nuevo: si no, el recibo saldría con el viejo.
+    const s = sueldoDe(e.id, periodo);
+    if (s && !s.pagado) {
+      const nuevoTotal = nuevo + _num(s.monto_horas_extra) + _num(s.bono_eficiencia) -
+        (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0);
+      const mT = Math.round(nuevoTotal * _num(s.pct_transferencia) / 100);
+      const campos = { sueldo_base: nuevo, total: nuevoTotal, monto_transferencia: mT, monto_efectivo: nuevoTotal - mT };
+      await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
+      Object.assign(s, campos);
+    }
+    persistirEmpleadosLocal();
+    document.getElementById('modal-ajuste1-backdrop').style.display = 'none';
+    _aj1Id = null;
+    renderSueldosPanel();
+    showToast('✅ ' + e.nombre + ': ' + fmtPeso(anterior) + ' a ' + fmtPeso(nuevo));
+  } catch (err) { console.warn('aplicarAjusteIndividual', err); alert('No se pudo aplicar: ' + (err.message || err)); }
 }
 
 // ── Adelantos del empleado dentro de la liquidación de sueldo ───────────────
@@ -961,8 +1074,9 @@ function recalcSueldoModal() {
     '<span style="margin-left:14px"><i class="ic ic-dollar"></i> Efectivo (' + (100 - pct) + '%): <strong>' + fmtPeso(mE) + '</strong></span>';
   return { base, horas, vh, extras, bono, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE };
 }
-async function guardarSueldo(marcarPagado) {
+async function guardarSueldo(marcarPagado, conRecibo) {
   if (sueldoModalEmpId == null) return;
+  const _empIdRecibo = sueldoModalEmpId;
   const periodo = document.getElementById('emp-sueldo-periodo').value;
   // Primero se imputan/deshacen las cuotas, así el registro del sueldo se
   // guarda con el mismo descuento que muestra la pantalla.
@@ -988,8 +1102,224 @@ async function guardarSueldo(marcarPagado) {
     persistirEmpleadosLocal();
     document.getElementById('modal-sueldo-backdrop').style.display = 'none';
     renderSueldosPanel();
+    // El recibo se baja DESPUÉS de guardar: así sale con lo que quedó
+    // registrado y no con lo que había en pantalla.
+    if (conRecibo) { try { exportReciboSueldoPDF(_empIdRecibo, periodo); } catch (err) { console.warn('recibo', err); } }
     showToast(marcarPagado ? '✅ Sueldo liquidado y marcado como pagado' : '✅ Liquidación guardada');
   } catch (e) { console.warn('guardarSueldo', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  RECIBO DE LIQUIDACIÓN — el papel que se firma al momento de pagar
+//
+//  Es un documento que SALE de la empresa hacia una persona, igual que la
+//  liquidación del cliente: se arma con la marca (src/marca.js) y con los datos
+//  del emisor. El período tiene que quedar sin ninguna ambigüedad —el mes en
+//  letras Y el rango de días—, los conceptos discriminados en haberes y
+//  descuentos, y el corte transferencia/efectivo, que es como se paga.
+//  Lleva las dos firmas: sin eso no sirve como constancia de pago.
+//
+//  Ojo con jsPDF y WinAnsi: los acentos y el · entran, las flechas y los
+//  símbolos no. Por eso no hay ni una flecha en este papel.
+// ════════════════════════════════════════════════════════════════════════
+const RECIBO = { izq: 14, der: 196, ancho: 182, pieRegla: 268 };
+
+// Último día del mes, para escribir el período sin ambigüedad.
+function _finDeMesISO(periodo) {
+  const [y, m] = String(periodo || '').split('-').map(Number);
+  if (!y || !m) return '';
+  return String(new Date(y, m, 0).getDate()).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + y;
+}
+function _iniDeMesISO(periodo) {
+  const [y, m] = String(periodo || '').split('-').map(Number);
+  if (!y || !m) return '';
+  return '01/' + String(m).padStart(2, '0') + '/' + y;
+}
+
+// Los datos de la liquidación, vengan de un registro guardado o del sueldo
+// vigente (para poder ver el recibo antes de guardarlo).
+function _datosRecibo(e, periodo) {
+  const s = sueldoDe(e.id, periodo);
+  const base = s ? _num(s.sueldo_base) : _num(e.sueldo);
+  const horas = s ? _num(s.horas_extra) : 0;
+  const vh = s ? _num(s.valor_hora_extra) : 0;
+  const extras = s ? _num(s.monto_horas_extra) : 0;
+  const bono = s ? _num(s.bono_eficiencia) : 0;
+  const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
+  const total = s ? _num(s.total) : base;
+  const pct = s ? _num(s.pct_transferencia) : _num(e.pct_transferencia);
+  const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
+  const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pct / 100);
+  return { s, base, horas, vh, extras, bono, adel, total, pct, mT, mE,
+           obs: (s && s.obs) || '', pagado: !!(s && s.pagado) };
+}
+
+function _reciboEncabezado(doc, ctx) {
+  const L = RECIBO.izq, R = RECIBO.der;
+  try { doc.addImage(MARCA.logo, 'PNG', L, 12, 44, 44 / MARCA.logoRatio); } catch (err) {}
+  _pdfTexto(doc, MARCA.navy); doc.setFont(undefined, 'bold'); doc.setFontSize(12.5);
+  doc.text('RECIBO DE LIQUIDACIÓN DE SUELDO', R, 16.5, { align: 'right' });
+  doc.setFont(undefined, 'normal'); doc.setFontSize(8); _pdfTexto(doc, MARCA.gris);
+  doc.text('N° ' + ctx.numero, R, 21.5, { align: 'right' });
+  doc.text('Emitido el ' + ctx.emitido, R, 25.5, { align: 'right' });
+  _pdfRelleno(doc, MARCA.navy); doc.rect(L, 29.5, RECIBO.ancho, 1.1, 'F');
+  _pdfRelleno(doc, MARCA.azul); doc.rect(L, 29.5, 46, 1.1, 'F');
+}
+
+function _reciboFichas(doc, ctx) {
+  const L = RECIBO.izq, W = 87, X2 = 109, Y = 35, H = 26;
+  _pdfRelleno(doc, MARCA.azulPapel);
+  doc.roundedRect(L, Y, W, H, 1.6, 1.6, 'F');
+  doc.roundedRect(X2, Y, W, H, 1.6, 1.6, 'F');
+  const ficha = (rotulo, titulo, lineas, x) => {
+    _pdfTexto(doc, MARCA.azul); doc.setFont(undefined, 'bold'); doc.setFontSize(6.5);
+    doc.text(_recorte(doc, rotulo, W - 10), x + 5, Y + 5.8);
+    _pdfTexto(doc, MARCA.navy); doc.setFontSize(10);
+    doc.text(_recorte(doc, titulo, W - 10), x + 5, Y + 12);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.texto);
+    let ly = Y + 17;
+    lineas.filter(Boolean).slice(0, 3).forEach(t => { doc.text(_recorte(doc, t, W - 10), x + 5, ly); ly += 3.9; });
+  };
+  ficha('EMPLEADO', ctx.nombre, ctx.datosEmp, L);
+  ficha('PERÍODO LIQUIDADO', ctx.periodoTxt, ctx.datosPer, X2);
+}
+
+function _reciboPie(doc, ctx) {
+  const L = RECIBO.izq, R = RECIBO.der, Y = RECIBO.pieRegla;
+  // Las dos firmas: es lo que convierte el papel en constancia de pago.
+  _pdfTrazo(doc, MARCA.linea); doc.setLineWidth(0.3);
+  doc.line(L + 6, Y - 4, L + 76, Y - 4);
+  doc.line(R - 76, Y - 4, R - 6, Y - 4);
+  doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.gris);
+  doc.text('Firma del empleado', L + 41, Y, { align: 'center' });
+  doc.text('Por ' + (empresaDato('empresa_razon') || empresaNombre()), R - 41, Y, { align: 'center' });
+  doc.setFontSize(6.5);
+  doc.text('Aclaración y DNI', L + 41, Y + 3.5, { align: 'center' });
+  doc.text('Firma y sello', R - 41, Y + 3.5, { align: 'center' });
+
+  _pdfTrazo(doc, MARCA.linea); doc.setLineWidth(0.2); doc.line(L, Y + 9, R, Y + 9);
+  const fiscal = empresaLineaFiscal(), contacto = empresaLineaContacto();
+  doc.setFont(undefined, 'bold'); doc.setFontSize(7); _pdfTexto(doc, MARCA.navy);
+  if (fiscal) doc.text(doc.splitTextToSize(fiscal, 140)[0], L, Y + 13.5);
+  doc.setFont(undefined, 'normal'); _pdfTexto(doc, MARCA.gris);
+  if (contacto) doc.text(doc.splitTextToSize(contacto, 140)[0], L, Y + 17);
+  doc.setFontSize(6.5);
+  doc.text('Constancia interna de pago. No reemplaza al recibo de sueldo de ley.', L, Y + 20.5);
+  doc.setFontSize(7.5);
+  doc.text('Recibo ' + ctx.numero, R, Y + 13.5, { align: 'right' });
+}
+
+// Recibo de UN empleado. opts.doc encadena varios en un solo archivo.
+function exportReciboSueldoPDF(empId, periodo, opts) {
+  opts = opts || {};
+  const e = (AppData.empleados || []).find(x => x.id === empId);
+  if (!e) return;
+  periodo = periodo || (document.getElementById('emp-sueldo-periodo') || {}).value || '';
+  const d = _datosRecibo(e, periodo);
+  const { jsPDF } = window.jspdf;
+  const doc = opts.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  if (opts.doc && opts.nuevaPagina) doc.addPage();
+
+  const ctx = {
+    nombre: e.nombre,
+    numero: 'LH-SUE-' + String(e.id) + '-' + String(periodo || '').replace('-', ''),
+    emitido: _fechaCorta(new Date()),
+    periodoTxt: _mesTexto(periodo),
+    datosEmp: [
+      (e.puesto || '') + (e.area ? '  ·  ' + e.area : ''),
+      (e.dni ? 'DNI ' + e.dni : '') + (e.registrado === false ? (e.dni ? '  ·  ' : '') + 'No registrado' : ''),
+      'Ingreso ' + _empFmt(e.fecha_ingreso) + '  ·  ' + antiguedadTexto(e)
+    ],
+    datosPer: [
+      'Del ' + _iniDeMesISO(periodo) + ' al ' + _finDeMesISO(periodo),
+      'Pago: ' + d.pct + '% transferencia  ·  ' + (100 - d.pct) + '% efectivo',
+      d.pagado ? 'Abonado' : 'Pendiente de pago'
+    ]
+  };
+  _reciboEncabezado(doc, ctx);
+  _reciboFichas(doc, ctx);
+
+  // ── Conceptos ────────────────────────────────────────────────────────────
+  const body = [];
+  body.push(['Sueldo básico', _mesTexto(periodo), fmtPeso(d.base), '']);
+  if (d.extras) body.push(['Horas extras', d.horas + ' h x ' + fmtPeso(d.vh), fmtPeso(d.extras), '']);
+  if (d.bono) body.push(['Bono de eficiencia', '', fmtPeso(d.bono), '']);
+  if (d.adel) body.push(['Adelanto descontado', 'a cuenta de haberes', '', fmtPeso(d.adel)]);
+
+  doc.autoTable({
+    startY: 66,
+    head: [['Concepto', 'Detalle', 'Haberes', 'Descuentos']],
+    body: body,
+    theme: 'striped',
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: { top: 2.6, bottom: 2.6, left: 3, right: 3 }, lineWidth: 0 },
+    headStyles: { fillColor: MARCA.navy, textColor: 255, fontSize: 8, fontStyle: 'bold', cellPadding: { top: 3, bottom: 3, left: 3, right: 3 } },
+    bodyStyles: { textColor: MARCA.texto },
+    alternateRowStyles: { fillColor: [247, 249, 252] },
+    columnStyles: {
+      0: { cellWidth: 'auto' }, 1: { cellWidth: 46 },
+      2: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+      3: { cellWidth: 30, halign: 'right', textColor: [185, 28, 28] }
+    },
+    margin: { left: RECIBO.izq, right: RECIBO.izq, top: 25, bottom: 40 }
+  });
+
+  let y = doc.lastAutoTable.finalY + 8;
+
+  // Totales a la derecha
+  const RX = 112;
+  let ty = y + 3;
+  const renglon = (lab, val, col) => {
+    doc.setFont(undefined, 'normal'); doc.setFontSize(8.5); _pdfTexto(doc, MARCA.gris);
+    doc.text(lab, RX, ty);
+    _pdfTexto(doc, col || MARCA.texto);
+    doc.text(val, RECIBO.der, ty, { align: 'right' });
+    ty += 5.4;
+  };
+  renglon('Total haberes', fmtPeso(d.base + d.extras + d.bono));
+  if (d.adel) renglon('Total descuentos', '-' + fmtPeso(d.adel), [185, 28, 28]);
+  _pdfTrazo(doc, MARCA.linea); doc.setLineWidth(0.2); doc.line(RX, ty - 3.2, RECIBO.der, ty - 3.2);
+  _pdfRelleno(doc, MARCA.navy); doc.roundedRect(RX, ty, 84, 15, 1.8, 1.8, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont(undefined, 'bold'); doc.setFontSize(7.5);
+  doc.text('NETO A COBRAR', RX + 5, ty + 5.5);
+  doc.setFontSize(15);
+  doc.text(fmtPeso(d.total), RECIBO.der - 5, ty + 11.8, { align: 'right' });
+
+  // Forma de pago + observaciones, a la izquierda
+  _pdfTexto(doc, MARCA.azul); doc.setFont(undefined, 'bold'); doc.setFontSize(6.5);
+  doc.text('FORMA DE PAGO', RECIBO.izq, y + 3);
+  doc.setFont(undefined, 'normal'); doc.setFontSize(8); _pdfTexto(doc, MARCA.texto);
+  let ly = y + 8;
+  doc.text('Transferencia (' + d.pct + '%): ' + fmtPeso(d.mT), RECIBO.izq, ly); ly += 4.6;
+  doc.text('Efectivo (' + (100 - d.pct) + '%): ' + fmtPeso(d.mE), RECIBO.izq, ly); ly += 4.6;
+  if (empresaDato('empresa_pago')) {
+    _pdfTexto(doc, MARCA.gris); doc.setFontSize(7);
+    doc.splitTextToSize(empresaDato('empresa_pago'), 90).forEach(t => { doc.text(t, RECIBO.izq, ly); ly += 3.6; });
+  }
+  if (d.obs) {
+    ly += 2;
+    _pdfTexto(doc, MARCA.azul); doc.setFont(undefined, 'bold'); doc.setFontSize(6.5);
+    doc.text('OBSERVACIONES', RECIBO.izq, ly); ly += 4.5;
+    doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.texto);
+    doc.splitTextToSize(d.obs, 90).slice(0, 4).forEach(t => { doc.text(t, RECIBO.izq, ly); ly += 3.9; });
+  }
+
+  _reciboPie(doc, ctx);
+  if (opts.doc) return doc;
+  doc.save('Recibo_' + String(e.nombre).replace(/\s+/g, '_') + '_' + String(periodo).replace('-', '-') + '.pdf');
+}
+
+// Todos los recibos del mes en un solo archivo, uno por página: es lo que se
+// imprime el día del pago para que cada uno firme el suyo.
+function exportRecibosDelMes() {
+  const periodo = (document.getElementById('emp-sueldo-periodo') || {}).value || '';
+  const lista = (AppData.empleados || []).filter(e => e.activo !== false && sueldoDe(e.id, periodo))
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  if (!lista.length) { alert('Todavía no hay ninguna liquidación cargada en ' + _mesTexto(periodo) + '.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  lista.forEach((e, i) => exportReciboSueldoPDF(e.id, periodo, { doc, nuevaPagina: i > 0 }));
+  doc.save('Recibos_' + String(periodo) + '.pdf');
+  showToast('📄 ' + lista.length + ' recibo(s) en un solo PDF');
 }
 
 // PDF del mes: quién cobra cuánto, con el corte transferencia / efectivo.
