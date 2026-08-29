@@ -214,6 +214,7 @@ function persistirEmpleadosLocal() {
     localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones));
+    localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
   } catch (e) {}
 }
@@ -940,6 +941,10 @@ function renderSueldosPanel() {
     const est = estadoAjuste(e);
     const leToca = leTocaAjuste(e);
     const post = postergacionVigente(e);
+    // Horas extras registradas en el mes que todavía no entraron en la
+    // liquidación: es plata que se le debe y que se paga sola si nadie mira.
+    const hsReg = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
+    const hsFalta = hsReg > 0 && (!s || Math.abs(_num(s.horas_extra) - hsReg) > 0.001);
     totT += mT; totE += mE; totG += total;
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div><div><strong>' + e.nombre + '</strong>' +
@@ -949,7 +954,9 @@ function renderSueldosPanel() {
         (post ? ' <span class="badge" style="background:#fef9c3;color:#854d0e;font-size:9px" title="' + String(post.motivo || '').replace(/"/g, '&quot;') + '">postergado a ' + _mesTexto(post.mes_nuevo) + '</span>' : '') +
         '<div class="muted" style="font-size:10px">' + (e.puesto || '') + '</div></div></div></td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(base) + '</td>' +
-      '<td class="mono" style="text-align:right">' + (extras ? '+' + fmtPeso(extras) : '—') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (extras ? '+' + fmtPeso(extras) : '—') +
+        (hsFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Registradas en Vacaciones → Horas extras y todavía no liquidadas">' +
+          (Math.round(hsReg * 100) / 100) + ' h registradas</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (bono ? '+' + fmtPeso(bono) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;color:#b91c1c">' + (adel ? '-' + fmtPeso(adel) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(total) + '</td>' +
@@ -971,14 +978,28 @@ function renderSueldosPanel() {
   // Liquidar el mes es el momento en que se paga: si alguien tiene el aumento
   // pendiente, se le está por pagar de menos. Se avisa acá, no en otra solapa.
   const pend = lista.filter(leTocaAjuste);
+  // Quiénes tienen horas extras registradas que la liquidación todavía no toma.
+  const conHs = lista.filter(e => {
+    const r = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
+    if (!(r > 0)) return false;
+    const sx = sueldoDe(e.id, periodo);
+    return !sx || Math.abs(_num(sx.horas_extra) - r) > 0.001;
+  });
   const av = document.getElementById('emp-sueldo-aviso');
-  if (av) av.innerHTML = pend.length
+  if (av) av.innerHTML = (pend.length
     ? '<div class="alert" style="margin:0 0 14px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
       '<i class="ic ic-alert"></i><div><strong>' + pend.length + ' empleado(s) tienen el ajuste trimestral pendiente.</strong> ' +
       'Si se liquida así, se les paga con el sueldo viejo. Ajustalos o postergalos desde su fila: ' +
       pend.slice(0, 6).map(x => x.nombre).join(' · ') + (pend.length > 6 ? ' …y ' + (pend.length - 6) + ' más' : '') +
       '</div></div>'
-    : '';
+    : '') +
+    (conHs.length
+      ? '<div class="alert" style="margin:0 0 14px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe">' +
+        '<i class="ic ic-calendar"></i><div><strong>' + conHs.length + ' empleado(s) tienen horas extras registradas sin liquidar</strong> en ' +
+        _mesTexto(periodo) + '. Se cargaron en <strong>Vacaciones → Horas extras</strong> y al abrir su liquidación vienen ya sumadas: ' +
+        conHs.slice(0, 6).map(x => x.nombre + ' (' + horasExtraDelMes(x.id, periodo) + ' h)').join(' · ') +
+        (conHs.length > 6 ? ' …y ' + (conHs.length - 6) + ' más' : '') + '</div></div>'
+      : '');
 
   // Transferencia y efectivo suman SOLO lo liquidado: de lo que falta liquidar
   // todavía no se sabe con qué corte se paga, y meterlo con un reparto supuesto
@@ -1206,7 +1227,12 @@ function openSueldoModal(empId) {
     ' · ' + (e.registrado === false ? '<span style="color:#9a3412">No registrado</span>' : 'Registrado') +
     '<br><span class="muted">Período ' + periodo + ' · ingreso ' + _empFmt(e.fecha_ingreso) + '</span>';
   document.getElementById('msld-base').value = s ? _num(s.sueldo_base) : _num(e.sueldo);
-  document.getElementById('msld-horas').value = s ? _num(s.horas_extra) : '';
+  // Las horas extras se registran en Vacaciones el día que se hacen: acá se
+  // traen sumadas del mes. Si la liquidación ya está guardada se respeta lo
+  // que quedó registrado —puede haberse ajustado a mano— y el aviso de abajo
+  // señala la diferencia en vez de pisarla en silencio.
+  const hsReg = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(empId, periodo) : 0;
+  document.getElementById('msld-horas').value = s ? _num(s.horas_extra) : (hsReg || '');
   // El valor de la hora sale del horario y del sueldo: se propone calculado y
   // el operador solo anota CUÁNTAS horas extras se hicieron.
   const vhCalc = valorHoraDe(e, s ? _num(s.sueldo_base) : _num(e.sueldo));
@@ -1217,10 +1243,38 @@ function openSueldoModal(empId) {
   document.getElementById('msld-pct-transf').value = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(empId);
   document.getElementById('msld-obs').value = s ? (s.obs || '') : '';
   _pintarValorHora(e, s);
+  _pintarHorasExtra(empId, periodo, s);
   renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
+// De dónde salen las horas extras del mes: qué días y por qué. Sin eso el
+// número aparece solo y el operador no puede cotejarlo con nada.
+function _pintarHorasExtra(empId, periodo, s) {
+  const box = document.getElementById('msld-hs-info');
+  if (!box) return;
+  const lista = (typeof horasExtraDe === 'function') ? horasExtraDe(empId, periodo) : [];
+  const total = lista.reduce((a, h) => a + _num(h.horas), 0);
+  if (!lista.length) {
+    box.innerHTML = '<span class="muted">No hay horas extras registradas en ' + _mesTexto(periodo) +
+      '. Se cargan en <strong>Vacaciones → Horas extras</strong>, el día que se hacen.</span>';
+    return;
+  }
+  const det = lista.map(h => _empFmt(h.fecha).slice(0, 5) + ': ' + _num(h.horas) + ' h' + (h.motivo ? ' (' + h.motivo + ')' : '')).join(' · ');
+  const guardadas = s ? _num(s.horas_extra) : null;
+  const difiere = guardadas !== null && Math.abs(guardadas - total) > 0.001;
+  box.innerHTML = '<strong>' + (Math.round(total * 100) / 100) + ' h</strong> registradas en ' + _mesTexto(periodo) +
+    ' <span class="muted">— ' + det + '</span>' +
+    (difiere
+      ? '<div style="color:#b45309;margin-top:3px">La liquidación guardada tiene <strong>' + guardadas +
+        ' h</strong>. <button type="button" class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="_ponerHorasExtra(' + total + ')">Usar las ' + (Math.round(total * 100) / 100) + ' registradas</button></div>'
+      : '');
+}
+function _ponerHorasExtra(v) {
+  const el = document.getElementById('msld-horas');
+  if (el) { el.value = v; recalcSueldoModal(); }
+}
+
 // De dónde sale el valor de la hora, y los atajos del recargo. Se muestra
 // porque un número que aparece solo, sin explicación, no se puede auditar: si
 // el operador no ve la cuenta no sabe si el horario está bien cargado.

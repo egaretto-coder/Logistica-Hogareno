@@ -133,7 +133,7 @@ let vacTab = 'saldos';
 
 function switchVacacionesTab(tab) {
   vacTab = tab;
-  ['saldos', 'calendario', 'historial'].forEach(t => {
+  ['saldos', 'calendario', 'historial', 'extras'].forEach(t => {
     const panel = document.getElementById('vac-tab-' + t);
     const btn = document.getElementById('vac-btn-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
@@ -141,7 +141,188 @@ function switchVacacionesTab(tab) {
   });
   if (tab === 'saldos') renderVacSaldos();
   else if (tab === 'calendario') renderVacCalendario();
+  else if (tab === 'extras') renderHorasExtra();
   else renderVacHistorial();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HORAS EXTRAS
+//  Se registran el día que se hacen. La liquidación mensual las TRAE de acá
+//  sumadas por mes y el valor de la hora sale del horario del empleado, así
+//  que el mismo dato no se escribe dos veces ni se estima de memoria.
+// ════════════════════════════════════════════════════════════════════════
+const _DIAS_SEM_HS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+function _hsMesActivo() {
+  const el = document.getElementById('vac-hs-mes');
+  if (el && !el.value) el.value = new Date().toISOString().slice(0, 7);
+  return (el && el.value) || new Date().toISOString().slice(0, 7);
+}
+
+// Todas las horas extras de un empleado en un mes (AAAA-MM).
+function horasExtraDe(empId, periodo) {
+  const p = String(periodo || '').slice(0, 7);
+  return (AppData.empleadoHorasExtra || [])
+    .filter(h => h.empleado_id === empId && String(h.fecha).slice(0, 7) === p)
+    .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+}
+// Cuántas horas suman. Es lo que la liquidación trae del mes.
+function horasExtraDelMes(empId, periodo) {
+  return Math.round(horasExtraDe(empId, periodo).reduce((s, h) => s + _num(h.horas), 0) * 100) / 100;
+}
+
+function renderHorasExtra() {
+  const cont = document.getElementById('vac-hs-rows');
+  if (!cont) return;
+  const periodo = _hsMesActivo();
+  const q = (document.getElementById('vac-hs-search')?.value || '').toLowerCase().trim();
+  const empDe = id => (AppData.empleados || []).find(e => e.id === id);
+
+  const filas = (AppData.empleadoHorasExtra || [])
+    .filter(h => String(h.fecha).slice(0, 7) === periodo)
+    .map(h => ({ h, e: empDe(h.empleado_id) }))
+    .filter(x => x.e && (!q || String(x.e.nombre).toLowerCase().includes(q)))
+    .sort((a, b) => String(b.h.fecha).localeCompare(String(a.h.fecha)) || String(a.e.nombre).localeCompare(String(b.e.nombre)));
+
+  const totHoras = filas.reduce((s, x) => s + _num(x.h.horas), 0);
+  const totImporte = filas.reduce((s, x) => s + _num(x.h.horas) * (typeof valorHoraDe === 'function' ? valorHoraDe(x.e) : 0), 0);
+  const nEmp = new Set(filas.map(x => x.e.id)).size;
+
+  const info = document.getElementById('vac-hs-info');
+  if (info) info.textContent = filas.length + ' registro(s) en ' + (typeof _mesTexto === 'function' ? _mesTexto(periodo) : periodo);
+
+  const tot = document.getElementById('vac-hs-total');
+  if (tot) tot.innerHTML =
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-calendar"></i></div><div class="metric-label">Horas extras del mes</div>' +
+      '<div class="metric-value">' + (Math.round(totHoras * 100) / 100) + '</div><div class="metric-sub">' + nEmp + ' empleado(s)</div></div>' +
+    '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Costo estimado</div>' +
+      '<div class="metric-value">' + fmtPeso(totImporte) + '</div><div class="metric-sub">al valor hora de cada uno, sin recargo</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-file"></i></div><div class="metric-label">Se liquidan en</div>' +
+      '<div class="metric-value" style="font-size:18px">' + (typeof _mesTexto === 'function' ? _mesTexto(periodo) : periodo) + '</div>' +
+      '<div class="metric-sub">Empleados → Liquidación mensual</div></div>';
+
+  if (!filas.length) {
+    cont.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="padding:30px">' +
+      '<div class="empty-icon"><i class="ic ic-calendar"></i></div>' +
+      '<div class="empty-title">Sin horas extras en ' + (typeof _mesTexto === 'function' ? _mesTexto(periodo) : periodo) + '</div>' +
+      '<div class="empty-sub">Cargalas cuando pasan: al liquidar el mes se traen solas</div></div></td></tr>';
+    return;
+  }
+
+  cont.innerHTML = filas.map(({ h, e }) => {
+    const vh = (typeof valorHoraDe === 'function') ? valorHoraDe(e) : 0;
+    const d = new Date(String(h.fecha) + 'T12:00:00');
+    const dow = isNaN(d.getTime()) ? '' : _DIAS_SEM_HS[d.getDay()];
+    return '<tr>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div>' +
+        '<div><strong>' + e.nombre + '</strong><div class="muted" style="font-size:10px">' + (e.puesto || '') + '</div></div></div></td>' +
+      '<td style="font-size:12px">' + (typeof _empFmt === 'function' ? _empFmt(h.fecha) : h.fecha) +
+        '<div class="muted" style="font-size:10px">' + dow + '</div></td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + (_num(h.horas)) + '</td>' +
+      '<td class="mono" style="text-align:right">' + (vh ? fmtPeso(vh) : '<span class="muted" style="font-size:10.5px">sin horario</span>') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (vh ? fmtPeso(_num(h.horas) * vh) : '—') + '</td>' +
+      '<td style="font-size:11.5px">' + (h.motivo || '<span class="muted">—</span>') +
+        (h.creado_por ? '<div class="muted" style="font-size:10px">' + h.creado_por + '</div>' : '') + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-sm" style="padding:3px 7px;font-size:10px;border-color:#fca5a5;color:#b91c1c" onclick="borrarHoraExtra(' + h.id + ')" title="Quitar este registro"><i class="ic ic-trash"></i></button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Alta ────────────────────────────────────────────────────────────────
+function abrirHoraExtra(empId) {
+  const sel = document.getElementById('mhse-empleado');
+  if (sel) {
+    const activos = (AppData.empleados || []).filter(e => e.activo !== false)
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    sel.innerHTML = '<option value="">— Elegí un empleado —</option>' +
+      activos.map(e => '<option value="' + e.id + '">' + e.nombre + (e.puesto ? ' · ' + e.puesto : '') + '</option>').join('');
+    if (empId) sel.value = String(empId);
+  }
+  const f = document.getElementById('mhse-fecha');
+  if (f) {
+    // Por defecto, un día del mes que se está mirando: lo normal es cargar
+    // algo que pasó en ese mes, no hoy.
+    const p = _hsMesActivo();
+    const hoy = new Date().toISOString().slice(0, 10);
+    f.value = hoy.slice(0, 7) === p ? hoy : (p + '-01');
+  }
+  const h = document.getElementById('mhse-horas'); if (h) h.value = '';
+  const m = document.getElementById('mhse-motivo'); if (m) m.value = '';
+  recalcHoraExtra();
+  document.getElementById('modal-hsextra-backdrop').style.display = 'flex';
+}
+
+function cerrarHoraExtra(e) {
+  if (!e || e.target.id === 'modal-hsextra-backdrop') {
+    document.getElementById('modal-hsextra-backdrop').style.display = 'none';
+  }
+}
+
+function recalcHoraExtra() {
+  const box = document.getElementById('mhse-preview');
+  const btn = document.getElementById('mhse-guardar');
+  if (!box) return;
+  const id = parseInt(document.getElementById('mhse-empleado')?.value, 10) || 0;
+  const fecha = document.getElementById('mhse-fecha')?.value || '';
+  const horas = parseFloat(document.getElementById('mhse-horas')?.value) || 0;
+  const e = (AppData.empleados || []).find(x => x.id === id);
+  if (btn) btn.disabled = !(e && fecha && horas > 0);
+  if (!e || !fecha || !(horas > 0)) {
+    box.innerHTML = '<span class="muted">Elegí el empleado, la fecha y cuántas horas.</span>';
+    return;
+  }
+  const vh = (typeof valorHoraDe === 'function') ? valorHoraDe(e) : 0;
+  const d = new Date(fecha + 'T12:00:00');
+  const dow = isNaN(d.getTime()) ? '' : _DIAS_SEM_HS[d.getDay()];
+  const yaMes = horasExtraDelMes(e.id, fecha.slice(0, 7));
+  box.innerHTML =
+    '<div><strong>' + horas + ' h</strong> el ' + (typeof _empFmt === 'function' ? _empFmt(fecha) : fecha) + ' (' + dow + ')</div>' +
+    (vh
+      ? '<div style="margin-top:3px">Al valor de su hora (' + fmtPeso(vh) + ') son <strong>' + fmtPeso(horas * vh) + '</strong> ' +
+        '<span class="muted">sin recargo; el recargo se aplica al liquidar</span></div>'
+      : '<div style="margin-top:3px;color:#b45309">No tiene horario cargado, así que todavía no se puede calcular el valor de su hora.</div>') +
+    '<div style="margin-top:5px;font-size:11px;color:var(--text-muted)">Con esta carga, ' + e.nombre + ' queda con <strong>' +
+      (Math.round((yaMes + horas) * 100) / 100) + ' h</strong> en ' + (typeof _mesTexto === 'function' ? _mesTexto(fecha.slice(0, 7)) : fecha.slice(0, 7)) +
+      '. Se traen solas al liquidar ese mes.</div>';
+}
+
+async function guardarHoraExtra() {
+  const id = parseInt(document.getElementById('mhse-empleado')?.value, 10) || 0;
+  const fecha = document.getElementById('mhse-fecha')?.value || '';
+  const horas = parseFloat(document.getElementById('mhse-horas')?.value) || 0;
+  const motivo = (document.getElementById('mhse-motivo')?.value || '').trim();
+  const e = (AppData.empleados || []).find(x => x.id === id);
+  if (!e) { alert('Elegí un empleado.'); return; }
+  if (!fecha) { alert('Cargá la fecha en que se hicieron.'); return; }
+  if (!(horas > 0)) { alert('Cargá cuántas horas.'); return; }
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const rec = { empleado_id: id, fecha, horas, motivo, creado_por: quien };
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    const row = await DB.insertRow('empleado_horas_extra', rec);
+    AppData.empleadoHorasExtra.push(Object.assign({ id: row && row.id }, rec));
+    if (typeof persistirEmpleadosLocal === 'function') persistirEmpleadosLocal();
+    document.getElementById('modal-hsextra-backdrop').style.display = 'none';
+    renderHorasExtra();
+    showToast('✅ ' + horas + ' h extras de ' + e.nombre + ' · se liquidan en ' +
+      (typeof _mesTexto === 'function' ? _mesTexto(String(fecha).slice(0, 7)) : String(fecha).slice(0, 7)));
+  } catch (err) { console.warn('guardarHoraExtra', err); alert('No se pudo guardar: ' + (err.message || err)); }
+}
+
+async function borrarHoraExtra(id) {
+  const h = (AppData.empleadoHorasExtra || []).find(x => x.id === id);
+  if (!h) return;
+  const e = (AppData.empleados || []).find(x => x.id === h.empleado_id);
+  if (!confirm('¿Quitar las ' + _num(h.horas) + ' h del ' + (typeof _empFmt === 'function' ? _empFmt(h.fecha) : h.fecha) +
+    (e ? ' de ' + e.nombre : '') + '?')) return;
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.deleteWhere('empleado_horas_extra', 'id', id);
+    AppData.empleadoHorasExtra = AppData.empleadoHorasExtra.filter(x => x.id !== id);
+    if (typeof persistirEmpleadosLocal === 'function') persistirEmpleadosLocal();
+    renderHorasExtra();
+    showToast('Registro quitado');
+  } catch (err) { console.warn('borrarHoraExtra', err); alert('No se pudo quitar: ' + (err.message || err)); }
 }
 
 function renderVacacionesPagina() {

@@ -577,6 +577,43 @@
   </div>
 </div>
 
+<!-- MODAL CARGAR HORAS EXTRAS
+     Se anotan el día que se hacen, no el día que se liquida: al fin de mes
+     nadie se acuerda de cuántas hizo cada uno ni por qué. -->
+<div class="modal-backdrop" id="modal-hsextra-backdrop" onclick="cerrarHoraExtra(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:470px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-calendar"></i> Cargar horas extras</span>
+      <button class="modal-close" onclick="cerrarHoraExtra()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Empleado *</label>
+        <select id="mhse-empleado" class="form-input" style="width:100%" onchange="recalcHoraExtra()"></select>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Fecha *</label>
+          <input type="date" id="mhse-fecha" class="form-input" style="width:100%" onchange="recalcHoraExtra()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px">
+          <label class="form-label">Horas *</label>
+          <input type="number" id="mhse-horas" class="form-input" min="0" max="24" step="0.5" placeholder="0" style="width:100%" oninput="recalcHoraExtra()" />
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Motivo</label>
+        <input type="text" id="mhse-motivo" class="form-input" style="width:100%" placeholder="Ej: cierre de mes, reemplazo de turno" />
+      </div>
+      <div id="mhse-preview" style="font-size:12px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarHoraExtra()">Cancelar</button>
+        <button class="btn btn-primary" id="mhse-guardar" onclick="guardarHoraExtra()"><i class="ic ic-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL AJUSTE DE SUELDO DE UN EMPLEADO
      El aumento se aplica desde la solapa de ajustes por lote, pero cuando se
      está liquidando el mes y uno tiene el aumento pendiente hay que poder
@@ -1009,6 +1046,7 @@
         <div class="form-group" style="margin:0;flex:1;min-width:110px">
           <label class="form-label">Horas extras</label>
           <input type="number" id="msld-horas" class="form-input" placeholder="0" min="0" step="0.5" style="width:100%" oninput="recalcSueldoModal()" />
+          <div id="msld-hs-info" style="font-size:10.5px;color:var(--text-muted);margin-top:4px"></div>
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:120px">
           <label class="form-label">Valor por hora ($)</label>

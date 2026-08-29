@@ -293,6 +293,7 @@ let AppData = {
   vacaciones: [],
   empleadoAjustes: [],
   empleadoPostergaciones: [],   // ajustes que se decidió NO dar todavía, con su justificación
+  empleadoHorasExtra: [],       // horas extras registradas el día que se hicieron
   empleadoSueldos: [],
 
   // Rendicion de envios con cobro en destino (el conductor cobra y rinde al dia siguiente).

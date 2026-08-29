@@ -1173,3 +1173,23 @@ alter table public.empleados
   add column if not exists hora_entrada text not null default '',
   add column if not exists hora_salida  text not null default '',
   add column if not exists almuerzo_min int not null default 0;
+
+-- ---------- HORAS EXTRAS ----------
+-- Se registran cuando pasan, día por día, y no el día que se liquida: al fin
+-- de mes nadie se acuerda de cuántas hizo cada uno ni por qué. La liquidación
+-- las TRAE de acá sumadas por mes; el valor de la hora sale del horario del
+-- empleado, así que acá solo se anota cuántas y por qué.
+create table if not exists public.empleado_horas_extra (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  fecha date not null,
+  horas numeric not null default 0,
+  motivo text not null default '',
+  creado_por text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_emp_hs_extra_empleado on public.empleado_horas_extra (empleado_id);
+create index if not exists idx_emp_hs_extra_fecha on public.empleado_horas_extra (fecha);
+alter table public.empleado_horas_extra enable row level security;
+create policy empleado_horas_extra_all on public.empleado_horas_extra
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
