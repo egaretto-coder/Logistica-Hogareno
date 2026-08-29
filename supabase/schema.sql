@@ -1203,3 +1203,27 @@ alter table public.vacaciones
   add column if not exists modalidad text not null default 'corrida';
 -- Backfill de lo ya cargado: un bloque de 7 o más es el corrido obligatorio.
 -- update public.vacaciones set modalidad = 'salteada' where dias < 7;
+
+-- ---------- REAPERTURA DE UNA LIQUIDACIÓN PAGADA ----------
+-- Una liquidación marcada como pagada es plata que ya salió y un recibo que
+-- alguien firmó: editarla en silencio deja el papel firmado diciendo una cosa
+-- y el sistema otra. Para corregirla hay que REABRIRLA, y eso lo autoriza un
+-- supervisor -- mismo régimen que los adelantos, los extravíos y el recorrido
+-- especial. Cada reapertura queda registrada con su motivo: una liquidación se
+-- puede reabrir más de una vez y el historial tiene que explicar cada una.
+create table if not exists public.empleado_sueldo_reaperturas (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  periodo text not null default '',           -- AAAA-MM de la liquidación
+  motivo text not null default '',            -- por qué se reabre (obligatorio)
+  solicitado_por text not null default '',
+  solicitado_en timestamptz not null default now(),
+  estado text not null default 'pendiente',   -- pendiente | aprobada | rechazada
+  resuelto_por text not null default '',
+  resuelto_en timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_emp_reap_empleado on public.empleado_sueldo_reaperturas (empleado_id, periodo);
+alter table public.empleado_sueldo_reaperturas enable row level security;
+create policy empleado_sueldo_reaperturas_all on public.empleado_sueldo_reaperturas
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());

@@ -251,6 +251,7 @@ function persistirEmpleadosLocal() {
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra));
+    localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
   } catch (e) {}
 }
@@ -1043,6 +1044,9 @@ function renderSueldosPanel() {
     // liquidación: es plata que se le debe y que se paga sola si nadie mira.
     const hsReg = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
     const hsFalta = hsReg > 0 && (!s || Math.abs(_num(s.horas_extra) - hsReg) > 0.001);
+    const reapPend = reaperturaPendiente(e.id, periodo);
+    const reapOk = reaperturasAprobadas(e.id, periodo);
+    const puedeAut = (typeof puedeAutorizar === 'function') && puedeAutorizar();
     totT += mT; totE += mE; totG += total;
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div><div><strong>' + e.nombre + '</strong>' +
@@ -1050,6 +1054,9 @@ function renderSueldosPanel() {
         (leToca ? ' <span class="badge" style="background:' + (est.estado === 'vencido' ? '#fee2e2;color:#b91c1c' : '#fef9c3;color:#854d0e') + ';font-size:9px" title="Le corresponde el aumento trimestral. Se puede aplicar desde acá.">' +
           (est.estado === 'vencido' ? 'ajuste vencido' : 'le toca ajuste') + '</span>' : '') +
         (post ? ' <span class="badge" style="background:#fef9c3;color:#854d0e;font-size:9px" title="' + String(post.motivo || '').replace(/"/g, '&quot;') + '">postergado a ' + _mesTexto(post.mes_nuevo) + '</span>' : '') +
+        (reapOk.length ? ' <span class="badge" style="background:#eff6ff;color:#1e40af;font-size:9px" title="' +
+          reapOk.map(r => _fechaCorta(r.solicitado_en) + ': ' + (r.motivo || 'sin motivo') + (r.resuelto_por ? ' (autorizó ' + r.resuelto_por + ')' : '')).join(' · ').replace(/"/g, '&quot;') +
+          '">reabierta ' + (reapOk.length === 1 ? '1 vez' : reapOk.length + ' veces') + '</span>' : '') +
         '<div class="muted" style="font-size:10px">' + (e.puesto || '') + '</div></div></div></td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(base) + '</td>' +
       '<td class="mono" style="text-align:right">' + (extras ? '+' + fmtPeso(extras) : '—') +
@@ -1065,10 +1072,18 @@ function renderSueldosPanel() {
         (leToca ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#fcd34d;color:#92400e" onclick="abrirAjusteIndividual(' + e.id + ')" title="Aplicarle el aumento trimestral ahora, sin salir de esta pantalla">$ Ajustar</button>' +
           '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento: se posterga con una justificación">Postergar</button>' : '') +
         (s && s.pagado
-          ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span>'
+          ? '<span class="badge" style="background:#dcfce7;color:#166534" title="' + (s.pagado_en ? 'Pagado el ' + _fechaCorta(s.pagado_en) : '') + '">✓ Pagado</span>'
           : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="openSueldoModal(' + e.id + ')"><i class="ic ic-edit"></i> Liquidar</button>') +
-        (s ? '<button class="btn btn-sm" style="padding:4px 6px;font-size:11px" onclick="openSueldoModal(' + e.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' +
-             '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="exportReciboSueldoPDF(' + e.id + ')" title="Recibo para firmar al momento del pago"><i class="ic ic-download"></i> Recibo</button>' : '') +
+        // Pagada: no se edita, se REABRE — y eso lo autoriza un supervisor.
+        (s && s.pagado
+          ? (reapPend
+              ? (puedeAut
+                  ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#86efac;color:#15803d" onclick="resolverReapertura(' + reapPend.id + ',true)" title="' + String(reapPend.motivo || '').replace(/"/g, '&quot;') + '">Aprobar reapertura</button>' +
+                    '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#fca5a5;color:#b91c1c" onclick="resolverReapertura(' + reapPend.id + ',false)">Rechazar</button>'
+                  : '<span class="badge" style="background:#fffbeb;color:#92400e;border:1px solid #fcd34d" title="' + String(reapPend.motivo || '').replace(/"/g, '&quot;') + '">⏳ Reapertura a aprobar</span>')
+              : '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="abrirReapertura(' + e.id + ',\'' + periodo + '\')" title="Corregir una liquidación ya pagada. Queda registrado el motivo y lo autoriza un supervisor."><i class="ic ic-undo"></i> Reabrir</button>')
+          : (s ? '<button class="btn btn-sm" style="padding:4px 6px;font-size:11px" onclick="openSueldoModal(' + e.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' : '')) +
+        (s ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="exportReciboSueldoPDF(' + e.id + ')" title="Recibo para firmar al momento del pago"><i class="ic ic-download"></i> Recibo</button>' : '') +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -1083,8 +1098,19 @@ function renderSueldosPanel() {
     const sx = sueldoDe(e.id, periodo);
     return !sx || Math.abs(_num(sx.horas_extra) - r) > 0.001;
   });
+  const reapPendientes = reaperturasPendientes();
+  const puedeAutTop = (typeof puedeAutorizar === 'function') && puedeAutorizar();
   const av = document.getElementById('emp-sueldo-aviso');
-  if (av) av.innerHTML = (pend.length
+  if (av) av.innerHTML = (reapPendientes.length
+    ? '<div class="alert" style="margin:0 0 14px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
+      '<i class="ic ic-undo"></i><div><strong>' + reapPendientes.length + ' liquidación(es) pagadas esperan que se apruebe su reapertura.</strong> ' +
+      (puedeAutTop ? 'Aprobalas o rechazalas desde su fila. ' : 'Las tiene que aprobar un supervisor. ') +
+      reapPendientes.slice(0, 5).map(r => {
+        const emp = (AppData.empleados || []).find(x => x.id === r.empleado_id);
+        return (emp ? emp.nombre : '?') + ' (' + _mesTexto(r.periodo) + '): ' + (r.motivo || 'sin motivo');
+      }).join(' · ') + (reapPendientes.length > 5 ? ' …y ' + (reapPendientes.length - 5) + ' más' : '') +
+      '</div></div>'
+    : '') + (pend.length
     ? '<div class="alert" style="margin:0 0 14px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
       '<i class="ic ic-alert"></i><div><strong>' + pend.length + ' empleado(s) tienen el ajuste trimestral pendiente.</strong> ' +
       'Si se liquida así, se les paga con el sueldo viejo. Ajustalos o postergalos desde su fila: ' +
@@ -1313,13 +1339,149 @@ async function aplicarCuotasSueldo(periodo) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  REABRIR UNA LIQUIDACIÓN PAGADA (maker-checker)
+//
+//  Una liquidación marcada como pagada es plata que ya salió y un recibo que
+//  alguien firmó. Editarla en silencio deja el papel firmado diciendo una cosa
+//  y el sistema otra, y nadie puede reconstruir qué pasó. Así que se BLOQUEA:
+//  para corregirla hay que reabrirla, y eso lo autoriza un supervisor — mismo
+//  régimen que los adelantos, los extravíos y el recorrido especial.
+//
+//  Quien puede autorizar la reabre en el acto; el resto deja el pedido con su
+//  motivo. Cada reapertura queda registrada: una liquidación se puede reabrir
+//  más de una vez y el historial tiene que explicar cada una.
+// ════════════════════════════════════════════════════════════════════════
+function reaperturasDe(empId, periodo) {
+  return (AppData.empleadoReaperturas || [])
+    .filter(r => r.empleado_id === empId && String(r.periodo) === String(periodo))
+    .sort((a, b) => String(b.solicitado_en).localeCompare(String(a.solicitado_en)));
+}
+function reaperturaPendiente(empId, periodo) {
+  return reaperturasDe(empId, periodo).find(r => r.estado === 'pendiente') || null;
+}
+function reaperturasAprobadas(empId, periodo) {
+  return reaperturasDe(empId, periodo).filter(r => r.estado === 'aprobada');
+}
+// Todas las que están esperando aprobación, de cualquier empleado y período.
+function reaperturasPendientes() {
+  return (AppData.empleadoReaperturas || []).filter(r => r.estado === 'pendiente')
+    .sort((a, b) => String(a.solicitado_en).localeCompare(String(b.solicitado_en)));
+}
+
+let _reapCtx = null;   // { empId, periodo }
+
+function abrirReapertura(empId, periodo) {
+  const e = (AppData.empleados || []).find(x => x.id === empId);
+  const s = sueldoDe(empId, periodo);
+  if (!e || !s) return;
+  _reapCtx = { empId, periodo };
+  const puede = (typeof puedeAutorizar === 'function') && puedeAutorizar();
+  const box = document.getElementById('mreap-info');
+  if (box) box.innerHTML = '<i class="ic ic-alert"></i><div>' +
+    'Se va a reabrir la liquidación de <strong>' + e.nombre + '</strong> de <strong>' + _mesTexto(periodo) + '</strong>, ' +
+    'que está marcada como <strong>pagada</strong> por ' + fmtPeso(_num(s.total)) + '.' +
+    '<div style="margin-top:4px">Vuelve a quedar editable y hay que volver a liquidarla. ' +
+    '<strong>El recibo ya emitido deja de coincidir</strong>: cuando se corrija, hay que bajar uno nuevo.</div>' +
+    (puede ? '' : '<div style="margin-top:4px">No podés autorizar reaperturas: queda <strong>pendiente</strong> hasta que la apruebe un supervisor.</div>') +
+    '</div>';
+  const m = document.getElementById('mreap-motivo'); if (m) m.value = '';
+  const btn = document.getElementById('mreap-guardar');
+  if (btn) btn.innerHTML = puede ? '<i class="ic ic-undo"></i> Reabrir ahora' : '<i class="ic ic-save"></i> Pedir la reapertura';
+  recalcReapertura();
+  document.getElementById('modal-reap-backdrop').style.display = 'flex';
+}
+
+function cerrarReapertura(ev) {
+  if (!ev || ev.target.id === 'modal-reap-backdrop') {
+    document.getElementById('modal-reap-backdrop').style.display = 'none';
+    _reapCtx = null;
+  }
+}
+
+function recalcReapertura() {
+  const btn = document.getElementById('mreap-guardar');
+  const motivo = (document.getElementById('mreap-motivo')?.value || '').trim();
+  if (btn) btn.disabled = !motivo;
+  const av = document.getElementById('mreap-aviso');
+  if (av) av.innerHTML = motivo ? '' : '<span style="color:#b91c1c">Escribí por qué hay que reabrirla: es lo que va a explicar el cambio después.</span>';
+}
+
+async function guardarReapertura() {
+  if (!_reapCtx) return;
+  const { empId, periodo } = _reapCtx;
+  const motivo = (document.getElementById('mreap-motivo')?.value || '').trim();
+  if (!motivo) { alert('El motivo es obligatorio: es lo que explica por qué se reabrió una liquidación ya pagada.'); return; }
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const puede = (typeof puedeAutorizar === 'function') && puedeAutorizar();
+  const rec = {
+    empleado_id: empId, periodo, motivo,
+    solicitado_por: quien, solicitado_en: new Date().toISOString(),
+    estado: puede ? 'aprobada' : 'pendiente',
+    resuelto_por: puede ? quien : '', resuelto_en: puede ? new Date().toISOString() : null
+  };
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    const row = await DB.insertRow('empleado_sueldo_reaperturas', rec);
+    AppData.empleadoReaperturas.push(Object.assign({ id: row && row.id }, rec));
+    if (puede) await _aplicarReapertura(empId, periodo);
+    persistirEmpleadosLocal();
+    document.getElementById('modal-reap-backdrop').style.display = 'none';
+    _reapCtx = null;
+    renderSueldosPanel();
+    showToast(puede ? '🔓 Liquidación reabierta — hay que volver a liquidarla y emitir un recibo nuevo'
+                    : '⏳ Pedido de reapertura registrado — lo tiene que aprobar un supervisor');
+  } catch (err) { console.warn('guardarReapertura', err); alert('No se pudo registrar: ' + (err.message || err)); }
+}
+
+// Desmarca el pagado: la liquidación vuelve a ser editable.
+async function _aplicarReapertura(empId, periodo) {
+  const s = sueldoDe(empId, periodo);
+  if (!s || !s.pagado) return;
+  const campos = { pagado: false, pagado_en: null };
+  await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
+  Object.assign(s, campos);
+}
+
+// Aprobar / rechazar un pedido (solo quien puede autorizar).
+async function resolverReapertura(id, aprueba) {
+  const r = (AppData.empleadoReaperturas || []).find(x => x.id === id);
+  if (!r) return;
+  if (!(typeof puedeAutorizar === 'function' && puedeAutorizar())) { showToast('Solo un supervisor o analista puede autorizar'); return; }
+  const e = (AppData.empleados || []).find(x => x.id === r.empleado_id);
+  if (!confirm((aprueba ? '¿Aprobar' : '¿Rechazar') + ' la reapertura de ' + (e ? e.nombre : '') + ' (' + _mesTexto(r.periodo) + ')?' +
+    String.fromCharCode(10) + (aprueba ? 'La liquidación vuelve a quedar editable y el recibo emitido deja de coincidir.' : 'La liquidación queda como está.'))) return;
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const campos = { estado: aprueba ? 'aprobada' : 'rechazada', resuelto_por: quien, resuelto_en: new Date().toISOString() };
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.updateWhere('empleado_sueldo_reaperturas', 'id', id, campos);
+    Object.assign(r, campos);
+    if (aprueba) await _aplicarReapertura(r.empleado_id, r.periodo);
+    persistirEmpleadosLocal();
+    renderSueldosPanel();
+    showToast(aprueba ? '🔓 Reapertura aprobada' : '⛔ Reapertura rechazada');
+  } catch (err) { console.warn('resolverReapertura', err); alert('No se pudo resolver: ' + (err.message || err)); }
+}
+
 // ── Modal de liquidación de sueldo ──────────────────────────────────────────
 let sueldoModalEmpId = null;
 function openSueldoModal(empId) {
   const e = AppData.empleados.find(x => x.id === empId); if (!e) return;
-  sueldoModalEmpId = empId;
   const periodo = document.getElementById('emp-sueldo-periodo').value;
   const s = sueldoDe(empId, periodo);
+  // Una liquidación pagada está cerrada: si se editara acá, el recibo firmado
+  // diría una cosa y el sistema otra, y nadie podría reconstruir qué pasó.
+  if (s && s.pagado) {
+    const pend = reaperturaPendiente(empId, periodo);
+    alert(pend
+      ? 'La liquidación de ' + e.nombre + ' está pagada y ya hay un pedido de reapertura pendiente de aprobación.'
+      : 'La liquidación de ' + e.nombre + ' está marcada como PAGADA, así que no se edita directamente.' +
+        String.fromCharCode(10) + String.fromCharCode(10) +
+        'Para corregirla usá "Reabrir": queda registrado el motivo y lo autoriza un supervisor.');
+    return;
+  }
+  sueldoModalEmpId = empId;
   document.getElementById('modal-sueldo-title').textContent = 'Liquidar sueldo · ' + e.nombre;
   document.getElementById('msld-info').innerHTML = '<strong>' + e.nombre + '</strong> · ' + (e.puesto || 'sin puesto') +
     ' · ' + (e.registrado === false ? '<span style="color:#9a3412">No registrado</span>' : 'Registrado') +
@@ -1467,6 +1629,15 @@ async function guardarSueldo(marcarPagado, conRecibo) {
   if (sueldoModalEmpId == null) return;
   const _empIdRecibo = sueldoModalEmpId;
   const periodo = document.getElementById('emp-sueldo-periodo').value;
+  // Defensa: si entre que se abrió el modal y ahora quedó pagada (otro usuario),
+  // no se pisa sin pasar por la reapertura.
+  const _yaPagada = sueldoDe(sueldoModalEmpId, periodo);
+  if (_yaPagada && _yaPagada.pagado) {
+    alert('Esa liquidación quedó marcada como pagada. Para corregirla hay que reabrirla.');
+    document.getElementById('modal-sueldo-backdrop').style.display = 'none';
+    renderSueldosPanel();
+    return;
+  }
   // Primero se imputan/deshacen las cuotas, así el registro del sueldo se
   // guarda con el mismo descuento que muestra la pantalla.
   await aplicarCuotasSueldo(periodo);

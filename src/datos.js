@@ -75,6 +75,8 @@ function loadSavedConfig() {
   if (empp) { try { AppData.empleadoPostergaciones = JSON.parse(empp) || []; } catch(e) {} }
   const emphe = localStorage.getItem('liq_empleado_horas_extra');
   if (emphe) { try { AppData.empleadoHorasExtra = JSON.parse(emphe) || []; } catch(e) {} }
+  const empre = localStorage.getItem('liq_empleado_reaperturas');
+  if (empre) { try { AppData.empleadoReaperturas = JSON.parse(empre) || []; } catch(e) {} }
   const emps = localStorage.getItem('liq_empleado_sueldos');
   if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
   const rend = localStorage.getItem('liq_rendiciones');
@@ -324,6 +326,11 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.empleadoHorasExtra = (data.empleado_horas_extra || []).map(h => ({
     id: h.id, empleado_id: h.empleado_id, fecha: String(h.fecha || '').slice(0, 10),
     horas: _num(h.horas), motivo: h.motivo || '', creado_por: h.creado_por || ''
+  }));
+  AppData.empleadoReaperturas = (data.empleado_sueldo_reaperturas || []).map(r => ({
+    id: r.id, empleado_id: r.empleado_id, periodo: r.periodo || '', motivo: r.motivo || '',
+    solicitado_por: r.solicitado_por || '', solicitado_en: r.solicitado_en || '',
+    estado: r.estado || 'pendiente', resuelto_por: r.resuelto_por || '', resuelto_en: r.resuelto_en || ''
   }));
   AppData.empleadoSueldos = (data.empleado_sueldos || []).map(s => ({
     id: s.id, empleado_id: s.empleado_id, periodo: s.periodo,

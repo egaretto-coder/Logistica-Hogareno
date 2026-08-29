@@ -577,6 +577,31 @@
   </div>
 </div>
 
+<!-- MODAL REABRIR UNA LIQUIDACIÓN PAGADA
+     Es plata que ya salió y un recibo que alguien firmó: se corrige, pero
+     dejando registrado quién lo pidió y por qué. -->
+<div class="modal-backdrop" id="modal-reap-backdrop" onclick="cerrarReapertura(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-undo"></i> Reabrir la liquidación</span>
+      <button class="modal-close" onclick="cerrarReapertura()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert" style="margin:0;font-size:12px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d" id="mreap-info"></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">¿Por qué hay que reabrirla? <span style="color:#b91c1c">*</span></label>
+        <textarea id="mreap-motivo" rows="3" class="form-input" style="width:100%;resize:vertical"
+          placeholder="Ej: se cargaron mal las horas extras de agosto" oninput="recalcReapertura()"></textarea>
+        <div id="mreap-aviso" style="font-size:11px;margin-top:4px"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarReapertura()">Cancelar</button>
+        <button class="btn btn-primary" id="mreap-guardar" onclick="guardarReapertura()"><i class="ic ic-undo"></i> Reabrir</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CARGAR HORAS EXTRAS
      Se anotan el día que se hacen, no el día que se liquida: al fin de mes
      nadie se acuerda de cuántas hizo cada uno ni por qué. -->
