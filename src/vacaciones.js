@@ -114,11 +114,25 @@ function vacCorresponden(emp, periodo) {
 // le figuraban 5 pendientes cuando le quedan 3 (de los 5 salteados que valía su
 // segundo bloque, usó 2).
 const VAC_BLOQUE_OBLIG = 7;     // días corridos que van sí o sí juntos
-const VAC_SALTEADOS_X_BLOQUE = 5;   // esos mismos 7 corridos, salteados, son 5
 
-// Cuántos días SALTEADOS rinde un tramo de días corridos.
-function vacCorridosASalteados(corridos) {
-  return Math.round(_num(corridos) * VAC_SALTEADOS_X_BLOQUE / VAC_BLOQUE_OBLIG);
+// Días de trabajo por semana del empleado (los del panel Empleados). Es lo que
+// decide la equivalencia: un bloque de 7 corridos rinde 5 salteados si trabaja
+// de lunes a viernes, y 6 si trabaja de lunes a sábados — solo se "gastan" los
+// días que iba a trabajar. Sin jornada cargada se asume la semana de 5.
+function vacDiasTrabajaSemana(emp) {
+  const d = _num(emp && emp.dias_laborales);
+  if (!d || d < 1) return 5;
+  return Math.min(7, d);
+}
+// Cuántos días SALTEADOS rinde un tramo de días corridos, para ESE empleado.
+function vacCorridosASalteados(corridos, emp) {
+  return Math.round(_num(corridos) * vacDiasTrabajaSemana(emp) / VAC_BLOQUE_OBLIG);
+}
+// "5 de cada 7" / "6 de cada 7", para poder explicarlo en pantalla.
+function vacEquivalenciaTexto(emp) {
+  const d = vacDiasTrabajaSemana(emp);
+  return d + ' de cada ' + VAC_BLOQUE_OBLIG + (d === 7 ? '' : ' (trabaja ' + (typeof diasLaboralesTexto === 'function'
+    ? String(diasLaboralesTexto(emp)).toLowerCase() : d + ' días por semana') + ')');
 }
 function vacEsSalteada(v) { return v && v.modalidad === 'salteada'; }
 
@@ -150,7 +164,7 @@ function vacSaldo(emp, periodo) {
   const obligPendiente = Math.max(0, oblig - corridos);
   const corridosExtra = Math.max(0, corridos - oblig);
   const restoCorridos = Math.max(0, c.dias - oblig - corridosExtra);
-  const restoSalteados = Math.max(0, vacCorridosASalteados(restoCorridos) - salteados);
+  const restoSalteados = Math.max(0, vacCorridosASalteados(restoCorridos, emp) - salteados);
   // Una vez que empezó a tomarlos salteados, lo que queda se cuenta así; si
   // todavía no eligió, se muestra en corridos (que es como los da la ley).
   const modoResto = salteados > 0 ? 'salteada' : (corridosExtra > 0 ? 'corrida' : '');
@@ -160,7 +174,8 @@ function vacSaldo(emp, periodo) {
     corresponden: c.dias, base: c.base, detalle: c.detalle,
     tomados, corridos, salteados,
     oblig, obligPendiente, obligCubierto: obligPendiente === 0 && oblig > 0,
-    restoCorridos, restoSalteados, modoResto, pendientes
+    restoCorridos, restoSalteados, modoResto, pendientes,
+    diasSemana: vacDiasTrabajaSemana(emp), equivalencia: vacEquivalenciaTexto(emp)
   };
 }
 
@@ -177,7 +192,7 @@ function vacSaldoTexto(s) {
   if (s.restoCorridos > 0 || s.restoSalteados > 0) {
     partes.push(s.modoResto === 'salteada'
       ? 'le quedan ' + s.restoSalteados + ' día' + (s.restoSalteados === 1 ? '' : 's') + ' salteado' + (s.restoSalteados === 1 ? '' : 's')
-      : 'el resto son ' + s.restoCorridos + ' corridos o ' + s.restoSalteados + ' salteados');
+      : 'el resto son ' + s.restoCorridos + ' corridos o ' + s.restoSalteados + ' salteados (' + s.diasSemana + ' de cada 7)');
   } else if (!s.obligPendiente) {
     partes.push('sin días pendientes');
   }
@@ -512,7 +527,8 @@ function renderVacSaldos() {
             : (s.oblig ? '<span style="color:#b45309">Faltan ' + s.obligPendiente + ' día(s) del bloque de ' + s.oblig + ' corridos (van juntos)</span>' : '')) +
           (s.restoCorridos > 0 || s.restoSalteados > 0
             ? '<div style="margin-top:2px">Resto: <strong>' + s.restoSalteados + ' salteados</strong>' +
-              (s.modoResto === 'salteada' ? ' <span class="muted">(ya tomó ' + s.salteados + ')</span>' : ' o <strong>' + s.restoCorridos + ' corridos</strong>') + '</div>'
+              (s.modoResto === 'salteada' ? ' <span class="muted">(ya tomó ' + s.salteados + ')</span>' : ' o <strong>' + s.restoCorridos + ' corridos</strong>') +
+              '<div class="muted" style="font-size:9.5px">salteados rinden ' + s.equivalencia + '</div></div>'
             : '<div style="margin-top:2px;color:#166534">Sin días pendientes</div>') +
           '</div>'
         : '') +
@@ -755,7 +771,7 @@ function recalcVacModal() {
   const obligPend = Math.max(0, oblig - corridosNuevo);
   const extraCorr = Math.max(0, corridosNuevo - oblig);
   const restoCorr = Math.max(0, s.corresponden - oblig - extraCorr);
-  const restoSalt = vacCorridosASalteados(restoCorr) - salteadosNuevo;
+  const restoSalt = vacCorridosASalteados(restoCorr, emp) - salteadosNuevo;
   const tomadosOtros = sinEsta.corridos + sinEsta.salteados;
 
   const v154 = vacVentanaGoce(periodo);
@@ -783,7 +799,8 @@ function recalcVacModal() {
   }
   if (dias && !cancelada && !salteada && dias < oblig && obligPend > 0) {
     html += '<div style="color:#9a3412;margin-top:4px">Un bloque corrido de menos de <strong>' + oblig + ' días</strong> no cubre el ' +
-      'tramo obligatorio. Si son días sueltos, marcalos como <strong>salteados</strong>: rinden más (5 de cada 7).</div>';
+      'tramo obligatorio. Si son días sueltos, marcalos como <strong>salteados</strong>: rinden más (' +
+      vacDiasTrabajaSemana(emp) + ' de cada 7, porque ' + String(typeof diasLaboralesTexto === 'function' ? diasLaboralesTexto(emp) : '').toLowerCase() + ').</div>';
   }
   if (fueraVentana) {
     html += '<div style="color:#9a3412;margin-top:4px">La fecha de inicio queda <strong>fuera del 1/10/' + periodo +
