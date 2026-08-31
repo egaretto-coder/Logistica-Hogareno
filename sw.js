@@ -131,6 +131,12 @@ self.addEventListener('fetch', (event) => {
   // Nunca cachear llamadas a Supabase (REST/Auth/Realtime): siempre a la red.
   if (url.hostname.endsWith('supabase.co')) return;
 
+  // El banco de pruebas (scratchpad/) NO es la app: vive fuera del repo y no se
+  // despliega. Cachearlo lo unico que hace es servir una copia vieja en local, y
+  // eso ya costo caro: una correccion al banco no tomaba, se verificaba contra el
+  // archivo viejo y la prueba parecia andar. Siempre a la red.
+  if (url.pathname.includes('/scratchpad/')) return;
+
   const sameOrigin = url.origin === self.location.origin;
 
   // Código propio de la app (mismo origen: HTML, JS, CSS, parciales) →
