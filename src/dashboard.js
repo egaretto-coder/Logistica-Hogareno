@@ -211,16 +211,30 @@ function getDashFechaRango() {
   return null;
 }
 
+// Devuelve una referencia ESTABLE para el mismo rango y la misma base: el
+// Dashboard y su reporte por zona/conductor lo llaman por separado dentro del
+// mismo render, y si cada uno recibiera un array nuevo el caché de
+// calcLiquidaciones (que va por identidad) no daría nunca y se recalcularían los
+// 47.684 envíos dos veces.
+let _filtroCache = null;
+// La llama invalidarLiquidaciones: el filtro se apoya en la fecha de cada envío,
+// así que cualquier cambio en los registros lo deja viejo igual que al cálculo.
+function invalidarFiltroFecha() { _filtroCache = null; }
 function filtrarRecordsPorFecha(records) {
   const rango = getDashFechaRango();
   if (!rango) return records;
-  return records.filter(r => {
+  const clave = (rango.desde ? rango.desde.getTime() : 0) + '|' + (rango.hasta ? rango.hasta.getTime() : 0);
+  if (_filtroCache && _filtroCache.clave === clave && _filtroCache.src === records
+      && _filtroCache.n === records.length) return _filtroCache.out;
+  const out = records.filter(r => {
     const f = parseFechaReg(r.fecha);
     if (!f) return false;
     if (rango.desde && f < rango.desde) return false;
     if (rango.hasta && f > rango.hasta) return false;
     return true;
   });
+  _filtroCache = { clave, src: records, n: records.length, out };
+  return out;
 }
 
 function setDashFechaPreset(btn, preset) {

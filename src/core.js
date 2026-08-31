@@ -886,7 +886,8 @@ const ESTADOS_CONTABILIZAN = new Set(['ENTREGADO', 'ENTREGADO 2DA VISITA']);
 // El TTL chico evita recálculos en cascada SIN riesgo de mostrar plata vieja:
 // además se invalida explícitamente ante cualquier cambio de datos o precios.
 let _liqCache = { t: 0, data: null };
-function invalidarLiquidaciones() { _liqCache.t = 0; _liqCache.data = null; _liqCache.src = null; }
+function invalidarLiquidaciones() { _liqCache.t = 0; _liqCache.data = null; _liqCache.src = null;
+  if (typeof invalidarFiltroFecha === 'function') invalidarFiltroFecha(); }
 // El TTL era de 250 ms, menos de lo que tarda UN render del Dashboard con 47.684
 // envíos (~1,1 s): el reporte por zona/conductor volvía a calcular lo mismo que
 // se acababa de calcular. Se sube a 3 s porque la garantía real no es el TTL sino
@@ -896,13 +897,17 @@ function invalidarLiquidaciones() { _liqCache.t = 0; _liqCache.data = null; _liq
 const _LIQ_TTL_MS = 3000;
 
 function calcLiquidaciones(records) {
-  // Solo se cachea el cálculo sobre TODA la base (sin subconjunto filtrado).
-  const cacheable = !records;
-  const base = AppData.records || [];
+  // El caché se lleva por IDENTIDAD del array, no por "es la base entera": con un
+  // filtro de fecha puesto, el Dashboard y su reporte reciben el MISMO array
+  // filtrado y antes cada uno recalculaba los 47.684 envíos desde cero.
+  // filtrarRecordsPorFecha devuelve una referencia estable para el mismo rango,
+  // así que la segunda llamada del render da en el caché.
+  const cacheable = true;
+  const base = records || AppData.records || [];
   if (cacheable && _liqCache.data && (Date.now() - _liqCache.t) < _LIQ_TTL_MS
       && _liqCache.src === base && _liqCache.n === base.length) return _liqCache.data;
   const byDriver = {};
-  (records || AppData.records).forEach(r => {
+  base.forEach(r => {
     // Identidad canónica: unifica alias/grafías de una misma persona en un solo
     // conductor (una sola liquidación), en vez de duplicarlo por cada nombre.
     const cond = conductorCanonico(r.cadete);

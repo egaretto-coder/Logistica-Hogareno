@@ -54,6 +54,41 @@ const ROL_PERMISOS = {
     label: 'Administrativo Clientes',
     color: '#8b5cf6',
     paginas: ['clientes', 'detalle-cliente', 'cliente-liquidaciones']
+  },
+
+  // ── Los dos roles de plata ───────────────────────────────────────────────
+  // Tienen que estar acá aunque hoy sus permisos vivan en la tabla rol_permisos:
+  // paginasDeRol cae a este default cuando el rol NO tiene ninguna fila, y sin
+  // entrada devolvía [] — o sea que un supervisor entraba y no veía NADA, sin
+  // ningún aviso. Es alcanzable: rol_permisos se guarda con replaceAll, que
+  // borra todo y reinserta por lotes y NO es transaccional, así que un fallo a
+  // mitad de camino deja al rol sin filas. Los otros cuatro roles ya tenían esta
+  // red; estos dos no.
+  supervisor: {
+    label: 'Supervisor — autoriza plata',
+    color: '#dc2626',
+    paginas: [
+      'dashboard', 'upload',
+      'panel-conductores', 'conductores', 'liquidaciones',
+      'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
+      'clientes', 'detalle-cliente',
+      'config-tarifas', 'config-supersla', 'dimensiones-especiales',
+      'empleados', 'vacaciones', 'comisiones'
+    ]
+  },
+  // El tesorero es el único, además del analista, que ve Monotributos: por la
+  // plata que se transfiere tiene que existir un comprobante. Y ve los DOS
+  // paneles de liquidación, que es el corte que pidió el negocio.
+  tesorero: {
+    label: 'Tesorero — paga, no autoriza',
+    color: '#0891b2',
+    paginas: [
+      'upload',
+      'panel-conductores', 'conductores', 'liquidaciones', 'monotributos',
+      'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
+      'cliente-liquidaciones',
+      'config-tarifas', 'config-supersla', 'dimensiones-especiales'
+    ]
   }
 };
 
