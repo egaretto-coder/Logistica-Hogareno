@@ -442,6 +442,11 @@ async function _hydrateFromSupabaseReal(opts) {
     id: c.id, alias_cod: String(c.alias_cod || '').toUpperCase(), cliente_cod: String(c.cliente_cod || '').toUpperCase()
   }));
   if (typeof invalidarIndiceCuentas === 'function') invalidarIndiceCuentas();
+  // Los índices que se arman sobre datos de la nube quedan viejos al re-hidratar.
+  // Van juntos porque los tres se leen una vez por ENVÍO y un índice viejo no da
+  // error: da un precio equivocado, que es peor.
+  if (typeof invalidarIndiceCliTarifas === 'function') invalidarIndiceCliTarifas();
+  if (typeof invalidarIndiceDim === 'function') invalidarIndiceDim();
 
   // Alias de zona: cómo viene escrita la zona en el tarifario de un cliente
   // → la zona canónica del tarifario de costos.
@@ -650,6 +655,16 @@ function dbPush(table) {
     if (typeof showToast === 'function') showToast('ℹ️ ' + ded.quitadas + ' fila(s) repetidas se unificaron al guardar');
   }
   if ((table === 'super_sla' || table === 'tarifas') && typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas();
+  // El alias de zona entra en la CLAVE de los tres índices (los tres resuelven la
+  // zona con zonaCanonica), así que cambiarlo los invalida a todos.
+  if (table === 'cliente_tarifas' || table === 'zona_alias') {
+    if (typeof invalidarIndiceCliTarifas === 'function') invalidarIndiceCliTarifas();
+  }
+  if (table === 'dimensiones_catalogo' || table === 'zona_alias') {
+    if (typeof invalidarIndiceDim === 'function') invalidarIndiceDim();
+  }
+  if (table === 'zona_alias' && typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas();
+  if (table === 'cliente_cuentas' && typeof invalidarIndiceCuentas === 'function') invalidarIndiceCuentas();
   // El mute de Realtime tiene que durar TODA la escritura, no 2,5 s: replaceAll
   // manda un delete y un lote por cada 500 filas, y si la ventana vence a mitad
   // de camino la re-hidratación lee la tabla incompleta y pisa AppData.

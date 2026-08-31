@@ -886,13 +886,21 @@ const ESTADOS_CONTABILIZAN = new Set(['ENTREGADO', 'ENTREGADO 2DA VISITA']);
 // El TTL chico evita recálculos en cascada SIN riesgo de mostrar plata vieja:
 // además se invalida explícitamente ante cualquier cambio de datos o precios.
 let _liqCache = { t: 0, data: null };
-function invalidarLiquidaciones() { _liqCache.t = 0; _liqCache.data = null; }
-const _LIQ_TTL_MS = 250;
+function invalidarLiquidaciones() { _liqCache.t = 0; _liqCache.data = null; _liqCache.src = null; }
+// El TTL era de 250 ms, menos de lo que tarda UN render del Dashboard con 47.684
+// envíos (~1,1 s): el reporte por zona/conductor volvía a calcular lo mismo que
+// se acababa de calcular. Se sube a 3 s porque la garantía real no es el TTL sino
+// la invalidación explícita —hay 18 puntos que la llaman ante cualquier cambio de
+// envío, panel, tarifa o dimensión— y además se descarta el caché si el array de
+// registros dejó de ser el mismo.
+const _LIQ_TTL_MS = 3000;
 
 function calcLiquidaciones(records) {
   // Solo se cachea el cálculo sobre TODA la base (sin subconjunto filtrado).
   const cacheable = !records;
-  if (cacheable && _liqCache.data && (Date.now() - _liqCache.t) < _LIQ_TTL_MS) return _liqCache.data;
+  const base = AppData.records || [];
+  if (cacheable && _liqCache.data && (Date.now() - _liqCache.t) < _LIQ_TTL_MS
+      && _liqCache.src === base && _liqCache.n === base.length) return _liqCache.data;
   const byDriver = {};
   (records || AppData.records).forEach(r => {
     // Identidad canónica: unifica alias/grafías de una misma persona en un solo
@@ -963,10 +971,10 @@ function calcLiquidaciones(records) {
   // importación). Las ordenamos por FECHA DE ENVÍO para que el detalle y el PDF
   // sigan la cronología real aunque un día se haya cargado tarde.
   Object.keys(byDriver).forEach(k => {
-    byDriver[k].filas.sort(_cmpPorFechaEnvio);
-    byDriver[k].filas_excluidas.sort(_cmpPorFechaEnvio);
+    _ordenarPorFechaEnvio(byDriver[k].filas);
+    _ordenarPorFechaEnvio(byDriver[k].filas_excluidas);
   });
-  if (cacheable) { _liqCache.t = Date.now(); _liqCache.data = byDriver; }
+  if (cacheable) { _liqCache.t = Date.now(); _liqCache.data = byDriver; _liqCache.src = base; _liqCache.n = base.length; }
   return byDriver;
 }
 
@@ -976,6 +984,27 @@ function _cmpPorFechaEnvio(a, b) {
   const ta = fa ? fa.getTime() : Infinity, tb = fb ? fb.getTime() : Infinity;
   if (ta !== tb) return ta - tb;
   return String(a.tracking || '').localeCompare(String(b.tracking || ''));
+}
+
+// Ordena filas por fecha de envío SIN pagar un Date por comparación.
+// _cmpPorFechaEnvio llama a parseFechaReg —que aloca un Date— para los DOS
+// operandos en cada comparación: ordenar los 47.684 envíos de una liquidación
+// completa creaba ~810.000 Date para tirarlos enseguida, y eso solo era el 85%
+// del tiempo de calcLiquidaciones (1.094 ms de los que 940 eran esto).
+// Se decora una vez por fila, se ordena por la clave ya calculada y se saca.
+// El criterio es el MISMO: fecha, después tracking, y sin fecha va al final.
+let _colador = null;
+function _ordenarPorFechaEnvio(arr) {
+  const n = arr.length;
+  if (n < 2) return;
+  if (!_colador) { try { _colador = new Intl.Collator(); } catch (e) { _colador = { compare: (x, y) => x.localeCompare(y) }; } }
+  const dec = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const f = parseFechaReg(arr[i].fecha);
+    dec[i] = { t: f ? f.getTime() : Infinity, k: String(arr[i].tracking || ''), v: arr[i] };
+  }
+  dec.sort((x, y) => (x.t - y.t) || _colador.compare(x.k, y.k));
+  for (let i = 0; i < n; i++) arr[i] = dec[i].v;
 }
 
 // ═══ Dimensiones especiales (catálogo por cliente, precio por zona) ══════════
@@ -995,25 +1024,54 @@ function dimNombresDe(cliente) {
 // Una dimensión tiene DOS precios que no tienen por qué coincidir: lo que se le
 // PAGA al conductor por llevarla y lo que se le COBRA al cliente por ese envío.
 // El tipo elige el tarifario; 'conductor' por defecto, que es el uso histórico.
+// Índice del catálogo de dimensiones. Mismo motivo que el de tarifas: esto se
+// resuelve una vez por ENVÍO y el catálogo real tiene 6.829 filas, así que el
+// find lineal costaba 0,36 ms por llamada — con 47.684 envíos, 17 s por render.
+// Clave: tipo|cliente|condición  ->  Map(zonaNorm -> {zona, precio})
+let _dimIdxCache = null;
+function invalidarIndiceDim() { _dimIdxCache = null; invalidarLiquidaciones(); }
+function _dimIndex() {
+  // Misma guarda que el índice del tarifario de venta: el panel de Dimensiones
+  // muta AppData.dimCatalogo en memoria (push/splice/filter) en ocho lugares, y
+  // un índice viejo devolvería un precio equivocado en silencio.
+  const arr = AppData.dimCatalogo || [];
+  if (_dimIdxCache && (_dimIdxCache.src !== arr || _dimIdxCache.n !== arr.length)) _dimIdxCache = null;
+  if (_dimIdxCache) return _dimIdxCache;
+  const m = new Map();
+  arr.forEach(d => {
+    const k = ((d.tipo || 'conductor') === 'cliente' ? 'cliente' : 'conductor') +
+      '|' + normNombre(d.cliente) + '|' + normNombre(d.nombre);
+    let zm = m.get(k); if (!zm) { zm = new Map(); m.set(k, zm); }
+    const zk = normNombre(d.zona), precio = _num(d.precio);
+    // Entre dos filas repetidas gana la que TIENE precio: una fila en $0 es la
+    // condición registrada esperando valor, no un precio acordado. Es el mismo
+    // criterio de _colapsarRepetidas y de dimensionAsignada.
+    const prev = zm.get(zk);
+    if (prev === undefined || (!(prev.precio > 0) && precio > 0)) zm.set(zk, { zona: d.zona, precio });
+  });
+  m.src = arr; m.n = arr.length;
+  _dimIdxCache = m;
+  return m;
+}
+function _dimClave(cliente, nombre, tipo) {
+  return (tipo === 'cliente' ? 'cliente' : 'conductor') + '|' + normNombre(cliente) + '|' + normNombre(nombre);
+}
 function dimPrecioEnZona(cliente, nombre, zona, tipo) {
   const t = tipo === 'cliente' ? 'cliente' : 'conductor';
   // La zona pasa por el alias antes de buscar, igual que en getPrecio y en
   // clienteTarifaEnZona: los tres tienen que resolver la zona IGUAL. Si no, un
   // envío en PRESIDENTE PERON no encontraría su condición cargada en GUERNICA y
   // se liquidaría con la tarifa común sin que nadie lo note.
-  const ck = normNombre(cliente), nk = normNombre(nombre);
   const zk = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
-  const row = AppData.dimCatalogo.find(d => (d.tipo || 'conductor') === t &&
-    normNombre(d.cliente) === ck && normNombre(d.nombre) === nk && normNombre(d.zona) === zk);
-  return row ? _num(row.precio) : null;
+  const zm = _dimIndex().get(_dimClave(cliente, nombre, t));
+  const row = zm ? zm.get(zk) : undefined;
+  return row ? row.precio : null;
 }
 // Zonas (con precio) en las que existe una dimensión de un cliente.
 function dimZonasDe(cliente, nombre, tipo) {
   const t = tipo === 'cliente' ? 'cliente' : 'conductor';
-  const ck = normNombre(cliente), nk = normNombre(nombre);
-  return AppData.dimCatalogo.filter(d => (d.tipo || 'conductor') === t &&
-    normNombre(d.cliente) === ck && normNombre(d.nombre) === nk)
-    .map(d => ({ zona: d.zona, precio: _num(d.precio) }));
+  const zm = _dimIndex().get(_dimClave(cliente, nombre, t));
+  return zm ? Array.from(zm.values()).map(v => ({ zona: v.zona, precio: v.precio })) : [];
 }
 // Dimensión asignada a un envío (o null). El precio sale de la zona de entrega.
 function dimensionAsignada(r) {

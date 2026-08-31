@@ -87,16 +87,51 @@ function clientesDeRegistros(rango) {
   return Array.from(m.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
+// Índice del tarifario de VENTA. Se resuelve una vez por ENVÍO y el tarifario
+// real tiene 5.445 filas, así que el find lineal costaba 0,2 ms por llamada:
+// con 47.684 envíos eran ~10 s por render del Dashboard, con la pantalla
+// congelada. Mismo patrón que _tarifaIndex de getPrecio.
+// Clave: código de cliente -> Map(zonaNorm -> precio). Las filas SIN código se
+// indexan aparte por nombre, que es como las matcheaba el find original.
+let _idxCliTarifas = null;
+function invalidarIndiceCliTarifas() { _idxCliTarifas = null; }
+function _cliTarifaIndex() {
+  // El índice se invalida explícitamente al re-hidratar y al guardar, pero varias
+  // pantallas también mutan AppData.clienteTarifas en memoria. Un índice viejo no
+  // da error: da un PRECIO equivocado, que es mucho peor. Por eso además se
+  // verifica que siga siendo el mismo array y con la misma cantidad de filas.
+  const arr = AppData.clienteTarifas || [];
+  if (_idxCliTarifas && (_idxCliTarifas.src !== arr || _idxCliTarifas.n !== arr.length)) _idxCliTarifas = null;
+  if (_idxCliTarifas) return _idxCliTarifas;
+  const porCod = new Map(), porNombre = new Map();
+  arr.forEach(x => {
+    // OJO: la zona GUARDADA no se canoniza, igual que el find original — lo
+    // persistido ya queda canónico al guardar (guardarClienteTarifas) y canonizar
+    // de nuevo acá cambiaría el matcheo de las filas viejas.
+    const z = normNombre(x.zona);
+    const destino = x.cliente_cod ? porCod : porNombre;
+    const k = x.cliente_cod ? clienteKey(x.cliente_cod) : normCliente(x.cliente);
+    if (!k) return;
+    let zm = destino.get(k); if (!zm) { zm = new Map(); destino.set(k, zm); }
+    // El find lineal se quedaba con la PRIMERA coincidencia: se respeta.
+    if (!zm.has(z)) zm.set(z, _num(x.precio));
+  });
+  _idxCliTarifas = { porCod, porNombre, src: arr, n: arr.length };
+  return _idxCliTarifas;
+}
+
 // Tarifa de venta de un cliente (por CÓDIGO) para una zona. 0 = sin cargar.
 function clienteTarifaEnZona(cod, zona) {
   // Misma resolución que getPrecio: la zona del envío pasa por el alias antes de
   // buscar la tarifa de venta. Las zonas del tarifario son las mismas de los dos
   // lados y tienen que resolverse igual.
   const k = clienteKey(cod), z = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
-  const t = (AppData.clienteTarifas || []).find(x =>
-    (clienteKey(x.cliente_cod) === k || (!x.cliente_cod && normCliente(x.cliente) === normCliente(k))) &&
-    normNombre(x.zona) === z);
-  return t ? _num(t.precio) : 0;
+  const idx = _cliTarifaIndex();
+  const porCod = idx.porCod.get(k);
+  if (porCod) { const p = porCod.get(z); if (p !== undefined) return p; }
+  const porNombre = idx.porNombre.get(normCliente(k));
+  if (porNombre) { const p = porNombre.get(z); if (p !== undefined) return p; }
+  return 0;
 }
 
 // Lo que se le FACTURA al cliente por un envío. Es el único punto que decide
@@ -209,7 +244,14 @@ function calcLiquidacionCliente(cliente, rango, opts) {
   // mostraba "0 en zonas sin tarifa" y facturaba $7.641 un envío pactado en
   // $18.000, pagándole $9.000 al conductor).
   let dimSinVenta = 0, dimSinVentaMonto = 0, dimSinVentaPagado = 0;
-  AppData.records.forEach(r => {
+  // De dónde salen los envíos a recorrer. Por defecto, todos: es la única forma
+  // segura, porque un cliente_cod se puede corregir en memoria y un índice
+  // global cacheado facturaría el envío al cliente equivocado.
+  // Quien necesita llamar esto para MUCHOS clientes seguidos (el Dashboard, que
+  // lo hacía 121 veces sobre 47.684 envíos = 5,8 millones de vueltas por render)
+  // agrupa una sola vez y le pasa a cada cliente su propia lista.
+  const _fuente = (opts && opts.registros) ? opts.registros : AppData.records;
+  _fuente.forEach(r => {
     if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
     const estadoNorm = (r.estado || '').toUpperCase().trim();
     if (!contabilizaRegistro(r)) return;   // la visita fallida también se le factura al cliente

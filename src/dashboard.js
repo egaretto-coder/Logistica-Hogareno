@@ -236,26 +236,16 @@ function renderDashboard() {
   const rango = getDashFechaRango();
   const recordsFiltrados = filtrarRecordsPorFecha(AppData.records);
 
-  // Recalcular liquidaciones solo sobre registros del período
-  // Formato compatible con calcLiquidaciones(): { conductor: { total, filas, ... } }
-  const liqFecha = {};
-  recordsFiltrados.forEach(r => {
-    const cond = conductorCanonico(r.cadete);
-    if (!cond) return;
-    const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
-    const estadoNorm = (r.estado || '').toUpperCase().trim();
-    const contabiliza = contabilizaRegistro(r);
-    if (!liqFecha[cond]) liqFecha[cond] = { total: 0, filas: [], filas_excluidas: [] };
-    if (contabiliza) {
-      const p = getPrecio(cond, zona);
-      const precio = precioManualDe(r) !== null ? precioManualDe(r) : p.precio;
-      liqFecha[cond].total += precio;
-      liqFecha[cond].filas.push({ zona, precio });
-    } else {
-      liqFecha[cond].filas_excluidas.push({ zona, estado: r.estado });
-    }
-  });
-
+  // Las liquidaciones del período salen del MISMO cálculo que usa la pantalla de
+  // Liquidaciones (calcLiquidaciones). Antes el Dashboard tenía su propia cuenta
+  // en línea que solo miraba getPrecio + precio_manual y NO la dimensión especial
+  // asignada al envío: los 73 envíos con condición cargada se contaban a la tarifa
+  // común de la zona, así que el "Total a pagar" del Dashboard no coincidía con la
+  // suma de lo que se liquida de verdad. Dos cuentas para el mismo número siempre
+  // terminan discrepando; ahora hay una sola.
+  // Sin filtro de fecha se pasa undefined a propósito: es lo único que calcLiquidaciones
+  // cachea, y así el reporte por zona/conductor reusa esta misma pasada.
+  const liqFecha = calcLiquidaciones(recordsFiltrados === AppData.records ? undefined : recordsFiltrados);
   const conductores = Object.keys(liqFecha);
   const totalMonto = Object.values(liqFecha).reduce((s, v) => s + v.total, 0);
   const totalRecs = recordsFiltrados.length;
@@ -295,14 +285,19 @@ function renderDashboard() {
     : 'Sin datos cargados';
   document.getElementById('no-data-alert').style.display = AppData.records.length ? 'none' : 'flex';
 
-  // Panel conductores por condición (pasa liqFecha para usar el período)
-  renderDashConductoresPanel(liqFecha);
-
-  // Reportes integrados (por zona / por conductor), respetan el mismo período.
-  if (typeof renderZonaReport === 'function') renderZonaReport();
-  if (typeof renderConductorReport === 'function') renderConductorReport();
-  // Solapa Clientes: la renta del negocio, con el mismo período.
-  if (typeof renderDashClientes === 'function') renderDashClientes();
+  // SOLO la solapa que se está viendo. Antes se recalculaban las tres en cada
+  // render, y la de Clientes es la cara de todas: con 47.684 envíos, entrar al
+  // Dashboard tardaba 23 s y cambiar de solapa 18 s, con la pantalla congelada.
+  // Las otras dos se recalculan al mostrarlas (switchDashTab), que es cuando
+  // hacen falta — y siguen leyendo el MISMO período, así que no se desfasan.
+  if (dashTab === 'conductores') {
+    renderDashConductoresPanel(liqFecha);
+    if (typeof renderConductorReport === 'function') renderConductorReport();
+  } else if (dashTab === 'zonas') {
+    if (typeof renderZonaReport === 'function') renderZonaReport();
+  } else {
+    if (typeof renderDashClientes === 'function') renderDashClientes();
+  }
 }
 
 // ===== LIQUIDACIONES =====
@@ -339,8 +334,21 @@ function _dashRangoCliente() {
 function dashRentaClientes() {
   const rango = _dashRangoCliente();
   const clientes = (typeof clientesDeRegistros === 'function') ? clientesDeRegistros(rango) : [];
+  // Una SOLA pasada agrupando los envíos por cliente, en vez de que cada
+  // calcLiquidacionCliente vuelva a recorrer los 47.684. Con 121 clientes eran
+  // 5,8 millones de vueltas por render y el Dashboard se congelaba 23 s.
+  // El agrupado se arma acá y se descarta al terminar: nada queda cacheado, así
+  // que corregir el cliente de un envío no puede quedar desfasado.
+  const porCliente = new Map();
+  (AppData.records || []).forEach(r => {
+    const k = clienteCodDeRegistro(r);
+    if (!k) return;
+    let a = porCliente.get(k); if (!a) { a = []; porCliente.set(k, a); }
+    a.push(r);
+  });
+  const vacio = [];
   return clientes.map(c => {
-    const liq = calcLiquidacionCliente(c.cod, rango);
+    const liq = calcLiquidacionCliente(c.cod, rango, { registros: porCliente.get(clienteKey(c.cod)) || vacio });
     return {
       cod: c.cod, nombre: clienteNombreDe(c.cod),
       envios: liq.totalEnvios, factura: liq.total, costo: liq.pagado,
