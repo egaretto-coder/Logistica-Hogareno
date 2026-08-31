@@ -16,7 +16,7 @@ const ROL_PERMISOS = {
       // (paginasConfigurables()). Se mantiene igual al del sidebar para que las
       // dos pantallas cuenten la misma historia.
       'dashboard', 'upload',
-      'panel-conductores', 'conductores', 'liquidaciones',
+      'panel-conductores', 'conductores', 'liquidaciones', 'monotributos',
       'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
       'clientes', 'detalle-cliente', 'cliente-liquidaciones',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales',

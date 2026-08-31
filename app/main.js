@@ -66,6 +66,7 @@ function showPage(id) {
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
+  if (id === 'monotributos' && typeof renderMonotributosPagina === 'function') renderMonotributosPagina();
   if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('activos');
   if (id === 'detalle-cliente' && typeof renderDetalleClientePagina === 'function') renderDetalleClientePagina();
   if (id === 'cliente-liquidaciones' && typeof renderClienteLiquidacionesPagina === 'function') renderClienteLiquidacionesPagina();
@@ -97,7 +98,7 @@ function rerenderPaginaActiva() {
 const PANTALLAS = [
   'dashboard', 'importar-datos', 'liquidaciones', 'conductores',
   'tarifas', 'super-sla',
-  'panel-conductores', 'dimensiones-especiales',
+  'panel-conductores', 'monotributos', 'dimensiones-especiales',
   'extraviados', 'beneficios', 'km-desvio', 'adelantos',
   'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones', 'gestion-permisos'
 ];

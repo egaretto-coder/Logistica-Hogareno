@@ -1227,3 +1227,63 @@ create index if not exists idx_emp_reap_empleado on public.empleado_sueldo_reape
 alter table public.empleado_sueldo_reaperturas enable row level security;
 create policy empleado_sueldo_reaperturas_all on public.empleado_sueldo_reaperturas
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- ---------- MONOTRIBUTOS (panel del tesorero) ----------
+-- La parte de la liquidación que se paga por TRANSFERENCIA BANCARIA es la que
+-- se factura: por esa plata tiene que existir un comprobante. Y para que ese
+-- comprobante exista, el conductor tiene que estar en condiciones — cuenta
+-- bancaria cargada, contrato de prestación de servicios firmado y monotributo
+-- activo. Con los tres está "al día"; si falta alguno, la empresa transfiere
+-- contra nada.
+create table if not exists public.conductor_fiscal (
+  id bigint generated always as identity primary key,
+  conductor text not null,
+  cuit text not null default '',
+  cbu text not null default '',
+  alias_cbu text not null default '',
+  banco text not null default '',
+  titular text not null default '',            -- puede no ser el conductor
+  contrato_firmado boolean not null default false,
+  contrato_fecha date,
+  monotributo boolean not null default false,
+  monotributo_categoria text not null default '',
+  factura_la_emitimos boolean not null default false,
+  obs text not null default '',
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists idx_cond_fiscal_conductor
+  on public.conductor_fiscal (upper(btrim(conductor)));
+
+-- Lo transferido en cada período y el estado de su comprobante. Cuando la
+-- factura la emite la empresa, la contrapartida es una factura a CONSUMIDOR
+-- FINAL: se registra que se hizo, cuándo y por cuánto.
+create table if not exists public.conductor_facturas (
+  id bigint generated always as identity primary key,
+  conductor text not null,
+  periodo text not null default '',            -- AAAA-MM
+  fecha date,
+  monto_transferencia numeric not null default 0,
+  origen text not null default 'conductor',    -- conductor | nosotros
+  factura_recibida boolean not null default false,
+  factura_fecha date,
+  factura_nro text not null default '',
+  cf_emitida boolean not null default false,
+  cf_fecha date,
+  cf_nro text not null default '',
+  cf_monto numeric not null default 0,
+  obs text not null default '',
+  creado_por text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_cond_fact_conductor on public.conductor_facturas (conductor);
+create index if not exists idx_cond_fact_periodo on public.conductor_facturas (periodo);
+alter table public.conductor_fiscal   enable row level security;
+alter table public.conductor_facturas enable row level security;
+create policy conductor_fiscal_all on public.conductor_fiscal
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+create policy conductor_facturas_all on public.conductor_facturas
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+-- El panel es del tesorero (el analista ya tiene acceso total por código).
+-- insert into public.rol_permisos (rol, pagina, permitido)
+--   values ('tesorero', 'monotributos', true)
+--   on conflict (rol, pagina) do update set permitido = true;

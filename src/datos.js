@@ -77,6 +77,10 @@ function loadSavedConfig() {
   if (emphe) { try { AppData.empleadoHorasExtra = JSON.parse(emphe) || []; } catch(e) {} }
   const empre = localStorage.getItem('liq_empleado_reaperturas');
   if (empre) { try { AppData.empleadoReaperturas = JSON.parse(empre) || []; } catch(e) {} }
+  const cfis = localStorage.getItem('liq_conductor_fiscal');
+  if (cfis) { try { AppData.conductorFiscal = JSON.parse(cfis) || []; } catch(e) {} }
+  const cfac = localStorage.getItem('liq_conductor_facturas');
+  if (cfac) { try { AppData.conductorFacturas = JSON.parse(cfac) || []; } catch(e) {} }
   const emps = localStorage.getItem('liq_empleado_sueldos');
   if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
   const rend = localStorage.getItem('liq_rendiciones');
@@ -332,6 +336,21 @@ async function _hydrateFromSupabaseReal(opts) {
     solicitado_por: r.solicitado_por || '', solicitado_en: r.solicitado_en || '',
     estado: r.estado || 'pendiente', resuelto_por: r.resuelto_por || '', resuelto_en: r.resuelto_en || ''
   }));
+  AppData.conductorFiscal = (data.conductor_fiscal || []).map(f => ({
+    id: f.id, conductor: f.conductor || '', cuit: f.cuit || '',
+    cbu: f.cbu || '', alias_cbu: f.alias_cbu || '', banco: f.banco || '', titular: f.titular || '',
+    contrato_firmado: !!f.contrato_firmado, contrato_fecha: String(f.contrato_fecha || '').slice(0, 10),
+    monotributo: !!f.monotributo, monotributo_categoria: f.monotributo_categoria || '',
+    factura_la_emitimos: !!f.factura_la_emitimos, obs: f.obs || ''
+  }));
+  AppData.conductorFacturas = (data.conductor_facturas || []).map(x => ({
+    id: x.id, conductor: x.conductor || '', periodo: x.periodo || '',
+    fecha: String(x.fecha || '').slice(0, 10), monto_transferencia: _num(x.monto_transferencia),
+    origen: x.origen === 'nosotros' ? 'nosotros' : 'conductor',
+    factura_recibida: !!x.factura_recibida, factura_fecha: String(x.factura_fecha || '').slice(0, 10), factura_nro: x.factura_nro || '',
+    cf_emitida: !!x.cf_emitida, cf_fecha: String(x.cf_fecha || '').slice(0, 10), cf_nro: x.cf_nro || '', cf_monto: _num(x.cf_monto),
+    obs: x.obs || '', creado_por: x.creado_por || ''
+  }));
   AppData.empleadoSueldos = (data.empleado_sueldos || []).map(s => ({
     id: s.id, empleado_id: s.empleado_id, periodo: s.periodo,
     sueldo_base: _num(s.sueldo_base), horas_extra: _num(s.horas_extra),
@@ -483,6 +502,11 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_cliente_cargos', JSON.stringify(AppData.clienteCargos || []));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
+    localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
+    localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
+    localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));
+    localStorage.setItem('liq_conductor_fiscal', JSON.stringify(AppData.conductorFiscal || []));
+    localStorage.setItem('liq_conductor_facturas', JSON.stringify(AppData.conductorFacturas || []));
     localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));
   } catch(e) {}
 

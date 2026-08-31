@@ -577,6 +577,166 @@
   </div>
 </div>
 
+<!-- MODAL FICHA FISCAL DEL CONDUCTOR (panel Monotributos)
+     Los tres datos que habilitan a facturar lo que se le transfiere: la
+     cuenta, el contrato firmado y el monotributo. -->
+<div class="modal-backdrop" id="modal-fiscal-backdrop" onclick="cerrarFichaFiscal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-shield"></i> Ficha fiscal · <span id="mfis-titulo"></span></span>
+      <button class="modal-close" onclick="cerrarFichaFiscal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">CUIT</label>
+          <input type="text" id="mfis-cuit" class="form-input" style="width:100%" placeholder="20-12345678-9" oninput="recalcFichaFiscal()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Banco</label>
+          <input type="text" id="mfis-banco" class="form-input" style="width:100%" placeholder="Ej: Banco Nación">
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:180px">
+          <label class="form-label"><i class="ic ic-card"></i> CBU</label>
+          <input type="text" id="mfis-cbu" class="form-input" style="width:100%;font-family:monospace" placeholder="22 dígitos" oninput="recalcFichaFiscal()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Alias</label>
+          <input type="text" id="mfis-alias" class="form-input" style="width:100%" placeholder="alias.de.la.cuenta" oninput="recalcFichaFiscal()">
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Titular de la cuenta</label>
+        <input type="text" id="mfis-titular" class="form-input" style="width:100%" placeholder="Si no es el propio conductor, aclarar quién">
+      </div>
+
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="mfis-contrato" onchange="recalcFichaFiscal()">
+          <span><strong>Contrato de prestación de servicios firmado</strong></span>
+        </label>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fecha de firma</label>
+          <input type="date" id="mfis-contrato-fecha" class="form-input" style="width:170px">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="mfis-mono" onchange="recalcFichaFiscal()">
+          <span><strong>Tiene monotributo activo</strong></span>
+        </label>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Categoría</label>
+          <input type="text" id="mfis-mono-cat" class="form-input" style="width:120px" placeholder="Ej: B">
+        </div>
+      </div>
+
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="mfis-emitimos">
+        <span>La factura de este conductor <strong>la emitimos nosotros</strong>
+          <div style="font-size:10.5px;color:var(--text-muted)">Cuando es así, el tesorero además tiene que emitir la factura a consumidor final.</div></span>
+      </label>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <input type="text" id="mfis-obs" class="form-input" style="width:100%">
+      </div>
+
+      <div id="mfis-estado" style="font-size:12px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarFichaFiscal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarFichaFiscal()"><i class="ic ic-save"></i> Guardar ficha</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REGISTRAR UNA TRANSFERENCIA Y SU FACTURA (panel Monotributos) -->
+<div class="modal-backdrop" id="modal-mfac-backdrop" onclick="cerrarMonoFactura(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-receipt"></i> <span id="modal-mfac-title">Registrar transferencia</span></span>
+      <button class="modal-close" onclick="cerrarMonoFactura()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Conductor *</label>
+        <select id="mfac-conductor" class="form-input" style="width:100%" onchange="recalcMonoFactura()"></select>
+        <div id="mfac-aviso" style="font-size:11px;margin-top:4px"></div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Fecha de la transferencia *</label>
+          <input type="date" id="mfac-fecha" class="form-input" style="width:100%" onchange="recalcMonoFactura()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label"><i class="ic ic-card"></i> Monto transferido ($) *</label>
+          <input type="number" id="mfac-monto" class="form-input" min="0" step="1000" style="width:100%" placeholder="0">
+          <span style="font-size:10px;color:var(--text-muted)">Es lo que se factura.</span>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">¿Quién emite la factura?</label>
+        <select id="mfac-origen" class="form-input" style="width:100%" onchange="recalcMonoFactura()">
+          <option value="conductor">La emite el conductor</option>
+          <option value="nosotros">La emitimos nosotros</option>
+        </select>
+      </div>
+
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="mfac-recibida" onchange="recalcMonoFactura()">
+          <strong id="mfac-recibida-lbl">El conductor mandó la factura</strong>
+        </label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div class="form-group" style="margin:0;flex:1;min-width:130px">
+            <label class="form-label">Fecha de la factura</label>
+            <input type="date" id="mfac-fact-fecha" class="form-input" style="width:100%">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:130px">
+            <label class="form-label">N° de factura</label>
+            <input type="text" id="mfac-fact-nro" class="form-input" style="width:100%" placeholder="0001-00000123">
+          </div>
+        </div>
+      </div>
+
+      <!-- Solo cuando la factura la emitimos nosotros: la contrapartida es una
+           factura a consumidor final, y hay que dejar registrado cuándo se hizo. -->
+      <div id="mfac-cf-box" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;flex-direction:column;gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#1e40af">
+          <input type="checkbox" id="mfac-cf" onchange="recalcMonoFactura()">
+          <span><strong>Se emitió la factura a consumidor final</strong>
+            <div style="font-size:10.5px;opacity:.85">Cuando la factura del conductor la hace la empresa, el tesorero tiene que emitir además ésta.</div></span>
+        </label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div class="form-group" style="margin:0;flex:1;min-width:120px">
+            <label class="form-label">Fecha</label>
+            <input type="date" id="mfac-cf-fecha" class="form-input" style="width:100%">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:120px">
+            <label class="form-label">N° de factura</label>
+            <input type="text" id="mfac-cf-nro" class="form-input" style="width:100%">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:110px">
+            <label class="form-label">Monto ($)</label>
+            <input type="number" id="mfac-cf-monto" class="form-input" min="0" step="1000" style="width:100%">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <input type="text" id="mfac-obs" class="form-input" style="width:100%">
+      </div>
+      <div id="mfac-estado" style="font-size:12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarMonoFactura()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarMonoFactura()"><i class="ic ic-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL REABRIR UNA LIQUIDACIÓN PAGADA
      Es plata que ya salió y un recibo que alguien firmó: se corrige, pero
      dejando registrado quién lo pidió y por qué. -->

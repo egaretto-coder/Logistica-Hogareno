@@ -295,6 +295,8 @@ let AppData = {
   empleadoPostergaciones: [],   // ajustes que se decidió NO dar todavía, con su justificación
   empleadoHorasExtra: [],       // horas extras registradas el día que se hicieron
   empleadoReaperturas: [],      // pedidos de reabrir una liquidación ya pagada
+  conductorFiscal: [],          // cuenta, contrato y monotributo de cada conductor
+  conductorFacturas: [],        // lo transferido por período y su comprobante
   empleadoSueldos: [],
 
   // Rendicion de envios con cobro en destino (el conductor cobra y rinde al dia siguiente).
@@ -1155,6 +1157,7 @@ const PAGE_TITLES = {
   'config-tarifas': ['Configuración de tarifas', 'Precios por zona y categoría'],
   'config-supersla': ['Super SLA', 'Tarifas especiales por conductor y zona'],
   'panel-conductores':  ['Panel de conductores', 'Condición, día de pago y categorización'],
+  'monotributos': ['Monotributos', 'Documentación, cuentas y facturación de lo que se transfiere'],
   'dimensiones-especiales': ['Dimensiones Especiales', 'Trackings con condición y valor especial que reemplazan la tarifa'],
   'extraviados': ['Extraviados / Rotos', 'Envíos extraviados o rotos, con opción de cuotear'],
   'beneficios': ['Beneficios', 'Combustible y servicio de proveedores por conductor'],

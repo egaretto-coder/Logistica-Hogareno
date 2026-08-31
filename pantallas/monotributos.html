@@ -1,0 +1,88 @@
+      <div id="page-monotributos" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-receipt"></i> Monotributos</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Mes</label>
+              <input type="month" id="mono-mes" onchange="renderMonotributos()">
+            </div>
+            <button class="btn btn-sm" onclick="exportMonotributosPDF()" title="Listado del mes para control"><i class="ic ic-download"></i> Listado (PDF)</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          <i class="ic ic-receipt"></i><div>La parte de la liquidación que se paga por <strong>transferencia bancaria</strong> es la que se
+          <strong>factura</strong>. Para que esa factura exista, el conductor tiene que tener <strong>cuenta cargada</strong>,
+          <strong>contrato de prestación de servicios firmado</strong> y <strong>monotributo</strong>: con los tres está
+          <strong>al día</strong>. Si la factura la emitimos nosotros, el tesorero además tiene que emitir la
+          <strong>factura a consumidor final</strong> y registrarla acá.</div>
+        </div>
+
+        <div class="tabs" id="mono-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="mono-btn-doc" onclick="switchMonoTab('doc')"><i class="ic ic-shield"></i> Documentación</button>
+          <button class="tab" id="mono-btn-fact" onclick="switchMonoTab('fact')"><i class="ic ic-receipt"></i> Facturación del mes</button>
+        </div>
+
+        <!-- ══════════ TAB: DOCUMENTACIÓN ══════════ -->
+        <div id="mono-tab-doc">
+          <div class="metrics-grid" id="mono-resumen" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="mono-search" placeholder="🔍 Buscar por conductor, CUIT o banco..." oninput="renderMonotributos()"
+              style="width:300px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+            <!-- Los dos filtros que piden una decisión: a quién hay que
+                 reclamarle el contrato y a quién el monotributo. -->
+            <select id="mono-filtro" onchange="renderMonotributos()"
+              style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;background:var(--surface-1)">
+              <option value="todos">Todos los conductores</option>
+              <option value="al_dia">Solo los que están al día</option>
+              <option value="sin_contrato">Sin contrato firmado</option>
+              <option value="sin_mono">Sin monotributo</option>
+              <option value="sin_cuenta">Sin cuenta bancaria cargada</option>
+              <option value="incompletos">Con algo pendiente</option>
+            </select>
+            <span id="mono-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div id="mono-aviso"></div>
+
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th>CUIT</th><th>Cuenta bancaria</th>
+              <th>Contrato</th><th>Monotributo</th><th>Estado</th><th style="width:110px"></th>
+            </tr></thead>
+            <tbody id="mono-rows"></tbody>
+          </table></div></div>
+        </div>
+
+        <!-- ══════════ TAB: FACTURACIÓN DEL MES ══════════ -->
+        <div id="mono-tab-fact" style="display:none">
+          <div class="metrics-grid" id="mono-fact-resumen" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="mono-fact-search" placeholder="🔍 Buscar por conductor..." oninput="renderMonoFacturas()"
+              style="width:270px;max-width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+            <select id="mono-fact-filtro" onchange="renderMonoFacturas()"
+              style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;background:var(--surface-1)">
+              <option value="todos">Todo el mes</option>
+              <option value="sin_factura">Sin factura</option>
+              <option value="nosotros">Las que emitimos nosotros</option>
+              <option value="sin_cf">Falta la factura a consumidor final</option>
+            </select>
+            <span id="mono-fact-count" style="font-size:12px;color:var(--text-muted)"></span>
+            <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="abrirMonoFactura()"><i class="ic ic-plus"></i> Registrar transferencia</button>
+          </div>
+
+          <div id="mono-fact-aviso"></div>
+
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Conductor</th><th>Fecha</th><th style="text-align:right">Transferencia</th>
+              <th>Factura</th><th>Consumidor final</th><th>Estado</th><th style="width:90px"></th>
+            </tr></thead>
+            <tbody id="mono-fact-rows"></tbody>
+          </table></div></div>
+        </div>
+
+      </div>
