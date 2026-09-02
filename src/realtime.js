@@ -17,6 +17,12 @@ const RT_TABLAS = [
   'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial',
   'km_tarifas', 'config', 'rol_permisos', 'roles',
   'clientes', 'cliente_tarifas',
+  // Estas dos deciden CÓMO se resuelve la facturación, no solo qué muestra una
+  // pantalla: cliente_cuentas define a qué cliente se le factura un envío y
+  // zona_alias si su zona tiene tarifa. Sin suscribirse, vincular dos cuentas o
+  // cargar un alias no llegaba a las sesiones abiertas: cada una seguía
+  // facturando distinto hasta que alguien recargara, sin ninguna señal.
+  'cliente_cuentas', 'zona_alias',
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
   'empleados', 'empleado_ajustes', 'empleado_postergaciones', 'empleado_horas_extra',
@@ -37,11 +43,11 @@ let _rtUltimaCargaRegistros = Date.now();   // para no rebajar recorridos de má
 // re-renderiza la pantalla activa (evita repintar de prepo mientras el operador
 // está trabajando).
 const RT_PANTALLA_TABLAS = {
-  'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo'],
+  'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias'],
   'upload':                 ['registros', 'importaciones'],
   'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
                              'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas'],
-  'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo'],
+  'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'zona_alias'],
   'panel-conductores':      ['panel_conductores'],
   'config-tarifas':         ['tarifas'],
   'config-supersla':        ['super_sla', 'panel_conductores', 'supersla_solicitudes'],
@@ -50,8 +56,9 @@ const RT_PANTALLA_TABLAS = {
   'beneficios':             ['descuentos_items'],
   'km-desvio':              ['km_desvio', 'km_tarifas'],
   'adelantos':              ['adelantos', 'adelanto_cuotas'],
-  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'tarifas', 'super_sla', 'panel_conductores', 'cliente_cargos'],
-  'clientes':               ['clientes', 'cliente_tarifas', 'registros'],
+  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'tarifas', 'super_sla', 'panel_conductores', 'cliente_cargos'],
+  'clientes':               ['clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'registros'],
+  'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
                              'clientes', 'cliente_tarifas', 'registros', 'config'],
   'vacaciones':             ['vacaciones', 'empleados'],
