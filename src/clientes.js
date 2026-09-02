@@ -383,6 +383,40 @@ function tarifasVigentesDe(cod, fechaISO) {
   return Array.from(porZona.values());
 }
 
+// Desde cuándo rige la lista de precios que se le está aplicando al cliente, y
+// si hay otra ya cargada esperando su fecha. Se muestra en la card porque es la
+// pregunta que se hace el que factura —"¿este cliente tiene el aumento puesto?"—
+// y hasta ahora había que abrir el tarifario para saberlo.
+function ultimaListaPrecios(cod) {
+  const hoy = _hoyISO();
+  const k = clienteKey(cod);
+  let rige = null, proxima = null;
+  (AppData.clienteTarifas || []).forEach(t => {
+    const mio = clienteKey(t.cliente_cod) === k ||
+      (!t.cliente_cod && normCliente(t.cliente) === normCliente(k));
+    if (!mio) return;
+    const d = tarifaVigenteDesde(t);
+    if (d <= hoy) { if (!rige || d > rige) rige = d; }
+    else if (!proxima || d < proxima) proxima = d;
+  });
+  return {
+    desde: rige,
+    // El centinela quiere decir que nunca se le cargó un aumento: es la lista con
+    // la que se dio de alta. Mostrar "01/01/2000" no le diría nada a nadie.
+    original: rige === TARIFA_DESDE_SIEMPRE,
+    proxima: proxima
+  };
+}
+
+// Texto corto para la card: desde cuándo rige la lista que se está aplicando.
+function ultimaListaPreciosTxt(cod) {
+  const u = ultimaListaPrecios(cod);
+  if (!u.desde) return { txt: '—', sub: '' };
+  const txt = u.original ? 'original' : _precFmt(u.desde);
+  const sub = u.proxima ? 'nueva desde el ' + _precFmt(u.proxima) : '';
+  return { txt, sub, original: u.original };
+}
+
 // Cantidad de zonas con tarifa cargada de un cliente (las que rigen hoy).
 function clienteNZonas(cod) {
   return tarifasVigentesDe(cod).filter(t => _num(t.precio) > 0).length;
@@ -606,6 +640,15 @@ function renderClientes() {
 
         '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border)">' +
           dato('Zonas con tarifa', nz ? nz : '<span style="color:#b45309">ninguna</span>') +
+          // Desde cuándo rige la lista que se le está aplicando: es lo primero que
+          // se pregunta el que factura cuando entra un aumento.
+          dato('Lista de precios', (function(){
+            const u = ultimaListaPreciosTxt(cod);
+            return (u.original
+                ? '<span title="Nunca se le cargó un aumento: rige la lista con la que se dio de alta">original</span>'
+                : 'desde ' + u.txt) +
+              (u.sub ? '<div style="font-size:10px;font-weight:400;color:#b45309">' + u.sub + '</div>' : '');
+          })()) +
           dato('Envíos esta semana', act ? act.envios : '—') +
           (liq ? dato('Se factura', fmtPeso(liq.total)) : '') +
 
@@ -704,6 +747,13 @@ function verCardCliente(cod) {
 
     '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
       dato('Zonas con tarifa', nz ? String(nz) : '<span style="color:#b45309">ninguna</span>') +
+      dato('Lista de precios', (function(){
+        const u = ultimaListaPreciosTxt(k);
+        return (u.original
+            ? '<span title="Nunca se le cargó un aumento">original</span>'
+            : 'desde ' + u.txt) +
+          (u.sub ? '<div style="font-size:11px;font-weight:400;color:#b45309">' + u.sub + '</div>' : '');
+      })()) +
       dato('Envíos de la semana', liq.totalEnvios ? String(liq.totalEnvios) : '—') +
       dato('A facturar', fmtPeso(liq.total)) +
 

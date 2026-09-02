@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v200';
+const CACHE = 'liq-cache-v201';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
