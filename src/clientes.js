@@ -1763,14 +1763,16 @@ function _importarUnTarifario(file, vigenteDesde) {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
     reader.onload = async function (e) {
-      try { resolve(await _aplicarTarifario(file.name, new Uint8Array(e.target.result))); }
+      try { resolve(await _aplicarTarifario(file.name, new Uint8Array(e.target.result), vigenteDesde)); }
       catch (err) { reject(err); }
     };
     reader.readAsArrayBuffer(file);
   });
 }
 
-async function _aplicarTarifario(nombreArchivo, bytes) {
+// vigenteDesde llega hasta ACA: el trabajo real (crear el cliente y guardar sus
+// tarifas) pasa en esta funcion, no en la que lee el archivo.
+async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde) {
   const wb = XLSX.read(bytes, { type: 'array' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
   const res = { archivo: nombreArchivo, clientes: [], zonasDesconocidas: [], repetidas: 0, ignoradas: 0 };
