@@ -1642,6 +1642,25 @@ async function guardarSueldo(marcarPagado, conRecibo) {
   // guarda con el mismo descuento que muestra la pantalla.
   await aplicarCuotasSueldo(periodo);
   const c = recalcSueldoModal();
+  // La pantalla ya avisa en rojo que no se puede transferir más de lo que se le
+  // paga, pero antes se guardaba igual: quedaba monto_efectivo NEGATIVO y un
+  // pct_transferencia arriba de 100, y el recibo —que es el papel que el empleado
+  // FIRMA— salía diciendo "Efectivo: -$50.000". Un aviso que no frena nada es peor
+  // que no avisar, porque hace creer que el caso está contemplado.
+  if (c.mT > Math.max(0, c.total)) {
+    alert('La transferencia (' + fmtPeso(c.mT) + ') se pasa del total a pagar (' + fmtPeso(c.total) + ').\n\n' +
+      'El efectivo es la diferencia, así que quedaría en ' + fmtPeso(c.total - c.mT) + '. Corregí el monto ' +
+      'transferido, o revisá los conceptos si el total no es el que esperabas.');
+    return;
+  }
+  // Un total negativo es real —el adelanto se comió el sueldo— pero no se puede
+  // "pagar": el recibo diría que el empleado cobró menos que nada.
+  if (c.total < 0 && marcarPagado) {
+    alert('El total quedó en ' + fmtPeso(c.total) + ': lo que se descuenta supera lo que se le paga.\n\n' +
+      'Se puede guardar para dejarlo registrado, pero no marcarlo como pagado ni emitir el recibo. ' +
+      'Revisá las cuotas de adelanto imputadas a este mes.');
+    return;
+  }
   const rec = {
     empleado_id: sueldoModalEmpId, periodo,
     sueldo_base: c.base, horas_extra: c.horas, valor_hora_extra: c.vh, monto_horas_extra: c.extras,
