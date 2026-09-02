@@ -37,10 +37,43 @@ function moverSemanaLiq(n) {
   renderLiquidaciones();
 }
 
-// El rango de la semana elegida, en el formato que ya usaba el panel.
+// ── La semana de pago de CADA condición ─────────────────────────────────
+// No es la misma para todos. La semana CIERRA el día anterior al día de pago,
+// así el conductor cobra lo que cerró la víspera:
+//   Titular      → paga viernes → cierra jueves  → semana VIE→JUE
+//   Semi Titular → paga lunes   → cierra domingo → semana LUN→DOM
+//   Suplente     → paga martes  → cierra lunes   → semana MAR→LUN
+// Lo confirma la planilla que se usa hoy: "LIQUIDACION SUPLENTES SEMANA DEL
+// 25/08 al 31/08" es martes a lunes. Liquidar a todos de viernes a jueves le
+// mete a un suplente los envíos de otra semana.
+const LIQ_DIA_PAGO = { 'TITULAR': 5, 'SEMI TITULAR': 1, 'SUPLENTE': 2 };   // 0=dom
+
+// Día en que ARRANCA la semana de esa condición (= su día de pago).
+function liqDiaInicioCond(condicion) {
+  const d = LIQ_DIA_PAGO[String(condicion || '').toUpperCase()];
+  return d === undefined ? 5 : d;   // sin condición se muestra con la de Titular
+}
+
+// La semana de esa condición que CONTIENE la fecha de referencia.
+function semanaDeCondicion(condicion, isoRef) {
+  const ini = liqDiaInicioCond(condicion);
+  const d = isoRef ? new Date(isoRef + 'T12:00:00') : new Date();
+  const atras = (d.getDay() - ini + 7) % 7;
+  const desde = new Date(d); desde.setDate(d.getDate() - atras); desde.setHours(0, 0, 0, 0);
+  const hasta = new Date(desde); hasta.setDate(desde.getDate() + 6); hasta.setHours(23, 59, 59, 999);
+  return { desde, hasta };
+}
+
+// La semana de UN conductor, según la condición que tenga cargada.
+function semanaDeConductor(conductor, isoRef) {
+  const pan = panelConductorDe(conductor);
+  return semanaDeCondicion((pan && pan.condicion) || '', isoRef || liqSemanaISO());
+}
+
+// El rango de referencia del encabezado: la semana del Titular (VIE→JUE), que
+// es la que ancla el resto. Cada fila muestra la suya cuando difiere.
 function getLiqFechaRango() {
-  const r = semanaClienteRango(liqSemanaISO());
-  return { desde: r.desdeD, hasta: r.hastaD };
+  return semanaDeCondicion('TITULAR', liqSemanaISO());
 }
 
 // ── Estado "lista para enviar" ──────────────────────────────────────────
@@ -48,16 +81,19 @@ function getLiqFechaRango() {
 // conductor CANÓNICO más el viernes que abre la semana.
 function liqConductorArmada(conductor, semanaISO) {
   const k = normNombre(typeof conductorCanonico === 'function' ? conductorCanonico(conductor) : conductor);
-  const sem = semanaISO || liqSemanaISO();
+  // La clave es la semana DE ESE CONDUCTOR: dos condiciones distintas que se
+  // liquidan el mismo dia de referencia tienen semanas distintas.
+  const sem = semanaISO || _liqISO(semanaDeConductor(conductor).desde);
   return (AppData.conductorLiquidaciones || []).find(x =>
     normNombre(x.conductor) === k && String(x.semana_desde).slice(0, 10) === sem) || null;
 }
 
 async function marcarLiqConductorLista(conductor) {
   const cond = (typeof conductorCanonico === 'function' ? conductorCanonico(conductor) : conductor) || conductor;
-  const sem = liqSemanaISO();
+  const semC = semanaDeConductor(cond);
+  const sem = _liqISO(semC.desde);
   if (liqConductorArmada(cond, sem)) return;
-  const r = semanaClienteRango(sem);
+  const r = { desdeD: semC.desde, hastaD: semC.hasta };
   const liq = calcLiquidacionesFiltradas();
   const rec = {
     conductor: cond,
@@ -111,15 +147,20 @@ async function marcarTodasLiqConductor() {
   for (const c of cs) await marcarLiqConductorLista(c);
 }
 
+// Los envíos de la semana de pago de CADA conductor. No se puede filtrar por un
+// rango único: la semana del suplente (mar→lun) no es la del titular (vie→jue),
+// y filtrar a todos por la misma le mete a uno los envíos de otra semana.
 function filtrarRecordsLiq(records) {
-  const rango = getLiqFechaRango();
-  if (!rango) return records;
+  const iso = liqSemanaISO();
+  const cache = new Map();   // condición -> {desde, hasta}, para no recalcular por envío
   return records.filter(r => {
-    const f = parseFechaReg(r.fecha);
-    if (!f) return false;
-    if (rango.desde && f < rango.desde) return false;
-    if (rango.hasta && f > rango.hasta) return false;
-    return true;
+    const cond = conductorCanonico(r.cadete); if (!cond) return false;
+    const pan = panelConductorDe(cond);
+    const c = (pan && pan.condicion) || '';
+    let sem = cache.get(c); if (!sem) { sem = semanaDeCondicion(c, iso); cache.set(c, sem); }
+    const fch = parseFechaReg(r.fecha);
+    if (!fch) return false;
+    return fch >= sem.desde && fch <= sem.hasta;
   });
 }
 

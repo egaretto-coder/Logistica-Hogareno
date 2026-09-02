@@ -33,6 +33,7 @@
               </select>
               <span id="liq-aviso-sinarmar"></span>
               <button class="btn btn-sm" onclick="marcarTodasLiqConductor()" title="Da por listas todas las liquidaciones que estás viendo, para que el tesorero pueda descargarlas"><i class="ic ic-check"></i> Marcar todas listas</button>
+              <button class="btn btn-sm" onclick="exportPlanillaPago()" title="La planilla que firma el conductor al cobrar: conductor, importe y una columna CONFORME. Sale con las liquidaciones ya marcadas como listas."><i class="ic ic-file"></i> Planilla de pago (firma)</button>
               <button class="btn btn-sm" id="liq-btn-unpdf" onclick="exportLiqCombinado()" title="Todas las liquidaciones elegidas en UN solo archivo, una por página. Útil para imprimir de una y cuando el navegador bloquea las descargas múltiples."><i class="ic ic-file"></i> En un solo PDF</button>
               <button class="btn btn-sm btn-primary" id="liq-btn-descargar" onclick="exportAllPDFs()" title="Descarga un PDF por conductor. Respeta el filtro y, si tildaste conductores, baja solo esos."><i class="ic ic-download"></i> Descargar liquidaciones (PDF)</button>
             </div>

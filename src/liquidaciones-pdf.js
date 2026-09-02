@@ -1237,4 +1237,128 @@ async function exportLiqCombinado() {
   showToast('📄 ' + conductores.length + ' liquidaciones en un solo PDF');
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  PLANILLA DE PAGO — la constancia que FIRMA el conductor.
+//  Buena parte del pago es en efectivo, así que hace falta un papel donde el
+//  conductor deje asentado que cobró. Hoy se tipea a mano en un Excel
+//  ("LIQUIDACION SUPLENTES SEMANA DEL 25/08 al 31/08"): conductor, importe y
+//  una columna CONFORME donde firma, con el TOTAL al pie. Esto lo saca del
+//  sistema con los mismos números que se liquidaron, así no hay que volver a
+//  tipear 27 importes —ni equivocarse al hacerlo.
+//
+//  Va SOLO con las liquidaciones marcadas como listas: es el papel del día de
+//  pago, y una que nadie revisó no se paga.
+//
+//  Se agrupa por CONDICIÓN porque cada una se paga su día y tiene su propia
+//  semana (Titular vie→jue · Semi Titular lun→dom · Suplente mar→lun), que es
+//  exactamente como está armada la planilla que se usa hoy.
+// ════════════════════════════════════════════════════════════════════════
+function exportPlanillaPago() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const M = (typeof MARCA !== 'undefined') ? MARCA : null;
+  const liq = calcLiquidacionesFiltradas();
+  const rangoImput = (typeof getLiqRangoFechasLabel === 'function') ? getLiqRangoFechasLabel() : null;
 
+  // Solo lo armado, y respetando el filtro que el operador tenga puesto.
+  const listos = conductoresFiltradosLiq(liq)
+    .filter(c => liq[c] && liq[c].filas.length && liqConductorArmada(c));
+  if (!listos.length) {
+    alert('No hay ninguna liquidación marcada como lista en lo que estás viendo.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      'La planilla de pago sale con las que el administrativo ya dio por listas: es el papel que se firma al pagar.');
+    return null;
+  }
+
+  // Agrupado por condición: cada una se paga su día y tiene su propia semana.
+  const grupos = new Map();
+  listos.forEach(c => {
+    const pan = panelConductorDe(c);
+    const cond = (pan && pan.condicion) || 'Sin condición';
+    if (!grupos.has(cond)) grupos.set(cond, []);
+    grupos.get(cond).push(c);
+  });
+  const ORDEN = ['Titular', 'Semi Titular', 'Suplente', 'Sin condición'];
+  const conds = Array.from(grupos.keys()).sort((a, b) => {
+    const ia = ORDEN.indexOf(a), ib = ORDEN.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+
+  const fmtD = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  const fmtDL = d => fmtD(d) + '/' + d.getFullYear();
+  const hoy = new Date();
+  let totalGeneral = 0;
+
+  conds.forEach((cond, gi) => {
+    if (gi > 0) doc.addPage();
+    const sem = semanaDeCondicion(cond === 'Sin condición' ? '' : cond, liqSemanaISO());
+    const cs = grupos.get(cond).slice().sort((a, b) => String(a).localeCompare(String(b)));
+
+    // ── Encabezado ────────────────────────────────────────────────────
+    if (M && M.logo) { try { doc.addImage(M.logo, 'PNG', 14, 10, 38, 38 / M.logoRatio); } catch (e) {} }
+    doc.setFontSize(13); doc.setFont(undefined, 'bold');
+    if (M) doc.setTextColor(M.navy[0], M.navy[1], M.navy[2]);
+    // En plural, como la planilla que se usa hoy ("LIQUIDACION SUPLENTES").
+    const titulo = { 'Titular': 'TITULARES', 'Semi Titular': 'SEMI TITULARES',
+      'Suplente': 'SUPLENTES', 'Sin condición': 'SIN CONDICIÓN' }[cond] || cond.toUpperCase();
+    doc.text('LIQUIDACIÓN ' + titulo, 105, 18, { align: 'center' });
+    doc.setFontSize(10); doc.setFont(undefined, 'normal');
+    doc.text('Semana del ' + fmtD(sem.desde) + ' al ' + fmtDL(sem.hasta), 105, 24, { align: 'center' });
+    doc.setFontSize(8);
+    if (M) doc.setTextColor(M.gris[0], M.gris[1], M.gris[2]);
+    doc.text('Fecha de pago: ' + fmtDL(hoy), 196, 18, { align: 'right' });
+    // Los datos del emisor salen de config (Liquidación de clientes → Datos de la
+    // empresa), igual que en el resto de los papeles que salen de la app.
+    const razon = (typeof empresaDato === 'function')
+      ? (empresaDato('empresa_razon') || (typeof empresaNombre === 'function' ? empresaNombre() : ''))
+      : '';
+    if (razon) doc.text(razon, 196, 22, { align: 'right' });
+
+    // ── Tabla: conductor · importe · CONFORME (donde firma) ───────────
+    const filas = cs.map(c => {
+      const neto = netoLiquidacion(liq[c].total, imputacionesConductor(c, rangoImput));
+      totalGeneral += neto;
+      return [c, fmtPeso(neto), ''];
+    });
+    const subtotal = cs.reduce((t, c) => t + netoLiquidacion(liq[c].total, imputacionesConductor(c, rangoImput)), 0);
+    filas.push(['TOTAL', fmtPeso(subtotal), '']);
+
+    doc.autoTable({
+      startY: 32,
+      head: [['CONDUCTOR', 'IMPORTE', 'CONFORME  (firma y aclaración)']],
+      body: filas,
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2.6, lineColor: M ? M.linea : [200, 200, 200], lineWidth: 0.2 },
+      headStyles: {
+        fillColor: M ? M.navy : [40, 40, 40], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, halign: 'center'
+      },
+      columnStyles: {
+        0: { cellWidth: 62 },
+        1: { cellWidth: 32, halign: 'right' },
+        // La columna de firma va ANCHA y ALTA a propósito: es donde el conductor
+        // escribe. Una celda apretada obliga a firmar encima del renglón de al lado.
+        2: { cellWidth: 88, minCellHeight: 11 }
+      },
+      // El TOTAL es la última fila y va resaltado, como en la planilla de hoy.
+      didParseCell: d => {
+        if (d.section === 'body' && d.row.index === filas.length - 1) {
+          d.cell.styles.fontStyle = 'bold';
+          d.cell.styles.fillColor = M ? M.azulPapel : [240, 240, 240];
+          if (d.column.index === 2) d.cell.styles.lineWidth = 0;
+        }
+      },
+      margin: { left: 14, right: 14 }
+    });
+
+    // ── Pie: qué está firmando ────────────────────────────────────────
+    const y = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(8);
+    if (M) doc.setTextColor(M.gris[0], M.gris[1], M.gris[2]);
+    doc.text('Al firmar en CONFORME, el conductor deja constancia de haber recibido el importe indicado', 14, y);
+    doc.text('por la liquidación de la semana detallada.', 14, y + 4);
+    doc.text(cs.length + ' conductor(es) · página ' + (gi + 1) + ' de ' + conds.length, 196, y + 4, { align: 'right' });
+  });
+
+  const nom = 'Planilla_de_pago_' + _liqISO(new Date()) + '.pdf';
+  doc.save(nom);
+  return doc;
+}
