@@ -331,6 +331,15 @@ function processUpload() {
     (carga ? ' — cargado el ' + carga : '');
   const tipoClave = c => c.startsWith('T:') ? 'tracking real' : c.startsWith('D:') ? 'dirección' : 'huella';
   const clavesExist = new Set(AppData.records.map(claveRegistro));
+  // Una fila ENTREGADA cierra el envío (su clave lleva la fecha), así que ya no
+  // matchea la fila ABIERTA que dejaron los estados intermedios. Se la busca
+  // aparte para reemplazarla, si no quedaría un envío fantasma en el detalle.
+  const cierraAbierta = {};
+  nuevos.forEach(n => {
+    if (!esEstadoEntregado(n.estado)) return;
+    const b = claveAbiertaRegistro(n);
+    if (b) cierraAbierta[b] = n;
+  });
 
   // Un reimport NO puede borrar lo que se corrigió a mano. El listado trae el
   // envío de nuevo cada vez que cambia de estado —la 2.ª visita, la entrega del
@@ -360,7 +369,7 @@ function processUpload() {
   const sup = [];
   const restantes = AppData.records.filter(r => {
     const ck = claveRegistro(r);
-    const n = nuevoPorClave[ck];
+    const n = nuevoPorClave[ck] || cierraAbierta[ck];   // la entrega cierra su fila abierta
     if (!n) return true;                 // no lo toca esta carga: se conserva
     heredarCorrecciones(r, n);           // lo hecho a mano sobrevive al reemplazo
     sup.push({

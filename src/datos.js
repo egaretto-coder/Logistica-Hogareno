@@ -782,7 +782,19 @@ async function guardarImportacionEnNube(nuevos) {
   if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal(8000);
   try {
     showToast('Guardando ' + nuevos.length + ' registros en la nube…');
-    const claves = Array.from(new Set(nuevos.map(n => n.clave || claveRegistro(n)).filter(Boolean)));
+    // Además de la clave propia, la de la fila ABIERTA que esta entrega cierra:
+    // en la nube esa fila sigue guardada con la clave vieja (sin fecha) y sin
+    // esto quedaría duplicada al lado de la entrega.
+    const _cl = [];
+    nuevos.forEach(n => {
+      const k = n.clave || claveRegistro(n);
+      if (k) _cl.push(k);
+      if (typeof claveAbiertaRegistro === 'function' && esEstadoEntregado(n.estado)) {
+        const b = claveAbiertaRegistro(n);
+        if (b && b !== k) _cl.push(b);
+      }
+    });
+    const claves = Array.from(new Set(_cl));
     // 1) Eliminar en el servidor las filas previas con la MISMA CLAVE de las de
     //    esta carga (por tracking real, o por dirección si el tracking es basura).
     //    Las claves nuevas no matchean nada -> los envíos distintos se conservan.

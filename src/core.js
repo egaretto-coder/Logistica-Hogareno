@@ -1152,8 +1152,34 @@ function claveRegistro(r) {
   if (trackingValido(t)) return 'T:' + t;
   const dir = _normTxt(r.direccion);
   const dest = _normTxt(r.destinatario);
-  if (dir) return 'D:' + dir + '|' + dest;
+  if (dir) {
+    const base = 'D:' + dir + '|' + dest;
+    // Sin tracking real, lo único que ata dos filas al mismo envío es la
+    // dirección. Eso se rompe con el cliente que le manda VARIAS VECES al mismo
+    // comprador: un jueves y el martes siguiente, mismos datos, y la segunda
+    // entrega pisaba a la primera — se perdía un envío entero, sin aviso (bug
+    // real en GAMING CITY: 11 entregas). Una ENTREGA cierra el envío, con el
+    // mismo criterio que la visita pagada: desde ahí la fecha entra en la clave
+    // y una entrega posterior al mismo domicilio es OTRO envío, no la misma
+    // fila otra vez. Mientras no esté entregado la clave queda ABIERTA, así la
+    // 1ra y la 2da visita se siguen reconociendo como el mismo envío.
+    if (esEstadoEntregado(r.estado)) return base + '|' + String(r.fecha || '').trim();
+    return base;
+  }
   return 'F:' + _normTxt([r.cadete, r.fecha, r.zona, r.localidad, dest].join('|'));
+}
+
+// Clave ABIERTA de un envío sin tracking real: la que tenía mientras no estaba
+// entregado. La entrega la cierra agregándole la fecha, así que al fusionar hay
+// que mirar las dos — si no, la fila intermedia ("En camino", "Nadie") quedaría
+// para siempre al lado de la entrega, como un envío fantasma que no contabiliza
+// pero ensucia el detalle.
+function claveAbiertaRegistro(r) {
+  const t = String(r.tracking || '').trim();
+  if (trackingValido(t)) return null;
+  const dir = _normTxt(r.direccion);
+  if (!dir) return null;
+  return 'D:' + dir + '|' + _normTxt(r.destinatario);
 }
 
 function tipoLabel(t) {
