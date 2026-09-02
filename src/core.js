@@ -237,6 +237,9 @@ let AppData = {
   // solo descarga las que están acá).
   // clienteLiquidaciones: [{ id, cliente_cod, semana_desde, semana_hasta, armada_por, armada_en }]
   clienteLiquidaciones: [],
+  // Liquidaciones de CONDUCTOR que el administrativo ya dio por listas. Sin
+  // este estado el tesorero no puede distinguir lo revisado de lo que nadie miró.
+  conductorLiquidaciones: [],
 
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
   // clienteCuentas: [{ id, alias_cod, cliente_cod }]

@@ -1304,3 +1304,32 @@ create unique index if not exists cliente_tarifas_cliente_zona_vig_key
   on public.cliente_tarifas (cliente, zona, vigente_desde);
 create index if not exists idx_cliente_tarifas_vigencia
   on public.cliente_tarifas (cliente_cod, vigente_desde desc);
+
+-- ---------- LIQUIDACIONES DE CONDUCTOR LISTAS PARA ENVIAR ----------
+-- El circuito tiene DOS manos, igual que el del cliente: el administrativo arma
+-- y revisa, y recien cuando la marca LISTA el tesorero la descarga y la envia.
+-- Sin este estado el tesorero no puede distinguir lo revisado de lo que todavia
+-- nadie miro, y baja PDFs de datos a medio corregir.
+--
+-- La semana es VIE -> JUE, la misma con la que se factura al cliente: la
+-- condicion (Titular/Semi Titular/Suplente) no cambia el ciclo de trabajo, dice
+-- que DIA se paga esa semana. Por eso la clave es conductor + viernes de inicio.
+create table if not exists public.conductor_liquidaciones (
+  id bigint generated always as identity primary key,
+  conductor text not null,                 -- nombre CANONICO del panel
+  semana_desde date not null,              -- viernes que abre la semana
+  semana_hasta date not null,              -- jueves de corte
+  armada_por text not null default '',
+  armada_en timestamptz not null default now(),
+  -- Neto congelado al marcarla: es lo que el administrativo dio por bueno. El
+  -- PDF se sigue calculando en vivo (una correccion posterior tiene que
+  -- reflejarse), pero guardar el numero permite ver si algo se movio despues.
+  monto numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique (conductor, semana_desde)
+);
+create index if not exists idx_cond_liq_semana on public.conductor_liquidaciones (semana_desde);
+alter table public.conductor_liquidaciones enable row level security;
+create policy conductor_liquidaciones_all on public.conductor_liquidaciones
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+alter publication supabase_realtime add table public.conductor_liquidaciones;

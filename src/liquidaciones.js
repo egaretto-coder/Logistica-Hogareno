@@ -1,39 +1,114 @@
-let liqFechaPreset = 'todo';
+// ════════════════════════════════════════════════════════════════════════
+//  LIQUIDACIÓN DE CONDUCTORES — el circuito tiene DOS manos.
+//    1) el ADMINISTRATIVO revisa los recorridos de la semana, imputa lo que
+//       corresponda y marca la liquidación como LISTA;
+//    2) el TESORERO baja las que están listas y las envía.
+//  Es el mismo circuito que ya usa Liquidación de clientes. Sin ese estado el
+//  tesorero no puede distinguir lo revisado de lo que todavía nadie miró, y
+//  termina mandando PDFs de datos a medio corregir.
+//
+//  El período es la semana VIE→JUE, la misma con la que se le factura al
+//  cliente: la condición NO cambia el ciclo de trabajo, dice qué DÍA se paga esa
+//  semana (Titular=viernes · Semi Titular=lunes · Suplente=martes). Antes el
+//  período era un filtro libre (Todo / Hoy / Este mes) y por eso una liquidación
+//  no pertenecía a ninguna semana: no había a qué atarle el "lista".
+// ════════════════════════════════════════════════════════════════════════
 
-function setLiqFechaPreset(btn, preset) {
-  liqFechaPreset = preset;
-  document.querySelectorAll('.liq-fecha-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const customDiv = document.getElementById('liq-fecha-custom');
-  customDiv.style.display = preset === 'personalizado' ? 'flex' : 'none';
+// Viernes que abre la semana que se está mirando (ISO).
+function liqSemanaISO() {
+  const el = document.getElementById('liq-semana');
+  if (el && el.value) return el.value;
+  const r = semanaClienteRango();
+  return _liqISO(r.desdeD);
+}
+function _liqISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+// El input acepta cualquier día y se corre al viernes de esa semana: si mostrara
+// el martes que se tocó, habría que deducir a qué semana pertenece.
+function cambiarSemanaLiq() {
+  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('liq-semana');
+  renderLiquidaciones();
+}
+function moverSemanaLiq(n) {
+  const el = document.getElementById('liq-semana'); if (!el) return;
+  const r = semanaClienteRango(liqSemanaISO());
+  const d = new Date(r.desdeD); d.setDate(d.getDate() + 7 * n);
+  el.value = _liqISO(d);
   renderLiquidaciones();
 }
 
+// El rango de la semana elegida, en el formato que ya usaba el panel.
 function getLiqFechaRango() {
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  if (liqFechaPreset === 'todo') return null;
-  if (liqFechaPreset === 'hoy') {
-    return { desde: hoy, hasta: new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23,59,59) };
-  }
-  if (liqFechaPreset === 'semana') {
-    const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - ((hoy.getDay()+6)%7)); lunes.setHours(0,0,0,0);
-    const dom = new Date(lunes); dom.setDate(lunes.getDate()+6); dom.setHours(23,59,59);
-    return { desde: lunes, hasta: dom };
-  }
-  if (liqFechaPreset === 'mes') {
-    return { desde: new Date(hoy.getFullYear(), hoy.getMonth(), 1, 0,0,0),
-             hasta: new Date(hoy.getFullYear(), hoy.getMonth()+1, 0, 23,59,59) };
-  }
-  if (liqFechaPreset === 'personalizado') {
-    const dEl = document.getElementById('liq-fecha-desde');
-    const hEl = document.getElementById('liq-fecha-hasta');
-    const dVal = dEl ? dEl.value : ''; const hVal = hEl ? hEl.value : '';
-    if (!dVal && !hVal) return null;
-    const desde = dVal ? parseFechaInput(dVal) : null;
-    const hasta = hVal ? new Date(parseFechaInput(hVal).setHours(23,59,59)) : null;
-    return { desde, hasta };
-  }
-  return null;
+  const r = semanaClienteRango(liqSemanaISO());
+  return { desde: r.desdeD, hasta: r.hastaD };
+}
+
+// ── Estado "lista para enviar" ──────────────────────────────────────────
+// Misma forma que liquidacionArmada() del lado de clientes: la clave es el
+// conductor CANÓNICO más el viernes que abre la semana.
+function liqConductorArmada(conductor, semanaISO) {
+  const k = normNombre(typeof conductorCanonico === 'function' ? conductorCanonico(conductor) : conductor);
+  const sem = semanaISO || liqSemanaISO();
+  return (AppData.conductorLiquidaciones || []).find(x =>
+    normNombre(x.conductor) === k && String(x.semana_desde).slice(0, 10) === sem) || null;
+}
+
+async function marcarLiqConductorLista(conductor) {
+  const cond = (typeof conductorCanonico === 'function' ? conductorCanonico(conductor) : conductor) || conductor;
+  const sem = liqSemanaISO();
+  if (liqConductorArmada(cond, sem)) return;
+  const r = semanaClienteRango(sem);
+  const liq = calcLiquidacionesFiltradas();
+  const rec = {
+    conductor: cond,
+    semana_desde: sem,
+    semana_hasta: _liqISO(r.hastaD),
+    armada_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || '',
+    armada_en: new Date().toISOString(),
+    // El neto que el administrativo dio por bueno. El PDF se sigue calculando en
+    // vivo —una corrección posterior tiene que reflejarse— pero guardar el número
+    // deja ver si algo se movió después de darla por lista.
+    // Misma cuenta que muestra la tabla: bruto + adicionales − descuentos imputados.
+    monto: liq[cond]
+      ? _num(netoLiquidacion(liq[cond].total, imputacionesConductor(cond, (typeof getLiqRangoFechasLabel === 'function' ? getLiqRangoFechasLabel() : null))))
+      : 0
+  };
+  try {
+    const row = await DB.insertRow('conductor_liquidaciones', rec);
+    AppData.conductorLiquidaciones = (AppData.conductorLiquidaciones || []).concat([Object.assign({ id: row && row.id }, rec)]);
+    persistirLiqConductorLocal();
+    showToast('✅ ' + cond + ' — liquidación lista, el tesorero ya puede descargarla');
+    renderLiquidaciones();
+  } catch (e) { console.warn('marcarLiqConductorLista', e); showToast('⛔ No se pudo marcar'); }
+}
+
+async function desarmarLiqConductor(conductor) {
+  const a = liqConductorArmada(conductor);
+  if (!a) return;
+  if (!confirm('¿Reabrir la liquidación de ' + conductor + '?' + String.fromCharCode(10) + String.fromCharCode(10) +
+    'Vuelve a quedar pendiente y el tesorero deja de verla como lista para enviar.')) return;
+  try {
+    await DB.deleteWhere('conductor_liquidaciones', 'id', a.id);
+    AppData.conductorLiquidaciones = (AppData.conductorLiquidaciones || []).filter(x => x.id !== a.id);
+    persistirLiqConductorLocal();
+    showToast('↩ Liquidación reabierta');
+    renderLiquidaciones();
+  } catch (e) { console.warn('desarmarLiqConductor', e); showToast('⛔ No se pudo reabrir'); }
+}
+
+function persistirLiqConductorLocal() {
+  try { localStorage.setItem('liq_conductor_liquidaciones', JSON.stringify(AppData.conductorLiquidaciones || [])); } catch (e) {}
+}
+
+// Marcar/reabrir TODO lo que se está viendo: con 102 conductores, hacerlo de a
+// uno es media hora de clics.
+async function marcarTodasLiqConductor() {
+  const liq = calcLiquidacionesFiltradas();
+  const cs = conductoresFiltradosLiq(liq).filter(c => liq[c] && liq[c].filas.length && !liqConductorArmada(c));
+  if (!cs.length) { showToast('No hay ninguna sin armar en lo que estás viendo'); return; }
+  if (!confirm('¿Marcar como listas las ' + cs.length + ' liquidaciones que estás viendo?' + String.fromCharCode(10) +
+    'El tesorero va a poder descargarlas y enviarlas.')) return;
+  for (const c of cs) await marcarLiqConductorLista(c);
 }
 
 function filtrarRecordsLiq(records) {
@@ -144,7 +219,7 @@ function toggleLiqSel(conductor, marcado) {
   actualizarBotonDescargaLiq();
 }
 function toggleLiqSelTodos(marcado) {
-  const conductores = conductoresFiltradosLiq();
+  const conductores = conductoresFiltradosLiq().filter(c => liqConductorArmada(c));
   conductores.forEach(c => { if (marcado) liqSeleccion.add(c); else liqSeleccion.delete(c); });
   document.querySelectorAll('.liq-row-check').forEach(ch => { ch.checked = !!marcado; });
   actualizarBotonDescargaLiq(conductores);
@@ -152,10 +227,23 @@ function toggleLiqSelTodos(marcado) {
 
 // Lo que se va a descargar: los tildados que estén dentro del filtro; si no hay
 // ninguno tildado, todo lo que muestra la tabla.
+// Lo que se va a descargar. La regla nueva: el tesorero baja SOLO lo que el
+// administrativo dio por listo. Una liquidación sin armar es una que nadie
+// revisó todavía, y mandarla es el error que este circuito viene a evitar.
+// Si el operador tildó conductores a mano, igual se cruzan con el filtro y con
+// el estado: tildar no puede saltear el control.
 function seleccionParaDescargar(liq) {
   const filtrados = conductoresFiltradosLiq(liq).filter(c => !liq || (liq[c] && liq[c].filas.length));
-  const elegidos = filtrados.filter(c => liqSeleccion.has(c));
-  return { filtrados, conductores: elegidos.length ? elegidos : filtrados, haySeleccion: elegidos.length > 0 };
+  const listas = filtrados.filter(c => liqConductorArmada(c));
+  const elegidos = listas.filter(c => liqSeleccion.has(c));
+  return {
+    filtrados, listas,
+    conductores: elegidos.length ? elegidos : listas,
+    haySeleccion: elegidos.length > 0,
+    // Cuántas quedaron afuera por no estar armadas: el botón lo dice, si no
+    // parecería que la descarga se comió conductores.
+    sinArmar: filtrados.length - listas.length
+  };
 }
 
 function actualizarBotonDescargaLiq(conductores) {
@@ -163,19 +251,77 @@ function actualizarBotonDescargaLiq(conductores) {
   // realtime en el medio le borraría el "Descargando 12 de 44".
   if (window._liqDescargando) return;
   const filtrados = conductores || conductoresFiltradosLiq();
-  const nSel = filtrados.filter(c => liqSeleccion.has(c)).length;
+  const listas = filtrados.filter(c => liqConductorArmada(c));
+  const nSel = listas.filter(c => liqSeleccion.has(c)).length;
+  const sinArmar = filtrados.length - listas.length;
   const btn = document.getElementById('liq-btn-descargar');
   if (btn) btn.innerHTML = '<i class="ic ic-download"></i> ' + (nSel
     ? 'Descargar ' + nSel + ' seleccionada' + (nSel > 1 ? 's' : '') + ' (PDF)'
-    : 'Descargar las ' + filtrados.length + ' (PDF)');
+    : 'Descargar las ' + listas.length + ' listas (PDF)');
+  if (btn) btn.disabled = !(nSel || listas.length);
+  // Lo que queda afuera por no estar armado se dice al lado del botón, no se esconde.
+  const av = document.getElementById('liq-aviso-sinarmar');
+  if (av) av.innerHTML = sinArmar
+    ? '<span style="font-size:11px;color:#b45309">' + sinArmar + ' sin armar no se descargan</span>'
+    : '';
   const unico = document.getElementById('liq-btn-unpdf');
-  if (unico) unico.style.display = (nSel || filtrados.length) > 1 ? '' : 'none';
+  if (unico) unico.style.display = (nSel || listas.length) > 1 ? '' : 'none';
   // El "todas" de la cabecera refleja lo que hay tildado dentro del filtro.
   const all = document.getElementById('liq-check-all');
   if (all) {
-    all.checked = filtrados.length > 0 && nSel === filtrados.length;
-    all.indeterminate = nSel > 0 && nSel < filtrados.length;
+    all.checked = listas.length > 0 && nSel === listas.length;
+    all.indeterminate = nSel > 0 && nSel < listas.length;
   }
+}
+
+// La celda de estado: lista (con quién y cuándo) o sin armar, con el botón que
+// corresponde. El día de pago se muestra acá porque es lo que cambia entre
+// conductores dentro de la MISMA semana.
+function _liqCeldaEstado(c) {
+  const a = liqConductorArmada(c);
+  const cEsc = String(c).replace(/'/g, "\\'");
+  const pan = panelConductorDe(c);
+  const cond = (pan && pan.condicion) || '';
+  const dia = { 'TITULAR': 'vie', 'SEMI TITULAR': 'lun', 'SUPLENTE': 'mar' }[cond.toUpperCase()] || '';
+  // Sin condición no hay día de pago y por lo tanto no se liquida: se dice acá,
+  // que es donde el operador está por darla por lista.
+  const chipCond = cond
+    ? '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">' + cond + (dia ? ' · ' + dia : '') + '</div>'
+    : '<div style="font-size:10px;color:#b91c1c;margin-top:3px">sin condición · no se liquida</div>';
+  if (a) {
+    const quien = a.armada_por ? ' por ' + a.armada_por : '';
+    return '<span class="tag" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-size:10px">' +
+      '<i class="ic ic-check"></i> Lista para enviar</span>' +
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">armada' + quien + '</div>' +
+      '<button class="btn btn-sm" style="margin-top:4px;padding:2px 6px;font-size:10px" onclick="desarmarLiqConductor(\'' + cEsc + '\')">Reabrir</button>' +
+      chipCond;
+  }
+  return '<span class="tag" style="background:var(--surface-2);color:var(--text-muted);font-size:10px">⏳ Sin armar</span>' +
+    '<button class="btn btn-sm" style="margin-top:4px;padding:2px 6px;font-size:10px" onclick="marcarLiqConductorLista(\'' + cEsc + '\')">Marcar lista</button>' +
+    chipCond;
+}
+
+// Los tres números de arriba, iguales a los de Liquidación de clientes: el
+// tesorero tiene que ver de un vistazo qué puede mandar y qué falta armar.
+function _liqPintarKPIs(liq, conductores) {
+  const cont = document.getElementById('liq-kpis');
+  if (!cont) return;
+  const conRec = conductores.filter(c => liq[c] && liq[c].filas.length);
+  const listas = conRec.filter(c => liqConductorArmada(c));
+  const rangoImput = (typeof getLiqRangoFechasLabel === 'function') ? getLiqRangoFechasLabel() : null;
+  const montoListas = listas.reduce((s, c) =>
+    s + netoLiquidacion(liq[c].total, imputacionesConductor(c, rangoImput)), 0);
+  const sinArmar = conRec.length - listas.length;
+  cont.innerHTML =
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-check-circle"></i></div>' +
+      '<div class="metric-label">Listas para enviar</div><div class="metric-value">' + listas.length + '</div>' +
+      '<div class="metric-sub">' + fmtPeso(montoListas) + ' a pagar</div></div>' +
+    '<div class="metric-card"' + (sinArmar ? ' style="border-color:#fdba74"' : '') + '><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
+      '<div class="metric-label">Sin armar</div><div class="metric-value">' + sinArmar + '</div>' +
+      '<div class="metric-sub">las revisa y marca el administrativo</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-truck"></i></div>' +
+      '<div class="metric-label">Conductores con recorridos</div><div class="metric-value">' + conRec.length + '</div>' +
+      '<div class="metric-sub">en la semana elegida</div></div>';
 }
 
 function renderLiquidaciones() {
@@ -203,24 +349,23 @@ function renderLiquidaciones() {
     }
   });
 
-  // Actualizar label de período
+  // Etiqueta del período: la semana que se está liquidando. El día de pago no va
+  // acá sino por conductor, que es donde cambia según su condición.
   const rango = getLiqFechaRango();
   const fmt = d => d.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
-  let labelP = '— todos los registros';
-  if (rango) {
-    if (rango.desde && rango.hasta) labelP = fmt(rango.desde) + ' → ' + fmt(rango.hasta);
-    else if (rango.desde) labelP = 'Desde ' + fmt(rango.desde);
-    else if (rango.hasta) labelP = 'Hasta ' + fmt(rango.hasta);
-  } else if (liqFechaPreset === 'personalizado') { labelP = 'Seleccioná un rango'; }
   const labelEl = document.getElementById('liq-fecha-label');
-  if (labelEl) labelEl.textContent = labelP;
+  if (labelEl) labelEl.textContent = 'Viernes a jueves · ' + fmt(rango.desde) + ' → ' + fmt(rango.hasta);
+  // El input arranca en la semana en curso; el operador la mueve con ‹ ›.
+  const semEl = document.getElementById('liq-semana');
+  if (semEl && !semEl.value) semEl.value = liqSemanaISO();
 
   const liq = liqBase;
   const conductores = conductoresFiltradosLiq(liq);
 
   const body = document.getElementById('liq-table-body');
   if (!conductores.length) {
-    body.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon"><i class="ic ic-dollar"></i></div><div class="empty-title">Sin liquidaciones</div><div class="empty-sub">Importá una base de datos</div></div></td></tr>`;
+    _liqPintarKPIs(liq, []);
     actualizarBotonDescargaLiq(conductores);
     return;
   }
@@ -236,6 +381,7 @@ function renderLiquidaciones() {
   });
 
   conductores.sort((a, b) => netos[b].neto - netos[a].neto);
+  _liqPintarKPIs(liq, conductores);
   actualizarBotonDescargaLiq(conductores);
   body.innerHTML = conductores.map(c => {
     const d = liq[c];
@@ -273,6 +419,7 @@ function renderLiquidaciones() {
       <td class="mono">${sCon.length} — ${fmtPeso(sCon.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sSLA.length} — ${fmtPeso(sSLA.reduce((s,f) => s+f.subtotal,0))}</td>
       <td class="mono">${sSuper.length ? `<span class="tag super-sla"><i class="ic ic-star"></i> ${sSuper.length} recorridos</span>` : '<span class="muted">—</span>'}</td>
+      <td>${_liqCeldaEstado(c)}</td>
       <td class="mono"><strong style="font-size:14px">${fmtPeso(neto)}</strong>${subTotal}</td>
       <td>
         <div style="display:flex;gap:4px">

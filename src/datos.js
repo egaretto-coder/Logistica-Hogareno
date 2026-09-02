@@ -77,6 +77,8 @@ function loadSavedConfig() {
   if (emphe) { try { AppData.empleadoHorasExtra = JSON.parse(emphe) || []; } catch(e) {} }
   const empre = localStorage.getItem('liq_empleado_reaperturas');
   if (empre) { try { AppData.empleadoReaperturas = JSON.parse(empre) || []; } catch(e) {} }
+  const cliq = localStorage.getItem('liq_conductor_liquidaciones');
+  if (cliq) { try { AppData.conductorLiquidaciones = JSON.parse(cliq) || []; } catch(e) {} }
   const cfis = localStorage.getItem('liq_conductor_fiscal');
   if (cfis) { try { AppData.conductorFiscal = JSON.parse(cfis) || []; } catch(e) {} }
   const cfac = localStorage.getItem('liq_conductor_facturas');
@@ -438,6 +440,12 @@ async function _hydrateFromSupabaseReal(opts) {
     armada_por: x.armada_por || '', armada_en: x.armada_en || '', obs: x.obs || '',
     cuenta_comision: !!x.cuenta_comision, monto: _num(x.monto)
   }));
+  AppData.conductorLiquidaciones = (data.conductor_liquidaciones || []).map(x => ({
+    id: x.id, conductor: x.conductor || '',
+    semana_desde: String(x.semana_desde || '').slice(0, 10),
+    semana_hasta: String(x.semana_hasta || '').slice(0, 10),
+    armada_por: x.armada_por || '', armada_en: x.armada_en || '', monto: _num(x.monto)
+  }));
 
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
   AppData.clienteCuentas = (data.cliente_cuentas || []).map(c => ({
@@ -514,6 +522,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));
     localStorage.setItem('liq_conductor_fiscal', JSON.stringify(AppData.conductorFiscal || []));
     localStorage.setItem('liq_conductor_facturas', JSON.stringify(AppData.conductorFacturas || []));
+    localStorage.setItem('liq_conductor_liquidaciones', JSON.stringify(AppData.conductorLiquidaciones || []));
     localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));
   } catch(e) {}
 

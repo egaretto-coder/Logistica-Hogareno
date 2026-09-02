@@ -1,28 +1,23 @@
       <div id="page-liquidaciones" class="page">
 
-        <!-- Filtro de fechas liquidaciones -->
+        <!-- ══════════ SEMANA DE PAGO ══════════
+             La semana de trabajo es VIE→JUE para todos, la misma con la que se
+             factura al cliente: la condición no cambia el ciclo, dice qué DÍA se
+             paga esa semana (Titular=viernes · Semi Titular=lunes · Suplente=martes).
+             Antes el período era un filtro libre (Todo/Hoy/Este mes) y por eso una
+             liquidación no tenía a qué semana pertenecer: no se podía dar por lista. -->
         <div class="card" style="margin-bottom:16px;padding:14px 18px">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Período</span>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-sm liq-fecha-btn active" onclick="setLiqFechaPreset(this,'todo')">Todo</button>
-              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'hoy')">Hoy</button>
-              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'semana')">Esta semana</button>
-              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'mes')">Este mes</button>
-              <button class="btn btn-sm liq-fecha-btn" onclick="setLiqFechaPreset(this,'personalizado')">Personalizado</button>
-            </div>
-            <div id="liq-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
-              <div class="date-range">
-                <i class="ic ic-calendar"></i>
-                <span class="date-label">Período</span>
-                <input type="date" id="liq-fecha-desde" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()" aria-label="Desde">
-                <span class="date-sep">→</span>
-                <input type="date" id="liq-fecha-hasta" onchange="renderLiquidaciones()" oninput="renderLiquidaciones()" aria-label="Hasta">
-              </div>
-            </div>
-            <span id="liq-fecha-label" style="font-size:11px;color:var(--text-muted);margin-left:4px"></span>
+            <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Semana de pago</span>
+            <input type="date" id="liq-semana" onchange="cambiarSemanaLiq()" aria-label="Semana a liquidar">
+            <span id="liq-fecha-label" style="font-size:12px;color:var(--text-muted)"></span>
+            <button class="btn btn-sm" onclick="moverSemanaLiq(-1)" title="Semana anterior">‹ Anterior</button>
+            <button class="btn btn-sm" onclick="moverSemanaLiq(1)" title="Semana siguiente">Siguiente ›</button>
           </div>
         </div>
+
+        <!-- Estado del armado: lo mismo que muestra Liquidación de clientes. -->
+        <div class="metrics-grid" id="liq-kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
 
         <div class="card">
           <div class="card-header">
@@ -36,6 +31,8 @@
                 <option value="Suplente">Suplente</option>
                 <option value="sin_asignar">Sin condición asignada</option>
               </select>
+              <span id="liq-aviso-sinarmar"></span>
+              <button class="btn btn-sm" onclick="marcarTodasLiqConductor()" title="Da por listas todas las liquidaciones que estás viendo, para que el tesorero pueda descargarlas"><i class="ic ic-check"></i> Marcar todas listas</button>
               <button class="btn btn-sm" id="liq-btn-unpdf" onclick="exportLiqCombinado()" title="Todas las liquidaciones elegidas en UN solo archivo, una por página. Útil para imprimir de una y cuando el navegador bloquea las descargas múltiples."><i class="ic ic-file"></i> En un solo PDF</button>
               <button class="btn btn-sm btn-primary" id="liq-btn-descargar" onclick="exportAllPDFs()" title="Descarga un PDF por conductor. Respeta el filtro y, si tildaste conductores, baja solo esos."><i class="ic ic-download"></i> Descargar liquidaciones (PDF)</button>
             </div>
@@ -53,7 +50,8 @@
                   <th>Con Colecta</th>
                   <th>SLA</th>
                   <th>Super SLA</th>
-                  <th title="Lo que se le paga: bruto + adicionales − descuentos imputados en el período">Total a pagar</th>
+                  <th>Estado</th>
+              <th title="Lo que se le paga: bruto + adicionales − descuentos imputados en el período">Total a pagar</th>
                   <th>Acciones</th>
                 </tr>
               </thead>

@@ -26,7 +26,7 @@ const RT_TABLAS = [
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
   'empleados', 'empleado_ajustes', 'empleado_postergaciones', 'empleado_horas_extra',
-  'empleado_sueldo_reaperturas', 'empleado_sueldos', 'conductor_fiscal', 'conductor_facturas', 'vacaciones', 'rendiciones', 'cliente_cargos',
+  'empleado_sueldo_reaperturas', 'empleado_sueldos', 'conductor_liquidaciones', 'conductor_fiscal', 'conductor_facturas', 'vacaciones', 'rendiciones', 'cliente_cargos',
 ];
 
 let _rtCanal = null;
@@ -46,7 +46,7 @@ const RT_PANTALLA_TABLAS = {
   'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias'],
   'upload':                 ['registros', 'importaciones'],
   'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
-                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas'],
+                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas', 'conductor_liquidaciones'],
   'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'zona_alias'],
   'panel-conductores':      ['panel_conductores'],
   'config-tarifas':         ['tarifas'],
