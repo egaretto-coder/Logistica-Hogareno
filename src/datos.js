@@ -263,7 +263,9 @@ async function _hydrateFromSupabaseReal(opts) {
   }));
   AppData.clienteTarifas = (data.cliente_tarifas || []).map(t => ({
     id: t.id, cliente: t.cliente, cliente_cod: (t.cliente_cod || '').toUpperCase(),
-    zona: t.zona, precio: _num(t.precio)
+    zona: t.zona, precio: _num(t.precio),
+    // Desde cuándo rige este precio. Vacío = desde siempre (la tarifa original).
+    vigente_desde: String(t.vigente_desde || '').slice(0, 10)
   }));
 
   // Comisiones: vendedores, escala de categorización, clientes en comisión y pagos.
@@ -697,7 +699,7 @@ function dbPush(table) {
 const CLAVES_UNICAS = {
   tarifas:              r => [r.zona],
   super_sla:            r => [r.conductor, r.zona],
-  cliente_tarifas:      r => [r.cliente, r.zona],
+  cliente_tarifas:      r => [r.cliente, r.zona, r.vigente_desde || '2000-01-01'],
   dimensiones_catalogo: r => [r.cliente, r.nombre, r.zona, r.tipo],
   zona_alias:           r => [r.alias],
 };

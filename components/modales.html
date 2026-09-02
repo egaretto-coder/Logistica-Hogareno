@@ -1783,3 +1783,47 @@
     </div>
   </div>
 </div>
+
+<!-- ══════════ ACTUALIZAR LISTA DE PRECIOS ══════════
+     Una lista nueva rige DESDE UNA FECHA. Antes, subir un aumento reescribía el
+     precio de todos los envíos ya cargados y cambiaba lo facturado en semanas
+     ya cerradas: el operador bajaba una liquidación y el total no era el que
+     había mandado. Acá se carga el aumento con su fecha y lo anterior queda
+     intacto. -->
+<div class="modal-backdrop" id="modal-precios-backdrop" style="display:none" onclick="cerrarActualizarPrecios(event)">
+  <div class="modal" style="max-width:640px" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3><i class="ic ic-trend"></i> Actualizar lista de precios</h3>
+      <button class="modal-x" onclick="cerrarActualizarPrecios()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin:0 0 14px">
+        <i class="ic ic-info"></i><div>La lista nueva rige <strong>desde la fecha que elijas, en adelante</strong>.
+        Los envíos anteriores siguen facturándose con el precio que estaba vigente el día que se entregaron,
+        así que <strong>las liquidaciones ya cerradas no cambian</strong>.
+        <div style="margin-top:6px">Si lo que querés es <strong>cargar un cliente nuevo</strong>, usá "Importar tarifario".</div></div>
+      </div>
+
+      <div class="form-group">
+        <label>Rige desde</label>
+        <input type="date" id="mprec-desde" onchange="_precPreview()">
+        <div class="form-hint" id="mprec-hint" style="margin-top:4px"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Archivo(s) con la lista nueva</label>
+        <input type="file" id="mprec-file" accept=".xlsx,.xls,.csv" multiple onchange="_precPreview()">
+        <div class="form-hint">Mismo formato que "Importar tarifario": el tarifario completo, o la planilla de un cliente
+          (su nombre arriba y debajo las columnas ZONA y PRECIO).</div>
+      </div>
+
+      <div id="mprec-estado" style="font-size:12px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="cerrarActualizarPrecios()">Cancelar</button>
+      <button class="btn btn-primary" id="mprec-guardar" onclick="guardarActualizacionPrecios()">
+        <i class="ic ic-check"></i> Aplicar desde esa fecha
+      </button>
+    </div>
+  </div>
+</div>

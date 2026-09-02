@@ -87,12 +87,21 @@ function clientesDeRegistros(rango) {
   return Array.from(m.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
+// Fecha desde la que rige la tarifa "original": es anterior a cualquier envío
+// del sistema, así que una tarifa sin vigencia cargada aplica a todo.
+const TARIFA_DESDE_SIEMPRE = '2000-01-01';
+function tarifaVigenteDesde(t) {
+  const v = String((t && t.vigente_desde) || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : TARIFA_DESDE_SIEMPRE;
+}
+
 // Índice del tarifario de VENTA. Se resuelve una vez por ENVÍO y el tarifario
 // real tiene 5.445 filas, así que el find lineal costaba 0,2 ms por llamada:
 // con 47.684 envíos eran ~10 s por render del Dashboard, con la pantalla
 // congelada. Mismo patrón que _tarifaIndex de getPrecio.
-// Clave: código de cliente -> Map(zonaNorm -> precio). Las filas SIN código se
-// indexan aparte por nombre, que es como las matcheaba el find original.
+// Clave: código de cliente -> Map(zonaNorm -> [{desde, precio}] ordenado por
+// fecha). Las filas SIN código se indexan aparte por nombre, que es como las
+// matcheaba el find original.
 let _idxCliTarifas = null;
 function invalidarIndiceCliTarifas() { _idxCliTarifas = null; }
 function _cliTarifaIndex() {
@@ -113,24 +122,45 @@ function _cliTarifaIndex() {
     const k = x.cliente_cod ? clienteKey(x.cliente_cod) : normCliente(x.cliente);
     if (!k) return;
     let zm = destino.get(k); if (!zm) { zm = new Map(); destino.set(k, zm); }
-    // El find lineal se quedaba con la PRIMERA coincidencia: se respeta.
-    if (!zm.has(z)) zm.set(z, _num(x.precio));
+    let lista = zm.get(z); if (!lista) { lista = []; zm.set(z, lista); }
+    lista.push({ desde: tarifaVigenteDesde(x), precio: _num(x.precio) });
   });
+  // Cada zona queda con sus precios ordenados por fecha de vigencia, para poder
+  // contestar "cuánto valía ESTE envío el día que se entregó".
+  [porCod, porNombre].forEach(m => m.forEach(zm => zm.forEach(lista => {
+    lista.sort((a, b) => a.desde < b.desde ? -1 : a.desde > b.desde ? 1 : 0);
+  })));
   _idxCliTarifas = { porCod, porNombre, src: arr, n: arr.length };
   return _idxCliTarifas;
 }
 
-// Tarifa de venta de un cliente (por CÓDIGO) para una zona. 0 = sin cargar.
-function clienteTarifaEnZona(cod, zona) {
+// El precio vigente a una fecha: el último que empezó a regir en o antes de ese
+// día. Sin fecha se toma el de hoy, que es lo que corresponde para las
+// previsualizaciones (el selector de zona, la ficha del cliente).
+function _precioVigente(lista, fechaISO) {
+  if (!lista || !lista.length) return undefined;
+  const f = /^\d{4}-\d{2}-\d{2}$/.test(String(fechaISO || '')) ? fechaISO : _hoyISO();
+  let out;
+  for (const x of lista) { if (x.desde <= f) out = x.precio; else break; }
+  // Todas las vigencias empiezan DESPUÉS de esa fecha: ese día no había precio
+  // acordado. Devolver el más nuevo sería facturar hacia atrás con una lista que
+  // todavía no existía, que es justo lo que se vino a arreglar.
+  return out;
+}
+function _hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+
+// Tarifa de venta de un cliente (por CÓDIGO) para una zona, al día del envío.
+// 0 = sin cargar.
+function clienteTarifaEnZona(cod, zona, fechaISO) {
   // Misma resolución que getPrecio: la zona del envío pasa por el alias antes de
   // buscar la tarifa de venta. Las zonas del tarifario son las mismas de los dos
   // lados y tienen que resolverse igual.
   const k = clienteKey(cod), z = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
   const idx = _cliTarifaIndex();
   const porCod = idx.porCod.get(k);
-  if (porCod) { const p = porCod.get(z); if (p !== undefined) return p; }
+  if (porCod) { const p = _precioVigente(porCod.get(z), fechaISO); if (p !== undefined) return p; }
   const porNombre = idx.porNombre.get(normCliente(k));
-  if (porNombre) { const p = porNombre.get(z); if (p !== undefined) return p; }
+  if (porNombre) { const p = _precioVigente(porNombre.get(z), fechaISO); if (p !== undefined) return p; }
   return 0;
 }
 
@@ -150,7 +180,10 @@ function precioVentaEnvio(cod, r) {
   const zona = (r && r.zona && r.zona.trim()) ? r.zona.trim() : ((r && r.localidad) || '').trim();
   const p = dimPrecioVenta(cod, r, zona);
   if (p != null) return p;
-  return clienteTarifaEnZona(cod, zona);
+  // La tarifa que se aplica es la VIGENTE EL DÍA DEL ENVÍO, no la última cargada:
+  // una lista de precios nueva rige de ahí en adelante y no puede reescribir lo
+  // que ya se facturó en semanas que ya se cerraron.
+  return clienteTarifaEnZona(cod, zona, (typeof fechaISOde === 'function' ? fechaISOde(r && r.fecha) : null));
 }
 
 // ¿Este envío está anulado como gesto con el cliente?
@@ -329,12 +362,30 @@ function calcLiquidacionCliente(cliente, rango, opts) {
   };
 }
 
-// Cantidad de zonas con tarifa cargada de un cliente.
-function clienteNZonas(cod) {
+// Las tarifas de un cliente con UNA sola fila por zona: la vigente a esa fecha.
+// Desde que las listas tienen vigencia, el mismo cliente y la misma zona tienen
+// varios precios —uno por aumento— y todo lo que MUESTRA o EXPORTA el tarifario
+// tiene que quedarse con el que corresponde. Si no, la ficha diría "90 zonas"
+// donde hay 45 y la descarga saldría con cada zona repetida.
+function tarifasVigentesDe(cod, fechaISO) {
   const k = clienteKey(cod);
-  return (AppData.clienteTarifas || []).filter(t =>
-    (clienteKey(t.cliente_cod) === k || (!t.cliente_cod && normCliente(t.cliente) === normCliente(k))) &&
-    _num(t.precio) > 0).length;
+  const f = fechaISO || _hoyISO();
+  const porZona = new Map();
+  (AppData.clienteTarifas || []).forEach(t => {
+    const mio = clienteKey(t.cliente_cod) === k ||
+      (!t.cliente_cod && normCliente(t.cliente) === normCliente(k));
+    if (!mio) return;
+    const d = tarifaVigenteDesde(t);
+    if (d > f) return;                       // esa lista todavía no empezó a regir
+    const prev = porZona.get(normNombre(t.zona));
+    if (!prev || tarifaVigenteDesde(prev) <= d) porZona.set(normNombre(t.zona), t);
+  });
+  return Array.from(porZona.values());
+}
+
+// Cantidad de zonas con tarifa cargada de un cliente (las que rigen hoy).
+function clienteNZonas(cod) {
+  return tarifasVigentesDe(cod).filter(t => _num(t.precio) > 0).length;
 }
 
 // ── Persistencia ────────────────────────────────────────────────────────────
@@ -1477,8 +1528,11 @@ function openTarifasCliente(id) {
   const zonas = new Set(AppData.tarifas.map(t => String(t.zona || '').toUpperCase().trim()).filter(Boolean));
   AppData.clienteTarifas.filter(t => normCliente(t.cliente) === normCliente(c.nombre))
     .forEach(t => zonas.add(String(t.zona || '').toUpperCase().trim()));
+  // El precio que se ofrece para editar es el que RIGE HOY, no una versión
+  // cualquiera: con varias listas cargadas, el find se quedaba con la primera.
   const precioDe = z => {
-    const t = AppData.clienteTarifas.find(x => normCliente(x.cliente) === normCliente(c.nombre) && normNombre(x.zona) === normNombre(z));
+    const t = tarifasVigentesDe(clienteKey(c.codigo) || c.nombre)
+      .find(x => normNombre(x.zona) === normNombre(z));
     return t ? _num(t.precio) : '';
   };
   const rows = Array.from(zonas).sort().map(z =>
@@ -1515,9 +1569,14 @@ async function guardarTarifasCliente() {
 async function guardarClienteTarifas(rows) {
   // Se canoniza acá también: es el único punto por el que pasan TODAS las
   // tarifas que se guardan, venga del import o de una edición a mano.
-  rows = rows.map(r => Object.assign({}, r, { zona: zonaCanonica(r.zona) }));
+  // Se canoniza la zona y se completa la vigencia: una tarifa sin fecha rige
+  // "desde siempre", que es como se comportaba todo antes de que existiera.
+  rows = rows.map(r => Object.assign({}, r, {
+    zona: zonaCanonica(r.zona),
+    vigente_desde: tarifaVigenteDesde(r)
+  }));
   const ids = await DB.insertRows('cliente_tarifas', rows);
-  return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, cliente_cod: (r.cliente_cod || '').toUpperCase(), zona: r.zona, precio: _num(r.precio) }));
+  return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, vigente_desde: r.vigente_desde, cliente_cod: (r.cliente_cod || '').toUpperCase(), zona: r.zona, precio: _num(r.precio) }));
 }
 
 // ── Import Excel del tarifario (Cliente · Zona · Precio) ─────────────────────
@@ -1531,9 +1590,15 @@ function descargarPlantillaTarifario() {
   ];
 
   const filas = [];
-  (AppData.clienteTarifas || []).forEach(t => {
-    const cod = clienteKey(t.cliente_cod);
-    filas.push([cod, cod ? clienteNombreDe(cod) : (t.cliente || ''), t.zona || '', _num(t.precio)]);
+  // Solo la lista que RIGE HOY: es la que se quiere editar y volver a subir. Las
+  // versiones anteriores quedan guardadas, pero bajarlas mezcladas haría que al
+  // reimportar el archivo se pisara el historial con precios viejos.
+  const _cods = new Set();
+  (AppData.clienteTarifas || []).forEach(t => { const c = clienteKey(t.cliente_cod); if (c) _cods.add(c); });
+  _cods.forEach(cod => {
+    tarifasVigentesDe(cod).forEach(t => {
+      filas.push([cod, clienteNombreDe(cod), t.zona || '', _num(t.precio)]);
+    });
   });
   // Clientes sin ninguna tarifa: van igual, con las zonas del tarifario en 0,
   // así se completan en el mismo archivo en vez de tener que agregarlos a mano.
@@ -1588,13 +1653,91 @@ function _codigoProvisional(nombre, usados) {
   return cod;
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  ACTUALIZAR LISTA DE PRECIOS — el aumento rige DESDE UNA FECHA
+//  Subir una lista nueva por "Importar tarifario" REEMPLAZA el tarifario del
+//  cliente, y como la tarifa no tenía fecha eso reescribía el precio de todos
+//  los envíos ya cargados: una liquidación cerrada la semana pasada pasaba a
+//  dar otro total, y el papel que ya se había mandado dejaba de coincidir.
+//  Acá la lista nueva se guarda con su fecha de vigencia y convive con la
+//  anterior; cada envío se cobra con el precio que regía el día que se entregó.
+//  El import queda para dar de ALTA clientes nuevos, que es cuando reemplazar
+//  todo es justamente lo que se quiere.
+// ════════════════════════════════════════════════════════════════════════
+let _precArchivos = [];
+
+function abrirActualizarPrecios() {
+  const bd = document.getElementById('modal-precios-backdrop');
+  if (!bd) return;
+  _precArchivos = [];
+  const d = document.getElementById('mprec-desde');
+  // Por defecto, desde HOY: un aumento se acuerda y se aplica de ahí en más.
+  if (d) d.value = _hoyISO();
+  const f = document.getElementById('mprec-file'); if (f) f.value = '';
+  bd.style.display = 'flex';
+  _precPreview();
+}
+function cerrarActualizarPrecios(e) {
+  if (!e || e.target.id === 'modal-precios-backdrop') {
+    const bd = document.getElementById('modal-precios-backdrop');
+    if (bd) bd.style.display = 'none';
+  }
+}
+
+// Anticipa qué va a pasar ANTES de aplicar: desde cuándo rige y qué envíos
+// quedan afuera. Una fecha hacia atrás no es un error —se puede estar cargando
+// un aumento que se acordó antes— pero sí cambia liquidaciones ya emitidas, y
+// eso tiene que decirse.
+function _precPreview() {
+  const desde = (document.getElementById('mprec-desde') || {}).value || '';
+  const files = Array.from((document.getElementById('mprec-file') || {}).files || []);
+  _precArchivos = files;
+  const hint = document.getElementById('mprec-hint');
+  const est = document.getElementById('mprec-estado');
+  const btn = document.getElementById('mprec-guardar');
+  const hoy = _hoyISO();
+  if (hint) {
+    hint.innerHTML = !desde ? '<span style="color:#b91c1c">Elegí desde cuándo rige la lista nueva.</span>'
+      : desde > hoy ? 'Rige a futuro: hasta el ' + _precFmt(desde) + ' se sigue cobrando la lista actual.'
+      : desde === hoy ? 'Rige desde hoy. Todo lo entregado hasta ayer se factura con la lista actual.'
+      : '<span style="color:#b45309">Rige desde una fecha PASADA (' + _precFmt(desde) + '): los envíos entregados desde ese día se van a recalcular con la lista nueva, aunque su liquidación ya se haya cerrado.</span>';
+  }
+  if (est) {
+    est.innerHTML = files.length
+      ? '<div class="muted">' + files.length + ' archivo(s): ' + files.map(f => f.name).join(' · ') + '</div>'
+      : '<div class="muted">Todavía no elegiste archivo.</div>';
+  }
+  if (btn) btn.disabled = !(desde && files.length);
+}
+function _precFmt(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || ''); }
+
+async function guardarActualizacionPrecios() {
+  const desde = (document.getElementById('mprec-desde') || {}).value || '';
+  const files = _precArchivos;
+  if (!desde || !files.length) { alert('Falta la fecha desde la que rige, o el archivo con la lista nueva.'); return; }
+  if (desde < _hoyISO()) {
+    if (!confirm('La lista nueva rige desde el ' + _precFmt(desde) + ', que ya pasó.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      'Los envíos entregados desde ese día se van a recalcular con los precios nuevos, incluso los de liquidaciones ya cerradas.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      '¿Aplicar igual?')) return;
+  }
+  const btn = document.getElementById('mprec-guardar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Aplicando…'; }
+  try {
+    await _procesarTarifarios(files, desde);
+    const bd = document.getElementById('modal-precios-backdrop');
+    if (bd) bd.style.display = 'none';
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ic ic-check"></i> Aplicar desde esa fecha'; }
+  }
+}
+
 function importTarifarioClientes(event) {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
   _procesarTarifarios(files).finally(() => { event.target.value = ''; });
 }
 
-async function _procesarTarifarios(files) {
+async function _procesarTarifarios(files, vigenteDesde) {
   // Los códigos REALES salen de los envíos. Si todavía se están cargando, todos
   // los clientes quedarían con código provisional al pedo.
   if (AppData._cargandoRegistros) {
@@ -1603,7 +1746,7 @@ async function _procesarTarifarios(files) {
   }
   const resultados = [];
   for (const file of files) {
-    try { resultados.push(await _importarUnTarifario(file)); }
+    try { resultados.push(await _importarUnTarifario(file, vigenteDesde)); }
     catch (e) {
       console.warn('importar tarifario', file.name, e);
       resultados.push({ archivo: file.name, error: e.message || String(e), clientes: [] });
@@ -1615,7 +1758,7 @@ async function _procesarTarifarios(files) {
 }
 
 // Lee y aplica UN archivo. Devuelve qué hizo, para el resumen.
-function _importarUnTarifario(file) {
+function _importarUnTarifario(file, vigenteDesde) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
@@ -1760,11 +1903,32 @@ async function _aplicarTarifario(nombreArchivo, bytes) {
         nuevo = true;
       } catch (err) { console.warn('crear cliente import', cod, err); continue; }
     }
-    const filas = Object.entries(info.zonas).map(([zona, precio]) => ({ cliente: cli.nombre, cliente_cod: cod, zona, precio }));
+    const filas = Object.entries(info.zonas).map(([zona, precio]) => ({
+      cliente: cli.nombre, cliente_cod: cod, zona, precio,
+      vigente_desde: vigenteDesde || TARIFA_DESDE_SIEMPRE
+    }));
     try {
-      await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);   // reemplaza el tarifario de ESE cliente
-      const inserted = await guardarClienteTarifas(filas);
-      AppData.clienteTarifas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) !== cod).concat(inserted);
+      if (vigenteDesde) {
+        // ACTUALIZACIÓN: la lista nueva CONVIVE con la anterior. Solo se pisan las
+        // filas de ESTA MISMA fecha, para que reintentar la carga no acumule
+        // versiones repetidas del mismo aumento.
+        const previas = (AppData.clienteTarifas || []).filter(t =>
+          clienteKey(t.cliente_cod) === cod && tarifaVigenteDesde(t) === vigenteDesde);
+        for (const t of previas) {
+          try { if (typeof t.id === 'number') await DB.deleteWhere('cliente_tarifas', 'id', t.id); }
+          catch (err) { console.warn('quitar version previa', t.id, err); }
+        }
+        const ins = await guardarClienteTarifas(filas);
+        AppData.clienteTarifas = (AppData.clienteTarifas || [])
+          .filter(t => !(clienteKey(t.cliente_cod) === cod && tarifaVigenteDesde(t) === vigenteDesde))
+          .concat(ins);
+      } else {
+        // ALTA: reemplaza el tarifario de ESE cliente, con toda su historia. Es lo
+        // que corresponde al cargar un cliente nuevo o rehacerle la lista entera.
+        await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);
+        const ins = await guardarClienteTarifas(filas);
+        AppData.clienteTarifas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) !== cod).concat(ins);
+      }
     } catch (err) { console.warn('tarifas import', cod, err); }
     res.clientes.push({ nombre: cli.nombre, cod, origen: info.origen, zonas: filas.length, nuevo });
   }

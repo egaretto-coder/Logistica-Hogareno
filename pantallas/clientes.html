@@ -18,6 +18,7 @@
               <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar tarifario(s)
                 <input type="file" id="cli-tarifario-file" accept=".xlsx,.xls,.csv" multiple onchange="importTarifarioClientes(event)" style="display:none">
               </label>
+              <button class="btn btn-sm" onclick="abrirActualizarPrecios()" title="Cargar una lista de precios NUEVA que rija desde una fecha, sin tocar lo ya facturado"><i class="ic ic-trend"></i> Actualizar lista de precios</button>
               <button class="btn btn-sm" onclick="descargarPlantillaTarifario()" title="Baja el tarifario completo para editarlo y volver a subirlo"><i class="ic ic-download"></i> Descargar tarifario</button>
               <button class="btn btn-sm btn-primary" onclick="openAddClienteModal()">+ Nuevo cliente</button>
             </div>
@@ -26,7 +27,7 @@
           <div class="alert alert-info" style="margin-bottom:16px">
             <i class="ic ic-building"></i><div>Cada cliente se identifica por su <strong>nombre</strong>, que sale de la <strong>columna K</strong> del listado de envíos, y tiene un <strong>tarifario de venta por zona</strong>: lo que le cobrás por cada envío entregado.
             Un mismo cliente puede facturar con <strong>varias cuentas</strong> (LA FERRETERIA y LA FERRETERIA 2): al vincularlas comparten el tarifario y su facturación sale junta.
-            <strong>Importar tarifario</strong> acepta el <strong>tarifario completo</strong> (el mismo que baja "Descargar tarifario") o una <strong>planilla de un solo cliente</strong>, con su nombre arriba y debajo las columnas ZONA y PRECIO — y podés subir <strong>varias de una vez</strong>.</div>
+            <strong>Importar tarifario</strong> es para <strong>cargar clientes nuevos</strong>: acepta el tarifario completo (el mismo que baja "Descargar tarifario") o una planilla de un solo cliente, con su nombre arriba y debajo las columnas ZONA y PRECIO, y podés subir varias de una vez. <strong>Reemplaza</strong> el tarifario de cada cliente que venga en el archivo.<br><strong>Actualizar lista de precios</strong> es para los <strong>aumentos</strong>: se carga la lista nueva con la fecha desde la que rige y <strong>no toca lo ya facturado</strong> — cada envío se cobra con el precio que estaba vigente el día que se entregó.</div>
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">

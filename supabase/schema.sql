@@ -1287,3 +1287,20 @@ create policy conductor_facturas_all on public.conductor_facturas
 -- insert into public.rol_permisos (rol, pagina, permitido)
 --   values ('tesorero', 'monotributos', true)
 --   on conflict (rol, pagina) do update set permitido = true;
+
+-- ---------- LISTAS DE PRECIOS DE CLIENTE CON VIGENCIA ----------
+-- Una lista nueva rige DESDE UNA FECHA, no para atras: antes la tarifa de venta
+-- no tenia fecha y subir un aumento reescribia el precio de TODOS los envios ya
+-- cargados, cambiando el total de liquidaciones que ya se habian mandado.
+-- '2000-01-01' es el centinela de "desde siempre" (anterior a cualquier envio del
+-- sistema), asi que las tarifas que ya estaban siguen aplicando a todo.
+alter table public.cliente_tarifas
+  add column if not exists vigente_desde date not null default '2000-01-01';
+comment on column public.cliente_tarifas.vigente_desde is
+  'Fecha desde la que rige este precio. 2000-01-01 = desde siempre (tarifa original).';
+-- El mismo cliente y la misma zona pueden tener varios precios, uno por vigencia.
+alter table public.cliente_tarifas drop constraint if exists cliente_tarifas_cliente_zona_key;
+create unique index if not exists cliente_tarifas_cliente_zona_vig_key
+  on public.cliente_tarifas (cliente, zona, vigente_desde);
+create index if not exists idx_cliente_tarifas_vigencia
+  on public.cliente_tarifas (cliente_cod, vigente_desde desc);
