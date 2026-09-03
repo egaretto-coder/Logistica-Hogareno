@@ -2563,7 +2563,7 @@ function diagnosticoCobroEnvio(r) {
 // ── El reverso: lo que se COBRA y no se PAGA ────────────────────────────────
 // Todo envío entregado se le factura al cliente, tenga o no conductor asignado
 // — eso está bien y es lo que corresponde. Pero el conductor cobra por DÍA DE
-// PAGO (Titular=viernes · Semi Titular=lunes · Suplente=martes), y esa condición
+// PAGO (Titular y Semi Titular=viernes · Suplente=martes), y esa condición
 // se carga a mano en el Panel de conductores. Un cadete que reparte pero que
 // nunca fue dado de alta ahí —o que está sin condición— no cae en ningún lote:
 // el operador liquida por condición y nunca lo ve. Sus envíos se facturan y no

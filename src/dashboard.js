@@ -563,7 +563,7 @@ function _bloqueSinPagar(sp) {
     '<i class="ic ic-truck"></i><div>' +
       '<strong>' + sp.envios.toLocaleString('es-AR') + ' envíos entregados no entran en ninguna liquidación de conductor</strong> — ' +
       'se le facturan al cliente (' + fmtPeso(sp.cobrado) + ') pero el cadete que los hizo <strong>no tiene día de pago</strong>. ' +
-      'La condición (Titular=viernes · Semi Titular=lunes · Suplente=martes) se carga en <strong>Panel de conductores</strong>; ' +
+      'La condición (Titular y Semi Titular=viernes · Suplente=martes) se carga en <strong>Panel de conductores</strong>; ' +
       'sin ella no cae en ningún lote y el operador que liquida por condición no lo ve.' +
       '<div class="table-wrap" style="margin-top:10px;background:var(--surface-1);border-radius:8px">' +
       '<table><thead><tr><th>Conductor</th><th>Qué falta</th>' +

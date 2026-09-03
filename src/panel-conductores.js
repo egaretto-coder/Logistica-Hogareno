@@ -1,6 +1,6 @@
 const CONDICION_INFO = {
   'Titular':     { dia: 'viernes', clase: 'cond-titular',  emoji: '🔵' },
-  'Semi Titular':{ dia: 'lunes',   clase: 'cond-semitit',  emoji: '🟡' },
+  'Semi Titular':{ dia: 'viernes', clase: 'cond-semitit',  emoji: '🟡' },
   'Suplente':    { dia: 'martes',  clase: 'cond-suplente', emoji: '🟣' },
 };
 

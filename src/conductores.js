@@ -381,7 +381,10 @@ function visitaPagaHTML(i, r) {
 // deciden cuánto y cuándo cobra. **Sin condición no entra en ningún lote de
 // liquidación**: el cadete reparte, sus envíos se le facturan al cliente y no
 // se le paga a nadie — y hasta ahora eso no se veía desde acá.
-const _DIA_PAGO = { 'TITULAR': 'viernes', 'SEMI TITULAR': 'lunes', 'SUPLENTE': 'martes' };
+// Desde 09/2026 los semi titulares cobran los viernes, unificados con los
+// titulares. El que manda es LIQ_DIA_PAGO (src/liquidaciones.js), de donde sale
+// la semana que se liquida.
+const _DIA_PAGO = { 'TITULAR': 'viernes', 'SEMI TITULAR': 'viernes', 'SUPLENTE': 'martes' };
 function _chipsCargaConductor(cond) {
   const p = (typeof panelConductorDe === 'function') ? panelConductorDe(cond) : null;
   const chip = (txt, bg, col, tit) =>

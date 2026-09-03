@@ -9,7 +9,7 @@
 //
 //  El período es la semana VIE→JUE, la misma con la que se le factura al
 //  cliente: la condición NO cambia el ciclo de trabajo, dice qué DÍA se paga esa
-//  semana (Titular=viernes · Semi Titular=lunes · Suplente=martes). Antes el
+//  semana (Titular y Semi Titular=viernes · Suplente=martes). Antes el
 //  período era un filtro libre (Todo / Hoy / Este mes) y por eso una liquidación
 //  no pertenecía a ninguna semana: no había a qué atarle el "lista".
 // ════════════════════════════════════════════════════════════════════════
@@ -40,13 +40,21 @@ function moverSemanaLiq(n) {
 // ── La semana de pago de CADA condición ─────────────────────────────────
 // No es la misma para todos. La semana CIERRA el día anterior al día de pago,
 // así el conductor cobra lo que cerró la víspera:
-//   Titular      → paga viernes → cierra jueves  → semana VIE→JUE
-//   Semi Titular → paga lunes   → cierra domingo → semana LUN→DOM
-//   Suplente     → paga martes  → cierra lunes   → semana MAR→LUN
+//   Titular      → paga viernes → cierra jueves → semana VIE→JUE
+//   Semi Titular → paga viernes → cierra jueves → semana VIE→JUE
+//   Suplente     → paga martes  → cierra lunes  → semana MAR→LUN
 // Lo confirma la planilla que se usa hoy: "LIQUIDACION SUPLENTES SEMANA DEL
 // 25/08 al 31/08" es martes a lunes. Liquidar a todos de viernes a jueves le
 // mete a un suplente los envíos de otra semana.
-const LIQ_DIA_PAGO = { 'TITULAR': 5, 'SEMI TITULAR': 1, 'SUPLENTE': 2 };   // 0=dom
+// ÚNICA fuente del día de pago: de acá salen la semana, el chip de la fila y el
+// PDF. Desde 09/2026 los SEMI TITULARES cobran los viernes, unificados con los
+// titulares; antes cobraban los lunes.
+const LIQ_DIA_PAGO = { 'TITULAR': 5, 'SEMI TITULAR': 5, 'SUPLENTE': 2 };   // 0=dom
+const LIQ_DIA_NOMBRE = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+function liqDiaPagoTxt(condicion) {
+  const d = LIQ_DIA_PAGO[String(condicion || '').toUpperCase()];
+  return d === undefined ? '' : LIQ_DIA_NOMBRE[d];
+}
 
 // Día en que ARRANCA la semana de esa condición (= su día de pago).
 function liqDiaInicioCond(condicion) {
@@ -323,7 +331,7 @@ function _liqCeldaEstado(c) {
   const cEsc = String(c).replace(/'/g, "\\'");
   const pan = panelConductorDe(c);
   const cond = (pan && pan.condicion) || '';
-  const dia = { 'TITULAR': 'vie', 'SEMI TITULAR': 'lun', 'SUPLENTE': 'mar' }[cond.toUpperCase()] || '';
+  const dia = liqDiaPagoTxt(cond).slice(0, 3);   // del MISMO mapa que usa la semana
   // Sin condición no hay día de pago y por lo tanto no se liquida: se dice acá,
   // que es donde el operador está por darla por lista.
   const chipCond = cond
