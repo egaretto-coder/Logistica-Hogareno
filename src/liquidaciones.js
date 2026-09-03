@@ -15,25 +15,47 @@
 // ════════════════════════════════════════════════════════════════════════
 
 // Viernes que abre la semana que se está mirando (ISO).
+// La condición que el operador tiene puesta en el filtro. Es la que manda: se
+// liquida por condición (los suplentes el martes, los titulares el viernes), así
+// que la semana que se muestra y se navega tiene que ser LA DE ESA CONDICIÓN.
+// Con "Todas" no hay una sola semana y eso se dice, en vez de mostrar la de una
+// y hacer pasar su rango por el de todos.
+function liqCondicionFiltro() {
+  const v = document.getElementById('liq-filter-condicion')?.value || '';
+  return (v && v !== 'sin_asignar') ? v : '';
+}
+
+// Fecha de referencia: cualquier día dentro de la semana que se está mirando.
 function liqSemanaISO() {
   const el = document.getElementById('liq-semana');
   if (el && el.value) return el.value;
-  const r = semanaClienteRango();
-  return _liqISO(r.desdeD);
+  return _liqISO(semanaDeCondicion(liqCondicionFiltro(), null).desde);
 }
 function _liqISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
-// El input acepta cualquier día y se corre al viernes de esa semana: si mostrara
-// el martes que se tocó, habría que deducir a qué semana pertenece.
+// El input acepta cualquier día y se corre al PRIMER día de la semana de la
+// condición filtrada: si mostrara el jueves que se tocó, habría que deducir a qué
+// semana pertenece. Con Suplente puesto se corre al martes, no al viernes.
 function cambiarSemanaLiq() {
-  if (typeof snapSemanaCliente === 'function') snapSemanaCliente('liq-semana');
+  const el = document.getElementById('liq-semana');
+  if (el && el.value) el.value = _liqISO(semanaDeCondicion(liqCondicionFiltro(), el.value).desde);
   renderLiquidaciones();
 }
 function moverSemanaLiq(n) {
   const el = document.getElementById('liq-semana'); if (!el) return;
-  const r = semanaClienteRango(liqSemanaISO());
-  const d = new Date(r.desdeD); d.setDate(d.getDate() + 7 * n);
+  const sem = semanaDeCondicion(liqCondicionFiltro(), liqSemanaISO());
+  const d = new Date(sem.desde); d.setDate(d.getDate() + 7 * n);
   el.value = _liqISO(d);
+  renderLiquidaciones();
+}
+
+// Al cambiar de condición, la semana se recalcula para ESA condición sin
+// moverse de lugar en el calendario: si estabas viendo la semana del titular que
+// contiene el 29/08 y pasás a Suplente, tenés que ver la del suplente que
+// contiene ese mismo día, no otra.
+function cambiarCondicionLiq() {
+  const el = document.getElementById('liq-semana');
+  if (el && el.value) el.value = _liqISO(semanaDeCondicion(liqCondicionFiltro(), el.value).desde);
   renderLiquidaciones();
 }
 
@@ -80,8 +102,19 @@ function semanaDeConductor(conductor, isoRef) {
 
 // El rango de referencia del encabezado: la semana del Titular (VIE→JUE), que
 // es la que ancla el resto. Cada fila muestra la suya cuando difiere.
+// El rango del encabezado: la semana de la condición filtrada. Con "Todas" cae a
+// la del titular, que es la que ancla el calendario.
 function getLiqFechaRango() {
-  return semanaDeCondicion('TITULAR', liqSemanaISO());
+  return semanaDeCondicion(liqCondicionFiltro(), liqSemanaISO());
+}
+
+// El rango con el que se imputan los descuentos de UN conductor. Tiene que ser
+// SU semana: si los envíos salen de mar→lun y los descuentos se buscaran en
+// vie→jue, el neto mezclaría dos períodos distintos.
+function liqRangoImputDe(conductor) {
+  const sem = semanaDeConductor(conductor);
+  const fmtF = d => d.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  return { desde: fmtF(sem.desde), hasta: fmtF(sem.hasta) };
 }
 
 // ── Estado "lista para enviar" ──────────────────────────────────────────
@@ -114,7 +147,7 @@ async function marcarLiqConductorLista(conductor) {
     // deja ver si algo se movió después de darla por lista.
     // Misma cuenta que muestra la tabla: bruto + adicionales − descuentos imputados.
     monto: liq[cond]
-      ? _num(netoLiquidacion(liq[cond].total, imputacionesConductor(cond, (typeof getLiqRangoFechasLabel === 'function' ? getLiqRangoFechasLabel() : null))))
+      ? _num(netoLiquidacion(liq[cond].total, imputacionesConductor(cond, liqRangoImputDe(cond))))
       : 0
   };
   try {
@@ -357,9 +390,8 @@ function _liqPintarKPIs(liq, conductores) {
   if (!cont) return;
   const conRec = conductores.filter(c => liq[c] && liq[c].filas.length);
   const listas = conRec.filter(c => liqConductorArmada(c));
-  const rangoImput = (typeof getLiqRangoFechasLabel === 'function') ? getLiqRangoFechasLabel() : null;
   const montoListas = listas.reduce((s, c) =>
-    s + netoLiquidacion(liq[c].total, imputacionesConductor(c, rangoImput)), 0);
+    s + netoLiquidacion(liq[c].total, imputacionesConductor(c, liqRangoImputDe(c))), 0);
   const sinArmar = conRec.length - listas.length;
   cont.innerHTML =
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-check-circle"></i></div>' +
@@ -398,13 +430,25 @@ function renderLiquidaciones() {
     }
   });
 
-  // Etiqueta del período: la semana que se está liquidando. El día de pago no va
-  // acá sino por conductor, que es donde cambia según su condición.
-  const rango = getLiqFechaRango();
+  // Etiqueta del período: la semana DE LA CONDICIÓN que se está mirando. Antes
+  // mostraba siempre 'Viernes a jueves', así que filtrando por Suplente —que es
+  // justo cuando se liquidan los suplentes— el encabezado decía un período y la
+  // tabla mostraba otro.
+  const condF = liqCondicionFiltro();
+  const rango = semanaDeCondicion(condF, liqSemanaISO());
   const fmt = d => d.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const cap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
   const labelEl = document.getElementById('liq-fecha-label');
-  if (labelEl) labelEl.textContent = 'Viernes a jueves · ' + fmt(rango.desde) + ' → ' + fmt(rango.hasta);
-  // El input arranca en la semana en curso; el operador la mueve con ‹ ›.
+  if (labelEl) {
+    const dias = cap(LIQ_DIA_NOMBRE[rango.desde.getDay()]) + ' a ' + LIQ_DIA_NOMBRE[rango.hasta.getDay()];
+    const per = dias + ' · ' + fmt(rango.desde) + ' → ' + fmt(rango.hasta);
+    // Con 'Todas' no hay UNA semana: los suplentes cierran el lunes y el resto el
+    // jueves. Decirlo es mejor que mostrar una y hacerla pasar por la de todos.
+    labelEl.innerHTML = condF
+      ? per + ' <span style="opacity:.75">· paga ' + liqDiaPagoTxt(condF) + '</span>'
+      : per + ' <span style="color:#b45309">· los suplentes van por su semana (mar→lun); filtrá por condición para verla</span>';
+  }
+  // El input arranca en la semana en curso de la condición filtrada.
   const semEl = document.getElementById('liq-semana');
   if (semEl && !semEl.value) semEl.value = liqSemanaISO();
 
@@ -422,10 +466,10 @@ function renderLiquidaciones() {
   // Neto de cada conductor: el bruto no es lo que se le paga si tiene
   // imputaciones. Se calcula ANTES de ordenar para poder ordenar por lo que
   // realmente se cobra, y con el mismo rango que usa la descarga del PDF.
-  const rangoImput = (typeof getLiqRangoFechasLabel === 'function') ? getLiqRangoFechasLabel() : null;
   const netos = {};
   conductores.forEach(c => {
-    const imp = imputacionesConductor(c, rangoImput);
+    // Cada uno con SU semana, también para los descuentos.
+    const imp = imputacionesConductor(c, liqRangoImputDe(c));
     netos[c] = { imp, neto: netoLiquidacion(liq[c].total, imp) };
   });
 

@@ -1258,7 +1258,7 @@ function exportPlanillaPago() {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const M = (typeof MARCA !== 'undefined') ? MARCA : null;
   const liq = calcLiquidacionesFiltradas();
-  const rangoImput = (typeof getLiqRangoFechasLabel === 'function') ? getLiqRangoFechasLabel() : null;
+  // Cada conductor se imputa con SU semana (liqRangoImputDe), no con una sola.
 
   // Solo lo armado, y respetando el filtro que el operador tenga puesto.
   const listos = conductoresFiltradosLiq(liq)
@@ -1315,11 +1315,11 @@ function exportPlanillaPago() {
 
     // ── Tabla: conductor · importe · CONFORME (donde firma) ───────────
     const filas = cs.map(c => {
-      const neto = netoLiquidacion(liq[c].total, imputacionesConductor(c, rangoImput));
+      const neto = netoLiquidacion(liq[c].total, imputacionesConductor(c, liqRangoImputDe(c)));
       totalGeneral += neto;
       return [c, fmtPeso(neto), ''];
     });
-    const subtotal = cs.reduce((t, c) => t + netoLiquidacion(liq[c].total, imputacionesConductor(c, rangoImput)), 0);
+    const subtotal = cs.reduce((t, c) => t + netoLiquidacion(liq[c].total, imputacionesConductor(c, liqRangoImputDe(c))), 0);
     filas.push(['TOTAL', fmtPeso(subtotal), '']);
 
     doc.autoTable({

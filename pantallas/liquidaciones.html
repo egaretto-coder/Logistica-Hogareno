@@ -24,7 +24,7 @@
             <span class="card-title">Liquidaciones por conductor</span>
             <div style="display:flex;gap:8px;align-items:center;">
               <input type="search" id="liq-search" placeholder="Buscar conductor..." style="width:180px;" oninput="renderLiquidaciones()">
-              <select id="liq-filter-condicion" onchange="renderLiquidaciones()">
+              <select id="liq-filter-condicion" onchange="cambiarCondicionLiq()">
                 <option value="">Todas las condiciones</option>
                 <option value="Titular">Titular</option>
                 <option value="Semi Titular">Semi Titular</option>
