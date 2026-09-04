@@ -142,7 +142,7 @@ function renderKmDesvio() {
       '<td>' +
         '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-sm" onclick="editKmDesvio(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
-          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarKmDesvio(' + realIdx + ')"><i class="ic ic-trash"></i></button>' +
+          '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarKmDesvio(' + JSON.stringify(String(d.id != null ? d.id : realIdx)) + ')"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</td>' +
       '</tr>';
@@ -227,9 +227,14 @@ function guardarKmDesvioModal() {
   }
 }
 
-function eliminarKmDesvio(idx) {
-  const d = AppData.kmDesvio[idx];
-  if (!d) return;
+// Se resuelve por ID, no por posición: AppData.kmDesvio se reemplaza entero en
+// cada re-hidratación y el índice horneado en el HTML pasa a apuntar a otra
+// fila — es el mismo bug que le borraba el Super SLA al conductor equivocado.
+function eliminarKmDesvio(id) {
+  const d = (AppData.kmDesvio || []).find(x => String(x.id) === String(id))
+    || AppData.kmDesvio[id];   // filas todavía sin id (recién creadas)
+  if (!d) { showToast('⚠️ Ese registro ya no existe'); renderKmDesvio(); return; }
+  const idx = AppData.kmDesvio.indexOf(d);
   if (!confirm('¿Eliminar el registro de km de desvío de ' + d.conductor + '?')) return;
   AppData.kmDesvio.splice(idx, 1);
   saveKmDesvio();

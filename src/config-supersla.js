@@ -55,18 +55,20 @@ function renderSuperSLA() {
 
     const filasZonas = reglas.length
       ? reglas.map(r => {
-          const realIdx = AppData.superSLA.indexOf(r);
+          // La fila se identifica por conductor + zona, no por su posición.
+          const idCond = String(nombre).replace(/"/g, '&quot;');
+          const idZona = String(r.zona || '').replace(/"/g, '&quot;');
           const precio = _num(r.precio || r.sla || 0);
           // ZONA: editable solo para autorizados.
           const zonaCell = editable
-            ? zonaSelectSuperSLA(realIdx, r.zona, nombre)
+            ? zonaSelectSuperSLA(nombre, r.zona, nombre)
             : `<span style="font-size:13px;font-weight:500">${r.zona || '<span style="color:var(--text-muted)">(sin zona)</span>'}</span>`;
           // PRECIO: input editable, o valor con candado.
           let precioCell, accionCell;
           if (editable) {
             precioCell = `<span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
-              <input type="number" value="${precio}" data-idx="${realIdx}" data-field="precio" style="border:none;background:none;font-size:14px;font-weight:600;width:100%;outline:none;text-align:right;color:var(--text-primary)" onchange="updateSuperSLA(this)" />`;
-            accionCell = `<button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%" onclick="deleteSuperSLA(${realIdx})" title="Eliminar zona"><i class="ic ic-x"></i></button>`;
+              <input type="number" value="${precio}" data-cond="${idCond}" data-zona="${idZona}" data-field="precio" style="border:none;background:none;font-size:14px;font-weight:600;width:100%;outline:none;text-align:right;color:var(--text-primary)" onchange="updateSuperSLA(this)" />`;
+            accionCell = `<button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%" onclick="deleteSuperSLA('${String(nombre).replace(/'/g, "\\'")}','${String(r.zona || '').replace(/'/g, "\\'")}')" title="Eliminar zona"><i class="ic ic-x"></i></button>`;
           } else {
             const pend = solicitudPendienteDe(nombre, r.zona);
             precioCell = `<span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
@@ -131,7 +133,9 @@ function zonasDelTarifario() {
   )).sort();
 }
 
-function zonaSelectSuperSLA(realIdx, zonaActual, conductor) {
+// Recibe el CONDUCTOR, no un índice: la fila se resuelve por conductor + zona,
+// que es su clave única y lo único estable cuando AppData.superSLA se reemplaza.
+function zonaSelectSuperSLA(cond, zonaActual, conductor) {
   const actual = String(zonaActual || '').trim().toUpperCase();
   // No ofrecemos las zonas que ese conductor ya tiene cargadas (evita duplicados),
   // pero sí la de esta misma fila.
@@ -153,7 +157,8 @@ function zonaSelectSuperSLA(realIdx, zonaActual, conductor) {
     ).join('');
 
   const sinOpciones = !disponibles.length && !fueraDeCatalogo;
-  return '<select data-idx="' + realIdx + '" data-field="zona" onchange="updateSuperSLA(this)"' +
+  return '<select data-cond="' + String(cond).replace(/"/g, '&quot;') + '" data-zona="' +
+    String(zonaActual || '').replace(/"/g, '&quot;') + '" data-field="zona" onchange="updateSuperSLA(this)"' +
     (sinOpciones ? ' disabled' : '') +
     ' title="' + (sinOpciones ? 'Este conductor ya tiene todas las zonas del tarifario' : 'Zonas del tarifario') + '"' +
     ' style="border:none;background:none;font-size:13px;font-weight:500;width:100%;outline:none;color:' + (actual ? 'var(--text-primary)' : 'var(--text-muted)') + ';cursor:pointer">' +
@@ -171,17 +176,63 @@ function addZonaSuperSLA(conductor) {
   }, 50);
 }
 
-function updateSuperSLA(el) {
-  if (!puedeEditarSuperSLA()) return;
-  const i = parseInt(el.dataset.idx), f = el.dataset.field;
-  AppData.superSLA[i][f] = f === 'zona' || f === 'conductor'
-    ? el.value.toUpperCase()
-    : parseFloat(el.value) || 0;
+// ── Identidad de una regla Super SLA ────────────────────────────────────
+// La fila se resuelve por CONDUCTOR + ZONA, que es su clave única, NUNCA por
+// su posición en AppData.superSLA. Ese array se REEMPLAZA entero en cada
+// re-hidratación —y la sincronización en vivo re-hidrata todas las tablas
+// aunque solo re-dibuje la pantalla activa si cambió una de las suyas—, así
+// que el índice horneado en el HTML pasaba a apuntar a OTRA fila: bastaba con
+// que entrara un import mientras el panel estaba abierto para que la ✕
+// borrara el Super SLA de otro conductor (bug real: a ARIEL OJEDA se le
+// perdía la regla de MERLO una vez por semana). Es la misma regla que ya
+// siguen los modales de visita, anulación, dimensión y panel de conductores.
+function _reglaSuperSLA(cond, zona) {
+  const c = normNombre(cond), z = normNombre(zona);
+  return (AppData.superSLA || []).find(r =>
+    normNombre(r.conductor) === c && normNombre(r.zona) === z) || null;
+}
+function _idxReglaSuperSLA(cond, zona) {
+  const r = _reglaSuperSLA(cond, zona);
+  return r ? AppData.superSLA.indexOf(r) : -1;
 }
 
-function deleteSuperSLA(i) {
+function updateSuperSLA(el) {
+  if (!puedeEditarSuperSLA()) return;
+  const f = el.dataset.field;
+  const fila = _reglaSuperSLA(el.dataset.cond, el.dataset.zona);
+  if (!fila) {
+    // La regla ya no está: alguien la cambió desde otra sesión mientras esta
+    // pantalla seguía abierta. Antes se escribía igual, en la fila que hubiera
+    // quedado en esa posición.
+    showToast('⚠️ Esa regla ya no existe — se recarga el panel');
+    renderSuperSLA();
+    return;
+  }
+  if (f === 'zona' || f === 'conductor') {
+    fila[f] = el.value.toUpperCase();
+    // Al cambiar la zona cambia la identidad de la fila: hay que re-dibujar
+    // para que los identificadores del HTML vuelvan a ser los correctos.
+    renderSuperSLA();
+  } else {
+    fila[f] = parseFloat(el.value) || 0;
+  }
+}
+
+// Se borra POR IDENTIDAD, y el confirm nombra a quién y qué zona: borrar la
+// regla equivocada le cambia el precio a otro conductor sin que nadie lo note
+// hasta la liquidación.
+function deleteSuperSLA(cond, zona) {
   if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
-  if (!confirm('¿Eliminar esta zona especial?')) return;
+  const i = _idxReglaSuperSLA(cond, zona);
+  if (i < 0) {
+    showToast('⚠️ Esa regla ya no existe — se recarga el panel');
+    renderSuperSLA();
+    return;
+  }
+  const r = AppData.superSLA[i];
+  if (!confirm('¿Eliminar la zona especial ' + (r.zona || '(sin zona)') + ' de ' + r.conductor + '?' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Va a pasar a cobrar la tarifa SLA estándar de esa zona.')) return;
   AppData.superSLA.splice(i, 1);
   renderSuperSLA();
 }

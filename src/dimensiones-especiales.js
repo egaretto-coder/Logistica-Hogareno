@@ -119,7 +119,7 @@ function renderDimensionesEspeciales() {
         : '<strong>' + fmtPeso(_num(d.precio)) + '</strong>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
         '<button class="btn btn-sm" onclick="editDimension(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
-        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDimension(' + realIdx + ')"><i class="ic ic-trash"></i></button>' +
+        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDimension(' + JSON.stringify(String(d.id != null ? d.id : realIdx)) + ')"><i class="ic ic-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -579,9 +579,14 @@ function guardarDimensionModal() {
   } catch (err) { console.error(err); alert('Error al guardar: ' + err.message); }
 }
 
-function eliminarDimension(idx) {
-  const d = AppData.dimCatalogo[idx];
-  if (!d) return;
+// Por ID, no por posición: el catálogo se reemplaza entero al re-hidratar y el
+// índice horneado en el HTML terminaba borrando la condición de otro cliente.
+// Es el mismo bug que le borraba el Super SLA al conductor equivocado.
+function eliminarDimension(id) {
+  const d = (AppData.dimCatalogo || []).find(x => String(x.id) === String(id))
+    || AppData.dimCatalogo[id];   // filas todavía sin id (recién creadas)
+  if (!d) { showToast('⚠️ Esa condición ya no existe'); renderDimensionesEspeciales(); return; }
+  const idx = AppData.dimCatalogo.indexOf(d);
   if (!confirm('Eliminar del catálogo: ' + d.nombre + ' de ' + d.cliente + ' en ' + d.zona + '?')) return;
   AppData.dimCatalogo.splice(idx, 1);
   saveDimCatalogo();
