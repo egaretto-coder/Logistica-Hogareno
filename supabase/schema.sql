@@ -1342,3 +1342,31 @@ alter publication supabase_realtime add table public.conductor_liquidaciones;
 -- filas: es reversible, se explica sola y no hay nada que migrar.
 insert into public.config (clave, valor) values ('cliente_corte_iso', '2026-08-24')
   on conflict (clave) do update set valor = excluded.valor;
+
+-- ---------- PEDIDOS DE ARCHIVO (maker-checker) ----------
+-- Archivar lo puede PEDIR un administrativo, pero lo AUTORIZA un supervisor o un
+-- analista. La operacion mueve decenas de miles de filas a una tabla de solo
+-- lectura y desde la app no hay vuelta atras, asi que la decide alguien distinto
+-- del que la propone.
+create table if not exists public.archivo_solicitudes (
+  id bigint generated always as identity primary key,
+  -- Hasta que fecha se pidio archivar (exclusivo). Al aprobar se RECALCULA y se
+  -- toma el minimo con el tope vigente: entre el pedido y la aprobacion puede
+  -- haberse reabierto una liquidacion, y archivar igual se llevaria trabajo en
+  -- curso.
+  hasta date not null,
+  envios integer not null default 0,        -- cuantos habia al pedirlo (referencia)
+  solicitado_por text not null default '',
+  solicitado_en timestamptz not null default now(),
+  motivo text not null default '',
+  estado text not null default 'pendiente', -- pendiente | aprobada | rechazada
+  resuelto_por text not null default '',
+  resuelto_en timestamptz,
+  archivados integer not null default 0,    -- cuantos se archivaron de verdad
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_archivo_sol_estado on public.archivo_solicitudes (estado);
+alter table public.archivo_solicitudes enable row level security;
+create policy archivo_solicitudes_all on public.archivo_solicitudes
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+alter publication supabase_realtime add table public.archivo_solicitudes;

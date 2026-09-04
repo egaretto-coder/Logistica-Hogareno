@@ -77,6 +77,8 @@ function loadSavedConfig() {
   if (emphe) { try { AppData.empleadoHorasExtra = JSON.parse(emphe) || []; } catch(e) {} }
   const empre = localStorage.getItem('liq_empleado_reaperturas');
   if (empre) { try { AppData.empleadoReaperturas = JSON.parse(empre) || []; } catch(e) {} }
+  const asol = localStorage.getItem('liq_archivo_solicitudes');
+  if (asol) { try { AppData.archivoSolicitudes = JSON.parse(asol) || []; } catch(e) {} }
   const cliq = localStorage.getItem('liq_conductor_liquidaciones');
   if (cliq) { try { AppData.conductorLiquidaciones = JSON.parse(cliq) || []; } catch(e) {} }
   const cfis = localStorage.getItem('liq_conductor_fiscal');
@@ -446,6 +448,13 @@ async function _hydrateFromSupabaseReal(opts) {
     semana_hasta: String(x.semana_hasta || '').slice(0, 10),
     armada_por: x.armada_por || '', armada_en: x.armada_en || '', monto: _num(x.monto)
   }));
+  AppData.archivoSolicitudes = (data.archivo_solicitudes || []).map(x => ({
+    id: x.id, hasta: String(x.hasta || '').slice(0, 10), envios: _num(x.envios),
+    solicitado_por: x.solicitado_por || '', solicitado_en: x.solicitado_en || '',
+    motivo: x.motivo || '', estado: x.estado || 'pendiente',
+    resuelto_por: x.resuelto_por || '', resuelto_en: x.resuelto_en || '',
+    archivados: _num(x.archivados)
+  }));
 
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
   AppData.clienteCuentas = (data.cliente_cuentas || []).map(c => ({
@@ -523,6 +532,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_conductor_fiscal', JSON.stringify(AppData.conductorFiscal || []));
     localStorage.setItem('liq_conductor_facturas', JSON.stringify(AppData.conductorFacturas || []));
     localStorage.setItem('liq_conductor_liquidaciones', JSON.stringify(AppData.conductorLiquidaciones || []));
+    localStorage.setItem('liq_archivo_solicitudes', JSON.stringify(AppData.archivoSolicitudes || []));
     localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));
   } catch(e) {}
 
@@ -890,7 +900,11 @@ async function cargarHistorialCompleto(btn) {
 // Archiva (mueve a registros_historico) los registros anteriores a antesDeISO.
 // Transaccional en el servidor; solo analistas. Refresca la app al terminar.
 async function archivarRegistrosAntesDe(antesDeISO) {
-  if (!esAnalista()) { showToast('⛔ Solo un analista puede archivar registros'); return; }
+  // Lo ejecuta quien AUTORIZA: supervisor o analista. El administrativo no llega
+  // acá — deja un pedido y alguno de ellos lo aprueba (ver src/cierre.js).
+  if (typeof puedeAutorizar === 'function' ? !puedeAutorizar() : !esAnalista()) {
+    showToast('⛔ Solo un supervisor o analista puede archivar registros'); return;
+  }
   if (!window.DB || !DB.ready) { showToast('Sin conexión'); return; }
   try {
     const movidos = await DB.archivarRegistros(antesDeISO);

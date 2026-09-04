@@ -240,6 +240,8 @@ let AppData = {
   // Liquidaciones de CONDUCTOR que el administrativo ya dio por listas. Sin
   // este estado el tesorero no puede distinguir lo revisado de lo que nadie miró.
   conductorLiquidaciones: [],
+  // Pedidos de archivo esperando que un supervisor o analista los autorice.
+  archivoSolicitudes: [],
 
   // Cuentas secundarias de un cliente: alias_cod → cliente_cod canónico.
   // clienteCuentas: [{ id, alias_cod, cliente_cod }]

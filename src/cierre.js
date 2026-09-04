@@ -225,13 +225,46 @@ function renderCierrePanel() {
       'archivarlos deja la app más liviana y hace que los paneles muestren solo lo que está en curso.</div></div>';
   }
 
+  // ── Quién puede archivar ──────────────────────────────────────────────
+  // El administrativo PIDE; el supervisor o el analista AUTORIZAN. Quien ya
+  // puede autorizar no se pide permiso a sí mismo: archiva directo.
+  const autoriza = (typeof puedeAutorizar === 'function') && puedeAutorizar();
+  const pend = solicitudArchivoPendiente();
+
+  if (pend) {
+    // El pedido a la vista, con lo que hay que decidir.
+    html += '<div class="alert" style="margin:0 0 12px;background:#eff6ff;color:#1e3a8a;border:1px solid #93c5fd"><i class="ic ic-clock"></i><div>' +
+      '<strong>Hay un pedido de archivo esperando autorización.</strong><br>' +
+      'Lo pidió <strong>' + (pend.solicitado_por || '—') + '</strong>: ' + fmt(pend.envios) + ' envíos, anteriores al ' + _cieFmt(pend.hasta) + '.' +
+      (pend.motivo ? '<br><span style="opacity:.85">Motivo: ' + pend.motivo + '</span>' : '') +
+      '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+        (autoriza
+          ? '<button class="btn btn-sm btn-primary" onclick="aprobarArchivo(\'' + pend.id + '\')"><i class="ic ic-check"></i> Autorizar y archivar</button>' +
+            '<button class="btn btn-sm" onclick="rechazarArchivo(\'' + pend.id + '\')">Rechazar</button>'
+          : '<button class="btn btn-sm" onclick="cancelarArchivo(\'' + pend.id + '\')">Cancelar mi pedido</button>' +
+            '<span style="font-size:11px;opacity:.85;align-self:center">Lo tiene que autorizar un supervisor o un analista.</span>') +
+      '</div></div></div>';
+  }
+
   html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-    '<button class="btn btn-sm btn-primary" onclick="archivarCerrados()"' + (arch.length ? '' : ' disabled') + '>' +
-      '<i class="ic ic-folder"></i> Archivar ' + fmt(arch.length) + ' cerrados</button>' +
+    '<button class="btn btn-sm btn-primary" onclick="pedirArchivoCerrados()"' + ((arch.length && !pend) ? '' : ' disabled') + '>' +
+      '<i class="ic ic-folder"></i> ' + (autoriza ? 'Archivar ' + fmt(arch.length) + ' cerrados' : 'Pedir archivar ' + fmt(arch.length) + ' cerrados') + '</button>' +
     '<span style="font-size:11px;color:var(--text-muted)">' +
       (rec.hasta ? 'Se archiva lo anterior al ' + _cieFmt(rec.hasta) + ', que es el envío en curso más viejo.'
                  : 'No hay nada en curso: se archiva todo lo cerrado.') +
+      (autoriza ? '' : ' Lo autoriza un supervisor o un analista.') +
     '</span></div>';
+
+  // Lo ya resuelto, para que quede el rastro de quién autorizó qué.
+  const hist = (AppData.archivoSolicitudes || []).filter(x => x.estado !== 'pendiente')
+    .sort((a, b) => String(b.resuelto_en || '').localeCompare(String(a.resuelto_en || ''))).slice(0, 5);
+  if (hist.length) {
+    html += '<div style="margin-top:10px;font-size:11px;color:var(--text-muted)"><strong>Últimos archivos:</strong>' +
+      hist.map(x => '<div>· ' + _cieFmt(String(x.resuelto_en || '').slice(0, 10)) + ' — ' +
+        (x.estado === 'aprobada' ? fmt(x.archivados) + ' envíos archivados' : 'rechazado') +
+        ', pedido por ' + (x.solicitado_por || '—') + ' y resuelto por ' + (x.resuelto_por || '—') + '</div>').join('') +
+      '</div>';
+  }
 
   // El corte del modelo anterior, para que se entienda de dónde sale el número.
   html += '<div style="margin-top:10px;font-size:11px;color:var(--text-muted)">' +
@@ -248,30 +281,141 @@ function _cieFmt(iso) {
   return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || '');
 }
 
-// Archiva lo cerrado. Solo analista, igual que el archivado por fecha: mueve
-// filas a una tabla de solo lectura y desde la app no hay vuelta atrás.
-async function archivarCerrados() {
-  if (typeof esAnalista === 'function' && !esAnalista()) {
-    showToast('⛔ Solo un analista puede archivar'); return;
-  }
+// ── Régimen de autorización ─────────────────────────────────────────────
+// Archivar lo puede PEDIR un administrativo, pero lo AUTORIZA un supervisor o
+// un analista. Es el mismo maker-checker que adelantos, extravíos y las
+// reaperturas de sueldo: la operación mueve decenas de miles de filas a una
+// tabla de solo lectura y desde la app no hay vuelta atrás, así que la decide
+// alguien distinto del que la propone.
+function solicitudArchivoPendiente() {
+  return (AppData.archivoSolicitudes || []).find(x => x.estado === 'pendiente') || null;
+}
+
+// Pide archivar. Si quien lo pide ya puede autorizar, se aplica en el acto: no
+// tiene sentido pedirse permiso a sí mismo.
+async function pedirArchivoCerrados() {
   const rec = recomendacionArchivo();
   const arch = rec.archivables;
   if (!arch.length) { showToast('No hay envíos cerrados para archivar'); return; }
-  const hasta = rec.hasta;
-  if (!hasta) {
-    if (!confirm('No hay ningún envío en curso, así que se archiva TODO lo cerrado (' +
-      arch.length.toLocaleString('es-AR') + ' envíos).\n\nSiguen consultables desde el archivo histórico. ¿Continuar?')) return;
-  } else {
-    if (!confirm('Se van a archivar ' + arch.length.toLocaleString('es-AR') + ' envíos ya cerrados ' +
-      '(anteriores al ' + _cieFmt(hasta) + ').\n\n' +
-      'Están pagados al conductor y facturados al cliente, así que ya no cambian. ' +
-      'Siguen consultables desde el archivo histórico y el historial de liquidaciones queda entero.\n\n¿Continuar?')) return;
+  const tope = rec.hasta;
+
+  if (typeof puedeAutorizar === 'function' && puedeAutorizar()) {
+    return _ejecutarArchivo(tope, arch.length, null);
   }
-  // archivarRegistrosAntesDe corta por fecha, y por eso el tope es el envío
-  // ABIERTO más viejo: así no se puede llevar puesto nada en curso.
-  const tope = hasta || _cieISO(new Date(Date.now() + 86400000));
-  if (typeof archivarRegistrosAntesDe === 'function') {
-    await archivarRegistrosAntesDe(tope);
+
+  const ya = solicitudArchivoPendiente();
+  if (ya) {
+    alert('Ya hay un pedido de archivo esperando autorización (' + _cieFmt(ya.hasta) + ', ' +
+      Number(ya.envios).toLocaleString('es-AR') + ' envíos), pedido por ' + (ya.solicitado_por || '—') + '.');
+    return;
+  }
+  const motivo = prompt('¿Por qué archivar ahora? (queda registrado en el pedido)', 'Cierre de período');
+  if (motivo === null) return;
+  const rec2 = {
+    hasta: tope || _cieISO(new Date(Date.now() + 86400000)),
+    envios: arch.length,
+    solicitado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || '',
+    solicitado_en: new Date().toISOString(),
+    motivo: String(motivo || '').trim(), estado: 'pendiente', archivados: 0
+  };
+  try {
+    const row = await DB.insertRow('archivo_solicitudes', rec2);
+    AppData.archivoSolicitudes = (AppData.archivoSolicitudes || []).concat([Object.assign({ id: row && row.id }, rec2)]);
+    _persistirArchivoSolic();
+    showToast('📩 Pedido enviado — un supervisor o analista tiene que autorizarlo');
     renderCierrePanel();
-  }
+  } catch (e) { console.warn('pedirArchivo', e); showToast('⛔ No se pudo enviar el pedido'); }
 }
+
+// Autoriza y archiva. RECALCULA antes de ejecutar: entre el pedido y la
+// aprobación puede haberse reabierto una liquidación o haber entrado envíos
+// nuevos, y archivar por el número viejo se llevaría trabajo en curso. Se toma
+// el MENOR entre lo pedido y lo que hoy está cerrado.
+async function aprobarArchivo(id) {
+  if (typeof puedeAutorizar !== 'function' || !puedeAutorizar()) {
+    showToast('⛔ Solo un supervisor o analista puede autorizar'); return;
+  }
+  const sol = (AppData.archivoSolicitudes || []).find(x => String(x.id) === String(id));
+  if (!sol) return;
+  const rec = recomendacionArchivo();
+  const topeHoy = rec.hasta || _cieISO(new Date(Date.now() + 86400000));
+  // El menor de los dos: nunca más allá de lo aprobado, nunca más allá de lo
+  // que hoy está efectivamente cerrado.
+  const tope = (sol.hasta && sol.hasta < topeHoy) ? sol.hasta : topeHoy;
+  const cuantos = rec.archivables.filter(r => fechaISOde(r.fecha) < tope).length;
+  if (!cuantos) {
+    alert('Ya no queda nada archivable dentro de lo pedido.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      'Puede que se haya reabierto una liquidación o que otro usuario ya lo haya archivado. El pedido queda como está.');
+    return;
+  }
+  const cambio = (tope !== sol.hasta)
+    ? String.fromCharCode(10) + String.fromCharCode(10) + 'OJO: se pidió hasta el ' + _cieFmt(sol.hasta) +
+      ' pero hoy solo está cerrado hasta el ' + _cieFmt(tope) + ', así que se archiva hasta ahí.'
+    : '';
+  if (!confirm('Autorizar el archivo pedido por ' + (sol.solicitado_por || '—') + '.' + String.fromCharCode(10) +
+    'Se archivan ' + cuantos.toLocaleString('es-AR') + ' envíos ya cerrados (anteriores al ' + _cieFmt(tope) + ').' +
+    cambio + String.fromCharCode(10) + String.fromCharCode(10) + '¿Continuar?')) return;
+  await _ejecutarArchivo(tope, cuantos, sol);
+}
+
+async function rechazarArchivo(id) {
+  if (typeof puedeAutorizar !== 'function' || !puedeAutorizar()) {
+    showToast('⛔ Solo un supervisor o analista puede rechazar'); return;
+  }
+  const sol = (AppData.archivoSolicitudes || []).find(x => String(x.id) === String(id));
+  if (!sol) return;
+  if (!confirm('¿Rechazar el pedido de archivo de ' + (sol.solicitado_por || '—') + '?')) return;
+  await _resolverSolicitud(sol, 'rechazada', 0);
+  showToast('Pedido rechazado');
+  renderCierrePanel();
+}
+
+// El que lo pidió puede cancelarlo mientras nadie lo haya resuelto.
+async function cancelarArchivo(id) {
+  const sol = (AppData.archivoSolicitudes || []).find(x => String(x.id) === String(id));
+  if (!sol || sol.estado !== 'pendiente') return;
+  if (!confirm('¿Cancelar tu pedido de archivo?')) return;
+  try {
+    await DB.deleteWhere('archivo_solicitudes', 'id', sol.id);
+    AppData.archivoSolicitudes = AppData.archivoSolicitudes.filter(x => x.id !== sol.id);
+    _persistirArchivoSolic();
+    showToast('Pedido cancelado');
+    renderCierrePanel();
+  } catch (e) { console.warn('cancelarArchivo', e); showToast('⛔ No se pudo cancelar'); }
+}
+
+async function _resolverSolicitud(sol, estado, archivados) {
+  const upd = {
+    estado, archivados: archivados || 0,
+    resuelto_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || '',
+    resuelto_en: new Date().toISOString()
+  };
+  try { await DB.updateWhere('archivo_solicitudes', 'id', sol.id, upd); } catch (e) { console.warn('resolver', e); }
+  Object.assign(sol, upd);
+  _persistirArchivoSolic();
+}
+
+function _persistirArchivoSolic() {
+  try { localStorage.setItem('liq_archivo_solicitudes', JSON.stringify(AppData.archivoSolicitudes || [])); } catch (e) {}
+}
+
+// La ejecución real. archivarRegistrosAntesDe corta por fecha, y por eso el
+// tope es el envío ABIERTO más viejo: así no se puede llevar puesto nada en
+// curso. Solo un analista puede correr la RPC, así que un supervisor que
+// autoriza sin serlo lo va a ver rechazado ahí y no acá.
+async function _ejecutarArchivo(tope, cuantos, sol) {
+  const t = tope || _cieISO(new Date(Date.now() + 86400000));
+  if (!sol) {
+    if (!confirm('Se van a archivar ' + Number(cuantos).toLocaleString('es-AR') + ' envíos ya cerrados' +
+      (tope ? ' (anteriores al ' + _cieFmt(tope) + ')' : '') + '.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      'Están pagados al conductor y facturados al cliente, así que ya no cambian. Siguen consultables desde el archivo ' +
+      'histórico y el historial de liquidaciones queda entero.' + String.fromCharCode(10) + String.fromCharCode(10) + '¿Continuar?')) return;
+  }
+  if (typeof archivarRegistrosAntesDe !== 'function') return;
+  const movidos = await archivarRegistrosAntesDe(t);
+  if (sol) await _resolverSolicitud(sol, 'aprobada', _num(movidos) || cuantos);
+  renderCierrePanel();
+}
+
+// Compatibilidad: el botón del panel llama a este nombre.
+async function archivarCerrados() { return pedirArchivoCerrados(); }
