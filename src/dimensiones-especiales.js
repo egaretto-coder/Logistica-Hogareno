@@ -4,7 +4,12 @@
 //  por zona. La asignación a un envío se hace a mano desde el panel Conductores
 //  (botón "Dimensión"), y el precio aplicado sale de la zona de entrega.
 // ════════════════════════════════════════════════════════════════════════
-let dimEditIdx = -1;
+// Mismo criterio que km de desvío: el modal guarda el ID, no la posición.
+let dimEditId = null;
+function _dimEditando() {
+  if (dimEditId == null) return null;
+  return (AppData.dimCatalogo || []).find(x => String(x.id) === String(dimEditId)) || null;
+}
 
 // DOS tarifarios para la misma dimensión: lo que se le PAGA al conductor por
 // llevarla y lo que se le COBRA al cliente por ese envío. No tienen por qué
@@ -118,7 +123,7 @@ function renderDimensionesEspeciales() {
         ? '<span class="tag" style="background:#fef2f2;color:#991b1b;border:1px solid #fca5a5">sin precio</span>'
         : '<strong>' + fmtPeso(_num(d.precio)) + '</strong>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
-        '<button class="btn btn-sm" onclick="editDimension(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
+        '<button class="btn btn-sm" onclick="editDimension(' + JSON.stringify(String(d.id != null ? d.id : '')) + ')"><i class="ic ic-edit"></i></button>' +
         '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarDimension(' + JSON.stringify(String(d.id != null ? d.id : realIdx)) + ')"><i class="ic ic-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
@@ -475,7 +480,7 @@ function toggleDimTodasZonas() {
 }
 
 function openAddDimensionModal() {
-  dimEditIdx = -1;
+  dimEditId = null;
   document.getElementById('modal-dim-title').textContent = 'Nueva dimensión (catálogo)';
   document.getElementById('md-cliente').value = '';
   document.getElementById('md-nombre').value = '';
@@ -490,10 +495,10 @@ function openAddDimensionModal() {
   document.getElementById('modal-dim-backdrop').style.display = 'flex';
 }
 
-function editDimension(idx) {
-  const d = AppData.dimCatalogo[idx];
-  if (!d) return;
-  dimEditIdx = idx;
+function editDimension(id) {
+  const d = (AppData.dimCatalogo || []).find(x => String(x.id) === String(id));
+  if (!d) { showToast('⚠️ Esa condición ya no existe'); renderDimensionesEspeciales(); return; }
+  dimEditId = String(id);
   document.getElementById('modal-dim-title').textContent = 'Editar dimensión (catálogo)';
   document.getElementById('md-cliente').value = d.cliente || '';
   document.getElementById('md-nombre').value = d.nombre || '';
@@ -518,7 +523,7 @@ function guardarDimensionModal() {
     const nombre = document.getElementById('md-nombre').value.trim().toUpperCase();
     const zona = document.getElementById('md-zona').value.trim().toUpperCase();
     const precio = parseFloat(document.getElementById('md-precio').value);
-    const todasZonas = !!(document.getElementById('md-todas-zonas') || {}).checked && dimEditIdx < 0;
+    const todasZonas = !!(document.getElementById('md-todas-zonas') || {}).checked && dimEditId == null;
     if (!cliente) { alert('Elegí el cliente.'); return; }
     if (!nombre) { alert('Ingresá el nombre de la dimensión.'); return; }
     if (!todasZonas && !zona) { alert('Elegí la zona.'); return; }
@@ -550,7 +555,7 @@ function guardarDimensionModal() {
       });
 
       saveDimCatalogo();
-      dimEditIdx = -1;
+      dimEditId = null;
       document.getElementById('modal-dim-backdrop').style.display = 'none';
       renderDimensionesEspeciales();
       showToast('✅ ' + nombre + ' cargada en ' + zonas.length + ' zonas a ' + fmtPeso(precio));
@@ -558,12 +563,17 @@ function guardarDimensionModal() {
     }
 
     const entry = { cliente, nombre, zona, precio, tipo: dimTipo };
-    const dupIdx = AppData.dimCatalogo.findIndex((x, i) => i !== dimEditIdx && dimEsTipo(x) &&
+    const dupIdx = AppData.dimCatalogo.findIndex((x, i) => String(x.id) !== String(dimEditId) && dimEsTipo(x) &&
       normNombre(x.cliente) === normNombre(cliente) && normNombre(x.nombre) === normNombre(nombre) && normNombre(x.zona) === normNombre(zona));
 
-    if (dimEditIdx >= 0) {
+    const editandoD = _dimEditando();
+    if (dimEditId != null && !editandoD) {
+      alert('La condición que estabas editando ya no existe: la borró o la cambió otra sesión.');
+      dimEditId = null; renderDimensionesEspeciales(); return;
+    }
+    if (editandoD) {
       if (dupIdx >= 0) { alert('Ya existe ese cliente + dimensión + zona.'); return; }
-      AppData.dimCatalogo[dimEditIdx] = Object.assign({}, AppData.dimCatalogo[dimEditIdx], entry);
+      Object.assign(editandoD, entry);
     } else if (dupIdx >= 0) {
       if (!confirm('Ya existe "' + nombre + '" de ' + cliente + ' en ' + zona + '. ¿Actualizar su precio?')) return;
       AppData.dimCatalogo[dupIdx].precio = precio;
@@ -572,7 +582,7 @@ function guardarDimensionModal() {
     }
 
     saveDimCatalogo();
-    dimEditIdx = -1;
+    dimEditId = null;
     document.getElementById('modal-dim-backdrop').style.display = 'none';
     renderDimensionesEspeciales();
     showToast('✅ Dimensión guardada en el catálogo');

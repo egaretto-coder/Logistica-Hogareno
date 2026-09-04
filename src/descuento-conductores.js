@@ -15,7 +15,14 @@ function switchBeneficioTab(tab) {
 }
 
 // ===== KM DE DESVÍO =====
-let kmEditIdx = -1;
+// El modal guarda el ID de la fila, no su posición: queda abierto mientras el
+// operador tipea, y en esa ventana la sincronización en vivo puede reemplazar
+// AppData.kmDesvio entera. Con el índice, al guardar se pisaba OTRA fila.
+let kmEditId = null;
+function _kmEditando() {
+  if (kmEditId == null) return null;
+  return (AppData.kmDesvio || []).find(x => String(x.id) === String(kmEditId)) || null;
+}
 
 function saveKmDesvio() {
   localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
@@ -141,7 +148,7 @@ function renderKmDesvio() {
       '<td class="mono" style="text-align:right;font-weight:600;color:' + ((d.monto||0) > 0 ? '#166534' : '#9ca3af') + '">' + fmtPeso(d.monto||0) + '</td>' +
       '<td>' +
         '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-sm" onclick="editKmDesvio(' + realIdx + ')"><i class="ic ic-edit"></i></button>' +
+          '<button class="btn btn-sm" onclick="editKmDesvio(' + JSON.stringify(String(d.id != null ? d.id : '')) + ')"><i class="ic ic-edit"></i></button>' +
           '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarKmDesvio(' + JSON.stringify(String(d.id != null ? d.id : realIdx)) + ')"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</td>' +
@@ -159,7 +166,7 @@ function poblarConductoresKmDesvioDatalist() {
 }
 
 function openAddKmDesvioModal() {
-  kmEditIdx = -1;
+  kmEditId = null;
   document.getElementById('modal-kmdesvio-title').textContent = 'Agregar km de desvío';
   document.getElementById('mkm-conductor').value = '';
   document.getElementById('mkm-km').value = '';
@@ -169,10 +176,10 @@ function openAddKmDesvioModal() {
   document.getElementById('modal-kmdesvio-backdrop').style.display = 'flex';
 }
 
-function editKmDesvio(idx) {
-  const d = AppData.kmDesvio[idx];
-  if (!d) return;
-  kmEditIdx = idx;
+function editKmDesvio(id) {
+  const d = (AppData.kmDesvio || []).find(x => String(x.id) === String(id));
+  if (!d) { showToast('⚠️ Ese registro ya no existe'); renderKmDesvio(); return; }
+  kmEditId = String(id);
   document.getElementById('modal-kmdesvio-title').textContent = 'Editar km de desvío — ' + d.conductor;
   document.getElementById('mkm-conductor').value = d.conductor || '';
   document.getElementById('mkm-km').value = d.km || '';
@@ -210,14 +217,20 @@ function guardarKmDesvioModal() {
 
     const entry = { conductor, km, fecha, valor_km, monto, obs: '' };
 
-    if (kmEditIdx >= 0) {
-      AppData.kmDesvio[kmEditIdx] = entry;
+    const editando = _kmEditando();
+    if (kmEditId != null && !editando) {
+      // Desapareció mientras el modal estaba abierto: no se pisa nada.
+      alert('El registro que estabas editando ya no existe: lo borró o lo cambió otra sesión.');
+      kmEditId = null; renderKmDesvio(); return;
+    }
+    if (editando) {
+      Object.assign(editando, entry);
     } else {
       AppData.kmDesvio.push(entry);
     }
 
     saveKmDesvio();
-    kmEditIdx = -1;
+    kmEditId = null;
     document.getElementById('modal-kmdesvio-backdrop').style.display = 'none';
     renderKmDesvio();
     showToast('✅ Km de desvío guardado: ' + fmtPeso(monto) + ' (' + km + ' km al ' + fecha + ')');
