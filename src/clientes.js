@@ -2498,6 +2498,10 @@ function conciliacionCobro(rango) {
 
   (AppData.records || []).forEach((r, i) => {
     if (!contabilizaRegistro(r)) return;
+    // Los anteriores al arranque del panel de clientes se cobraron con el modelo
+    // anterior, por fuera del sistema. No son una fuga ni una deuda: reclamarlos
+    // seria pedir que se cobre dos veces lo mismo.
+    if (typeof envioModeloAnterior === 'function' && envioModeloAnterior(r)) return;
     if (desde || hasta) {
       const f = parseFechaReg(r.fecha);
       if (!f) return;

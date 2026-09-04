@@ -1333,3 +1333,12 @@ alter table public.conductor_liquidaciones enable row level security;
 create policy conductor_liquidaciones_all on public.conductor_liquidaciones
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
 alter publication supabase_realtime add table public.conductor_liquidaciones;
+
+-- ---------- CORTE DEL MODELO ANTERIOR ----------
+-- La app empezo a capturar el cliente de cada envio a mitad de la semana del
+-- 17/08/2026. Todo lo anterior se cobro por fuera del sistema: no es una fuga
+-- ni una deuda. Se resuelve con UNA fecha en config (envioModeloAnterior los
+-- cuenta como cerrados y conciliacionCobro los excluye) en vez de marcar 37.000
+-- filas: es reversible, se explica sola y no hay nada que migrar.
+insert into public.config (clave, valor) values ('cliente_corte_iso', '2026-08-24')
+  on conflict (clave) do update set valor = excluded.valor;

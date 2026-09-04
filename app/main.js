@@ -75,7 +75,8 @@ function showPage(id) {
   if (id === 'vacaciones' && typeof renderVacacionesPagina === 'function') renderVacacionesPagina();
   if (id === 'rendiciones' && typeof renderRendiciones === 'function') renderRendiciones();
   if (id === 'gestion-permisos') renderGestionPermisos();
-  if (id === 'upload') { renderArchivoPanel(); if (typeof renderHistorialImportaciones === 'function') renderHistorialImportaciones(); }
+  if (id === 'upload') { renderArchivoPanel(); if (typeof renderHistorialImportaciones === 'function') renderHistorialImportaciones();
+    if (typeof renderCierrePanel === 'function') renderCierrePanel(); }
   window.__perfLog('pantalla: ' + id, _t0);
 }
 

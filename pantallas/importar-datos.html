@@ -77,17 +77,19 @@
               <div id="arch-consulta-result" style="margin-top:12px"></div>
             </div>
 
-            <!-- ARCHIVAR VIEJOS -->
+            <!-- ══════════ CIERRE Y ARCHIVO ══════════
+                 El archivo NO va por fecha: va por CIERRE. Un envío se archiva
+                 cuando los DOS circuitos terminaron —al conductor se le pagó y al
+                 cliente se le facturó—. Archivar por fecha podía llevarse envíos
+                 con plata pendiente de un lado sin que nadie se enterara. -->
             <div style="border-top:1px solid var(--border);padding-top:14px">
-              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🗄️ Archivar registros viejos</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Mové los recorridos ya liquidados y antiguos al archivo para mantener la app rápida. <strong>No se borran</strong> (siguen consultables acá arriba). Operación segura y transaccional.</div>
-              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <span style="font-size:13px;font-weight:600">Archivar anteriores a</span>
-                <input type="date" id="arch-fecha">
-                <button class="btn btn-sm btn-primary" onclick="ejecutarArchivado()">🗄️ Archivar</button>
-                <span id="arch-estado" style="font-size:11px;color:var(--text-muted)"></span>
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🗄️ Cerrar y archivar</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">
+                Se archiva lo que ya está <strong>pagado al conductor Y facturado al cliente</strong>.
+                Lo que sigue abierto se queda a la vista con el motivo. <strong>No se borra nada</strong>:
+                los archivados se consultan acá arriba y el historial de liquidaciones queda entero.
               </div>
-              <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Sugerencia: archivá lo anterior a hace 6–12 meses.</div>
+              <div id="cierre-panel"></div>
             </div>
           </div>
         </div>
