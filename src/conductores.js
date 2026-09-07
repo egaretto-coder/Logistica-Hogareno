@@ -919,7 +919,7 @@ function _registroDim() {
   }
   return AppData.records[dimAsignarIdx] || null;
 }
-function _dimJs(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+function _dimJs(s) { return "'" + jsAttr(s) + "'"; }
 
 function openDimAsignarModal(idx) {
   const r = AppData.records[idx];
@@ -1588,7 +1588,7 @@ function _buscarEnvioSinConductor(wrap) {
     '<span style="font-size:11px;color:var(--text-muted)">elegí el conductor para verlos y corregirlos</span></div>' +
     '<div class="card-body" style="display:flex;flex-direction:column;gap:6px">' +
     lista.map(x => {
-      const esc = String(x.cond).replace(/'/g, "\'");
+      const esc = jsAttr(x.cond);
       const r = x.ejemplo;
       return '<button class="btn" style="justify-content:flex-start;text-align:left" onclick="_irAConductorDeEnvio(\'' + esc + '\')">' +
         '<strong>' + x.cond + '</strong>' +

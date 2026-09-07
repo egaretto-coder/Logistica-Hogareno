@@ -772,6 +772,30 @@ function panelConductorDe(nombre) {
 // el nombre tal cual. Es la CLAVE de identidad: unifica todas las grafías/alias de
 // una misma persona en un solo conductor para liquidaciones, detalle, super SLA y
 // condición (día de pago).
+// ── Un dato adentro de un onclick="fn('…')" ────────────────────────────────
+// Ese valor tiene que sobrevivir DOS parsers: primero el del ATRIBUTO HTML y
+// después el de JAVASCRIPT. Escapar solo las comillas deja pasar la BARRA
+// INVERTIDA, y ahí el valor cambia SIN AVISAR: el cliente TIENDA\_POPEYE
+// llegaba al handler como TIENDA_POPEYE —JS se come el \_ como un escape
+// desconocido—, no matcheaba ningún envío, y "Marcar liquidación como lista"
+// contestaba que el cliente no tenía envíos mientras la pantalla mostraba 107
+// y $499.400 (bug real). Peor todavía: dos lugares escapaban con "\'" en vez
+// de "\\'", que dentro de un string de comillas dobles es la comilla pelada —
+// o sea que no escapaban nada.
+// El ORDEN importa: la barra primero (si no, re-escapa lo que agregan los pasos
+// siguientes) y el & antes que las comillas (si no, rompe la entidad).
+function jsAttr(v) {
+  return String(v == null ? '' : v)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function conductorCanonico(nombre) {
   const p = panelConductorDe(nombre);
   return p ? p.nombre : String(nombre || '').trim();

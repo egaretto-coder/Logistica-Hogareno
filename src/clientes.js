@@ -715,7 +715,7 @@ function verCardCliente(cod) {
       (principal ? 'background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe' : 'background:var(--surface-0);color:var(--text-secondary);border:1px dashed var(--border)') + '">' +
       cta + (porCuenta.get(cta) ? ' · ' + porCuenta.get(cta) + ' envíos' : '') +
       (principal ? ' <strong style="font-size:9px;opacity:.75;margin-left:4px">· principal</strong>'
-                 : ' <button class="btn btn-sm" style="padding:0 5px;font-size:10px;margin-left:4px" title="Separar esta cuenta" onclick="separarCuenta(\'' + String(cta).replace(/'/g, "\\'") + '\')">✕</button>') +
+                 : ' <button class="btn btn-sm" style="padding:0 5px;font-size:10px;margin-left:4px" title="Separar esta cuenta" onclick="separarCuenta(\'' + jsAttr(cta) + '\')">✕</button>') +
     '</span>';
 
   // Identidades de los envíos que todavía no cuelgan de ningún cliente: son las
@@ -750,7 +750,7 @@ function verCardCliente(cod) {
               '<option value="">Sumar otra cuenta de este cliente…</option>' +
               libres.map(x => '<option value="' + String(x.cod).replace(/"/g, '&quot;') + '">' + x.nombre + ' · ' + x.envios + ' envíos</option>').join('') +
             '</select>' +
-            '<button class="btn btn-sm" onclick="sumarCuentaDesdeCard(\'' + String(k).replace(/'/g, "\\'") + '\')"><i class="ic ic-clip"></i> Vincular</button>' +
+            '<button class="btn btn-sm" onclick="sumarCuentaDesdeCard(\'' + jsAttr(k) + '\')"><i class="ic ic-clip"></i> Vincular</button>' +
           '</div>'
         : '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">No hay cuentas sueltas en los envíos para sumarle.</div>') +
     '</div>' +
@@ -856,7 +856,7 @@ function _bloqueSinLiquidar(cod, hastaISO, titulo) {
   }
   const tot = pend.reduce((s, p) => s + p.total, 0);
   const env = pend.reduce((s, p) => s + p.envios, 0);
-  const esc = s => String(s).replace(/'/g, "\\'");
+  const esc = jsAttr;
   return '<div style="font-size:12px"><strong>' + (titulo || 'Quedan sin liquidar') + ': ' + pend.length +
       ' período(s)</strong> · ' + env + ' envíos · ' + fmtPeso(tot) + '</div>' +
     '<div style="display:flex;flex-direction:column;gap:3px;margin-top:6px;max-height:150px;overflow-y:auto">' +
@@ -2839,7 +2839,7 @@ async function guardarPeriodoCliente(cod, dias) {
 // y qué le muestra el panel del operador.
 function _cardPeriodo(k, c) {
   const actual = periodoDiasDe(k);
-  const esc = String(k).replace(/'/g, "\'");
+  const esc = jsAttr(k);
   const opts = Object.keys(PERIODOS_CLIENTE).map(d => {
     const info = PERIODOS_CLIENTE[d];
     return '<option value="' + d + '"' + (_num(d) === actual ? ' selected' : '') + '>' +

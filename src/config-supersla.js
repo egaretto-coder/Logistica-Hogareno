@@ -68,7 +68,7 @@ function renderSuperSLA() {
           if (editable) {
             precioCell = `<span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
               <input type="number" value="${precio}" data-cond="${idCond}" data-zona="${idZona}" data-field="precio" style="border:none;background:none;font-size:14px;font-weight:600;width:100%;outline:none;text-align:right;color:var(--text-primary)" onchange="updateSuperSLA(this)" />`;
-            accionCell = `<button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%" onclick="deleteSuperSLA('${String(nombre).replace(/'/g, "\\'")}','${String(r.zona || '').replace(/'/g, "\\'")}')" title="Eliminar zona"><i class="ic ic-x"></i></button>`;
+            accionCell = `<button style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:8px;width:100%;height:100%" onclick="deleteSuperSLA('${jsAttr(nombre)}','${jsAttr(r.zona || '')}')" title="Eliminar zona"><i class="ic ic-x"></i></button>`;
           } else {
             const pend = solicitudPendienteDe(nombre, r.zona);
             precioCell = `<span style="font-size:12px;color:var(--text-muted);flex-shrink:0">$</span>
@@ -76,7 +76,7 @@ function renderSuperSLA() {
               <i class="ic ic-lock" title="Solo supervisor/analista puede editar el precio" style="opacity:.45;margin-left:6px;width:14px;height:14px"></i>`;
             accionCell = pend
               ? `<span title="Cambio a $${_num(pend.precio_propuesto).toLocaleString('es-AR')} pendiente de autorización" style="font-size:10px;color:#854d0e;text-align:center;line-height:1.15">⏳ pendiente</span>`
-              : `<button class="btn btn-sm" style="padding:3px 6px;font-size:10px;white-space:nowrap" onclick="solicitarCambioSuperSLA('${nombre.replace(/'/g, "\\'")}','${String(r.zona).replace(/'/g, "\\'")}',${precio})" title="Pedir autorización para cambiar el precio">Solicitar</button>`;
+              : `<button class="btn btn-sm" style="padding:3px 6px;font-size:10px;white-space:nowrap" onclick="solicitarCambioSuperSLA('${jsAttr(nombre)}','${jsAttr(r.zona)}',${precio})" title="Pedir autorización para cambiar el precio">Solicitar</button>`;
           }
           return `
           <div style="display:grid;${cols};gap:0;padding:0;border-bottom:1px solid var(--border);align-items:stretch">
@@ -89,8 +89,8 @@ function renderSuperSLA() {
 
     const totalZonas = reglas.length;
     const accionesHeader = editable
-      ? `<button class="btn btn-sm" onclick="addZonaSuperSLA('${nombre.replace(/'/g, "\\'")}')">+ Agregar zona</button>
-         <button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarConductorSuperSLA('${nombre.replace(/'/g, "\\'")}')" title="Quitar de Super SLA"><i class="ic ic-trash"></i></button>`
+      ? `<button class="btn btn-sm" onclick="addZonaSuperSLA('${jsAttr(nombre)}')">+ Agregar zona</button>
+         <button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarConductorSuperSLA('${jsAttr(nombre)}')" title="Quitar de Super SLA"><i class="ic ic-trash"></i></button>`
       : '';
 
     return `

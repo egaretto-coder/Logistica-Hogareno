@@ -1365,7 +1365,7 @@ function renderCierreMensual() {
 }
 
 // Escapa un string para incrustarlo como argumento JS en un onclick.
-function jsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+function jsStr(s) { return "'" + jsAttr(s) + "'"; }
 
 async function marcarPagoComision(periodo, beneficiario, tipo, monto) {
   if (comisionPagoDe(periodo, beneficiario, tipo)) { renderCierreMensual(); return; }

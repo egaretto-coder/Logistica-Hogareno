@@ -88,7 +88,7 @@ function renderDetalleClientePagina() {
 function _dcliBotonArmar(cod, rango) {
   if (typeof liquidacionArmada !== 'function') return '';
   const a = liquidacionArmada(cod, rango);
-  const codEsc = String(cod).replace(/'/g, "\\'");
+  const codEsc = jsAttr(cod);
   if (a) {
     return '<div style="margin-top:8px;font-size:11px;opacity:.9">' +
       '<span class="badge badge-green"><i class="ic ic-check"></i> Liquidación lista</span>' +

@@ -361,7 +361,7 @@ function actualizarBotonDescargaLiq(conductores) {
 // conductores dentro de la MISMA semana.
 function _liqCeldaEstado(c) {
   const a = liqConductorArmada(c);
-  const cEsc = String(c).replace(/'/g, "\\'");
+  const cEsc = jsAttr(c);
   const pan = panelConductorDe(c);
   const cond = (pan && pan.condicion) || '';
   const dia = liqDiaPagoTxt(cond).slice(0, 3);   // del MISMO mapa que usa la semana
@@ -478,7 +478,7 @@ function renderLiquidaciones() {
   actualizarBotonDescargaLiq(conductores);
   body.innerHTML = conductores.map(c => {
     const d = liq[c];
-    const cEsc = String(c).replace(/'/g, "\\'");
+    const cEsc = jsAttr(c);
     const { imp, neto } = netos[c];
     // Debajo del neto se dice qué lo movió: sin esa línea, un total distinto al
     // bruto parece un error de cálculo en vez de un descuento aplicado.

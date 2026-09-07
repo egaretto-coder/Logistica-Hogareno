@@ -411,7 +411,7 @@ function renderDashClientes() {
 
   body.innerHTML = lista.map(x => {
     const p = x.factura > 0 ? Math.round(x.margen * 100 / x.factura) : 0;
-    const codEsc = String(x.cod).replace(/'/g, "\\'");
+    const codEsc = jsAttr(x.cod);
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(x.nombre) + '</div>' +
         '<div><strong>' + x.nombre + '</strong>' +

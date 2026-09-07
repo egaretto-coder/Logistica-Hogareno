@@ -323,7 +323,7 @@ async function renderGpGrupos() {
         (deshabilitado ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-size:9px">Deshabilitado</span>' : '') +
         (bloqueado ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:9px" title="Por intentos fallidos">🔒 Bloqueado ' + minRest + ' min</span>' : '');
       const accesoBtns = analista ? (
-        (bloqueado ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" title="Destrabar ahora" onclick="desbloquearUsuario(\'' + String(u.email).replace(/'/g, "\\'") + '\')">Destrabar</button>' : '') +
+        (bloqueado ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" title="Destrabar ahora" onclick="desbloquearUsuario(\'' + jsAttr(u.email) + '\')">Destrabar</button>' : '') +
         (deshabilitado
           ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px;border-color:#86efac;color:#166534" onclick="setUsuarioActivo(\'' + u.id + '\',true)">Habilitar</button>'
           : '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px;border-color:#fca5a5;color:#b91c1c" onclick="setUsuarioActivo(\'' + u.id + '\',false)" title="Le corta el acceso a la app y a los datos">Deshabilitar</button>')

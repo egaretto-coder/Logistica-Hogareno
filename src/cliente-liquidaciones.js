@@ -173,7 +173,7 @@ function renderClienteLiquidaciones() {
   }
 
   body.innerHTML = lista.map(x => {
-    const codEsc = String(x.cod).replace(/'/g, "\\'");
+    const codEsc = jsAttr(x.cod);
     return '<tr' + (x.armada ? '' : ' style="opacity:.6"') + '>' +
       '<td>' + (x.armada
         ? '<input type="checkbox" class="cliq-check" ' + (cliqSeleccion.has(x.cod) ? 'checked' : '') +

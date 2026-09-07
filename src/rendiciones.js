@@ -220,7 +220,7 @@ function renderRendiciones() {
                 (d.atraso ? ' · <span style="color:#b91c1c">atraso ' + d.atraso + ' día(s)</span>' : '') + '</div>' +
             '</div>' +
             '<strong class="mono" style="white-space:nowrap">' + fmtPeso(d.monto) + '</strong>' +
-            '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="recibirDeChofer(\'' + String(d.conductor).replace(/'/g, "\\'") + '\')" title="Registrar que trajo la plata">Recibí todo</button>' +
+            '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="recibirDeChofer(\'' + jsAttr(d.conductor) + '\')" title="Registrar que trajo la plata">Recibí todo</button>' +
           '</div>').join('')
       : '<div class="muted" style="padding:14px;text-align:center;font-size:12px">Ningún chofer tiene plata sin rendir</div>';
   }
@@ -238,7 +238,7 @@ function renderRendiciones() {
               '<div style="font-size:10px;color:var(--text-muted)">' + c.cobros + ' cobro(s) en la empresa</div>' +
             '</div>' +
             '<strong class="mono" style="white-space:nowrap">' + fmtPeso(c.monto) + '</strong>' +
-            '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + String(c.cliente).replace(/'/g, "\\'") + '\')">Devolver</button>' +
+            '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + jsAttr(c.cliente) + '\')">Devolver</button>' +
           '</div>').join('')
       : '<div class="muted" style="padding:14px;text-align:center;font-size:12px">No hay plata en la empresa esperando devolución</div>';
   }
@@ -300,7 +300,7 @@ function renderRendiciones() {
           ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="openRendirModal(' + r.id + ')" title="El chofer trajo la plata"><i class="ic ic-check"></i> Recibir</button>'
           : '') +
         (enLaEmpresa(r)
-          ? '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + String(r.cliente || '').replace(/'/g, "\\'") + '\')" title="Devolverle la plata al cliente">Devolver</button>'
+          ? '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + jsAttr(r.cliente || '') + '\')" title="Devolverle la plata al cliente">Devolver</button>'
           : '') +
         '<button class="btn btn-sm" style="padding:3px 6px;font-size:10px" onclick="editRendicion(' + r.id + ')"><i class="ic ic-edit"></i></button>' +
         (est !== 'pendiente' && est !== 'vencido'
