@@ -784,6 +784,78 @@ async function eliminarEmpleado(id) {
 // ════════════════════════════════════════════════════════════════════════
 //  TAB 2 — AJUSTES DE SUELDO
 // ════════════════════════════════════════════════════════════════════════
+// ── Aumento FUERA DE CICLO ──────────────────────────────────────────────
+// El panel lista a quien le TOCA, y eso es su trabajo: el ciclo de 3 meses es
+// lo que evita que a alguien se le pase el aumento. Pero la empresa a veces
+// aumenta igual —una paritaria, un ascenso, corregir un sueldo que quedó
+// atrás— y desde acá no se podía: había que esperar a que le tocara, o
+// editarle el sueldo a mano en la ficha, que NO deja historial y le rompe el
+// ciclo (el próximo se sigue contando desde el aumento anterior).
+// Los que no les toca se muestran aparte y DESTILDADOS: sumarlos es una
+// decisión, no el caso normal, y tildarlos por defecto convertiría un
+// "Aplicar ajuste" distraído en un aumento a toda la nómina.
+let empAjusteFueraCiclo = false;
+function toggleAjusteFueraCiclo() { empAjusteFueraCiclo = !empAjusteFueraCiclo; renderAjustesPanel(); }
+function _tildarFueraCiclo(v) {
+  document.querySelectorAll('.emp-ajuste-chk[data-fuera="1"]').forEach(c => { c.checked = !!v; });
+  _actualizarPreviewAjuste();
+}
+// Meses entre dos 'AAAA-MM' (b - a).
+function _difMeses(a, b) {
+  if (!a || !b) return 0;
+  return ((+String(b).slice(0, 4)) * 12 + (+String(b).slice(5, 7))) -
+         ((+String(a).slice(0, 4)) * 12 + (+String(a).slice(5, 7)));
+}
+
+// Una fila de la tabla. `fuera` = no le toca en el mes elegido.
+function _filaAjuste(e, fuera, mesSel) {
+  const est = estadoAjuste(e);
+  const ult = ultimoAjusteDe(e.id);
+  const prox = proximoAjuste(e);
+  const proxM = prox ? _yyyymm(prox) : '';
+  const ultTxt = ult
+    ? '<div style="font-weight:600">' + _empFmt(ult.fecha) + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted)">' +
+        (_num(ult.sueldo_anterior) > 0
+          ? fmtPeso(_num(ult.sueldo_anterior)) + ' → ' + fmtPeso(_num(ult.sueldo_nuevo))
+          : (ult.pct ? '+' + ult.pct + '%' : 'sin detalle')) + '</div>'
+    : '<span class="muted" style="font-size:11px">Nunca ajustado</span>';
+  const vencido = est.estado === 'vencido';
+  const post = postergacionVigente(e);
+  // Para los de fuera de ciclo la cuenta se hace desde el MES ELEGIDO, que es
+  // sobre el que está trabajando el operador, no desde hoy.
+  const faltan = _difMeses(mesSel, proxM);
+  return '<tr>' +
+    '<td><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+      '<input type="checkbox" class="emp-ajuste-chk" data-id="' + e.id + '"' +
+        (fuera ? ' data-fuera="1"' : ' checked') + ' onchange="_actualizarPreviewAjuste()">' +
+      '<div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div>' +
+      '<div><strong>' + e.nombre + '</strong>' +
+      '<div style="font-size:10px;color:var(--text-muted)">' + (e.puesto || '') + (e.area ? ' · ' + e.area : '') + '</div></div></label></td>' +
+    '<td class="muted" style="font-size:12px">' + _empFmt(e.fecha_ingreso) + '</td>' +
+    '<td style="font-size:12px">' + ultTxt + '</td>' +
+    '<td style="font-size:12px">' +
+      '<div style="font-weight:600;color:' + (fuera ? 'var(--text-muted)' : (vencido ? '#b91c1c' : '#854d0e')) + '">' +
+        (prox ? _mesTexto(proxM) : '—') + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted)">' +
+        (fuera
+          ? (!proxM ? 'sin fecha de ingreso: nunca le toca solo'
+             : (faltan > 0 ? 'le toca en ' + _mesesTexto(faltan) : 'no le toca en este mes'))
+          : (vencido ? 'atrasado ' + _mesesTexto(est.meses) : (est.meses === 0 ? 'le toca este mes' : 'en ' + _mesesTexto(est.meses)))) + '</div>' +
+      (post ? '<div style="font-size:10px;color:#854d0e;margin-top:2px" title="' + String(post.motivo || '').replace(/"/g, '&quot;') + '">' +
+        '⏸ postergado ' + _mesesTexto(post.meses) + ' · ' + (post.motivo || 'sin motivo').slice(0, 40) + '</div>' : '') + '</td>' +
+    '<td class="mono" style="text-align:right">' + fmtPeso(_num(e.sueldo)) + '</td>' +
+    '<td class="mono" style="text-align:right;font-weight:700" id="emp-prev-' + e.id + '">—</td>' +
+    '<td style="text-align:right;white-space:nowrap">' +
+      '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="verHistorialEmpleado(' + e.id + ')" title="Aumentos y postergaciones">Historial</button>' +
+      // Postergar solo tiene sentido para quien le TOCA: al que no le toca no
+      // hay nada que postergarle.
+      (fuera ? '' :
+        ' <button class="btn btn-sm" style="padding:2px 7px;font-size:10px;border-color:#fcd34d;color:#92400e" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento ahora: se posterga con una justificación">Postergar</button>') +
+    '</td>' +
+  '</tr>';
+}
+
 function renderAjustesPanel() {
   const cont = document.getElementById('emp-ajustes-rows');
   if (!cont) return;
@@ -792,64 +864,52 @@ function renderAjustesPanel() {
   const mesSel = (mesEl && mesEl.value) || new Date().toISOString().slice(0, 7);
 
   const activos = (AppData.empleados || []).filter(e => e.activo !== false);
-  // Le toca en el mes elegido o antes (los vencidos arrastran).
-  const alcanzados = activos.filter(e => {
-    const p = proximoAjuste(e);
-    return p && _yyyymm(p) <= mesSel;
-  }).sort((a, b) => {
+  const porFecha = (a, b) => {
     const pa = proximoAjuste(a), pb = proximoAjuste(b);
     return (pa ? pa.getTime() : 0) - (pb ? pb.getTime() : 0);
-  });
+  };
+  // Le toca en el mes elegido o antes (los vencidos arrastran).
+  const leToca = e => { const p = proximoAjuste(e); return !!p && _yyyymm(p) <= mesSel; };
+  const alcanzados = activos.filter(leToca).sort(porFecha);
+  const fueraCiclo = activos.filter(e => !leToca(e)).sort(porFecha);
 
   _renderMesesAjuste(activos, mesSel);
 
   const info = document.getElementById('emp-ajuste-info');
-  if (info) info.textContent = alcanzados.length
-    ? alcanzados.length + ' empleado(s) ajustan en ' + _mesTexto(mesSel) + ' o antes'
-    : 'Nadie tiene ajuste pendiente hasta ' + _mesTexto(mesSel);
+  if (info) info.innerHTML =
+    '<span>' + (alcanzados.length
+      ? alcanzados.length + ' empleado(s) ajustan en ' + _mesTexto(mesSel) + ' o antes'
+      : 'Nadie tiene ajuste pendiente hasta ' + _mesTexto(mesSel)) + '</span>' +
+    (fueraCiclo.length
+      ? ' &nbsp; <button class="btn btn-sm" style="padding:2px 9px;font-size:11px' +
+          (empAjusteFueraCiclo ? ';border-color:#6366f1;background:#eef2ff;color:#3730a3;font-weight:700' : '') +
+          '" onclick="toggleAjusteFueraCiclo()">' +
+          (empAjusteFueraCiclo
+            ? 'Ocultar a los que no les toca'
+            : 'Aumentar igual a alguien que no le toca (' + fueraCiclo.length + ')') +
+        '</button>'
+      : '');
 
-  if (!alcanzados.length) {
-    cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">✓</div>' +
+  let html = alcanzados.map(e => _filaAjuste(e, false, mesSel)).join('');
+  if (!alcanzados.length && !empAjusteFueraCiclo) {
+    html = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">✓</div>' +
       '<div class="empty-title">Nadie ajusta en ' + _mesTexto(mesSel) + '</div>' +
-      '<div class="empty-sub">Cada uno ajusta 3 meses después de su último aumento — probá con otro mes</div></div></td></tr>';
-    _actualizarPreviewAjuste();
-    return;
+      '<div class="empty-sub">Cada uno ajusta 3 meses después de su último aumento — probá con otro mes, ' +
+        'o sumá a alguien que no le toca desde el botón de arriba</div></div></td></tr>';
   }
-
-  cont.innerHTML = alcanzados.map(e => {
-    const est = estadoAjuste(e);
-    const ult = ultimoAjusteDe(e.id);
-    const prox = proximoAjuste(e);
-    const ultTxt = ult
-      ? '<div style="font-weight:600">' + _empFmt(ult.fecha) + '</div>' +
-        '<div style="font-size:10px;color:var(--text-muted)">' +
-          (_num(ult.sueldo_anterior) > 0
-            ? fmtPeso(_num(ult.sueldo_anterior)) + ' → ' + fmtPeso(_num(ult.sueldo_nuevo))
-            : (ult.pct ? '+' + ult.pct + '%' : 'sin detalle')) + '</div>'
-      : '<span class="muted" style="font-size:11px">Nunca ajustado</span>';
-    const vencido = est.estado === 'vencido';
-    const post = postergacionVigente(e);
-    return '<tr>' +
-      '<td><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
-        '<input type="checkbox" class="emp-ajuste-chk" data-id="' + e.id + '" checked onchange="_actualizarPreviewAjuste()">' +
-        '<div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div>' +
-        '<div><strong>' + e.nombre + '</strong>' +
-        '<div style="font-size:10px;color:var(--text-muted)">' + (e.puesto || '') + (e.area ? ' · ' + e.area : '') + '</div></div></label></td>' +
-      '<td class="muted" style="font-size:12px">' + _empFmt(e.fecha_ingreso) + '</td>' +
-      '<td style="font-size:12px">' + ultTxt + '</td>' +
-      '<td style="font-size:12px">' +
-        '<div style="font-weight:600;color:' + (vencido ? '#b91c1c' : '#854d0e') + '">' + (prox ? _mesTexto(_yyyymm(prox)) : '—') + '</div>' +
-        '<div style="font-size:10px;color:var(--text-muted)">' + (vencido ? 'atrasado ' + _mesesTexto(est.meses) : (est.meses === 0 ? 'le toca este mes' : 'en ' + _mesesTexto(est.meses))) + '</div>' +
-        (post ? '<div style="font-size:10px;color:#854d0e;margin-top:2px" title="' + String(post.motivo || '').replace(/"/g, '&quot;') + '">' +
-          '⏸ postergado ' + _mesesTexto(post.meses) + ' · ' + (post.motivo || 'sin motivo').slice(0, 40) + '</div>' : '') + '</td>' +
-      '<td class="mono" style="text-align:right">' + fmtPeso(_num(e.sueldo)) + '</td>' +
-      '<td class="mono" style="text-align:right;font-weight:700" id="emp-prev-' + e.id + '">—</td>' +
-      '<td style="text-align:right;white-space:nowrap">' +
-        '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="verHistorialEmpleado(' + e.id + ')" title="Aumentos y postergaciones">Historial</button> ' +
-        '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px;border-color:#fcd34d;color:#92400e" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento ahora: se posterga con una justificación">Postergar</button>' +
-      '</td>' +
-    '</tr>';
-  }).join('');
+  if (empAjusteFueraCiclo && fueraCiclo.length) {
+    html += '<tr><td colspan="7" style="background:var(--surface-2);padding:8px 12px">' +
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+      '<strong style="font-size:12px">No les toca en ' + _mesTexto(mesSel) + '</strong>' +
+      '<span style="font-size:11px;color:var(--text-muted)">Van destildados. Tildarlos les da el aumento igual y les ' +
+        '<strong>corre el ciclo</strong>: el próximo pasa a ' + _mesTexto(_mesMas(mesSel, RRHH_MESES_AJUSTE)) + '.</span>' +
+      '<span style="margin-left:auto;white-space:nowrap">' +
+        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarFueraCiclo(true)">Tildar todos</button> ' +
+        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarFueraCiclo(false)">Ninguno</button>' +
+      '</span></div></td></tr>';
+    html += fueraCiclo.map(e => _filaAjuste(e, true, mesSel)).join('');
+  }
+  cont.innerHTML = html;
   _actualizarPreviewAjuste();
 }
 
@@ -908,17 +968,25 @@ function _elegirMesAjuste(m) {
 function _actualizarPreviewAjuste() {
   const pct = parseFloat(document.getElementById('emp-ajuste-pct')?.value) || 0;
   const monto = parseFloat(document.getElementById('emp-ajuste-monto')?.value) || 0;
-  let n = 0, sube = 0;
+  const mesSel = document.getElementById('emp-ajuste-periodo')?.value || '';
+  const proxSiSube = mesSel ? _mesTexto(_mesMas(mesSel, RRHH_MESES_AJUSTE)) : '';
+  let n = 0, sube = 0, nFuera = 0;
   document.querySelectorAll('.emp-ajuste-chk').forEach(chk => {
     const id = parseInt(chk.dataset.id);
     const e = (AppData.empleados || []).find(x => x.id === id); if (!e) return;
     const nuevo = _nuevoSueldo(_num(e.sueldo), pct, monto);
     const cell = document.getElementById('emp-prev-' + id);
+    // Al que NO le tocaba, el aumento le corre el ciclo: el próximo pasa a
+    // contarse desde este mes. Es la consecuencia que no se ve, y la que hay
+    // que decidir — así que se dice en la propia fila, no en un cartel aparte.
+    const fuera = chk.dataset.fuera === '1';
+    const corre = (chk.checked && fuera && proxSiSube)
+      ? '<div style="font-size:10px;color:#854d0e;font-weight:400">próximo: ' + proxSiSube + '</div>' : '';
     if (cell) cell.innerHTML = chk.checked
       ? '<span style="color:#166534">' + fmtPeso(nuevo) + '</span>' +
-        (nuevo > _num(e.sueldo) ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400">+' + fmtPeso(nuevo - _num(e.sueldo)) + '</div>' : '')
+        (nuevo > _num(e.sueldo) ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400">+' + fmtPeso(nuevo - _num(e.sueldo)) + '</div>' : '') + corre
       : '<span class="muted">sin cambio</span>';
-    if (chk.checked) { n++; sube += (nuevo - _num(e.sueldo)); }
+    if (chk.checked) { n++; sube += (nuevo - _num(e.sueldo)); if (fuera) nFuera++; }
   });
 
   // El costo se mide sobre TODA la nómina activa, no solo sobre los que ajustan.
@@ -931,7 +999,8 @@ function _actualizarPreviewAjuste() {
       '<div class="metric-sub">' + activos.length + ' empleado(s) activos</div></div>' +
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
       '<div class="metric-label">Con el ajuste proyectado</div><div class="metric-value">' + fmtPeso(masaHoy + sube) + '</div>' +
-      '<div class="metric-sub">' + n + ' ajuste(s) tildado(s)</div></div>' +
+      '<div class="metric-sub">' + n + ' ajuste(s) tildado(s)' +
+        (nFuera ? ' · ' + nFuera + ' fuera de ciclo' : '') + '</div></div>' +
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-alert"></i></div>' +
       '<div class="metric-label">Aumento mensual</div><div class="metric-value" style="color:' + (sube ? '#b45309' : 'inherit') + '">+' + fmtPeso(sube) + '</div>' +
       '<div class="metric-sub">' + (masaHoy ? (sube * 100 / masaHoy).toFixed(1) : 0) + '% sobre la nómina</div></div>';
@@ -957,10 +1026,31 @@ async function aplicarAjusteSueldos() {
   const periodo = document.getElementById('emp-ajuste-periodo').value || '';
   const motivo = (document.getElementById('emp-ajuste-motivo').value || '').trim();
   if (!pct && !monto) { alert('Cargá el % de aumento o un monto fijo.'); return; }
-  const ids = Array.from(document.querySelectorAll('.emp-ajuste-chk')).filter(c => c.checked).map(c => parseInt(c.dataset.id));
+  const chks = Array.from(document.querySelectorAll('.emp-ajuste-chk'));
+  const tildados = chks.filter(c => c.checked);
+  const ids = tildados.map(c => parseInt(c.dataset.id, 10));
+  // Se anota ACÁ, antes de aplicar: más abajo se re-dibuja la tabla y las filas
+  // vuelven tildadas por defecto, así que leer el DOM al final daba siempre cero
+  // y el aviso de postergar no llegaba a dispararse nunca.
+  // Los de fuera de ciclo no cuentan: al que no le tocaba no hay nada que
+  // postergarle, y meterlo ahí le correría la fecha sin motivo.
+  const sinAjustar = chks.filter(c => !c.checked && c.dataset.fuera !== '1')
+    .map(c => parseInt(c.dataset.id, 10));
   if (!ids.length) { alert('Seleccioná al menos un empleado.'); return; }
-  const detalle = ids.map(id => { const e = AppData.empleados.find(x => x.id === id); return '· ' + e.nombre + ': ' + fmtPeso(_num(e.sueldo)) + ' → ' + fmtPeso(_nuevoSueldo(_num(e.sueldo), pct, monto)); }).join('\n');
-  if (!confirm('¿Aplicar el ajuste a ' + ids.length + ' empleado(s)?\n\n' + detalle + '\n\nQueda registrado en el historial de cada uno.')) return;
+  const idsFuera = tildados.filter(c => c.dataset.fuera === '1').map(c => parseInt(c.dataset.id, 10));
+  const linea = id => { const e = AppData.empleados.find(x => x.id === id); return '· ' + e.nombre + ': ' + fmtPeso(_num(e.sueldo)) + ' → ' + fmtPeso(_nuevoSueldo(_num(e.sueldo), pct, monto)); };
+  const detalle = ids.map(linea).join('\n');
+  // A los que no les tocaba se los nombra aparte: es un aumento fuera de ciclo
+  // y les mueve la próxima fecha, que es lo que después nadie va a poder
+  // explicar si no se dijo acá.
+  const avisoFuera = idsFuera.length
+    ? '\n\nA ' + idsFuera.length + ' NO les tocaba en ' + _mesTexto(periodo) + ':\n' +
+      idsFuera.map(id => { const e = AppData.empleados.find(x => x.id === id); const pr = proximoAjuste(e);
+        return '· ' + e.nombre + ' (le tocaba en ' + (pr ? _mesTexto(_yyyymm(pr)) : '—') + ')'; }).join('\n') +
+      '\nSu próximo ajuste pasa a ' + _mesTexto(_mesMas(periodo, RRHH_MESES_AJUSTE)) + '.'
+    : '';
+  if (!confirm('¿Aplicar el ajuste a ' + ids.length + ' empleado(s)?\n\n' + detalle + avisoFuera +
+    '\n\nQueda registrado en el historial de cada uno.')) return;
 
   const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
   // El ajuste se fecha en el MES ELEGIDO, no en el día en que se aplica: si se
@@ -991,8 +1081,7 @@ async function aplicarAjusteSueldos() {
   // Los que quedaron DESTILDADOS son, por definición, los que no se ajustaron
   // cuando les tocaba. Sin registrar por qué, quedan "vencidos" para siempre y
   // dentro de tres meses nadie va a poder decir si fue una decisión o un olvido.
-  const fuera = Array.from(document.querySelectorAll('.emp-ajuste-chk'))
-    .filter(c => !c.checked).map(c => parseInt(c.dataset.id, 10))
+  const fuera = sinAjustar
     .filter(id => { const e = (AppData.empleados || []).find(x => x.id === id); return e && !postergacionVigente(e); });
   if (fuera.length) {
     const nombres = fuera.map(id => (AppData.empleados.find(x => x.id === id) || {}).nombre).filter(Boolean);
