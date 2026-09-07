@@ -2586,6 +2586,7 @@ function diagnosticoCobroEnvio(r) {
 function _conciliacionSinPagar(desde, hasta) {
   const porCond = new Map();
   let envios = 0, cobrado = 0;
+  const sinChofer = { envios: 0, cobrado: 0 };
   (AppData.records || []).forEach(r => {
     if (!contabilizaRegistro(r)) return;
     if (desde || hasta) {
@@ -2601,16 +2602,51 @@ function _conciliacionSinPagar(desde, hasta) {
 
     const cod = clienteCodDeRegistro(r);
     const c = cod ? precioVentaEnvio(cod, r) : 0;
+    // SIN CHOFER no es el mismo caso que un cadete sin condición, y mezclarlos
+    // hacía que el aviso dijera "cargá la condición en el Panel" sobre envíos
+    // que no tienen a quién cargársela. El cadete sin condición es un dato que
+    // falta: se carga y cobra. El envío sin chofer es POLÍTICA — asignarse el
+    // envío es responsabilidad del chofer, así que no se le paga a nadie y se
+    // le factura al cliente igual. No hay nada que arreglar, hay que MEDIRLO.
+    if (!cond) { sinChofer.envios++; sinChofer.cobrado += c; return; }
     envios++; cobrado += c;
-    const clave = cond || '(sin conductor)';
-    let x = porCond.get(clave);
-    if (!x) x = { conductor: clave, envios: 0, cobrado: 0, enPanel: !!panel }, porCond.set(clave, x);
+    let x = porCond.get(cond);
+    if (!x) x = { conductor: cond, envios: 0, cobrado: 0, enPanel: !!panel }, porCond.set(cond, x);
     x.envios++; x.cobrado += c;
   });
   return {
-    envios, cobrado,
+    envios, cobrado, sinChofer,
     conductores: Array.from(porCond.values()).sort((a, b) => b.envios - a.envios)
   };
+}
+
+// ── Envíos sin chofer, MES A MES ────────────────────────────────────────────
+// La política: asignarse el envío es responsabilidad del chofer, así que un
+// envío que llega sin chofer NO se le paga a nadie — pero SÍ se le factura al
+// cliente, porque se entregó. No es un error a corregir: es un número a vigilar,
+// y la pregunta es cuánto pesa cada mes.
+// Va sobre TODA la base cargada y no sobre el filtro del Dashboard: lo que se
+// mira acá es la tendencia, no un período suelto.
+function enviosSinChoferPorMes() {
+  const porMes = new Map();
+  let envios = 0, cobrado = 0;
+  (AppData.records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;      // lo no entregado no se cobra
+    const cond = (typeof conductorCanonico === 'function')
+      ? conductorCanonico(r.cadete) : String((r && r.cadete) || '').trim();
+    if (cond) return;
+    const mes = String((typeof fechaISOde === 'function' ? fechaISOde(r.fecha) : '') || '').slice(0, 7);
+    if (!mes) return;
+    const cod = clienteCodDeRegistro(r);
+    const c = cod ? precioVentaEnvio(cod, r) : 0;
+    envios++; cobrado += c;
+    let x = porMes.get(mes);
+    if (!x) { x = { mes, envios: 0, cobrado: 0, clientes: new Map() }; porMes.set(mes, x); }
+    x.envios++; x.cobrado += c;
+    const nom = cod ? clienteNombreDe(cod) : '(sin cliente)';
+    x.clientes.set(nom, (x.clientes.get(nom) || 0) + 1);
+  });
+  return { envios, cobrado, meses: Array.from(porMes.values()).sort((a, b) => b.mes.localeCompare(a.mes)) };
 }
 
 // ════════════════════════════════════════════════════════════════════════

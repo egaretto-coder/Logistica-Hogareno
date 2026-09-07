@@ -550,8 +550,13 @@ function renderDashFuga() {
 // liquidación de conductor. La condición (día de pago) se carga a mano en el
 // Panel de conductores; sin ella el cadete no cae en ningún lote y el operador,
 // que liquida por condición, nunca lo ve.
+// Envíos entregados que se le facturan al cliente y que NO entran en la
+// liquidación de ningún conductor. Son DOS situaciones distintas y se muestran
+// separadas: el cadete sin día de pago (un dato que falta, se carga y cobra) y
+// el envío sin chofer (política: no se paga, se cobra igual).
 function _bloqueSinPagar(sp) {
-  if (!sp || !sp.envios) return '';
+  const mensual = _bloqueSinChofer();
+  if (!sp || !sp.envios) return mensual;
   const filas = sp.conductores.slice(0, 10).map(x =>
     '<tr>' +
     '<td><strong>' + x.conductor + '</strong></td>' +
@@ -571,5 +576,55 @@ function _bloqueSinPagar(sp) {
       '<tbody>' + filas + '</tbody></table>' +
       (sp.conductores.length > 10 ? '<div style="padding:6px 10px;font-size:11px;color:var(--text-muted)">…y ' + (sp.conductores.length - 10) + ' conductor(es) más</div>' : '') +
       '</div>' +
+    '</div></div>' + mensual;
+}
+
+// ── SIN CHOFER, mes a mes ───────────────────────────────────────────────
+// No es un problema a resolver: es la política —asignarse el envío es
+// responsabilidad del chofer, así que no se le paga a nadie y se le factura al
+// cliente igual—. Lo que hace falta es el número: cuántos son cada mes y cuánta
+// plata mueven. Va sobre TODA la base cargada, no sobre el filtro de arriba,
+// porque lo que se mira es la tendencia — y por eso dice qué ventana está
+// midiendo: con los últimos 14 días, "por mes" es medio mes.
+function _bloqueSinChofer() {
+  if (typeof enviosSinChoferPorMes !== 'function') return '';
+  const d = enviosSinChoferPorMes();
+  if (!d.envios) return '';
+  const completo = !!AppData.historialCompleto;
+  const ventana = completo
+    ? 'Sobre el historial completo.'
+    : 'Sobre los últimos ' + (typeof VENTANA_DIAS_REGISTROS !== 'undefined' ? VENTANA_DIAS_REGISTROS : 14) +
+      ' días cargados — para ver los meses enteros hace falta el historial completo.';
+  const filas = d.meses.slice(0, 12).map(m => {
+    const top = Array.from(m.clientes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([n, c]) => n + ' (' + c + ')').join(', ');
+    return '<tr>' +
+      '<td><strong>' + _mesLargo(m.mes) + '</strong></td>' +
+      '<td class="mono" style="text-align:right">' + m.envios.toLocaleString('es-AR') + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(m.cobrado) + '</td>' +
+      '<td style="font-size:11px;color:var(--text-muted)">' + (top || '—') + '</td>' +
+      '</tr>';
+  }).join('');
+  return '<div class="alert" style="margin:12px 0 0;background:#faf5ff;color:#5b21b6;border:1px solid #d8b4fe">' +
+    '<i class="ic ic-truck"></i><div>' +
+      '<strong>' + d.envios.toLocaleString('es-AR') + ' envíos entregados llegaron SIN chofer asignado</strong> — ' +
+      'se le facturan al cliente (' + fmtPeso(d.cobrado) + ') y <strong>no se le pagan a nadie</strong>. ' +
+      'Asignarse el envío es responsabilidad del chofer: no hay nada que corregir acá, ' +
+      'pero sí hay que ver cuánto pesa mes a mes.' +
+      '<div style="font-size:11px;opacity:.8;margin-top:4px">' + ventana +
+      (completo ? '' : ' <button class="btn btn-sm" style="padding:1px 7px;font-size:10px;margin-left:4px" onclick="cargarHistorialCompleto(this)">Cargar historial completo</button>') +
+      '</div>' +
+      '<div class="table-wrap" style="margin-top:10px;background:var(--surface-1);border-radius:8px">' +
+      '<table><thead><tr><th>Mes</th><th style="text-align:right">Envíos</th>' +
+      '<th style="text-align:right">Se factura</th><th>Clientes</th></tr></thead>' +
+      '<tbody>' + filas + '</tbody></table></div>' +
     '</div></div>';
+}
+
+const _MESES_LARGO = ['enero','febrero','marzo','abril','mayo','junio','julio',
+  'agosto','septiembre','octubre','noviembre','diciembre'];
+function _mesLargo(yyyymm) {
+  const p = String(yyyymm || '').split('-');
+  if (p.length < 2) return yyyymm || '—';
+  return _MESES_LARGO[(+p[1]) - 1] + ' ' + p[0];
 }
