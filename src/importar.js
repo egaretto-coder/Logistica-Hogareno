@@ -306,7 +306,23 @@ function processUpload() {
     rec.clave = claveRegistro(rec);
     return rec;
   }).filter(r => {
-    if (!r.cadete || !(r.tracking || r.direccion)) return false;
+    // Tiene que poder identificarse: sin tracking ni dirección no es un envío.
+    if (!(r.tracking || r.direccion)) return false;
+    // Un envío ENTREGADO SIN CHOFER es un envío REAL: se le factura al cliente
+    // igual —todo lo entregado se cobra— y simplemente no se le paga a nadie.
+    // Exigir cadete lo descartaba acá SIN NINGÚN AVISO, así que la liquidación
+    // del cliente salía con menos envíos que el listado y el administrativo
+    // terminaba cargándolo a mano, uno por uno. Medido en producción: de los 30
+    // envíos sin chofer de la base, los 30 están marcados como carga manual —
+    // del import no entró jamás ninguno.
+    // El resto de la app ya contempla el caso: calcLiquidaciones los saltea
+    // (`if (!cond) return`), el alta manual ofrece "sin conductor asignado" y el
+    // control de fuga los cuenta en "se cobra y no se paga". El importador era
+    // el ÚNICO que los tiraba.
+    // Sin cadete se pide algo más que una dirección suelta —un tracking, un
+    // estado o un cliente—: eso es lo que antes frenaba el "cadete obligatorio",
+    // y una fila del Excel a medio llenar no es un envío.
+    if (!r.cadete && !(r.tracking || r.estado || r.cliente)) return false;
     if (_esFilaEncabezado(r)) { _encabezadosSalteados++; return false; }
     return true;
   });
@@ -420,6 +436,10 @@ function processUpload() {
 
   const entregados = nuevos.filter(r => esEstadoEntregado(r.estado)).length;
   const noEntregados = nuevos.length - entregados;
+  // Se cargan, pero hay que decirlo: es plata que se factura y que no se le paga
+  // a nadie. Un envío que entra en silencio sin chofer es igual de invisible que
+  // uno que se descarta en silencio.
+  const sinChofer = nuevos.filter(r => !String(r.cadete || '').trim()).length;
 
   document.getElementById('upload-success-msg').innerHTML =
     `✅ Carga del <strong>${fechaCarga}</strong>: ${nuevos.length} registros procesados — ` +
@@ -427,6 +447,7 @@ function processUpload() {
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
     (enArchivoColapsadas ? `<br>ℹ️ ${enArchivoColapsadas} fila(s) del archivo eran el mismo envío repetido (mismo tracking o misma dirección) y se unificaron. ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
+    `${sinChofer ? `<br><i class="ic ic-alert"></i> <strong>${sinChofer} envío(s) vinieron SIN chofer en el listado.</strong> Se cargan igual y se le facturan al cliente —todo lo entregado se cobra— pero no entran en la liquidación de ningún conductor. El Dashboard los lista en <strong>“se cobra y no se paga”</strong>.` : ''}` +
     `${diasFueraDeRango ? `<br><i class="ic ic-alert"></i> ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
     `${faltantesDias.length ? `<br><i class="ic ic-alert"></i> <strong>Ojo:</strong> ${faltantesDias.length} día(s) hábil(es) sin registros dentro del rango cargado (${faltantesDias.slice(0, 6).map(diaLabel).join(' · ')}${faltantesDias.length > 6 ? '…' : ''}). ¿Te faltó cargar alguna fecha?` : ''}` +
     ` La base total queda en <strong>${AppData.records.length}</strong> registros. <span id="upload-nube-estado">☁️ Guardando en la nube…</span>`;
@@ -463,7 +484,7 @@ function renderPreviewRegistros(lista, titulo) {
             <td>${r.zona || '<span class="muted">vacía</span>'}</td>
             <td class="muted">${r.localidad || '—'}</td>
             <td><span class="badge ${esEstadoEntregado(r.estado) ? 'badge-green' : 'badge-gray'}">${r.estado || '—'}</span></td>
-            <td><strong>${r.cadete}</strong></td>
+            <td>${r.cadete ? `<strong>${r.cadete}</strong>` : `<span class="muted">sin chofer</span>`}</td>
             <td class="muted mono" style="font-size:11px">${r.carga_fecha || '—'}</td>
           </tr>
         `).join('')}
@@ -637,7 +658,9 @@ function renderArchivadosResult(rows) {
   if (!cont) return;
   if (!rows.length) { cont.innerHTML = '<div class="muted" style="padding:10px">No hay registros archivados en ese rango.</div>'; return; }
   const body = rows.slice(0, 200).map(r =>
-    '<tr><td class="mono muted">' + (r.tracking || '') + '</td><td class="muted">' + (r.fecha || '—') + '</td><td>' + (r.zona || r.localidad || '—') + '</td><td>' + (r.estado || '—') + '</td><td><strong>' + (r.cadete || '') + '</strong></td></tr>').join('');
+    '<tr><td class="mono muted">' + (r.tracking || '') + '</td><td class="muted">' + (r.fecha || '—') + '</td><td>' + (r.zona || r.localidad || '—') + '</td><td>' + (r.estado || '—') + '</td><td>' + (String(r.cadete || '').trim()
+      ? '<strong>' + r.cadete + '</strong>'
+      : '<span class="muted">sin chofer</span>') + '</td></tr>').join('');
   cont.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Tracking</th><th>Fecha</th><th>Zona</th><th>Estado</th><th>Cadete</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
     (rows.length > 200 ? '<div class="muted" style="text-align:center;padding:8px">…y ' + (rows.length - 200) + ' más (' + rows.length + ' archivados en el rango)</div>' : '<div class="muted" style="padding:6px">' + rows.length + ' registros archivados en el rango</div>');
 }

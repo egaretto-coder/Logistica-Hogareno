@@ -223,6 +223,16 @@ function dimVentaNombre(cod, r) {
 
 // Lo que se le PAGA al conductor por ese envío (para el margen).
 function precioPagadoConductor(r) {
+  // SIN CONDUCTOR no se le paga a nadie, y esto tiene que decir exactamente lo
+  // mismo que la cuenta que paga: calcLiquidaciones saltea estos envíos
+  // (`if (!cond) return`). Devolver la tarifa de la zona era una segunda cuenta
+  // diciendo otra cosa — el margen del cliente le restaba un costo inexistente,
+  // y el modal de anular ofrecía "se le sigue pagando $X al conductor" cuando no
+  // hay a quién pagarle. Va ANTES del precio a mano: aunque alguien haya escrito
+  // un precio, sin conductor esa plata no sale en ninguna liquidación.
+  const cond = (typeof conductorCanonico === 'function')
+    ? conductorCanonico(r && r.cadete) : String((r && r.cadete) || '').trim();
+  if (!cond) return 0;
   if (typeof precioManualDe === 'function') {
     const m = precioManualDe(r);
     if (m !== null && m !== undefined) return _num(m);
