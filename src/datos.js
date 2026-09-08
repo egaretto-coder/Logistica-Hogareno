@@ -259,6 +259,8 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.clientes = (data.clientes || []).map(c => ({
     id: c.id, nombre: c.nombre, codigo: (c.codigo || '').toUpperCase(),
     razon_social: c.razon_social || '', cuit: c.cuit || '',
+    // Condición frente al IVA y domicilio: se usan para facturar.
+    condicion_iva: c.condicion_iva || '', direccion: c.direccion || '',
     contacto: c.contacto || '', telefono: c.telefono || '', email: c.email || '', obs: c.obs || '',
     // Cada cuánto se le factura, en días: 7 semanal · 14 quincenal · 28 mensual.
     periodo_dias: _num(c.periodo_dias) || 7,

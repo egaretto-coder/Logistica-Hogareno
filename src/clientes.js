@@ -16,6 +16,16 @@ let clienteEditId = null;
 // ── Identidad ───────────────────────────────────────────────────────────────
 function normCliente(s) { return normNombre(s); }
 
+// ── Condición frente al IVA ─────────────────────────────────────────────────
+// Lista CERRADA: escrita a mano, la misma condición entra como "Resp. Inscripto",
+// "RESPONSABLE INSCRIPTO" y "R.I.", y después no se puede agrupar ni filtrar para
+// facturar. Se guarda el texto y no un código porque es lo que se lee en la ficha
+// y lo que va a ir a la factura.
+// VACÍO no es una opción más: es "todavía no se cargó", que es distinto de
+// consumidor final — por eso se muestra marcado y no en blanco.
+const CONDICIONES_IVA = ['Responsable Inscripto', 'Consumidor final sin factura'];
+function condicionIvaDe(c) { return String((c && c.condicion_iva) || '').trim(); }
+
 function clienteKey(cod) { return String(cod || '').trim().toUpperCase(); }
 
 // ── Cuentas de un mismo cliente ─────────────────────────────────────────────
@@ -639,9 +649,11 @@ function renderClientes() {
           '</div>' +
         '</div>' +
 
-        (c.razon_social || c.contacto || c.telefono || c.email
+        (c.razon_social || c.contacto || c.telefono || c.email || c.direccion || condicionIvaDe(c)
           ? '<div style="font-size:11px;color:var(--text-secondary);padding:8px 0;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:2px">' +
             (c.razon_social ? '<div><i class="ic ic-building"></i> ' + c.razon_social + '</div>' : '') +
+            (condicionIvaDe(c) ? '<div><i class="ic ic-receipt"></i> ' + condicionIvaDe(c) + '</div>' : '') +
+            (c.direccion ? '<div><i class="ic ic-pin"></i> ' + c.direccion + '</div>' : '') +
             (c.contacto ? '<div><i class="ic ic-user"></i> ' + c.contacto + '</div>' : '') +
             (c.telefono ? '<div><i class="ic ic-phone"></i> ' + c.telefono + '</div>' : '') +
             (c.email ? '<div style="overflow:hidden;text-overflow:ellipsis"><i class="ic ic-mail"></i> ' + c.email + '</div>' : '') +
@@ -735,6 +747,13 @@ function verCardCliente(cod) {
     _cardVendedor(c) +
     '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
       dato('Razón social', c.razon_social) + dato('CUIT', c.cuit) +
+      // La condición frente al IVA decide cómo se le factura, así que un cliente
+      // sin ella no es un dato neutro: se marca en ámbar en vez de mostrarse en
+      // blanco, que se lee como si no hiciera falta.
+      dato('Condición de IVA', condicionIvaDe(c)
+        ? condicionIvaDe(c)
+        : '<span style="color:#b45309">sin cargar</span>') +
+      dato('Dirección', c.direccion) +
       dato('Contacto', c.contacto) + dato('Teléfono', c.telefono) + dato('Email', c.email) +
     '</div>' +
 
@@ -1449,13 +1468,30 @@ function _mcliVendedores(actual) {
     (actual && !hay ? '<option value="' + esc(actual) + '" selected>' + actual + ' (dado de baja)</option>' : '');
 }
 
+// Pobla el select de condición de IVA conservando lo que el cliente ya tenía.
+// Una condición vieja fuera de la lista NO se borra: se conserva marcada, si no
+// abrir la ficha para tocar el teléfono le cambiaría la condición fiscal.
+function _mcliCondicionIva(actual) {
+  const sel = document.getElementById('mcli-iva');
+  if (!sel) return;
+  const a = String(actual || '').trim();
+  const hay = a && CONDICIONES_IVA.some(x => normNombre(x) === normNombre(a));
+  sel.innerHTML =
+    '<option value=""' + (a ? '' : ' selected') + '>— sin cargar —</option>' +
+    CONDICIONES_IVA.map(x => '<option value="' + x + '"' +
+      (normNombre(x) === normNombre(a) ? ' selected' : '') + '>' + x + '</option>').join('') +
+    (a && !hay ? '<option value="' + String(a).replace(/"/g, '&quot;') + '" selected>' + a + ' (fuera de la lista)</option>' : '');
+}
+
 function openAddClienteModal() {
   clienteEditId = null;
   document.getElementById('modal-cliente-title').textContent = 'Nuevo cliente';
   document.getElementById('mcli-nombre').value = '';
   _mcliVendedores('');
-  ['mcli-codigo','mcli-razon','mcli-contacto','mcli-telefono','mcli-email','mcli-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['mcli-codigo','mcli-razon','mcli-contacto','mcli-telefono','mcli-email','mcli-obs','mcli-direccion']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('mcli-cuit').value = '';
+  _mcliCondicionIva('');
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
 }
 function editCliente(id) {
@@ -1468,6 +1504,8 @@ function editCliente(id) {
   set('mcli-codigo', c.codigo); set('mcli-razon', c.razon_social);
   set('mcli-contacto', c.contacto); set('mcli-telefono', c.telefono);
   set('mcli-email', c.email); set('mcli-obs', c.obs);
+  set('mcli-direccion', c.direccion);
+  _mcliCondicionIva(condicionIvaDe(c));
   const rc = comisionDeCliente(c.nombre);
   _mcliVendedores(rc ? (rc.vendedor || '') : '');
   document.getElementById('mcli-cuit').value = c.cuit || '';
@@ -1485,6 +1523,8 @@ async function guardarClienteModal() {
   const telefono = (document.getElementById('mcli-telefono')?.value || '').trim();
   const email = (document.getElementById('mcli-email')?.value || '').trim();
   const obs = (document.getElementById('mcli-obs')?.value || '').trim();
+  const condicion_iva = (document.getElementById('mcli-iva')?.value || '').trim();
+  const direccion = (document.getElementById('mcli-direccion')?.value || '').trim();
   if (!nombre) { alert('El nombre del cliente es obligatorio.'); return; }
   if (!codigo) { alert('El código es obligatorio: es lo que une al cliente con sus envíos (columna Cod.Cliente del listado).'); return; }
   const dupCod = AppData.clientes.find(c => clienteKey(c.codigo) === clienteKey(codigo) && c.id !== clienteEditId);
@@ -1494,12 +1534,14 @@ async function guardarClienteModal() {
   if (dup) { alert('Ya existe un cliente "' + nombre + '".'); return; }
   try {
     if (clienteEditId != null) {
-      await DB.updateWhere('clientes', 'id', clienteEditId, { nombre, codigo, razon_social, cuit, contacto, telefono, email, obs });
+      const campos = { nombre, codigo, razon_social, cuit, condicion_iva, direccion, contacto, telefono, email, obs };
+      await DB.updateWhere('clientes', 'id', clienteEditId, campos);
       const c = AppData.clientes.find(x => x.id === clienteEditId);
-      if (c) Object.assign(c, { nombre, codigo, razon_social, cuit, contacto, telefono, email, obs });
+      if (c) Object.assign(c, campos);
     } else {
-      const row = await DB.insertRow('clientes', { nombre, codigo, razon_social, cuit, contacto, telefono, email, obs, activo: true });
-      AppData.clientes.push({ id: row.id, nombre, codigo, razon_social, cuit, contacto, telefono, email, obs, activo: true });
+      const campos = { nombre, codigo, razon_social, cuit, condicion_iva, direccion, contacto, telefono, email, obs };
+      const row = await DB.insertRow('clientes', Object.assign({ activo: true }, campos));
+      AppData.clientes.push(Object.assign({ id: row.id, activo: true }, campos));
     }
     persistirClientesLocal();
     // El vendedor no se guarda en `clientes`: va a `comision_clientes`, que es la

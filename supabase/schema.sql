@@ -249,6 +249,12 @@ create table if not exists public.clientes (
   nombre text not null,
   razon_social text default '',
   cuit text default '',
+  -- Condición frente al IVA: "Responsable Inscripto" o "Consumidor final sin
+  -- factura". Se guarda el TEXTO y no un código porque es lo que se lee en la
+  -- ficha y lo que va a ir a la factura. Vacío = todavía no se cargó, que es
+  -- distinto de consumidor final: por eso no lleva default con valor.
+  condicion_iva text not null default '',
+  direccion text not null default '',
   activo boolean not null default true,
   created_at timestamptz not null default now()
 );

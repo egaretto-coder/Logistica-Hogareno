@@ -887,9 +887,19 @@
         <label class="form-label">Razón social (opcional)</label>
         <input type="text" id="mcli-razon" class="form-input" placeholder="Razón social para la factura" style="width:100%" />
       </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">CUIT (opcional)</label>
+          <input type="text" id="mcli-cuit" class="form-input" placeholder="30-XXXXXXXX-X" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:190px">
+          <label class="form-label">Condición de IVA</label>
+          <select id="mcli-iva" class="form-input" style="width:100%"></select>
+        </div>
+      </div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">CUIT (opcional)</label>
-        <input type="text" id="mcli-cuit" class="form-input" placeholder="30-XXXXXXXX-X" style="width:100%" />
+        <label class="form-label">Dirección (opcional)</label>
+        <input type="text" id="mcli-direccion" class="form-input" placeholder="Calle 1234, Localidad" style="width:100%" />
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:130px">
