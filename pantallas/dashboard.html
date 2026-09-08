@@ -34,6 +34,8 @@
 
         <!-- ══════════ TAB: CLIENTES ══════════ -->
         <div id="dash-tab-clientes">
+          <!-- Aviso cuando el filtro por condición está puesto: acá no aplica. -->
+          <div id="dash-cli-nota"></div>
           <div class="metrics-grid" id="dash-cli-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
 
           <!-- Lo que se paga y no se le cobra a nadie. Va ARRIBA de la renta:
@@ -82,7 +84,7 @@
             <div class="metric-ic"><i class="ic ic-truck"></i></div>
             <div class="metric-label">Conductores en panel</div>
             <div class="metric-value" id="metric-panel-total">0</div>
-            <div class="metric-sub">Registrados en el sistema</div>
+            <div class="metric-sub" id="metric-panel-sub">Registrados en el sistema</div>
           </div>
         </div>
 

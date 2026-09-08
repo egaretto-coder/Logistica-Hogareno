@@ -9,10 +9,13 @@ function dashPeriodoLabel() {
 
 // Datos del reporte por zona (ordenados por total desc) del período del Dashboard.
 function computeZonaReport() {
-  const recs = (typeof filtrarRecordsPorFecha === 'function') ? filtrarRecordsPorFecha(AppData.records) : AppData.records;
-  // Sin filtro de fecha, filtrarRecordsPorFecha devuelve el MISMO array: pasarlo
-  // igual anulaba el caché de calcLiquidaciones (solo cachea la base entera) y
-  // los dos reportes del Dashboard recalculaban 47.684 envíos cada uno.
+  // MISMA fuente que los KPIs: período Y condición. Si el reporte se filtrara
+  // solo por fecha, tildar "Titulares" dejaría los KPIs hablando de titulares y
+  // la tabla de abajo mostrando a todos.
+  const recs = (typeof recordsDelDashboard === 'function') ? recordsDelDashboard() : AppData.records;
+  // Sin filtro, devuelve el MISMO array: pasarlo igual anulaba el caché de
+  // calcLiquidaciones (solo cachea la base entera) y los dos reportes del
+  // Dashboard recalculaban 47.684 envíos cada uno.
   const liq = calcLiquidaciones(recs === AppData.records ? undefined : recs);
   const zonaData = {};
   recs.forEach(r => {
@@ -54,10 +57,13 @@ function renderZonaReport() {
 
 // ===== REPORTE CONDUCTOR =====
 function computeConductorReport() {
-  const recs = (typeof filtrarRecordsPorFecha === 'function') ? filtrarRecordsPorFecha(AppData.records) : AppData.records;
-  // Sin filtro de fecha, filtrarRecordsPorFecha devuelve el MISMO array: pasarlo
-  // igual anulaba el caché de calcLiquidaciones (solo cachea la base entera) y
-  // los dos reportes del Dashboard recalculaban 47.684 envíos cada uno.
+  // MISMA fuente que los KPIs: período Y condición. Si el reporte se filtrara
+  // solo por fecha, tildar "Titulares" dejaría los KPIs hablando de titulares y
+  // la tabla de abajo mostrando a todos.
+  const recs = (typeof recordsDelDashboard === 'function') ? recordsDelDashboard() : AppData.records;
+  // Sin filtro, devuelve el MISMO array: pasarlo igual anulaba el caché de
+  // calcLiquidaciones (solo cachea la base entera) y los dos reportes del
+  // Dashboard recalculaban 47.684 envíos cada uno.
   const liq = calcLiquidaciones(recs === AppData.records ? undefined : recs);
   const conductores = Object.keys(liq).sort((a, b) => liq[b].total - liq[a].total);
   return { liq, conductores };

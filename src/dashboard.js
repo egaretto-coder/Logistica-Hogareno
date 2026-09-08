@@ -2,8 +2,15 @@ function getZonaEfectiva(r) {
   return (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
 }
 
-// Estado del filtro de condición en dashboard
+// ── Filtro por condición ────────────────────────────────────────────────────
+// El filtro existía pero solo repintaba la tarjeta "Conductores por condición":
+// los KPIs de arriba, el reporte por conductor y el de zonas seguían mostrando
+// a TODOS. Filtrar Titulares y ver "Total liquidado" con la plata de todo el
+// mundo es peor que no tener el filtro, porque el número parece el del filtro y
+// no lo es. Ahora filtra los ENVÍOS, y todo lo que cuelga de ahí lo sigue.
 let dashCondFilter = '';
+const DASH_COND_PLURAL = { 'Titular': 'Titulares', 'Semi Titular': 'Semi Titulares', 'Suplente': 'Suplentes' };
+function dashCondLabel() { return dashCondFilter ? (DASH_COND_PLURAL[dashCondFilter] || dashCondFilter) : ''; }
 
 function setDashCondFilter(btn, cond) {
   dashCondFilter = cond;
@@ -219,7 +226,37 @@ function getDashFechaRango() {
 let _filtroCache = null;
 // La llama invalidarLiquidaciones: el filtro se apoya en la fecha de cada envío,
 // así que cualquier cambio en los registros lo deja viejo igual que al cálculo.
-function invalidarFiltroFecha() { _filtroCache = null; }
+function invalidarFiltroFecha() { _filtroCache = null; _filtroCondCache = null; }
+// Envíos de los conductores con ESA condición. Un envío sin chofer, o de un
+// cadete que no está en el panel, no tiene condición: queda afuera de cualquier
+// filtro por condición (que es lo correcto — no es titular ni suplente).
+// Devuelve la MISMA referencia cuando no hay filtro: es lo que hace que
+// calcLiquidaciones dé en su caché y las tres pasadas del render no recalculen
+// 47.684 envíos cada una.
+let _filtroCondCache = null;
+function filtrarRecordsPorCondicion(records) {
+  const cond = dashCondFilter;
+  if (!cond) return records;
+  if (_filtroCondCache && _filtroCondCache.cond === cond && _filtroCondCache.src === records
+      && _filtroCondCache.n === records.length) return _filtroCondCache.out;
+  const out = records.filter(r => {
+    const c = conductorCanonico(r.cadete);
+    if (!c) return false;
+    const p = panelConductorDe(c);
+    return !!p && String(p.condicion || '').trim() === cond;
+  });
+  _filtroCondCache = { cond, src: records, n: records.length, out };
+  return out;
+}
+
+// Los envíos que el Dashboard está mirando: período Y condición. Es la única
+// fuente de los KPIs y de los dos reportes, así que no pueden desfasarse.
+function recordsDelDashboard() {
+  const porFecha = (typeof filtrarRecordsPorFecha === 'function')
+    ? filtrarRecordsPorFecha(AppData.records) : AppData.records;
+  return filtrarRecordsPorCondicion(porFecha);
+}
+
 function filtrarRecordsPorFecha(records) {
   const rango = getDashFechaRango();
   if (!rango) return records;
@@ -248,7 +285,7 @@ function setDashFechaPreset(btn, preset) {
 
 function renderDashboard() {
   const rango = getDashFechaRango();
-  const recordsFiltrados = filtrarRecordsPorFecha(AppData.records);
+  const recordsFiltrados = recordsDelDashboard();
 
   // Las liquidaciones del período salen del MISMO cálculo que usa la pantalla de
   // Liquidaciones (calcLiquidaciones). Antes el Dashboard tenía su propia cuenta
@@ -282,6 +319,7 @@ function renderDashboard() {
   } else if (dashFechaPreset === 'personalizado') {
     labelPeriodo = 'Seleccioná un rango de fechas';
   }
+  if (dashCondLabel()) labelPeriodo = (labelPeriodo ? labelPeriodo + ' · ' : '') + 'solo ' + dashCondLabel();
   const labelEl = document.getElementById('dash-fecha-label');
   if (labelEl) labelEl.textContent = labelPeriodo;
 
@@ -292,7 +330,16 @@ function renderDashboard() {
   document.getElementById('metric-conductores').textContent = conductores.length;
   document.getElementById('metric-promedio').textContent = fmtPeso(promedioPorConductor);
   document.getElementById('metric-promedio-sub').textContent = conductores.length + ' conductores en el período';
-  document.getElementById('metric-panel-total').textContent = AppData.panelConductores.length;
+  // "Conductores en panel" también sigue al filtro: si dice 102 mientras los
+  // demás KPIs hablan de 30 titulares, el promedio no se puede leer contra nada.
+  const enPanel = dashCondFilter
+    ? (AppData.panelConductores || []).filter(c => String(c.condicion || '').trim() === dashCondFilter).length
+    : (AppData.panelConductores || []).length;
+  document.getElementById('metric-panel-total').textContent = enPanel;
+  const panelSub = document.getElementById('metric-panel-sub');
+  if (panelSub) panelSub.textContent = dashCondFilter
+    ? dashCondLabel() + ' de ' + (AppData.panelConductores || []).length
+    : 'Registrados en el sistema';
   document.getElementById('sidebar-conductor-count').textContent = conductores.length + ' conductores';
   document.getElementById('sidebar-record-count').textContent = AppData.records.length
     ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
@@ -396,6 +443,17 @@ function renderDashClientes() {
       '<div class="metric-label">Margen</div>' +
       '<div class="metric-value" style="color:' + (margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(margen) + '</div>' +
       '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>';
+
+  // El filtro por condición es del lado del CONDUCTOR y acá no aplica: lo que se
+  // le factura a un cliente no depende de quién se lo llevó, y filtrarlo daría
+  // una "facturación" que no existe en ninguna factura. Se dice, en vez de
+  // dejar que el operador crea que el filtro está puesto y no hizo nada.
+  const nota = document.getElementById('dash-cli-nota');
+  if (nota) nota.innerHTML = dashCondFilter
+    ? '<div class="alert" style="margin:0 0 14px;background:#eff6ff;color:#1e3a8a;border:1px solid #93c5fd">' +
+      '<i class="ic ic-alert"></i><div>El filtro <strong>' + dashCondLabel() + '</strong> es del lado del conductor y ' +
+      'acá no se aplica: lo que se le factura a un cliente no depende de quién se lo llevó. Estos números son los del período completo.</div></div>'
+    : '';
 
   const countEl = document.getElementById('dash-cli-count');
   if (countEl) countEl.textContent = lista.length === todos.length
