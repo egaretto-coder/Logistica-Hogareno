@@ -1138,6 +1138,10 @@
           <input type="text" id="memp-dni" class="form-input" placeholder="30111222" style="width:100%" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Fecha de nacimiento</label>
+          <input type="date" id="memp-nacimiento" class="form-input" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label">Área</label>
           <select id="memp-area" class="form-input" style="width:100%" onchange="_poblarPuestos()"></select>
         </div>
@@ -1162,6 +1166,41 @@
         <label class="form-label">Dirección</label>
         <input type="text" id="memp-direccion" class="form-input" placeholder="Calle 123" style="width:100%" />
       </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:2;min-width:160px">
+          <label class="form-label">Localidad</label>
+          <input type="text" id="memp-localidad" class="form-input" placeholder="Ej: Villa Adelina" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:90px">
+          <label class="form-label">CP</label>
+          <input type="text" id="memp-cp" class="form-input" placeholder="1607" maxlength="8" style="width:100%" />
+        </div>
+      </div>
+      <!-- Talles: se cargan para comprar la indumentaria, así que lo que
+           importa es poder CONTARLOS ("cuántas remeras L"). Van con una lista
+           sugerida para que no entren como "M", "m" y "Mediano", pero se
+           puede escribir cualquier cosa: una lista cerrada que no contemple
+           un talle real dejaría a alguien sin ropa. -->
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Indumentaria de trabajo</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div class="form-group" style="margin:0;flex:1;min-width:110px">
+            <label class="form-label">Talle pantalón</label>
+            <input type="text" id="memp-t-pantalon" class="form-input" list="dl-talle-pantalon" placeholder="Ej: 42" style="width:100%" />
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:110px">
+            <label class="form-label">Talle remera</label>
+            <input type="text" id="memp-t-remera" class="form-input" list="dl-talle-remera" placeholder="Ej: L" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:110px">
+            <label class="form-label">Calzado</label>
+            <input type="text" id="memp-t-calzado" class="form-input" list="dl-talle-calzado" placeholder="Ej: 43" style="width:100%" />
+          </div>
+        </div>
+      </div>
+      <datalist id="dl-talle-pantalon"><option value="38"><option value="40"><option value="42"><option value="44"><option value="46"><option value="48"><option value="50"><option value="52"><option value="54"><option value="56"></datalist>
+      <datalist id="dl-talle-remera"><option value="XS"><option value="S"><option value="M"><option value="L"><option value="XL"><option value="XXL"><option value="XXXL"></datalist>
+      <datalist id="dl-talle-calzado"><option value="35"><option value="36"><option value="37"><option value="38"><option value="39"><option value="40"><option value="41"><option value="42"><option value="43"><option value="44"><option value="45"><option value="46"><option value="47"></datalist>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label">¿Registrado?</label>

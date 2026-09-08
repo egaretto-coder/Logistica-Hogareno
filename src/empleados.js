@@ -67,6 +67,34 @@ function _mesesEntre(desde, hasta) {
   if (hasta.getDate() < desde.getDate()) m--;
   return Math.max(0, m);
 }
+// Edad a hoy. No se guarda: se calcula, como la antigüedad — guardar el
+// resultado además del factor es la forma de que queden en desacuerdo.
+function edadDe(emp) {
+  const d = _empFecha(emp && emp.fecha_nacimiento);
+  if (!d) return null;
+  const h = new Date();
+  let a = h.getFullYear() - d.getFullYear();
+  const m = h.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && h.getDate() < d.getDate())) a--;
+  return a >= 0 && a < 120 ? a : null;
+}
+// Domicilio armado: calle, localidad y CP son tres campos y una sola línea.
+function domicilioTexto(emp) {
+  if (!emp) return '';
+  const calle = String(emp.direccion || '').trim();
+  const loc = String(emp.localidad || '').trim();
+  const cp = String(emp.cp || '').trim();
+  const zona = [loc, cp ? '(' + cp + ')' : ''].filter(Boolean).join(' ');
+  return [calle, zona].filter(Boolean).join(', ');
+}
+// Los talles, en una línea. Solo los cargados.
+function tallesTexto(emp) {
+  if (!emp) return '';
+  return [['Pantalón', emp.talle_pantalon], ['Remera', emp.talle_remera], ['Calzado', emp.talle_calzado]]
+    .filter(x => String(x[1] || '').trim())
+    .map(x => x[0] + ' ' + String(x[1]).trim()).join(' · ');
+}
+
 function antiguedadTexto(emp) {
   const ing = _empFecha(emp.fecha_ingreso); if (!ing) return '—';
   const m = _mesesEntre(ing, new Date());
@@ -435,6 +463,18 @@ function renderEmpleados() {
           (valorHoraDe(e) ? ' · hora <strong>' + fmtPeso(valorHoraDe(e)) + '</strong>' : '') + '</span>' +
         (e.telefono ? '<span class="muted">' + e.telefono + '</span>' : '') +
       '</div>' +
+      // Datos personales e indumentaria. Solo se muestran los cargados: una
+      // fila de guiones no dice nada y ocupa lo mismo que un dato real.
+      ((domicilioTexto(e) || e.fecha_nacimiento || tallesTexto(e))
+        ? '<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:3px">' +
+          (domicilioTexto(e) ? '<span><i class="ic ic-pin"></i> ' + domicilioTexto(e) + '</span>' : '') +
+          (e.fecha_nacimiento
+            ? '<span><i class="ic ic-user"></i> Nac. ' + _empFmt(e.fecha_nacimiento) +
+              (edadDe(e) != null ? ' · ' + edadDe(e) + ' años' : '') + '</span>'
+            : '') +
+          (tallesTexto(e) ? '<span><i class="ic ic-tag"></i> ' + tallesTexto(e) + '</span>' : '') +
+        '</div>'
+        : '') +
     '</div>';
   }).join('');
 }
@@ -656,7 +696,9 @@ function _puestoElegido() {
 function openAddEmpleadoModal() {
   empleadoEditId = null;
   document.getElementById('modal-emp-title').textContent = 'Nuevo empleado';
-  ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto',
+   'memp-nacimiento','memp-localidad','memp-cp','memp-t-pantalon','memp-t-remera','memp-t-calzado']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   poblarAreasEmpleado('');
   _poblarPuestos('');
   document.getElementById('memp-registrado').value = 'si';
@@ -679,6 +721,11 @@ function editEmpleado(id) {
   document.getElementById('memp-telefono').value = e.telefono || '';
   document.getElementById('memp-email').value = e.email || '';
   document.getElementById('memp-direccion').value = e.direccion || '';
+  const setE = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  setE('memp-nacimiento', e.fecha_nacimiento ? String(e.fecha_nacimiento).slice(0, 10) : '');
+  setE('memp-localidad', e.localidad); setE('memp-cp', e.cp);
+  setE('memp-t-pantalon', e.talle_pantalon); setE('memp-t-remera', e.talle_remera);
+  setE('memp-t-calzado', e.talle_calzado);
   poblarAreasEmpleado(e.area || '');
   _poblarPuestos(e.puesto || '');
   document.getElementById('memp-registrado').value = e.registrado === false ? 'no' : 'si';
@@ -737,6 +784,12 @@ async function guardarEmpleadoModal() {
     telefono: (document.getElementById('memp-telefono').value || '').trim(),
     email: (document.getElementById('memp-email').value || '').trim(),
     direccion: (document.getElementById('memp-direccion').value || '').trim(),
+    fecha_nacimiento: document.getElementById('memp-nacimiento')?.value || null,
+    localidad: (document.getElementById('memp-localidad')?.value || '').trim(),
+    cp: (document.getElementById('memp-cp')?.value || '').trim(),
+    talle_pantalon: (document.getElementById('memp-t-pantalon')?.value || '').trim(),
+    talle_remera: (document.getElementById('memp-t-remera')?.value || '').trim().toUpperCase(),
+    talle_calzado: (document.getElementById('memp-t-calzado')?.value || '').trim(),
     puesto: _puestoElegido(),
     area: (document.getElementById('memp-area') || {}).value || '',
     registrado: document.getElementById('memp-registrado').value === 'si',

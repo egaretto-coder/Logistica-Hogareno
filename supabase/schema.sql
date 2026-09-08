@@ -597,6 +597,16 @@ create table if not exists public.empleados (
   nombre text not null,
   dni text default '', telefono text default '', email text default '',
   direccion text default '', puesto text default '',
+  -- Datos personales y TALLES de indumentaria. Los talles son texto: la
+  -- numeración de pantalón y calzado es un número pero convive con "42/44" y
+  -- con talles de letra, así que un numérico perdería casos reales. La
+  -- consistencia se cuida en la carga (lista sugerida), no en el tipo.
+  fecha_nacimiento date,
+  localidad text not null default '',
+  cp text not null default '',
+  talle_pantalon text not null default '',
+  talle_remera text not null default '',
+  talle_calzado text not null default '',
   registrado boolean not null default true,
   fecha_ingreso date,
   sueldo numeric not null default 0,

@@ -311,6 +311,11 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.empleados = (data.empleados || []).map(e => ({
     id: e.id, nombre: e.nombre, dni: e.dni || '', telefono: e.telefono || '', email: e.email || '',
     direccion: e.direccion || '', puesto: e.puesto || '', area: e.area || '',
+    // Datos personales e indumentaria (talles para comprar la ropa de trabajo).
+    fecha_nacimiento: String(e.fecha_nacimiento || '').slice(0, 10),
+    localidad: e.localidad || '', cp: e.cp || '',
+    talle_pantalon: e.talle_pantalon || '', talle_remera: e.talle_remera || '',
+    talle_calzado: e.talle_calzado || '',
     registrado: e.registrado !== false,
     fecha_ingreso: e.fecha_ingreso || '', sueldo: _num(e.sueldo),
     // Jornada. Los HECHOS son el horario (entrada, salida, almuerzo) y los
