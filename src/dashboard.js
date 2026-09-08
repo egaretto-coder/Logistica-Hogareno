@@ -305,6 +305,14 @@ function renderDashboard() {
   const liqFecha = calcLiquidaciones(recordsFiltrados === AppData.records ? undefined : recordsFiltrados);
   const conductores = Object.keys(liqFecha);
   const totalMonto = Object.values(liqFecha).reduce((s, v) => s + v.total, 0);
+  // COSTO VARIABLE UNITARIO: lo que cuesta cada envío que se paga.
+  // El denominador son LOS MISMOS envíos que forman el total —las filas que
+  // contabilizan—, no todos los recorridos del período: los no entregados no
+  // se le pagan a nadie y meterlos abajo daría un unitario más barato que el
+  // real. Dividir un número por su propia cantidad es lo que hace que esta
+  // tarjeta no pueda contradecir a la de al lado.
+  const enviosPagos = Object.values(liqFecha).reduce((s, v) => s + v.filas.length, 0);
+  const costoUnitario = enviosPagos ? totalMonto / enviosPagos : 0;
   const totalRecs = recordsFiltrados.length;
   const totalEntregados = recordsFiltrados.filter(r => esEstadoEntregado(r.estado)).length;
   const totalExcluidos = totalRecs - totalEntregados;
@@ -334,6 +342,11 @@ function renderDashboard() {
 
   document.getElementById('metric-total').textContent = fmtPeso(totalMonto);
   document.getElementById('metric-sub-total').textContent = totalEntregados + ' entregados · ' + totalExcluidos + ' en otros estados';
+  document.getElementById('metric-cvu').textContent = fmtPeso(costoUnitario);
+  const cvuSub = document.getElementById('metric-cvu-sub');
+  if (cvuSub) cvuSub.textContent = enviosPagos
+    ? 'por envío pagado · ' + enviosPagos.toLocaleString('es-AR') + ' envíos'
+    : 'sin envíos pagados en el período';
   document.getElementById('metric-conductores').textContent = conductores.length;
   document.getElementById('metric-promedio').textContent = fmtPeso(promedioPorConductor);
   document.getElementById('metric-promedio-sub').textContent = conductores.length + ' conductores en el período';

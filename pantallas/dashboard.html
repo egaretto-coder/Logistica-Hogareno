@@ -60,13 +60,23 @@
 
         <!-- ══════════ TAB: CONDUCTORES ══════════ -->
         <div id="dash-tab-conductores" style="display:none">
-        <!-- KPIs -->
-        <div class="metrics-grid">
+        <!-- KPIs. auto-fit y no repeat(4): son cinco y tienen que acomodarse
+             solas sin dejar una huérfana ocupando un cuarto de fila. -->
+        <div class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(185px,1fr))">
           <div class="metric-card accent">
             <div class="metric-ic"><i class="ic ic-dollar"></i></div>
             <div class="metric-label">Total liquidado</div>
             <div class="metric-value" id="metric-total">$0</div>
             <div class="metric-sub" id="metric-sub-total">Sin datos</div>
+          </div>
+          <!-- Lo que cuesta CADA envío que se paga. Sale de dividir el mismo
+               "Total liquidado" de al lado por los envíos que lo componen, así
+               que las dos tarjetas no se pueden contradecir. -->
+          <div class="metric-card">
+            <div class="metric-ic"><i class="ic ic-trend"></i></div>
+            <div class="metric-label">Costo variable unitario</div>
+            <div class="metric-value" id="metric-cvu">$0</div>
+            <div class="metric-sub" id="metric-cvu-sub">por envío pagado</div>
           </div>
           <div class="metric-card">
             <div class="metric-ic"><i class="ic ic-users"></i></div>
