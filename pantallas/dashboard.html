@@ -155,6 +155,18 @@
                 <button class="btn btn-sm btn-primary" onclick="exportReporteZonaPDF()"><i class="ic ic-download"></i> PDF</button>
               </div>
             </div>
+            <!-- Los MISMOS botones que la solapa Conductores. El filtro ya movía
+                 este reporte, pero para cambiarlo había que ir a la otra solapa y
+                 volver. Comparten la clase .dash-cond-btn, así que los dos grupos
+                 se pintan solos contra el filtro activo (_pintarBotonesCond). -->
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border)">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-truck"></i> Condición</span>
+              <button class="btn btn-sm dash-cond-btn active" data-cond="" onclick="setDashCondFilter(this,'')">Todos</button>
+              <button class="btn btn-sm dash-cond-btn" data-cond="Titular" onclick="setDashCondFilter(this,'Titular')">Titulares</button>
+              <button class="btn btn-sm dash-cond-btn" data-cond="Semi Titular" onclick="setDashCondFilter(this,'Semi Titular')">Semi Titulares</button>
+              <button class="btn btn-sm dash-cond-btn" data-cond="Suplente" onclick="setDashCondFilter(this,'Suplente')">Suplentes</button>
+              <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Las zonas y los totales son de los conductores de esa condición</span>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>

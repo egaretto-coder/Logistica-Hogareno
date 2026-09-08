@@ -12,10 +12,16 @@ let dashCondFilter = '';
 const DASH_COND_PLURAL = { 'Titular': 'Titulares', 'Semi Titular': 'Semi Titulares', 'Suplente': 'Suplentes' };
 function dashCondLabel() { return dashCondFilter ? (DASH_COND_PLURAL[dashCondFilter] || dashCondFilter) : ''; }
 
+// Los botones se pintan contra el FILTRO, no contra el que se tocó: el mismo
+// grupo está en Conductores y en Zonas, y marcando solo el clickeado el otro
+// grupo quedaba mostrando "Todos" mientras el panel filtraba por Titulares.
+function _pintarBotonesCond() {
+  document.querySelectorAll('.dash-cond-btn').forEach(b =>
+    b.classList.toggle('active', (b.dataset.cond || '') === dashCondFilter));
+}
 function setDashCondFilter(btn, cond) {
   dashCondFilter = cond;
-  document.querySelectorAll('.dash-cond-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  _pintarBotonesCond();
   renderDashboard(); // re-renderiza respetando el filtro de fechas activo
 }
 
@@ -319,6 +325,7 @@ function renderDashboard() {
   } else if (dashFechaPreset === 'personalizado') {
     labelPeriodo = 'Seleccioná un rango de fechas';
   }
+  _pintarBotonesCond();
   if (dashCondLabel()) labelPeriodo = (labelPeriodo ? labelPeriodo + ' · ' : '') + 'solo ' + dashCondLabel();
   const labelEl = document.getElementById('dash-fecha-label');
   if (labelEl) labelEl.textContent = labelPeriodo;
