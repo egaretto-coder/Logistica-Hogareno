@@ -303,6 +303,7 @@ let AppData = {
   conductorFiscal: [],          // cuenta, contrato y monotributo de cada conductor
   conductorFacturas: [],        // lo transferido por período y su comprobante
   empleadoSueldos: [],
+  empleadoCierres: [],          // cierres mensuales de RRHH (historial para comparar meses)
 
   // Rendicion de envios con cobro en destino (el conductor cobra y rinde al dia siguiente).
   rendiciones: [],

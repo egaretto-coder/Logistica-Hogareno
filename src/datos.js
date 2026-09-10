@@ -87,6 +87,8 @@ function loadSavedConfig() {
   if (cfac) { try { AppData.conductorFacturas = JSON.parse(cfac) || []; } catch(e) {} }
   const emps = localStorage.getItem('liq_empleado_sueldos');
   if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
+  const empc = localStorage.getItem('liq_empleado_cierres');
+  if (empc) { try { AppData.empleadoCierres = JSON.parse(empc) || []; } catch(e) {} }
   const rend = localStorage.getItem('liq_rendiciones');
   if (rend) { try { AppData.rendiciones = JSON.parse(rend) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
@@ -373,6 +375,17 @@ async function _hydrateFromSupabaseReal(opts) {
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
   }));
+  // Cierres mensuales de RRHH: los números congelados de cada mes.
+  AppData.empleadoCierres = (data.empleado_cierres || []).map(c => ({
+    id: c.id, periodo: String(c.periodo || '').slice(0, 7),
+    emp_registrados: _num(c.emp_registrados), emp_no_registrados: _num(c.emp_no_registrados),
+    sueldos_base: _num(c.sueldos_base), promedio_sueldo: _num(c.promedio_sueldo),
+    horas_extra_horas: _num(c.horas_extra_horas), horas_extra_costo: _num(c.horas_extra_costo),
+    bonos: _num(c.bonos), costo_total: _num(c.costo_total),
+    liquidados: _num(c.liquidados), estimados: _num(c.estimados),
+    detalle: Array.isArray(c.detalle) ? c.detalle : [],
+    cerrado_por: c.cerrado_por || '', cerrado_en: c.cerrado_en || ''
+  }));
 
   // Cargos extra por cliente y semana (colecta, viajes particulares, otros).
   AppData.clienteCargos = (data.cliente_cargos || []).map(c => ({
@@ -533,6 +546,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_cliente_cargos', JSON.stringify(AppData.clienteCargos || []));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
+    localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));

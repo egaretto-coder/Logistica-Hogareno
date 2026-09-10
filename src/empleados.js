@@ -281,6 +281,7 @@ function persistirEmpleadosLocal() {
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
+    localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
   } catch (e) {}
 }
 
@@ -288,7 +289,7 @@ function persistirEmpleadosLocal() {
 //  SOLAPAS
 // ════════════════════════════════════════════════════════════════════════
 function switchEmpleadosTab(tab) {
-  ['plantel', 'ajustes', 'sueldos', 'bajas'].forEach(t => {
+  ['plantel', 'ajustes', 'sueldos', 'historial', 'bajas'].forEach(t => {
     const panel = document.getElementById('emp-tab-' + t);
     const btn = document.getElementById('emp-btn-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
@@ -297,6 +298,7 @@ function switchEmpleadosTab(tab) {
   if (tab === 'plantel') renderEmpleados();
   else if (tab === 'ajustes') renderAjustesPanel();
   else if (tab === 'bajas') renderBajas();
+  else if (tab === 'historial') renderHistorialEmpleados();
   else renderSueldosPanel();
 }
 function renderEmpleadosPagina() { switchEmpleadosTab('plantel'); }
@@ -2160,4 +2162,370 @@ async function reincorporarEmpleado(id) {
     renderBajas();
     showToast('✅ ' + e.nombre + ' volvió al plantel');
   } catch (err) { console.warn('reincorporarEmpleado', err); showToast('⛔ No se pudo reincorporar'); }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HISTORIAL MENSUAL — comparar cada mes contra los anteriores
+//
+//  Cuatro números por mes: cuántos empleados (registrados y no), el sueldo
+//  promedio, lo que costaron las horas extras y el costo total de sueldos.
+//
+//  Mientras un mes NO se cierra, sus números se CALCULAN con lo que hay hoy:
+//  la liquidación del mes si está cargada y, si no, el sueldo que regía ese
+//  mes según el historial de ajustes. No alcanza con las liquidaciones: medido
+//  al implementarlo, había UN mes con 2 liquidaciones de 31 empleados, así que
+//  "costo del mes" daba $1,2M contra una nómina real de ~$43M.
+//
+//  CERRAR el mes congela los números (`empleado_cierres`). Después, cambiar
+//  una ficha —pasar a alguien a registrado, corregir un sueldo, cargar una
+//  baja con fecha vieja— no reescribe el pasado: un historial que se mueve
+//  solo no sirve para comparar. Si lo que da hoy difiere de lo cerrado, se
+//  avisa en la fila en vez de pisarlo en silencio.
+//
+//  El costo total es sueldo + horas extras + bonos. Los adelantos NO lo bajan:
+//  son plata que ya se prestó, no un ahorro del mes.
+// ════════════════════════════════════════════════════════════════════════
+
+function _histMesActual() {
+  return (typeof mesActualYYYYMM === 'function') ? mesActualYYYYMM() : _yyyymm(new Date());
+}
+function _histFinDeMes(periodo) {
+  const d = _mesFecha(periodo);
+  if (!d) return '';
+  const f = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-' + String(f.getDate()).padStart(2, '0');
+}
+function _histMesLabel(periodo) {
+  const t = _mesTexto(periodo);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+function _histFecha(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return '';
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+}
+// Primer mes con alguien en la nómina: antes no hay nada que comparar.
+function _histPrimerMes() {
+  return (AppData.empleados || []).map(e => String(e.fecha_ingreso || '').slice(0, 7))
+    .filter(Boolean).sort()[0] || '';
+}
+
+// ¿Trabajó en ese mes? Entró antes de que termine y no se fue antes de que
+// empiece. Quien se va a mitad de mes cuenta: ese mes cobró.
+// Una baja SIN fecha no se puede ubicar en el tiempo, así que no se cuenta en
+// ningún mes — contarla en todos inflaría el pasado sin saber si trabajaba.
+function empleadoActivoEnMes(e, periodo) {
+  if (!e || !periodo) return false;
+  const ini = periodo + '-01', fin = _histFinDeMes(periodo);
+  const ing = String(e.fecha_ingreso || '').slice(0, 10);
+  if (ing && ing > fin) return false;
+  if (e.activo === false) {
+    const baja = String(e.fecha_baja || '').slice(0, 10);
+    return !!baja && baja >= ini;
+  }
+  return true;
+}
+
+// El sueldo que regía ESE mes, reconstruido del historial de ajustes: el
+// último aumento de ese mes o antes; si no hubo, el "sueldo anterior" del
+// primer aumento posterior; si no hay ninguno, el sueldo de la ficha.
+// Cuando el aumento posterior no guardó el sueldo anterior (los cargados
+// antes de que se registrara) se deshace el %: es una estimación y se marca.
+function sueldoVigenteEn(e, periodo) {
+  const fin = _histFinDeMes(periodo);
+  const aj = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === e.id)
+    .slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  let antes = null, despues = null;
+  aj.forEach(a => {
+    const f = String(a.fecha || '').slice(0, 10);
+    if (f && f <= fin) antes = a;
+    else if (f && !despues) despues = a;
+  });
+  if (antes && _num(antes.sueldo_nuevo) > 0) return { sueldo: _num(antes.sueldo_nuevo), estimado: false };
+  if (despues) {
+    if (_num(despues.sueldo_anterior) > 0) return { sueldo: _num(despues.sueldo_anterior), estimado: false };
+    if (_num(despues.pct) > 0 && _num(despues.sueldo_nuevo) > 0) {
+      return { sueldo: Math.round(_num(despues.sueldo_nuevo) / (1 + _num(despues.pct) / 100)), estimado: true };
+    }
+    return { sueldo: _num(despues.sueldo_nuevo) || _num(e.sueldo), estimado: true };
+  }
+  return { sueldo: _num(e.sueldo), estimado: false };
+}
+
+// Los números de un mes, CALCULADOS. La liquidación manda si existe —es lo
+// que se pagó—; si no, la nómina de ese mes más las horas extras registradas
+// a su valor hora.
+function calcMesEmpleados(periodo) {
+  const detalle = [];
+  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, liquidados = 0, estimados = 0;
+  (AppData.empleados || []).forEach(e => {
+    if (!empleadoActivoEnMes(e, periodo)) return;
+    const s = sueldoDe(e.id, periodo);
+    let b, hh, hc, bo, fuente, est = false;
+    if (s) {
+      b = _num(s.sueldo_base); hh = _num(s.horas_extra); hc = _num(s.monto_horas_extra);
+      bo = _num(s.bono_eficiencia); fuente = 'liquidado'; liquidados++;
+    } else {
+      const v = sueldoVigenteEn(e, periodo);
+      b = v.sueldo; est = v.estimado; if (est) estimados++;
+      hh = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
+      hc = hh ? Math.round(hh * valorHoraDe(e, b)) : 0;
+      bo = 0; fuente = 'nomina';
+    }
+    if (e.registrado === false) noReg++; else reg++;
+    base += b; heHoras += hh; heCosto += hc; bonos += bo;
+    detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false,
+      base: b, he_horas: hh, he_costo: hc, bono: bo, fuente, estimado: est });
+  });
+  const total = reg + noReg;
+  return {
+    periodo, emp_registrados: reg, emp_no_registrados: noReg, total,
+    sueldos_base: base, promedio_sueldo: total ? Math.round(base / total) : 0,
+    horas_extra_horas: Math.round(heHoras * 100) / 100, horas_extra_costo: heCosto,
+    bonos, costo_total: base + heCosto + bonos, liquidados, estimados, detalle
+  };
+}
+
+function cierreEmpleadosDe(periodo) {
+  return (AppData.empleadoCierres || []).find(c => c.periodo === periodo) || null;
+}
+
+// Lo que se MUESTRA de un mes: lo cerrado si está cerrado, lo calculado si no.
+// `vivo` va siempre, para poder decir si cambió después del cierre.
+function _histDatosMes(periodo) {
+  const vivo = calcMesEmpleados(periodo);
+  const c = cierreEmpleadosDe(periodo);
+  if (!c) return { periodo, datos: vivo, vivo, cierre: null };
+  const datos = {
+    periodo, emp_registrados: _num(c.emp_registrados), emp_no_registrados: _num(c.emp_no_registrados),
+    total: _num(c.emp_registrados) + _num(c.emp_no_registrados),
+    sueldos_base: _num(c.sueldos_base), promedio_sueldo: _num(c.promedio_sueldo),
+    horas_extra_horas: _num(c.horas_extra_horas), horas_extra_costo: _num(c.horas_extra_costo),
+    bonos: _num(c.bonos), costo_total: _num(c.costo_total),
+    liquidados: _num(c.liquidados), estimados: _num(c.estimados)
+  };
+  return { periodo, datos, vivo, cierre: c };
+}
+function _histCambioDespuesDelCierre(x) {
+  if (!x.cierre) return false;
+  return Math.abs(x.vivo.costo_total - x.datos.costo_total) >= 1 ||
+    x.vivo.emp_registrados !== x.datos.emp_registrados ||
+    x.vivo.emp_no_registrados !== x.datos.emp_no_registrados;
+}
+
+// Los últimos N meses, del más nuevo al más viejo, sin pasar del primer ingreso.
+function _histMeses(n) {
+  const hoy = _histMesActual();
+  const primer = _histPrimerMes();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const m = _mesMas(hoy, -i);
+    if (primer && m < primer) break;
+    out.push(m);
+  }
+  return out;
+}
+
+// Variaciones contra el mes anterior. Neutras a propósito: que el costo suba
+// por un aumento es lo esperable, pintarlo de rojo lo haría pasar por problema.
+function _histVarPesos(a, b) {
+  if (b == null) return '';
+  if (!b) return a ? '<div style="font-size:10px;color:var(--text-muted)">nuevo</div>' : '';
+  const d = a - b;
+  if (Math.abs(d) < 1) return '<div style="font-size:10px;color:var(--text-muted)">= igual</div>';
+  return '<div style="font-size:10px;color:var(--text-muted)">' + (d > 0 ? '▲ ' : '▼ ') + fmtPeso(Math.abs(d)) +
+    ' · ' + (Math.abs(d) * 100 / b).toFixed(1).replace('.', ',') + '%</div>';
+}
+function _histVarCant(a, b) {
+  if (b == null) return '';
+  const d = a - b;
+  if (!d) return '<div style="font-size:10px;color:var(--text-muted)">= igual</div>';
+  return '<div style="font-size:10px;color:var(--text-muted)">' + (d > 0 ? '▲ ' : '▼ ') + Math.abs(d) + '</div>';
+}
+function _histPctTxt(a, b) {
+  if (b == null || !b) return '';
+  const d = a - b;
+  if (Math.abs(d) < 1) return '=';
+  return (d > 0 ? '+' : '-') + (Math.abs(d) * 100 / b).toFixed(1).replace('.', ',') + '%';
+}
+
+function _histFila(x, prev, hoy) {
+  const d = x.datos, p = prev || null;
+  let estado;
+  if (x.cierre) {
+    const cambio = _histCambioDespuesDelCierre(x);
+    estado = '<span class="badge badge-green">cerrado</span>' +
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + _histFecha(x.cierre.cerrado_en) +
+        (x.cierre.cerrado_por ? ' · ' + x.cierre.cerrado_por : '') + '</div>' +
+      (cambio
+        ? '<div style="font-size:10px;color:#b45309;margin-top:3px">Cambió después del cierre: hoy da ' +
+            fmtPeso(x.vivo.costo_total) + ' con ' + x.vivo.total + ' empleado(s)</div>' +
+          '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px;margin-top:3px" onclick="cerrarMesEmpleados(\'' + jsAttr(x.periodo) + '\')">Volver a cerrar</button>'
+        : '');
+  } else {
+    estado = (x.periodo === hoy
+        ? '<span class="badge badge-gray">en curso</span>'
+        : '<span class="badge" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a">sin cerrar</span>') +
+      '<div style="margin-top:4px"><button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="cerrarMesEmpleados(\'' + jsAttr(x.periodo) + '\')">Cerrar mes</button></div>';
+  }
+  // De dónde sale cada número: un total sin su origen no se puede discutir.
+  const fuente = [];
+  if (d.liquidados) fuente.push(d.liquidados + ' liquidado(s)');
+  const nom = d.total - d.liquidados;
+  if (nom > 0) fuente.push(nom + ' según nómina');
+  if (d.estimados) fuente.push(d.estimados + ' sueldo(s) estimado(s)');
+  return '<tr>' +
+    '<td><strong>' + _histMesLabel(x.periodo) + '</strong>' +
+      (fuente.length ? '<div style="font-size:10px;color:var(--text-muted)">' + fuente.join(' · ') + '</div>' : '') + '</td>' +
+    '<td class="mono" style="text-align:right">' + d.emp_registrados + _histVarCant(d.emp_registrados, p && p.emp_registrados) + '</td>' +
+    '<td class="mono" style="text-align:right">' + d.emp_no_registrados + _histVarCant(d.emp_no_registrados, p && p.emp_no_registrados) + '</td>' +
+    '<td class="mono" style="text-align:right;font-weight:700">' + d.total + _histVarCant(d.total, p && p.total) + '</td>' +
+    '<td class="mono" style="text-align:right">' + fmtPeso(d.promedio_sueldo) + _histVarPesos(d.promedio_sueldo, p && p.promedio_sueldo) + '</td>' +
+    '<td class="mono" style="text-align:right">' + (d.horas_extra_costo ? fmtPeso(d.horas_extra_costo) : '—') +
+      (d.horas_extra_horas ? '<div style="font-size:10px;color:var(--text-muted)">' + String(d.horas_extra_horas).replace('.', ',') + ' h</div>' : '') +
+      (d.horas_extra_costo || (p && p.horas_extra_costo) ? _histVarPesos(d.horas_extra_costo, p && p.horas_extra_costo) : '') + '</td>' +
+    '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(d.costo_total) + _histVarPesos(d.costo_total, p && p.costo_total) + '</td>' +
+    '<td>' + estado + '</td>' +
+  '</tr>';
+}
+
+function renderHistorialEmpleados() {
+  const cont = document.getElementById('emp-hist-rows');
+  if (!cont) return;
+  const n = parseInt((document.getElementById('emp-hist-meses') || {}).value, 10) || 6;
+  const hoy = _histMesActual();
+  const meses = _histMeses(n);
+  const info = document.getElementById('emp-hist-info');
+  const kpis = document.getElementById('emp-hist-kpis');
+  if (!meses.length) {
+    cont.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-title">Sin historial</div>' +
+      '<div class="empty-sub">No hay empleados con fecha de ingreso en el período</div></div></td></tr>';
+    if (kpis) kpis.innerHTML = '';
+    if (info) info.textContent = '';
+    return;
+  }
+  const datos = meses.map(_histDatosMes);
+  // El mes anterior al más viejo que se muestra, para que también tenga contra
+  // qué compararse (si no, la última fila quedaría sin variación).
+  const primer = _histPrimerMes();
+  const antes = _mesMas(meses[meses.length - 1], -1);
+  const extra = (!primer || antes >= primer) ? _histDatosMes(antes) : null;
+  const previoDe = i => (i + 1 < datos.length) ? datos[i + 1].datos : (extra ? extra.datos : null);
+
+  // Arriba: el último mes CERRADO contra el anterior; si no se cerró ninguno,
+  // el último mes completo. El mes en curso no: todavía se está moviendo.
+  let refI = datos.findIndex(x => x.cierre);
+  if (refI < 0) refI = datos.findIndex(x => x.periodo === _mesMas(hoy, -1));
+  if (refI < 0) refI = 0;
+  const ref = datos[refI], pr = previoDe(refI), kd = ref.datos;
+  if (info) info.textContent = 'Arriba: ' + _mesTexto(ref.periodo) + (ref.cierre ? ' (cerrado)' : ' (calculado)') +
+    (pr ? ' contra ' + _mesTexto(_mesMas(ref.periodo, -1)) : '') + ' · ' +
+    datos.filter(x => x.cierre).length + ' de ' + datos.length + ' mes(es) cerrados';
+  const card = (ic, label, valor, sub, extraHtml) =>
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-' + ic + '"></i></div>' +
+      '<div class="metric-label">' + label + '</div><div class="metric-value">' + valor + '</div>' +
+      '<div class="metric-sub">' + sub + '</div>' + (extraHtml || '') + '</div>';
+  if (kpis) kpis.innerHTML =
+    card('users', 'Empleados', String(kd.total),
+      kd.emp_registrados + ' registrados · ' + kd.emp_no_registrados + ' no registrados', _histVarCant(kd.total, pr && pr.total)) +
+    card('dollar', 'Promedio de sueldo', fmtPeso(kd.promedio_sueldo), 'por empleado', _histVarPesos(kd.promedio_sueldo, pr && pr.promedio_sueldo)) +
+    card('calendar', 'Horas extras', fmtPeso(kd.horas_extra_costo),
+      (kd.horas_extra_horas ? String(kd.horas_extra_horas).replace('.', ',') + ' h' : 'sin horas extras'),
+      _histVarPesos(kd.horas_extra_costo, pr && pr.horas_extra_costo)) +
+    card('trend', 'Costo total de sueldos', fmtPeso(kd.costo_total), 'sueldos + horas extras + bonos',
+      _histVarPesos(kd.costo_total, pr && pr.costo_total));
+
+  cont.innerHTML = datos.map((x, i) => _histFila(x, previoDe(i), hoy)).join('');
+}
+
+// Congela los números del mes. Cualquiera que liquida puede cerrar: es un
+// registro de lo que pasó, no una decisión sobre plata. Volver a cerrar
+// REEMPLAZA el cierre anterior, y el confirm lo dice con quién y cuándo.
+async function cerrarMesEmpleados(periodo) {
+  const hoy = _histMesActual();
+  if (!periodo || periodo > hoy) return;
+  const d = calcMesEmpleados(periodo);
+  const prev = cierreEmpleadosDe(periodo);
+  const NL = String.fromCharCode(10);
+  const txt =
+    (prev ? 'Este mes ya se cerró el ' + _histFecha(prev.cerrado_en) + (prev.cerrado_por ? ' (' + prev.cerrado_por + ')' : '') +
+      '. Se va a REEMPLAZAR con los números de hoy.' + NL + NL : '') +
+    (periodo === hoy ? 'Ojo: ' + _mesTexto(periodo) + ' todavía no terminó.' + NL + NL : '') +
+    'Cerrar ' + _mesTexto(periodo) + ':' + NL +
+    '· Empleados: ' + d.total + ' (' + d.emp_registrados + ' registrados, ' + d.emp_no_registrados + ' no registrados)' + NL +
+    '· Promedio de sueldo: ' + fmtPeso(d.promedio_sueldo) + NL +
+    '· Horas extras: ' + fmtPeso(d.horas_extra_costo) + NL +
+    '· Costo total: ' + fmtPeso(d.costo_total) +
+    (d.total - d.liquidados > 0
+      ? NL + NL + (d.total - d.liquidados) + ' de ' + d.total + ' salen de la nómina, no de una liquidación cargada.'
+      : '') +
+    NL + NL + 'Desde ahora el historial muestra estos números aunque después cambie una ficha.';
+  if (!confirm(txt)) return;
+  const quien = (typeof currentUser !== 'undefined' && currentUser) ? (currentUser.nombre || currentUser.usuario || '') : '';
+  const rec = {
+    periodo,
+    emp_registrados: d.emp_registrados, emp_no_registrados: d.emp_no_registrados,
+    sueldos_base: d.sueldos_base, promedio_sueldo: d.promedio_sueldo,
+    horas_extra_horas: d.horas_extra_horas, horas_extra_costo: d.horas_extra_costo,
+    bonos: d.bonos, costo_total: d.costo_total,
+    liquidados: d.liquidados, estimados: d.estimados, detalle: d.detalle,
+    cerrado_por: quien, cerrado_en: new Date().toISOString()
+  };
+  try {
+    if (prev && prev.id != null) {
+      await DB.updateWhere('empleado_cierres', 'id', prev.id, rec);
+      Object.assign(prev, rec);
+    } else {
+      const row = await DB.insertRow('empleado_cierres', rec);
+      AppData.empleadoCierres = (AppData.empleadoCierres || []).filter(c => c.periodo !== periodo)
+        .concat([Object.assign({ id: row && row.id }, rec)]);
+    }
+    persistirEmpleadosLocal();
+    renderHistorialEmpleados();
+    showToast('✅ ' + _histMesLabel(periodo) + ' cerrado');
+  } catch (e) { console.warn('cerrarMesEmpleados', e); alert('No se pudo cerrar el mes: ' + (e.message || e)); }
+}
+
+// El papel de la comparativa: los mismos meses que la pantalla, con la
+// variación contra el mes anterior. Sin flechas: jsPDF no las dibuja.
+function exportHistorialEmpleadosPDF() {
+  const n = parseInt((document.getElementById('emp-hist-meses') || {}).value, 10) || 6;
+  const meses = _histMeses(n);
+  if (!meses.length) { alert('No hay meses para exportar.'); return; }
+  const datos = meses.map(_histDatosMes);
+  const primer = _histPrimerMes();
+  const antes = _mesMas(meses[meses.length - 1], -1);
+  const extra = (!primer || antes >= primer) ? _histDatosMes(antes) : null;
+  const previoDe = i => (i + 1 < datos.length) ? datos[i + 1].datos : (extra ? extra.datos : null);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+  doc.setFontSize(15); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
+  doc.text('Historial mensual de personal', 14, 17);
+  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
+  doc.text('Últimos ' + meses.length + ' meses · Generado: ' + new Date().toLocaleString('es-AR') +
+    ' · Costo total = sueldos + horas extras + bonos (los adelantos no lo bajan)', 14, 23);
+  const body = datos.map((x, i) => {
+    const d = x.datos, p = previoDe(i);
+    return [
+      _histMesLabel(x.periodo),
+      d.emp_registrados, d.emp_no_registrados, d.total,
+      fmtPeso(d.promedio_sueldo), fmtPeso(d.horas_extra_costo), fmtPeso(d.costo_total),
+      _histPctTxt(d.costo_total, p && p.costo_total),
+      x.cierre ? 'Cerrado ' + _histFecha(x.cierre.cerrado_en) : (x.periodo === _histMesActual() ? 'En curso' : 'Sin cerrar')
+    ];
+  });
+  doc.autoTable({
+    startY: 28,
+    head: [['Mes', 'Registrados', 'No registrados', 'Total', 'Promedio sueldo', 'Horas extras', 'Costo total', 'vs mes anterior', 'Estado']],
+    body,
+    theme: 'striped',
+    headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
+    alternateRowStyles: { fillColor: [244, 247, 252] },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' },
+      4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+    margin: { left: 14, right: 14 }
+  });
+  doc.save('Historial_personal_' + new Date().toLocaleDateString('es-AR').replace(/\//g, '-') + '.pdf');
+  showToast('📥 Historial mensual descargado');
 }

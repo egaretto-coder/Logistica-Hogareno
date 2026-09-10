@@ -659,6 +659,32 @@ create policy empleados_all        on public.empleados        for all to authent
 create policy empleado_ajustes_all on public.empleado_ajustes for all to authenticated using (true) with check (true);
 create policy empleado_sueldos_all on public.empleado_sueldos for all to authenticated using (true) with check (true);
 
+-- Cierre mensual de RRHH (historial para comparar meses). Mientras un mes no
+-- se cierra la app lo CALCULA con lo que hay hoy; cerrarlo lo congela, así
+-- cambiar después una ficha no reescribe el pasado. `detalle` guarda quién
+-- entró en la cuenta y de dónde salió cada número.
+create table if not exists public.empleado_cierres (
+  id bigint generated always as identity primary key,
+  periodo text not null unique,                 -- AAAA-MM
+  emp_registrados integer not null default 0,
+  emp_no_registrados integer not null default 0,
+  sueldos_base numeric not null default 0,
+  promedio_sueldo numeric not null default 0,
+  horas_extra_horas numeric not null default 0,
+  horas_extra_costo numeric not null default 0,
+  bonos numeric not null default 0,
+  costo_total numeric not null default 0,       -- base + horas extras + bonos
+  liquidados integer not null default 0,
+  estimados integer not null default 0,
+  detalle jsonb not null default '[]'::jsonb,
+  cerrado_por text not null default '',
+  cerrado_en timestamptz not null default now()
+);
+alter table public.empleado_cierres enable row level security;
+create policy empleado_cierres_all on public.empleado_cierres for all to authenticated
+  using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+alter publication supabase_realtime add table public.empleado_cierres;
+
 -- registros.anulado_cliente + motivo_anulacion: GESTO COMERCIAL. El envio se
 -- entrego y al conductor SE LE PAGA igual; lo que se anula es el cobro al
 -- cliente. No se borra: queda en la liquidacion tachado y en $0 con lo
