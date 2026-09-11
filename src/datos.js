@@ -411,7 +411,9 @@ async function _hydrateFromSupabaseReal(opts) {
     fecha_desde: v.fecha_desde || '', fecha_hasta: v.fecha_hasta || '',
     dias: _num(v.dias), estado: v.estado || 'planificada', obs: v.obs || '',
     // 'corrida' (bloque, gasta sábados y domingos) | 'salteada' (días sueltos)
-    modalidad: v.modalidad === 'salteada' ? 'salteada' : 'corrida'
+    modalidad: v.modalidad === 'salteada' ? 'salteada' : 'corrida',
+    // Cuándo se cargó: ante una carga repetida es lo que dice cuál fue la primera.
+    created_at: v.created_at || ''
   }));
 
   // Rendiciones de cobros en destino.

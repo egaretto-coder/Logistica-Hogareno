@@ -214,6 +214,9 @@ let vacTab = 'saldos';
 
 function switchVacacionesTab(tab) {
   vacTab = tab;
+  // El aviso de cargas repetidas va arriba de las solapas: tiene que verse desde
+  // cualquiera, y esta función es la que corre después de cada cambio.
+  renderVacRepetidas();
   ['saldos', 'calendario', 'historial', 'licencias', 'extras'].forEach(t => {
     const panel = document.getElementById('vac-tab-' + t);
     const btn = document.getElementById('vac-btn-' + t);
@@ -608,17 +611,24 @@ function renderVacCalendario() {
       '</div>';
   }
 
+  const repVac = _vacIdsRepetidas();
   const filas = delMes.map(v => {
     const e = empleadoDeVac(v.empleado_id);
     const st = VAC_ESTADOS[v.estado] || VAC_ESTADOS.planificada;
     return '<tr>' +
       '<td><strong>' + _vacNombre(v.empleado_id) + '</strong>' +
+        (repVac.has(v.id) ? ' <span class="tag" title="Hay otra carga de este empleado para las mismas fechas" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:9.5px">repetida</span>' : '') +
         (e && e.area ? '<div style="font-size:10.5px;color:var(--text-muted)">' + e.area + '</div>' : '') + '</td>' +
       '<td>' + vacFmt(v.fecha_desde) + ' → ' + vacFmt(v.fecha_hasta) + '</td>' +
       '<td style="text-align:right"><strong>' + v.dias + '</strong>' + '<div class="muted" style="font-size:9.5px">' + (vacEsSalteada(v) ? 'salteados' : 'corridos') + '</div></td>' +
       '<td>' + v.periodo + '</td>' +
       '<td><span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + '">' + st.label + '</span></td>' +
-      '<td style="text-align:right"><button class="btn btn-sm" onclick="openVacModal(' + v.id + ')"><i class="ic ic-edit"></i></button></td>' +
+      // La papelera también acá: el Calendario muestra el mes en curso, que es
+      // donde se ve la carga de más, y antes solo tenía el lápiz.
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
+        '<button class="btn btn-sm" title="Editar" onclick="openVacModal(' + v.id + ')"><i class="ic ic-edit"></i></button>' +
+        '<button class="btn btn-sm" title="Borrar esta carga" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarVacacion(' + v.id + ')"><i class="ic ic-trash"></i></button>' +
+      '</div></td>' +
     '</tr>';
   }).join('');
 
@@ -631,7 +641,10 @@ function renderVacCalendario() {
       '<td style="text-align:right"><strong>' + _num(l.dias) + '</strong><div class="muted" style="font-size:9.5px">corridos</div></td>' +
       '<td>—</td>' +
       '<td><span class="tag" style="background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe">Licencia · ' + licTipo(l.tipo).label + '</span></td>' +
-      '<td style="text-align:right"><button class="btn btn-sm" onclick="openLicenciaModal(' + l.id + ')"><i class="ic ic-edit"></i></button></td>' +
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
+        '<button class="btn btn-sm" title="Editar" onclick="openLicenciaModal(' + l.id + ')"><i class="ic ic-edit"></i></button>' +
+        '<button class="btn btn-sm" title="Borrar" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarLicencia(' + l.id + ')"><i class="ic ic-trash"></i></button>' +
+      '</div></td>' +
     '</tr>';
   }).join('');
 
@@ -677,12 +690,14 @@ function renderVacHistorial() {
     return;
   }
 
+  const repVac = _vacIdsRepetidas();
   body.innerHTML = lista.map(v => {
     const e = empleadoDeVac(v.empleado_id);
     const st = VAC_ESTADOS[v.estado] || VAC_ESTADOS.planificada;
     return '<tr' + (e && e.activo === false ? ' style="opacity:.6"' : '') + '>' +
       '<td><strong>' + _vacNombre(v.empleado_id) + '</strong>' +
-        (e && e.activo === false ? ' <span class="tag" style="background:#fef2f2;color:#991b1b;font-size:9.5px">baja</span>' : '') + '</td>' +
+        (e && e.activo === false ? ' <span class="tag" style="background:#fef2f2;color:#991b1b;font-size:9.5px">baja</span>' : '') +
+        (repVac.has(v.id) ? ' <span class="tag" title="Hay otra carga de este empleado para las mismas fechas" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:9.5px">repetida</span>' : '') + '</td>' +
       '<td>' + vacFmt(v.fecha_desde) + '</td>' +
       '<td>' + vacFmt(v.fecha_hasta) + '</td>' +
       '<td style="text-align:right"><strong>' + v.dias + '</strong>' + '<div class="muted" style="font-size:9.5px">' + (vacEsSalteada(v) ? 'salteados' : 'corridos') + '</div></td>' +
@@ -690,8 +705,8 @@ function renderVacHistorial() {
       '<td><span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + '">' + st.label + '</span>' +
         (v.obs ? '<div style="font-size:10.5px;color:var(--text-muted)">' + v.obs + '</div>' : '') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
-        '<button class="btn btn-sm" onclick="openVacModal(' + v.id + ')"><i class="ic ic-edit"></i></button>' +
-        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarVacacion(' + v.id + ')"><i class="ic ic-trash"></i></button>' +
+        '<button class="btn btn-sm" title="Editar" onclick="openVacModal(' + v.id + ')"><i class="ic ic-edit"></i></button>' +
+        '<button class="btn btn-sm" title="Borrar esta carga" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarVacacion(' + v.id + ')"><i class="ic ic-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -701,6 +716,8 @@ function renderVacHistorial() {
 //  MODAL — cargar / editar una licencia
 // ════════════════════════════════════════════════════════════════════════
 let vacEditId = null;
+// Guardado en curso: ver guardarVacacion.
+let _vacGuardando = false;
 
 function openVacModal(id, empIdSugerido) {
   vacEditId = id != null ? id : null;
@@ -746,7 +763,11 @@ function openVacModal(id, empIdSugerido) {
     }
   }
   document.getElementById('mvac-obs').value = v ? (v.obs || '') : '';
-  document.getElementById('modal-vac-title').textContent = v ? 'Editar licencia' : 'Cargar vacaciones';
+  document.getElementById('modal-vac-title').textContent = v ? 'Editar vacaciones' : 'Cargar vacaciones';
+  // Borrar vive también acá: el lápiz es lo primero que se abre al ver una carga
+  // de más, y la papelera estaba solo en el Historial.
+  const bBorrar = document.getElementById('mvac-borrar');
+  if (bBorrar) bBorrar.style.display = v ? '' : 'none';
   document.getElementById('modal-vac-backdrop').style.display = 'flex';
   recalcVacModal();
 }
@@ -835,6 +856,11 @@ function recalcVacModal() {
 }
 
 async function guardarVacacion() {
+  // Un doble clic en Guardar grababa la carga DOS veces: la ventana sigue abierta
+  // mientras se escribe en la nube, y el segundo clic no ve la primera carga,
+  // que se suma a AppData recién cuando vuelve. Pasó de verdad: dos filas
+  // idénticas de RUBEN QUIROZ grabadas con 22 microsegundos de diferencia.
+  if (_vacGuardando) return;
   const empleado_id = parseInt(document.getElementById('mvac-empleado').value, 10);
   const periodo = parseInt(document.getElementById('mvac-periodo').value, 10);
   const fecha_desde = document.getElementById('mvac-desde').value;
@@ -848,14 +874,26 @@ async function guardarVacacion() {
   if (fecha_hasta < fecha_desde) { alert('La fecha de fin no puede ser anterior a la de inicio.'); return; }
   const dias = vacDiasEntre(fecha_desde, fecha_hasta);
 
-  // Superposición con otra licencia del MISMO empleado: casi siempre es que se
-  // cargó dos veces, y sumaría días de más al saldo.
+  // Superposición con otras vacaciones del MISMO empleado: casi siempre es que se
+  // cargó dos veces, y sumaría días de más al saldo. Al cargar una NUEVA se dice
+  // qué pasa si se acepta: las copias de más que se encontraron eran correcciones
+  // (del período, del estado) hechas cargando otra vez en vez de editar.
   const choca = (AppData.vacaciones || []).find(v => v.empleado_id === empleado_id && v.id !== vacEditId &&
     vacCuenta(v) && String(v.fecha_desde) <= fecha_hasta && String(v.fecha_hasta) >= fecha_desde);
-  if (choca && !confirm('Ya tiene una licencia del ' + vacFmt(choca.fecha_desde) + ' al ' + vacFmt(choca.fecha_hasta) +
-      ', que se superpone con estas fechas.' + String.fromCharCode(10) + String.fromCharCode(10) + '¿Guardar igual?')) return;
+  if (choca) {
+    const NL = String.fromCharCode(10);
+    const msg = _vacNombre(empleado_id) + ' ya tiene vacaciones cargadas del ' + vacFmt(choca.fecha_desde) + ' al ' +
+      vacFmt(choca.fecha_hasta) + ', que se pisan con estas fechas.' + NL + NL +
+      (vacEditId == null
+        ? 'Guardar agrega una SEGUNDA carga y le descuenta esos días dos veces. Si lo que querés es corregir la que ya está ' +
+          '(el período, el estado o la modalidad), cancelá y editala con el lápiz.' + NL + NL + '¿Agregar otra carga igual?'
+        : '¿Guardar igual?');
+    if (!confirm(msg)) return;
+  }
 
   const rec = { empleado_id, periodo, fecha_desde, fecha_hasta, dias, estado, modalidad, obs };
+  _vacGuardando = true;
+  _btnGuardando('mvac-guardar', true);
   try {
     if (vacEditId != null) {
       await DB.updateWhere('vacaciones', 'id', vacEditId, rec);
@@ -863,30 +901,148 @@ async function guardarVacacion() {
       if (v) Object.assign(v, rec);
     } else {
       const row = await DB.insertRow('vacaciones', rec);
-      AppData.vacaciones.push(Object.assign({ id: row.id }, rec));
+      AppData.vacaciones.push(Object.assign({ id: row && row.id,
+        created_at: (row && row.created_at) || new Date().toISOString() }, rec));
     }
     persistirVacacionesLocal();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     closeVacModal();
     switchVacacionesTab(vacTab);
-    showToast('✅ Licencia guardada — ' + dias + ' día(s) ' + (modalidad === 'salteada' ? 'salteados' : 'corridos'));
-  } catch (e) { console.warn('guardarVacacion', e); alert('No se pudo guardar: ' + (e.message || e)); }
+    showToast('✅ Vacaciones guardadas — ' + dias + ' día(s) ' + (modalidad === 'salteada' ? 'salteados' : 'corridos'));
+  } catch (e) {
+    console.warn('guardarVacacion', e); alert('No se pudo guardar: ' + (e.message || e));
+  } finally {
+    _vacGuardando = false;
+    _btnGuardando('mvac-guardar', false);
+  }
 }
 
 async function eliminarVacacion(id) {
   const v = (AppData.vacaciones || []).find(x => x.id === id);
-  if (!v) return;
-  if (!confirm('Borrar la licencia de ' + _vacNombre(v.empleado_id) + ' del ' + vacFmt(v.fecha_desde) +
-    ' al ' + vacFmt(v.fecha_hasta) + '?' + String.fromCharCode(10) + String.fromCharCode(10) +
-    'Si la persona no llegó a tomarlas, conviene marcarla como Cancelada en vez de borrarla: así queda el registro.')) return;
+  if (!v) return false;
+  const NL = String.fromCharCode(10);
+  // Si se pisa con otra carga del mismo empleado, lo que se borra es una copia y
+  // no hay nada que conservar. Si es la única, conviene cancelarla: queda el registro.
+  const otra = (AppData.vacaciones || []).some(x => x.id !== v.id && x.empleado_id === v.empleado_id && vacCuenta(x) &&
+    String(x.fecha_desde) <= String(v.fecha_hasta) && String(x.fecha_hasta) >= String(v.fecha_desde));
+  if (!confirm('¿Borrar las vacaciones de ' + _vacNombre(v.empleado_id) + ' del ' + vacFmt(v.fecha_desde) +
+      ' al ' + vacFmt(v.fecha_hasta) + ' (' + v.dias + ' ' + (vacEsSalteada(v) ? 'salteados' : 'corridos') +
+      ', corresponden a ' + v.periodo + ')?' + NL + NL +
+      (otra ? 'Tiene otra carga para esas fechas: esa queda como está.'
+            : 'Si la persona no llegó a tomarlas, conviene marcarlas como Canceladas en vez de borrarlas: así queda el registro.'))) return false;
   try {
     await DB.deleteWhere('vacaciones', 'id', id);
     AppData.vacaciones = AppData.vacaciones.filter(x => x.id !== id);
     persistirVacacionesLocal();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     switchVacacionesTab(vacTab);
-    showToast('Licencia borrada');
-  } catch (e) { console.warn('eliminarVacacion', e); alert('No se pudo borrar: ' + (e.message || e)); }
+    showToast('Vacaciones borradas');
+    return true;
+  } catch (e) { console.warn('eliminarVacacion', e); alert('No se pudo borrar: ' + (e.message || e)); return false; }
+}
+// Borrar desde la ventana del lápiz, que se cierra solo si de verdad se borró.
+async function borrarVacacionDelModal() {
+  const id = vacEditId;
+  if (id == null) return;
+  if (await eliminarVacacion(id)) closeVacModal();
+}
+// Mientras se escribe en la nube el botón queda deshabilitado y lo dice: es lo
+// que frena el segundo clic, y además se ve que algo está pasando.
+function _btnGuardando(id, on) {
+  const b = document.getElementById(id);
+  if (!b) return;
+  if (on) {
+    if (b.dataset.html == null) b.dataset.html = b.innerHTML;
+    b.disabled = true; b.textContent = 'Guardando…';
+  } else {
+    b.disabled = false;
+    if (b.dataset.html != null) { b.innerHTML = b.dataset.html; delete b.dataset.html; }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  CARGAS REPETIDAS
+//  El mismo empleado con dos o más vacaciones que se pisan. Nadie se toma dos
+//  veces la misma semana: es una carga doble —un doble clic en Guardar, o una
+//  carga nueva para "corregir" la anterior en vez de editarla— y cada copia le
+//  descuenta días del saldo. Las canceladas no cuentan: ya no descuentan nada.
+// ════════════════════════════════════════════════════════════════════════
+function vacRepetidas() {
+  const porEmp = {};
+  (AppData.vacaciones || []).filter(vacCuenta).forEach(v => {
+    (porEmp[v.empleado_id] = porEmp[v.empleado_id] || []).push(v);
+  });
+  const grupos = [];
+  Object.keys(porEmp).forEach(k => {
+    const lista = porEmp[k].slice().sort((a, b) =>
+      String(a.fecha_desde).localeCompare(String(b.fecha_desde)) || (_num(a.id) - _num(b.id)));
+    let g = null;
+    lista.forEach(v => {
+      // Se encadenan: si A se pisa con B y B con C es un solo grupo, aunque A y C no se toquen.
+      if (g && String(v.fecha_desde) <= g.hasta) {
+        g.filas.push(v);
+        if (String(v.fecha_hasta) > g.hasta) g.hasta = String(v.fecha_hasta);
+      } else {
+        g = { empleado_id: v.empleado_id, desde: String(v.fecha_desde), hasta: String(v.fecha_hasta), filas: [v] };
+        grupos.push(g);
+      }
+    });
+  });
+  return grupos.filter(x => x.filas.length > 1)
+    .sort((a, b) => String(_vacNombre(a.empleado_id)).localeCompare(String(_vacNombre(b.empleado_id))));
+}
+function _vacIdsRepetidas() {
+  const s = new Set();
+  vacRepetidas().forEach(g => g.filas.forEach(v => s.add(v.id)));
+  return s;
+}
+// Dos cargas IDÉNTICAS (mismo período, días, estado, modalidad y observación) no
+// tienen nada que decidir: cualquiera de las dos sobra.
+function _vacFirma(v) {
+  return [v.empleado_id, v.periodo, v.fecha_desde, v.fecha_hasta, v.dias, v.estado,
+    vacEsSalteada(v) ? 's' : 'c', String(v.obs || '').trim()].join('|');
+}
+// Cuándo se cargó: entre dos copias, es lo que dice cuál fue la primera.
+function _vacCargadaEl(v) {
+  if (!v || !v.created_at) return '';
+  const d = new Date(v.created_at);
+  if (isNaN(d)) return '';
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + ' ' +
+    String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function renderVacRepetidas() {
+  const cont = document.getElementById('vac-repetidas');
+  if (!cont) return;
+  const grupos = vacRepetidas();
+  if (!grupos.length) { cont.innerHTML = ''; return; }
+  const bloques = grupos.map(g => {
+    const vistas = {};
+    const filas = g.filas.slice().sort((a, b) => _num(a.id) - _num(b.id)).map(v => {
+      const st = VAC_ESTADOS[v.estado] || VAC_ESTADOS.planificada;
+      const firma = _vacFirma(v);
+      const identica = vistas[firma]; vistas[firma] = true;
+      const cargada = _vacCargadaEl(v);
+      return '<div class="vac-rep-fila" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 0;border-top:1px dashed #fdba74">' +
+        '<span style="flex:1;min-width:220px">' + vacFmt(v.fecha_desde) + ' al ' + vacFmt(v.fecha_hasta) +
+          ' · <strong>' + v.dias + ' ' + (vacEsSalteada(v) ? 'salteados' : 'corridos') + '</strong>' +
+          ' · corresponden a ' + v.periodo + ' ' +
+          '<span class="tag" style="background:' + st.bg + ';color:' + st.color + ';border:1px solid ' + st.borde + '">' + st.label + '</span>' +
+          (cargada ? ' <span style="font-size:11px;opacity:.8">cargada el ' + cargada + '</span>' : '') +
+          (identica ? ' <span class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">idéntica a otra</span>' : '') +
+        '</span>' +
+        '<button class="btn btn-sm" title="Editar" onclick="openVacModal(' + v.id + ')"><i class="ic ic-edit"></i></button>' +
+        '<button class="btn btn-sm" title="Borrar esta carga" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarVacacion(' + v.id + ')"><i class="ic ic-trash"></i> Borrar</button>' +
+      '</div>';
+    }).join('');
+    return '<div style="margin-top:10px"><div style="margin-bottom:2px"><strong>' + _vacNombre(g.empleado_id) + '</strong> — ' +
+      g.filas.length + ' cargas que se pisan, del ' + vacFmt(g.desde) + ' al ' + vacFmt(g.hasta) + '</div>' + filas + '</div>';
+  }).join('');
+  cont.innerHTML = '<div class="alert" style="margin:0 0 14px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+    '<i class="ic ic-alert"></i><div style="flex:1;min-width:0">' +
+    '<strong>' + (grupos.length === 1 ? '1 empleado tiene' : grupos.length + ' empleados tienen') +
+    ' vacaciones cargadas más de una vez para las mismas fechas.</strong> ' +
+    'Cada carga le descuenta días del saldo: dejá la que corresponde y borrá las demás. Si no sabés cuál vale, abrila con el lápiz.' +
+    bloques + '</div></div>';
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1190,6 +1346,7 @@ function renderLicencias() {
 
 // ── El modal ──────────────────────────────────────────────────────────────
 let licEditId = null;
+let _licGuardando = false;
 
 function openLicenciaModal(id, empIdSugerido) {
   licEditId = id != null ? id : null;
@@ -1227,6 +1384,8 @@ function openLicenciaModal(id, empIdSugerido) {
   _licSet('mlic-obs', l ? l.obs : '');
   const tit = document.getElementById('modal-lic-title');
   if (tit) tit.textContent = l ? 'Editar licencia' : 'Registrar licencia';
+  const bBorrar = document.getElementById('mlic-borrar');
+  if (bBorrar) bBorrar.style.display = l ? '' : 'none';
   document.getElementById('modal-lic-backdrop').style.display = 'flex';
   _licEtiquetaComprobante();
   recalcLicenciaModal();
@@ -1331,6 +1490,8 @@ function recalcLicenciaModal() {
 }
 
 async function guardarLicencia() {
+  // Mismo resguardo que guardarVacacion: un doble clic grababa dos veces.
+  if (_licGuardando) return;
   const empleado_id = parseInt(_licVal('mlic-empleado'), 10);
   const tipo = _licVal('mlic-tipo');
   const fecha_desde = _licVal('mlic-desde'), fecha_hasta = _licVal('mlic-hasta');
@@ -1351,6 +1512,8 @@ async function guardarLicencia() {
       'Casi siempre es una carga doble. ¿Guardar igual?')) return;
 
   const rec = { empleado_id, tipo, fecha_desde, fecha_hasta, dias, con_goce, comprobante, obs };
+  _licGuardando = true;
+  _btnGuardando('mlic-guardar', true);
   try {
     if (licEditId != null) {
       await DB.updateWhere('empleado_licencias', 'id', licEditId, rec);
@@ -1367,14 +1530,19 @@ async function guardarLicencia() {
     closeLicenciaModal();
     switchVacacionesTab(vacTab);
     showToast('✅ Licencia registrada — ' + t.label + ' · ' + dias + ' día(s)');
-  } catch (e) { console.warn('guardarLicencia', e); alert('No se pudo guardar: ' + (e.message || e)); }
+  } catch (e) {
+    console.warn('guardarLicencia', e); alert('No se pudo guardar: ' + (e.message || e));
+  } finally {
+    _licGuardando = false;
+    _btnGuardando('mlic-guardar', false);
+  }
 }
 
 async function eliminarLicencia(id) {
   const l = (AppData.empleadoLicencias || []).find(x => x.id === id);
-  if (!l) return;
+  if (!l) return false;
   if (!confirm('¿Borrar la licencia por ' + licTipo(l.tipo).label.toLowerCase() + ' de ' + _vacNombre(l.empleado_id) +
-    ' del ' + vacFmt(l.fecha_desde) + ' al ' + vacFmt(l.fecha_hasta) + '?')) return;
+    ' del ' + vacFmt(l.fecha_desde) + ' al ' + vacFmt(l.fecha_hasta) + '?')) return false;
   try {
     await DB.deleteWhere('empleado_licencias', 'id', id);
     AppData.empleadoLicencias = (AppData.empleadoLicencias || []).filter(x => x.id !== id);
@@ -1382,7 +1550,13 @@ async function eliminarLicencia(id) {
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     switchVacacionesTab(vacTab);
     showToast('Licencia borrada');
-  } catch (e) { console.warn('eliminarLicencia', e); alert('No se pudo borrar: ' + (e.message || e)); }
+    return true;
+  } catch (e) { console.warn('eliminarLicencia', e); alert('No se pudo borrar: ' + (e.message || e)); return false; }
+}
+async function borrarLicenciaDelModal() {
+  const id = licEditId;
+  if (id == null) return;
+  if (await eliminarLicencia(id)) closeLicenciaModal();
 }
 
 // Registrar que trajo el acta o el certificado, sin abrir el modal.

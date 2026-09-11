@@ -1724,8 +1724,9 @@
         <input type="text" id="mlic-obs" class="form-input" placeholder="Ej: parentesco, médico, nro. de certificado" style="width:100%">
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" id="mlic-borrar" onclick="borrarLicenciaDelModal()" style="display:none;margin-right:auto;border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Borrar</button>
         <button class="btn" onclick="closeLicenciaModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarLicencia()"><i class="ic ic-save"></i> Guardar</button>
+        <button class="btn btn-primary" id="mlic-guardar" onclick="guardarLicencia()"><i class="ic ic-save"></i> Guardar</button>
       </div>
     </div>
   </div>
@@ -1784,8 +1785,9 @@
         <input type="text" id="mvac-obs" class="form-input" placeholder="Ej: adelanta 5 días del período siguiente" style="width:100%">
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" id="mvac-borrar" onclick="borrarVacacionDelModal()" style="display:none;margin-right:auto;border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i> Borrar esta carga</button>
         <button class="btn" onclick="closeVacModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarVacacion()"><i class="ic ic-save"></i> Guardar</button>
+        <button class="btn btn-primary" id="mvac-guardar" onclick="guardarVacacion()"><i class="ic ic-save"></i> Guardar</button>
       </div>
     </div>
   </div>
