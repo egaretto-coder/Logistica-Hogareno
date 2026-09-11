@@ -214,7 +214,7 @@ let vacTab = 'saldos';
 
 function switchVacacionesTab(tab) {
   vacTab = tab;
-  ['saldos', 'calendario', 'historial', 'extras'].forEach(t => {
+  ['saldos', 'calendario', 'historial', 'licencias', 'extras'].forEach(t => {
     const panel = document.getElementById('vac-tab-' + t);
     const btn = document.getElementById('vac-btn-' + t);
     if (panel) panel.style.display = (t === tab) ? '' : 'none';
@@ -223,6 +223,7 @@ function switchVacacionesTab(tab) {
   if (tab === 'saldos') renderVacSaldos();
   else if (tab === 'calendario') renderVacCalendario();
   else if (tab === 'extras') renderHorasExtra();
+  else if (tab === 'licencias') renderLicencias();
   else renderVacHistorial();
 }
 
@@ -566,15 +567,24 @@ function renderVacCalendario() {
     .sort((a, b) => String(a.fecha_desde).localeCompare(String(b.fecha_desde)) ||
                     String(_vacNombre(a.empleado_id)).localeCompare(String(_vacNombre(b.empleado_id))));
 
+  // Las LICENCIAS (matrimonio, enfermedad…) también dejan a alguien afuera: el
+  // calendario está para ver la superposición, y quien está enfermo falta
+  // igual que quien está de vacaciones.
+  const licMes = (AppData.empleadoLicencias || []).filter(l =>
+    _vacFecha(l.fecha_desde) <= ultimo && _vacFecha(l.fecha_hasta) >= primero);
+
   const activos = (AppData.empleados || []).filter(e => e.activo !== false).length;
-  const porDia = new Array(nDias + 1).fill(0);
-  delMes.forEach(v => {
+  // Se cuentan PERSONAS, no registros: alguien con vacaciones y una licencia
+  // el mismo día (casi siempre, una carga doble) es una sola persona afuera.
+  const afuera = Array.from({ length: nDias + 1 }, () => new Set());
+  delMes.concat(licMes).forEach(v => {
     const a = _vacFecha(v.fecha_desde), b = _vacFecha(v.fecha_hasta);
     for (let d = 1; d <= nDias; d++) {
       const f = new Date(anio, mes - 1, d, 12);
-      if (f >= a && f <= b) porDia[d]++;
+      if (f >= a && f <= b) afuera[d].add(v.empleado_id);
     }
   });
+  const porDia = afuera.map(s => s.size);
   const pico = Math.max.apply(null, porDia.slice(1).concat([0]));
 
   const nombreMes = primero.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
@@ -590,7 +600,7 @@ function renderVacCalendario() {
     // sobre fondo claro y no se leía el número del día.
     const fg = n ? '#1f2937' : 'inherit';
     const fgTenue = n ? '#4b5563' : 'var(--text-muted)';
-    grid += '<div title="' + d + '/' + mes + ': ' + n + ' de licencia" style="border:1px solid var(--border);border-radius:6px;padding:4px 2px;text-align:center;' +
+    grid += '<div title="' + d + '/' + mes + ': ' + n + ' afuera (vacaciones o licencias)" style="border:1px solid var(--border);border-radius:6px;padding:4px 2px;text-align:center;' +
       'background:' + bg + ';opacity:' + (dom ? '.55' : '1') + '">' +
       '<div style="font-size:9px;color:' + fgTenue + '">' + DOW[f.getDay()] + '</div>' +
       '<div style="font-size:12px;font-weight:600;color:' + fg + '">' + d + '</div>' +
@@ -612,22 +622,35 @@ function renderVacCalendario() {
     '</tr>';
   }).join('');
 
+  const filasLic = licMes.slice().sort((a, b) => String(a.fecha_desde).localeCompare(String(b.fecha_desde))).map(l => {
+    const e = empleadoDeVac(l.empleado_id);
+    return '<tr>' +
+      '<td><strong>' + _vacNombre(l.empleado_id) + '</strong>' +
+        (e && e.area ? '<div style="font-size:10.5px;color:var(--text-muted)">' + e.area + '</div>' : '') + '</td>' +
+      '<td>' + vacFmt(l.fecha_desde) + ' → ' + vacFmt(l.fecha_hasta) + '</td>' +
+      '<td style="text-align:right"><strong>' + _num(l.dias) + '</strong><div class="muted" style="font-size:9.5px">corridos</div></td>' +
+      '<td>—</td>' +
+      '<td><span class="tag" style="background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe">Licencia · ' + licTipo(l.tipo).label + '</span></td>' +
+      '<td style="text-align:right"><button class="btn btn-sm" onclick="openLicenciaModal(' + l.id + ')"><i class="ic ic-edit"></i></button></td>' +
+    '</tr>';
+  }).join('');
+
   cont.innerHTML =
     '<div class="card" style="margin-bottom:14px"><div class="card-header">' +
       '<span class="card-title">' + nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1) + '</span>' +
       '<span style="font-size:11px;color:var(--text-muted)">' +
-        (pico ? 'Pico: ' + pico + ' de ' + activos + ' persona(s) afuera el mismo día' : 'Nadie de licencia este mes') +
+        (pico ? 'Pico: ' + pico + ' de ' + activos + ' persona(s) afuera el mismo día' : 'Nadie afuera este mes') +
       '</span></div>' +
       '<div class="card-body"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:4px">' + grid + '</div>' +
-      '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px">El número es cuánta gente está de licencia ese día. ' +
+      '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px">El número es cuánta gente está afuera ese día, de vacaciones o de licencia. ' +
       'Los domingos van atenuados: los días son <strong>corridos</strong>, así que cuentan igual.</div></div></div>' +
-    (delMes.length
+    ((delMes.length || licMes.length)
       ? '<div class="card"><div class="table-wrap"><table><thead><tr>' +
-        '<th>Empleado</th><th>Período de licencia</th><th style="text-align:right">Días</th><th>Corresponde a</th><th>Estado</th><th></th>' +
-        '</tr></thead><tbody>' + filas + '</tbody></table></div></div>'
+        '<th>Empleado</th><th>Período</th><th style="text-align:right">Días</th><th>Corresponde a</th><th>Estado</th><th></th>' +
+        '</tr></thead><tbody>' + filas + filasLic + '</tbody></table></div></div>'
       : '<div class="empty-state"><div class="empty-icon"><i class="ic ic-calendar"></i></div>' +
-        '<div class="empty-title">Sin licencias en el mes</div>' +
-        '<div class="empty-sub">Cargalas desde la solapa Saldos, con el botón de cada empleado</div></div>');
+        '<div class="empty-title">Nadie afuera en el mes</div>' +
+        '<div class="empty-sub">Las vacaciones se cargan desde Saldos y las licencias desde su solapa</div></div>');
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -960,4 +983,418 @@ function exportVacSaldosPDF() {
   });
   doc.save('Vacaciones_saldos_' + vacPeriodo + '.pdf');
   showToast('📥 Saldos de vacaciones descargados');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  LICENCIAS — todo lo que NO son vacaciones
+//
+//  Matrimonio, nacimiento, fallecimiento de un familiar, examen (art. 158
+//  LCT), enfermedad (art. 208), accidente de trabajo, maternidad, donación de
+//  sangre y los permisos sin goce. Hasta ahora no había dónde anotarlas: se
+//  sabía que alguien había faltado una semana, pero no por qué ni si trajo el
+//  acta.
+//
+//  Van en su propia tabla (`empleado_licencias`) y NO en `vacaciones`: las
+//  vacaciones tienen su saldo anual (art. 150), y mezclarlas haría que una
+//  licencia por enfermedad le descuente días de vacaciones a alguien.
+//
+//  Al elegir el tipo se PROPONE lo que da la ley —matrimonio 10 días corridos,
+//  nacimiento 2, fallecimiento 3— pero se puede cambiar: un convenio puede dar
+//  más, y lo que se registra es la licencia que efectivamente se tomó. Si no
+//  coincide con la ley se avisa, no se bloquea.
+//
+//  El COMPROBANTE (acta, certificado médico, constancia) queda registrado: la
+//  pregunta de RRHH a fin de mes es "¿quién no trajo el certificado?", y sin
+//  el dato hay que ir a preguntarle a cada uno.
+// ════════════════════════════════════════════════════════════════════════
+const LIC_TIPOS = [
+  { key: 'matrimonio', label: 'Matrimonio', dias: 10, goce: true,
+    regla: '10 días corridos', norma: 'art. 158 b LCT', comprobante: 'acta de matrimonio' },
+  { key: 'nacimiento', label: 'Nacimiento de hijo/a', dias: 2, goce: true, habil: true,
+    regla: '2 días corridos', norma: 'art. 158 a LCT', comprobante: 'partida de nacimiento' },
+  { key: 'fallecimiento', label: 'Fallecimiento de cónyuge, hijo/a o padres', dias: 3, goce: true, habil: true,
+    regla: '3 días corridos', norma: 'art. 158 c LCT', comprobante: 'acta de defunción' },
+  { key: 'fallecimiento_hermano', label: 'Fallecimiento de hermano/a', dias: 1, goce: true, habil: true,
+    regla: '1 día', norma: 'art. 158 d LCT', comprobante: 'acta de defunción' },
+  { key: 'examen', label: 'Examen', dias: 2, goce: true, topeAnual: 10,
+    regla: '2 días corridos por examen, hasta 10 por año', norma: 'art. 158 e LCT', comprobante: 'constancia de examen' },
+  { key: 'enfermedad', label: 'Enfermedad', dias: null, goce: true,
+    regla: 'los días que indique el certificado médico', norma: 'art. 208 LCT', comprobante: 'certificado médico' },
+  { key: 'accidente', label: 'Accidente de trabajo (ART)', dias: null, goce: true,
+    regla: 'los días que indique la ART', norma: 'Ley 24.557', comprobante: 'denuncia a la ART',
+    nota: 'Los primeros 10 días los paga la empresa; desde el día 11, la ART.' },
+  { key: 'maternidad', label: 'Maternidad', dias: 90, goce: false,
+    regla: '90 días: 45 antes y 45 después del parto', norma: 'art. 177 LCT', comprobante: 'certificado médico',
+    nota: 'La paga ANSES (asignación por maternidad), no la empresa.' },
+  { key: 'donacion', label: 'Donación de sangre', dias: 1, goce: true,
+    regla: '1 día', norma: 'Ley 22.990', comprobante: 'constancia de donación' },
+  { key: 'sin_goce', label: 'Permiso sin goce de sueldo', dias: null, goce: false,
+    regla: '', norma: '', comprobante: '' },
+  { key: 'otra', label: 'Otra', dias: null, goce: true, regla: '', norma: '', comprobante: '' }
+];
+
+// Un tipo que ya no está en la lista no se pierde: se muestra con su nombre.
+function licTipo(key) {
+  return LIC_TIPOS.find(t => t.key === key) ||
+    { key: key || 'otra', label: key ? String(key) : 'Otra', dias: null, goce: true, regla: '', norma: '', comprobante: '' };
+}
+function persistirLicenciasLocal() {
+  try { localStorage.setItem('liq_empleado_licencias', JSON.stringify(AppData.empleadoLicencias || [])); } catch (e) {}
+}
+// Las observaciones son texto libre y van al HTML: se escapan.
+function _licHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function _licVal(id) { const el = document.getElementById(id); return el ? el.value : ''; }
+function _licSet(id, v) { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; }
+// Una licencia es del año en que EMPIEZA.
+function _licAnio(l) { return parseInt(String((l && l.fecha_desde) || '').slice(0, 4), 10) || 0; }
+function _licMasDias(iso, n) {
+  const d = _vacFecha(iso);
+  if (!d) return '';
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Días de un tipo que el empleado ya tiene en el año, sin la que se edita.
+function licDiasDelAnio(empId, tipo, anio, excluirId) {
+  return (AppData.empleadoLicencias || []).filter(l => l.empleado_id === empId && l.tipo === tipo &&
+    _licAnio(l) === anio && l.id !== excluirId).reduce((s, l) => s + _num(l.dias), 0);
+}
+
+// ¿El rango toca al menos un día que esa persona trabaja? El art. 160 exige
+// computar un día hábil cuando la licencia cae entera en domingo o feriado.
+// Los feriados la app no los conoce: esto mira los días de SU semana laboral.
+function _licTocaDiaHabil(emp, desde, hasta) {
+  const a = _vacFecha(desde), b = _vacFecha(hasta);
+  if (!a || !b || b < a) return true;
+  const trabaja = (typeof vacDiasTrabajaSemana === 'function') ? vacDiasTrabajaSemana(emp) : 5;
+  for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay();           // 0 = domingo, 6 = sábado
+    if (dow === 0) { if (trabaja >= 7) return true; continue; }
+    if (dow === 6) { if (trabaja >= 6) return true; continue; }
+    return true;
+  }
+  return false;
+}
+
+// Con qué se superpone: sus vacaciones y sus otras licencias. Casi siempre es
+// una carga doble.
+function _licSuperposiciones(empId, desde, hasta, excluirId) {
+  const out = [];
+  (AppData.vacaciones || []).forEach(v => {
+    if (v.empleado_id !== empId || !vacCuenta(v)) return;
+    if (String(v.fecha_desde) <= hasta && String(v.fecha_hasta) >= desde)
+      out.push('sus vacaciones del ' + vacFmt(v.fecha_desde) + ' al ' + vacFmt(v.fecha_hasta));
+  });
+  (AppData.empleadoLicencias || []).forEach(l => {
+    if (l.empleado_id !== empId || l.id === excluirId) return;
+    if (String(l.fecha_desde) <= hasta && String(l.fecha_hasta) >= desde)
+      out.push('otra licencia (' + licTipo(l.tipo).label + ') del ' + vacFmt(l.fecha_desde) + ' al ' + vacFmt(l.fecha_hasta));
+  });
+  return out;
+}
+
+// Quién paga esos días. Maternidad no es "sin goce": la cubre ANSES.
+function _licPagoTxt(l) {
+  const t = licTipo(l.tipo);
+  if (l.con_goce) {
+    return 'paga la empresa' + (t.key === 'accidente'
+      ? '<div style="font-size:10px;color:var(--text-muted)">desde el día 11, la ART</div>' : '');
+  }
+  if (t.key === 'maternidad') return 'la paga ANSES';
+  return '<span style="color:#b45309">sin goce de sueldo</span>';
+}
+function _licFaltaComprobante(l) { return !!licTipo(l.tipo).comprobante && !l.comprobante; }
+
+// ── La solapa ─────────────────────────────────────────────────────────────
+function renderLicencias() {
+  const cont = document.getElementById('vac-lic-rows');
+  if (!cont) return;
+  const selT = document.getElementById('vac-lic-tipo');
+  if (selT && !selT.options.length) {
+    selT.innerHTML = '<option value="">Todos los tipos</option>' +
+      LIC_TIPOS.map(t => '<option value="' + t.key + '">' + t.label + '</option>').join('');
+  }
+  const tipo = selT ? selT.value : '';
+  const q = (_licVal('vac-lic-search') || '').toLowerCase().trim();
+  const soloSinComp = !!(document.getElementById('vac-lic-sincomp') || {}).checked;
+  const anio = vacPeriodo;
+
+  const delAnio = (AppData.empleadoLicencias || []).filter(l => _licAnio(l) === anio);
+  const lista = delAnio
+    .filter(l => !tipo || l.tipo === tipo)
+    .filter(l => !q || _vacNombre(l.empleado_id).toLowerCase().includes(q))
+    .filter(l => !soloSinComp || _licFaltaComprobante(l))
+    .sort((a, b) => String(b.fecha_desde).localeCompare(String(a.fecha_desde)));
+
+  const info = document.getElementById('vac-lic-info');
+  if (info) info.textContent = 'Licencias que empiezan en ' + anio + ' · ' +
+    (lista.length === delAnio.length ? lista.length : lista.length + ' de ' + delAnio.length);
+
+  // Arriba, el año entero (sin filtros): cuántas, cuántos días de enfermedad
+  // y a quién le falta el comprobante, que es lo que hay que salir a pedir.
+  const enf = delAnio.filter(l => l.tipo === 'enfermedad');
+  const sinComp = delAnio.filter(_licFaltaComprobante);
+  const kpis = document.getElementById('vac-lic-kpis');
+  const card = (ic, label, valor, sub, color) =>
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-' + ic + '"></i></div>' +
+      '<div class="metric-label">' + label + '</div>' +
+      '<div class="metric-value"' + (color ? ' style="color:' + color + '"' : '') + '>' + valor + '</div>' +
+      '<div class="metric-sub">' + sub + '</div></div>';
+  if (kpis) kpis.innerHTML =
+    card('file', 'Licencias en ' + anio, String(delAnio.length),
+      delAnio.reduce((s, l) => s + _num(l.dias), 0) + ' días en total') +
+    card('alert', 'Días por enfermedad', String(enf.reduce((s, l) => s + _num(l.dias), 0)),
+      enf.length + ' licencia(s) · ' + new Set(enf.map(l => l.empleado_id)).size + ' persona(s)') +
+    card('check-circle', 'Sin comprobante', String(sinComp.length),
+      sinComp.length ? 'hay que pedírselo' : 'todos presentados', sinComp.length ? '#b45309' : '');
+
+  if (!lista.length) {
+    cont.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-file"></i></div>' +
+      '<div class="empty-title">' + (delAnio.length ? 'Ninguna coincide con el filtro' : 'Sin licencias en ' + anio) + '</div>' +
+      '<div class="empty-sub">' + (delAnio.length ? 'Probá con otro tipo o sacá el buscador' : 'Registrá una con el botón de arriba') +
+      '</div></div></td></tr>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(l => {
+    const t = licTipo(l.tipo);
+    const e = empleadoDeVac(l.empleado_id);
+    const comp = !t.comprobante
+      ? '<span class="muted">—</span>'
+      : l.comprobante
+        ? '<span style="color:#166534">✓ presentado</span>'
+        : '<span style="color:#b45309">falta ' + t.comprobante + '</span>' +
+          '<div style="margin-top:3px"><button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="marcarComprobanteLicencia(' + l.id + ')">Marcar presentado</button></div>';
+    // Si los días no coinciden con la ley se dice en la fila: puede ser un
+    // convenio que da más, o un error de carga, y las dos cosas hay que verlas.
+    const difLey = t.dias && t.key !== 'examen' && _num(l.dias) !== t.dias;
+    return '<tr>' +
+      '<td><strong>' + _vacNombre(l.empleado_id) + '</strong>' +
+        (e && e.area ? '<div style="font-size:10.5px;color:var(--text-muted)">' + e.area + '</div>' : '') + '</td>' +
+      '<td>' + t.label + (t.norma ? '<div style="font-size:10px;color:var(--text-muted)">' + t.norma + '</div>' : '') + '</td>' +
+      '<td>' + vacFmt(l.fecha_desde) + ' → ' + vacFmt(l.fecha_hasta) + '</td>' +
+      '<td style="text-align:right"><strong>' + _num(l.dias) + '</strong>' +
+        (difLey ? '<div style="font-size:9.5px;color:#92400e">la ley da ' + t.dias + '</div>' : '') + '</td>' +
+      '<td style="font-size:11.5px">' + _licPagoTxt(l) + '</td>' +
+      '<td style="font-size:11.5px">' + comp + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-secondary);max-width:220px">' + _licHtml(l.obs) + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        '<button class="btn btn-sm" onclick="openLicenciaModal(' + l.id + ')" title="Editar"><i class="ic ic-edit"></i></button> ' +
+        '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarLicencia(' + l.id + ')" title="Borrar"><i class="ic ic-trash"></i></button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── El modal ──────────────────────────────────────────────────────────────
+let licEditId = null;
+
+function openLicenciaModal(id, empIdSugerido) {
+  licEditId = id != null ? id : null;
+  const l = id != null ? (AppData.empleadoLicencias || []).find(x => x.id === id) : null;
+
+  // Mismo criterio que vacaciones: el plantel sale de Empleados, y alguien
+  // dado de baja con una licencia vieja se agrega igual para poder editarla.
+  const sel = document.getElementById('mlic-empleado');
+  if (sel) {
+    const activos = (AppData.empleados || []).filter(e => e.activo !== false)
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    let html = '<option value="">— Elegí un empleado —</option>' +
+      activos.map(e => '<option value="' + e.id + '">' + e.nombre + (e.area ? ' · ' + e.area : '') + '</option>').join('');
+    const elegido = l ? l.empleado_id : empIdSugerido;
+    if (elegido && !activos.some(e => e.id === elegido)) {
+      html += '<option value="' + elegido + '">' + _vacNombre(elegido) + ' (dado de baja)</option>';
+    }
+    sel.innerHTML = html;
+    sel.value = elegido ? String(elegido) : '';
+  }
+  const st = document.getElementById('mlic-tipo');
+  if (st) {
+    st.innerHTML = '<option value="">— Elegí el tipo —</option>' +
+      LIC_TIPOS.map(t => '<option value="' + t.key + '">' + t.label + '</option>').join('') +
+      (l && !LIC_TIPOS.some(t => t.key === l.tipo)
+        ? '<option value="' + _licHtml(l.tipo) + '">' + _licHtml(l.tipo) + ' (fuera de la lista)</option>' : '');
+    st.value = l ? l.tipo : '';
+  }
+  _licSet('mlic-desde', l ? l.fecha_desde : '');
+  _licSet('mlic-hasta', l ? l.fecha_hasta : '');
+  const goce = document.getElementById('mlic-goce');
+  if (goce) goce.checked = l ? !!l.con_goce : true;
+  const comp = document.getElementById('mlic-comprobante');
+  if (comp) comp.checked = l ? !!l.comprobante : false;
+  _licSet('mlic-obs', l ? l.obs : '');
+  const tit = document.getElementById('modal-lic-title');
+  if (tit) tit.textContent = l ? 'Editar licencia' : 'Registrar licencia';
+  document.getElementById('modal-lic-backdrop').style.display = 'flex';
+  _licEtiquetaComprobante();
+  recalcLicenciaModal();
+}
+
+function closeLicenciaModal(ev) {
+  if (ev && ev.target !== ev.currentTarget) return;
+  document.getElementById('modal-lic-backdrop').style.display = 'none';
+  licEditId = null;
+}
+
+function _licEtiquetaComprobante() {
+  const t = licTipo(_licVal('mlic-tipo'));
+  const wrap = document.getElementById('mlic-comprobante-wrap');
+  const lab = document.getElementById('mlic-comprobante-label');
+  if (wrap) wrap.style.display = t.comprobante ? '' : 'none';
+  if (lab) lab.textContent = 'Ya presentó el comprobante' + (t.comprobante ? ': ' + t.comprobante : '');
+}
+
+// Elegir el tipo propone sus condiciones: quién paga y hasta cuándo va.
+function cambioTipoLicencia() {
+  const t = licTipo(_licVal('mlic-tipo'));
+  const goce = document.getElementById('mlic-goce');
+  if (goce) goce.checked = !!t.goce;
+  const desde = _licVal('mlic-desde');
+  if (t.dias && desde) _licSet('mlic-hasta', _licMasDias(desde, t.dias - 1));
+  _licEtiquetaComprobante();
+  recalcLicenciaModal();
+}
+// Con días fijos el fin sale solo; sin ellos, el fin no puede quedar antes.
+function cambioDesdeLicencia() {
+  const t = licTipo(_licVal('mlic-tipo'));
+  const desde = _licVal('mlic-desde'), hasta = _licVal('mlic-hasta');
+  if (t.dias && desde) _licSet('mlic-hasta', _licMasDias(desde, t.dias - 1));
+  else if (desde && (!hasta || hasta < desde)) _licSet('mlic-hasta', desde);
+  recalcLicenciaModal();
+}
+
+// El efecto ANTES de guardar: cuántos días son, si coinciden con la ley, si se
+// superpone con algo, y qué pasa con el sueldo de esos días.
+function recalcLicenciaModal() {
+  const empId = parseInt(_licVal('mlic-empleado'), 10);
+  const tipoKey = _licVal('mlic-tipo');
+  const t = licTipo(tipoKey);
+  const desde = _licVal('mlic-desde'), hasta = _licVal('mlic-hasta');
+  const dias = (desde && hasta && hasta >= desde) ? vacDiasEntre(desde, hasta) : 0;
+  const goce = !!(document.getElementById('mlic-goce') || {}).checked;
+  const comp = !!(document.getElementById('mlic-comprobante') || {}).checked;
+
+  const regla = document.getElementById('mlic-regla');
+  if (regla) regla.innerHTML = !tipoKey
+    ? 'Al elegir el tipo se proponen los días que da la ley y quién paga.'
+    : (t.regla ? 'La ley da: <strong>' + t.regla + '</strong>' + (t.norma ? ' (' + t.norma + ')' : '') + '.' : '') +
+      (t.nota ? ' ' + t.nota : '');
+
+  const elDias = document.getElementById('mlic-dias');
+  if (elDias) elDias.textContent = dias
+    ? dias + (dias === 1 ? ' día corrido' : ' días corridos') + ' · del ' + vacFmt(desde) + ' al ' + vacFmt(hasta)
+    : (desde && hasta && hasta < desde ? 'La fecha de fin es anterior al inicio' : '—');
+
+  const info = document.getElementById('mlic-info');
+  if (!info) return;
+  const emp = empleadoDeVac(empId);
+  const anio = desde ? parseInt(desde.slice(0, 4), 10) : 0;
+  const av = [];
+  const ambar = s => '<div style="color:#9a3412;margin-top:4px">' + s + '</div>';
+
+  if (tipoKey && dias && t.dias && t.key !== 'examen' && dias !== t.dias) {
+    av.push(ambar('La ley da <strong>' + t.regla + '</strong>; estás cargando <strong>' + dias + '</strong>. ' +
+      'Se puede guardar igual si el convenio o la empresa dan otra cosa.'));
+  }
+  if (t.key === 'examen' && dias) {
+    if (dias > 2) av.push(ambar('Por examen corresponden <strong>2 días corridos</strong>.'));
+    if (emp) {
+      const prev = licDiasDelAnio(empId, 'examen', anio, licEditId);
+      if (prev + dias > t.topeAnual) av.push(ambar('Con esta suma <strong>' + (prev + dias) + ' días de examen</strong> en ' + anio +
+        ': la ley da hasta <strong>' + t.topeAnual + ' por año</strong>.'));
+    }
+  }
+  if (t.habil && emp && dias && !_licTocaDiaHabil(emp, desde, hasta)) {
+    av.push(ambar('La licencia cae entera en días que no trabaja. El <strong>art. 160</strong> exige computar ' +
+      '<strong>al menos un día hábil</strong>: extendela hasta su próximo día de trabajo.'));
+  }
+  if (emp && dias) {
+    const sup = _licSuperposiciones(empId, desde, hasta, licEditId);
+    if (sup.length) av.push('<div style="color:#b91c1c;margin-top:4px">Se superpone con ' + sup.join(' y con ') + '.</div>');
+  }
+  if (t.key === 'enfermedad' && emp && dias) {
+    av.push('<div style="margin-top:4px">Con esta, <strong>' + (licDiasDelAnio(empId, 'enfermedad', anio, licEditId) + dias) +
+      ' días de enfermedad</strong> en ' + anio + '.</div>');
+  }
+  if (tipoKey && dias && !goce) {
+    av.push(ambar(t.key === 'maternidad'
+      ? 'La empresa no paga el sueldo de estos días: los cubre ANSES.'
+      : '<strong>Estos días no se pagan</strong>: descontalos al liquidar el sueldo del mes.'));
+  }
+  if (tipoKey && t.comprobante && !comp) {
+    av.push('<div style="color:var(--text-muted);margin-top:4px">Queda marcada como <strong>falta ' + t.comprobante +
+      '</strong> hasta que lo presente.</div>');
+  }
+  info.innerHTML = av.length ? '<div style="font-size:11.5px;line-height:1.55">' + av.join('') + '</div>' : '';
+}
+
+async function guardarLicencia() {
+  const empleado_id = parseInt(_licVal('mlic-empleado'), 10);
+  const tipo = _licVal('mlic-tipo');
+  const fecha_desde = _licVal('mlic-desde'), fecha_hasta = _licVal('mlic-hasta');
+  const t = licTipo(tipo);
+  const con_goce = !!(document.getElementById('mlic-goce') || {}).checked;
+  const comprobante = t.comprobante ? !!(document.getElementById('mlic-comprobante') || {}).checked : false;
+  const obs = (_licVal('mlic-obs') || '').trim();
+
+  if (!empleado_id) { alert('Elegí el empleado.'); return; }
+  if (!tipo) { alert('Elegí el tipo de licencia.'); return; }
+  if (!fecha_desde || !fecha_hasta) { alert('Cargá las dos fechas.'); return; }
+  if (fecha_hasta < fecha_desde) { alert('La fecha de fin no puede ser anterior a la de inicio.'); return; }
+  const dias = vacDiasEntre(fecha_desde, fecha_hasta);
+
+  const sup = _licSuperposiciones(empleado_id, fecha_desde, fecha_hasta, licEditId);
+  const NL = String.fromCharCode(10);
+  if (sup.length && !confirm('Se superpone con ' + sup.join(' y con ') + '.' + NL + NL +
+      'Casi siempre es una carga doble. ¿Guardar igual?')) return;
+
+  const rec = { empleado_id, tipo, fecha_desde, fecha_hasta, dias, con_goce, comprobante, obs };
+  try {
+    if (licEditId != null) {
+      await DB.updateWhere('empleado_licencias', 'id', licEditId, rec);
+      const l = (AppData.empleadoLicencias || []).find(x => x.id === licEditId);
+      if (l) Object.assign(l, rec);
+    } else {
+      const quien = (typeof currentUser !== 'undefined' && currentUser) ? (currentUser.nombre || currentUser.usuario || '') : '';
+      const nuevo = Object.assign({}, rec, { creado_por: quien });
+      const row = await DB.insertRow('empleado_licencias', nuevo);
+      AppData.empleadoLicencias = (AppData.empleadoLicencias || []).concat([Object.assign({ id: row && row.id }, nuevo)]);
+    }
+    persistirLicenciasLocal();
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    closeLicenciaModal();
+    switchVacacionesTab(vacTab);
+    showToast('✅ Licencia registrada — ' + t.label + ' · ' + dias + ' día(s)');
+  } catch (e) { console.warn('guardarLicencia', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+async function eliminarLicencia(id) {
+  const l = (AppData.empleadoLicencias || []).find(x => x.id === id);
+  if (!l) return;
+  if (!confirm('¿Borrar la licencia por ' + licTipo(l.tipo).label.toLowerCase() + ' de ' + _vacNombre(l.empleado_id) +
+    ' del ' + vacFmt(l.fecha_desde) + ' al ' + vacFmt(l.fecha_hasta) + '?')) return;
+  try {
+    await DB.deleteWhere('empleado_licencias', 'id', id);
+    AppData.empleadoLicencias = (AppData.empleadoLicencias || []).filter(x => x.id !== id);
+    persistirLicenciasLocal();
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    switchVacacionesTab(vacTab);
+    showToast('Licencia borrada');
+  } catch (e) { console.warn('eliminarLicencia', e); alert('No se pudo borrar: ' + (e.message || e)); }
+}
+
+// Registrar que trajo el acta o el certificado, sin abrir el modal.
+async function marcarComprobanteLicencia(id) {
+  const l = (AppData.empleadoLicencias || []).find(x => x.id === id);
+  if (!l) return;
+  try {
+    await DB.updateWhere('empleado_licencias', 'id', id, { comprobante: true });
+    l.comprobante = true;
+    persistirLicenciasLocal();
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    renderLicencias();
+    showToast('✅ Comprobante registrado — ' + _vacNombre(l.empleado_id));
+  } catch (e) { console.warn('marcarComprobanteLicencia', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }

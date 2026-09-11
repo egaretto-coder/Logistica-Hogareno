@@ -685,6 +685,32 @@ create policy empleado_cierres_all on public.empleado_cierres for all to authent
   using (public.es_usuario_activo()) with check (public.es_usuario_activo());
 alter publication supabase_realtime add table public.empleado_cierres;
 
+-- Licencias que NO son vacaciones: matrimonio, nacimiento, fallecimiento,
+-- examen (art. 158 LCT), enfermedad (art. 208), accidente de trabajo,
+-- maternidad, donación de sangre, permisos sin goce. Tabla propia: las
+-- vacaciones tienen su saldo anual y mezclarlas haría que una licencia por
+-- enfermedad descuente días de vacaciones. `tipo` es texto: la lista cerrada
+-- vive en la app. `comprobante` = presentó el acta / certificado.
+create table if not exists public.empleado_licencias (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  tipo text not null,
+  fecha_desde date not null,
+  fecha_hasta date not null,
+  dias integer not null default 0,
+  con_goce boolean not null default true,
+  comprobante boolean not null default false,
+  obs text not null default '',
+  creado_por text not null default '',
+  created_at timestamptz not null default now(),
+  constraint empleado_licencias_rango check (fecha_hasta >= fecha_desde)
+);
+create index if not exists idx_empleado_licencias_emp on public.empleado_licencias (empleado_id, fecha_desde);
+alter table public.empleado_licencias enable row level security;
+create policy empleado_licencias_all on public.empleado_licencias for all to authenticated
+  using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+alter publication supabase_realtime add table public.empleado_licencias;
+
 -- registros.anulado_cliente + motivo_anulacion: GESTO COMERCIAL. El envio se
 -- entrego y al conductor SE LE PAGA igual; lo que se anula es el cobro al
 -- cliente. No se borra: queda en la liquidacion tachado y en $0 con lo

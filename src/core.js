@@ -304,6 +304,7 @@ let AppData = {
   conductorFacturas: [],        // lo transferido por período y su comprobante
   empleadoSueldos: [],
   empleadoCierres: [],          // cierres mensuales de RRHH (historial para comparar meses)
+  empleadoLicencias: [],        // licencias que no son vacaciones (matrimonio, enfermedad, examen…)
 
   // Rendicion de envios con cobro en destino (el conductor cobra y rinde al dia siguiente).
   rendiciones: [],

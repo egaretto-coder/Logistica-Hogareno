@@ -122,7 +122,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -165,6 +165,7 @@ const DB = {
         this.selectAll('archivo_solicitudes', 'id'),
         this.selectAll('cliente_cargos', 'id'),
         this.selectAll('empleado_cierres', 'periodo'),
+        this.selectAll('empleado_licencias', 'id'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
@@ -184,6 +185,7 @@ const DB = {
         empleado_sueldos: empleadoSueldos, vacaciones,
         rendiciones, zona_alias: zonaAlias, cliente_cuentas: cuentas, cliente_liquidaciones: cliLiq, conductor_liquidaciones: condLiq, archivo_solicitudes: archSol, cliente_cargos: cliCargos,
         empleado_cierres: empCierres,
+        empleado_licencias: empLicencias,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);

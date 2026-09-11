@@ -89,6 +89,8 @@ function loadSavedConfig() {
   if (emps) { try { AppData.empleadoSueldos = JSON.parse(emps) || []; } catch(e) {} }
   const empc = localStorage.getItem('liq_empleado_cierres');
   if (empc) { try { AppData.empleadoCierres = JSON.parse(empc) || []; } catch(e) {} }
+  const empl = localStorage.getItem('liq_empleado_licencias');
+  if (empl) { try { AppData.empleadoLicencias = JSON.parse(empl) || []; } catch(e) {} }
   const rend = localStorage.getItem('liq_rendiciones');
   if (rend) { try { AppData.rendiciones = JSON.parse(rend) || []; } catch(e) {} }
   const p = localStorage.getItem('liq_panel_conductores');
@@ -386,6 +388,13 @@ async function _hydrateFromSupabaseReal(opts) {
     detalle: Array.isArray(c.detalle) ? c.detalle : [],
     cerrado_por: c.cerrado_por || '', cerrado_en: c.cerrado_en || ''
   }));
+  // Licencias que no son vacaciones (matrimonio, enfermedad, examen…).
+  AppData.empleadoLicencias = (data.empleado_licencias || []).map(l => ({
+    id: l.id, empleado_id: l.empleado_id, tipo: l.tipo || 'otra',
+    fecha_desde: String(l.fecha_desde || '').slice(0, 10), fecha_hasta: String(l.fecha_hasta || '').slice(0, 10),
+    dias: _num(l.dias), con_goce: l.con_goce !== false, comprobante: !!l.comprobante,
+    obs: l.obs || '', creado_por: l.creado_por || '', created_at: l.created_at || ''
+  }));
 
   // Cargos extra por cliente y semana (colecta, viajes particulares, otros).
   AppData.clienteCargos = (data.cliente_cargos || []).map(c => ({
@@ -547,6 +556,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
     localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
+    localStorage.setItem('liq_empleado_licencias', JSON.stringify(AppData.empleadoLicencias || []));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));

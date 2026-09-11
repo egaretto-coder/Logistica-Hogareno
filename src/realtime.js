@@ -26,7 +26,7 @@ const RT_TABLAS = [
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
   'empleados', 'empleado_ajustes', 'empleado_postergaciones', 'empleado_horas_extra',
-  'empleado_sueldo_reaperturas', 'empleado_sueldos', 'empleado_cierres', 'conductor_liquidaciones', 'archivo_solicitudes', 'conductor_fiscal', 'conductor_facturas', 'vacaciones', 'rendiciones', 'cliente_cargos',
+  'empleado_sueldo_reaperturas', 'empleado_sueldos', 'empleado_cierres', 'empleado_licencias', 'conductor_liquidaciones', 'archivo_solicitudes', 'conductor_fiscal', 'conductor_facturas', 'vacaciones', 'rendiciones', 'cliente_cargos',
 ];
 
 let _rtCanal = null;
@@ -61,7 +61,7 @@ const RT_PANTALLA_TABLAS = {
   'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
                              'clientes', 'cliente_tarifas', 'registros', 'config'],
-  'vacaciones':             ['vacaciones', 'empleados'],
+  'vacaciones':             ['vacaciones', 'empleados', 'empleado_licencias'],
   'gestion-permisos':       ['rol_permisos', 'roles'],
 };
 
