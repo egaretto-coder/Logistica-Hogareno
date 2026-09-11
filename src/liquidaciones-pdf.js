@@ -1,6 +1,19 @@
 let liqModalConductor = null;
 let liqModalData = null;
 
+// El rango de la ventana es la semana DE ESE CONDUCTOR (liqRangoImputDe): la
+// misma con la que la tabla calcula su bruto y su neto, y la planilla su
+// importe. Usaba la del ENCABEZADO, que con el filtro en "Todas" es la del
+// titular (vie→jue): a un suplente (mar→lun) la ventana le buscaba los
+// descuentos en otra semana y le fechaba la cuota el jueves, que cae adentro de
+// su semana SIGUIENTE — ahí se volvía a descontar y la que tocaba no se creaba.
+// Es el mismo error que dejó a BLAS SOSA y MARCELO CASTRO con la cuota 2/4
+// descontada dos semanas seguidas (esa vez por el cambio del período libre a
+// la semana por condición: la cuota del 28/08 quedó adentro de 28/08→03/09).
+function _liqRangoModal() {
+  return liqModalConductor ? liqRangoImputDe(liqModalConductor) : getLiqRangoFechasLabel();
+}
+
 function openLiqModal(conductor) {
   liqModalConductor = conductor;
 
@@ -18,8 +31,9 @@ function openLiqModal(conductor) {
   const idLabel = panelCond?.id || '—';
   const condLabel = panelCond?.condicion || 'Sin asignar';
 
-  // Rango de fechas activo del panel Liquidaciones
-  const rango = getLiqFechaRango();
+  // El período de ESTE conductor: su semana según su condición, la misma con
+  // la que la tabla calculó su bruto y su neto.
+  const rango = semanaDeConductor(conductor);
   const fmtF = date => date.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
   let rangoTxt = 'Todos los registros disponibles';
   if (rango) {
@@ -72,7 +86,7 @@ function openLiqModal(conductor) {
 
   // Pre-cargar los 3 ítems de descuento del PERÍODO (imputación automática por
   // fecha, editable). Cada uno suma los registros de su solapa que caen en el rango.
-  const rangoImp = getLiqRangoFechasLabel();
+  const rangoImp = _liqRangoModal();
   const setItemPre = (tipo, campo) => {
     // incluirExcluidos: traemos también los marcados "no imputar" para poder
     // mostrarlos destildados (y que el operador los reincorpore si quiere).
@@ -137,7 +151,7 @@ async function toggleImputarDesdeLiq(id, tipo, campo, marcado) {
     try { localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems)); } catch (e) {}
   } catch (e) { console.warn('toggleImputarDesdeLiq:', e); showToast('⛔ No se pudo guardar; se descuenta igual que lo que ves'); }
   // Recalcular el monto del campo con lo que quedó tildado.
-  const r = descItemDescuentoConductor(tipo, liqModalConductor, getLiqRangoFechasLabel(), true);
+  const r = descItemDescuentoConductor(tipo, liqModalConductor, _liqRangoModal(), true);
   const totEl = document.getElementById('liq-desc-' + campo + '-total');
   if (totEl) totEl.textContent = fmtPeso(r.monto);
   const info = document.getElementById('liq-desc-' + campo + '-info');
@@ -174,7 +188,11 @@ function renderCuotasImputables(conductor, rango) {
     if (adelantoEsEmpleado(a)) return;
     if (conductorKey(a.conductor) !== key || !esAutorizado(a)) return;
     if (typeof saldoAdelanto === 'function' && saldoAdelanto(a) <= 0) return;
-    const yaEnPeriodo = (AppData.adelantoCuotas || []).some(c => c.adelanto_id === a.id && _fechaEnRango(c.fecha, rango));
+    // La cuota ya registrada en ESTA semana se nombra por su número, no por
+    // cuántas lleva pagadas: revisando una semana vieja, "pagadas" cuenta
+    // también las posteriores y la ventana decía 3/4 donde el PDF dice 2/4.
+    const regPeriodo = (AppData.adelantoCuotas || []).find(c => c.adelanto_id === a.id && _fechaEnRango(c.fecha, rango));
+    const yaEnPeriodo = !!regPeriodo;
     const pagadas = (AppData.adelantoCuotas || []).filter(c => c.adelanto_id === a.id).length;
     const usd = adelantoEsUSD(a);
     // Una cuota en dólares se descuenta por su equivalente en pesos. Si el
@@ -183,7 +201,7 @@ function renderCuotasImputables(conductor, rango) {
     const enPesos = usd ? adelantoARS(a, a.monto_cuota) : _num(a.monto_cuota);
     filas.push({ clave: 'adelanto:' + a.id, tipo: 'adelanto', id: a.id, marcado: yaEnPeriodo,
       bloqueado: usd && enPesos == null,
-      label: 'Cuota de adelanto ' + Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(a.cuotas_total)) + '/' + _num(a.cuotas_total),
+      label: 'Cuota de adelanto ' + (regPeriodo ? _num(regPeriodo.nro) : Math.min(pagadas + 1, _num(a.cuotas_total))) + '/' + _num(a.cuotas_total),
       sub: fmtMoneda(_num(a.monto_total), a.moneda) + ' en ' + _num(a.cuotas_total) + ' cuotas' +
         (usd ? ' · ' + fmtUSD(a.monto_cuota) + (enPesos == null ? ' — falta el tipo de cambio (cargalo en Adelantos)' : ' a $' + _num(a.tipo_cambio).toLocaleString('es-AR')) : ''),
       monto: enPesos || 0 });
@@ -195,12 +213,13 @@ function renderCuotasImputables(conductor, rango) {
     if (!cuoteable || _num(x.cuotas_total) <= 1) return;
     if (conductorKey(x.conductor) !== key || !esAutorizado(x)) return;
     if (descItemSaldado(x)) return;
-    const yaEnPeriodo = (AppData.descItemCuotas || []).some(c => c.item_id === x.id && _fechaEnRango(c.fecha, rango));
+    const regPeriodoE = (AppData.descItemCuotas || []).find(c => c.item_id === x.id && _fechaEnRango(c.fecha, rango));
+    const yaEnPeriodo = !!regPeriodoE;
     const pagadas = descItemCuotasPagadas(x.id);
     const esProv = x.tipo === 'proveedores';
     filas.push({ clave: 'extravio:' + x.id, tipo: 'extravio', id: x.id, marcado: yaEnPeriodo,
       label: (esProv ? 'Cuota de servicio proveedores ' : 'Cuota de extravío ') +
-        Math.min(pagadas + (yaEnPeriodo ? 0 : 1), _num(x.cuotas_total)) + '/' + _num(x.cuotas_total),
+        (regPeriodoE ? _num(regPeriodoE.nro) : Math.min(pagadas + 1, _num(x.cuotas_total))) + '/' + _num(x.cuotas_total),
       sub: (x.referencia || x.detalle || (esProv ? 'Proveedor' : 'Extravío')) + ' · ' + fmtPeso(_num(x.monto)),
       monto: _num(x.monto_cuota) });
   });
@@ -256,7 +275,7 @@ async function toggleImputarKmDesdeLiq(idx, marcado) {
     await dbPush('km_desvio');
     if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
   } catch (e) { console.warn('toggleImputarKmDesdeLiq:', e); showToast('⚠️ No se pudo guardar la imputación del km'); }
-  renderKmImputable(liqModalConductor, getLiqRangoFechasLabel());
+  renderKmImputable(liqModalConductor, _liqRangoModal());
   recalcLiqModal();
 }
 
@@ -350,7 +369,7 @@ function recalcLiqModal() {
   // El monto de cada ítem es la suma de sus registros TILDADOS (descItemDescuentoConductor
   // ya excluye los que tienen imputar=false). No hay número escrito a mano: si algo
   // no está cargado en su panel, no se descuenta.
-  const rangoAct = getLiqRangoFechasLabel();
+  const rangoAct = _liqRangoModal();
   const combustible = descItemDescuentoConductor('combustible', liqModalConductor, rangoAct).monto;
   const extraviados = descItemDescuentoConductor('extraviados', liqModalConductor, rangoAct).monto;
   const proveedores = descItemDescuentoConductor('proveedores', liqModalConductor, rangoAct).monto;
@@ -359,7 +378,7 @@ function recalcLiqModal() {
   pinta('combustible', combustible); pinta('extraviados', extraviados); pinta('proveedores', proveedores);
 
   // Adicional por km de desvío del período filtrado (suma al neto, igual que el PDF)
-  const kmAd = kmAdicionalConductor(liqModalConductor, getLiqRangoFechasLabel());
+  const kmAd = kmAdicionalConductor(liqModalConductor, _liqRangoModal());
   const kmMonto = kmAd.monto;   // ya excluye los km destildados
   const kmTotEl = document.getElementById('liq-km-total');
   if (kmTotEl) kmTotEl.textContent = '+' + fmtPeso(kmMonto);
@@ -374,7 +393,7 @@ function recalcLiqModal() {
   }
 
   // Recorridos especiales del período (rutas pactadas a monto fijo). SUMAN.
-  const respAd = recorridoEspecialConductor(liqModalConductor, getLiqRangoFechasLabel());
+  const respAd = recorridoEspecialConductor(liqModalConductor, _liqRangoModal());
   const respMonto = respAd.monto;
   const respWrap = document.getElementById('liq-modal-linea-resp-wrap');
   if (respWrap) {
@@ -389,8 +408,8 @@ function recalcLiqModal() {
   // Cuota(s) de adelanto imputadas al período (deducción, igual que el PDF).
   // Al monto ya registrado le sumamos/restamos lo que el operador acaba de
   // tildar o destildar en el modal (se aplica recién al confirmar).
-  const advAd = adelantoDescuentoConductor(liqModalConductor, getLiqRangoFechasLabel());
-  const advMonto = Math.max(0, advAd.monto + _ajusteCuotasPend('adelanto', getLiqRangoFechasLabel()));
+  const advAd = adelantoDescuentoConductor(liqModalConductor, _liqRangoModal());
+  const advMonto = Math.max(0, advAd.monto + _ajusteCuotasPend('adelanto', _liqRangoModal()));
   const advWrap = document.getElementById('liq-modal-linea-adelanto-wrap');
   if (advWrap) {
     advWrap.style.display = advMonto > 0 ? 'flex' : 'none';
@@ -403,8 +422,8 @@ function recalcLiqModal() {
   }
 
   // Cuota(s) de extravío cuoteado imputadas al período (deducción, igual que el PDF)
-  const extAd = extravioCuotaDescuento(liqModalConductor, getLiqRangoFechasLabel());
-  const extMonto = Math.max(0, extAd.monto + _ajusteCuotasPend('extravio', getLiqRangoFechasLabel()));
+  const extAd = extravioCuotaDescuento(liqModalConductor, _liqRangoModal());
+  const extMonto = Math.max(0, extAd.monto + _ajusteCuotasPend('extravio', _liqRangoModal()));
   const extWrap = document.getElementById('liq-modal-linea-extravio-wrap');
   if (extWrap) {
     extWrap.style.display = extMonto > 0 ? 'flex' : 'none';
@@ -452,7 +471,7 @@ async function guardarImputacionLiq() {
     // Los checkboxes de combustible/extraviados/proveedores ya se guardan solos
     // al tildarlos (columna imputar). Acá faltan las cuotas, que se crean o se
     // borran recién ahora.
-    await aplicarCuotasLiq(getLiqRangoFechasLabel());
+    await aplicarCuotasLiq(_liqRangoModal());
     document.getElementById('modal-liq-backdrop').style.display = 'none';
     showToast('✅ Imputación guardada — bajalas todas juntas cuando termines');
     if (typeof renderLiquidaciones === 'function') renderLiquidaciones();
@@ -467,14 +486,14 @@ async function confirmarYDescargarPDF() {
   if (!liqModalConductor || !liqModalData) return;
 
   const descuentos = {
-    combustible: descItemDescuentoConductor('combustible', liqModalConductor, getLiqRangoFechasLabel()).monto,
-    extraviados: descItemDescuentoConductor('extraviados', liqModalConductor, getLiqRangoFechasLabel()).monto,
-    proveedores: descItemDescuentoConductor('proveedores', liqModalConductor, getLiqRangoFechasLabel()).monto,
+    combustible: descItemDescuentoConductor('combustible', liqModalConductor, _liqRangoModal()).monto,
+    extraviados: descItemDescuentoConductor('extraviados', liqModalConductor, _liqRangoModal()).monto,
+    proveedores: descItemDescuentoConductor('proveedores', liqModalConductor, _liqRangoModal()).monto,
     obs:         document.getElementById('liq-desc-obs').value || ''
   };
 
   // Rango de fechas del panel Liquidaciones al momento
-  const rangoFechas = getLiqRangoFechasLabel();
+  const rangoFechas = _liqRangoModal();
 
   // Aplicar las cuotas que el operador tildó/destildó en el modal ANTES de
   // generar el PDF: son las que mueven el saldo de la deuda del conductor.
@@ -504,7 +523,7 @@ async function confirmarYDescargarPDF() {
 // activo (filtro en "todo"), exportPDF cae al rango completo de sus registros.
 function exportPDFConductor(conductor) {
   exportPDF(conductor, {
-    rangoFechas: getLiqRangoFechasLabel(),
+    rangoFechas: liqRangoImputDe(conductor),
     liqData: calcLiquidacionesFiltradas()
   });
 }
@@ -1144,7 +1163,7 @@ function exportPDF(conductor, opts) {
 function _liqADescargar() {
   const liq = calcLiquidacionesFiltradas();
   const sel = seleccionParaDescargar(liq);
-  return { liq, rangoFechas: getLiqRangoFechasLabel(), ...sel };
+  return { liq, ...sel };
 }
 
 // Milisegundos entre una descarga y la siguiente. El navegador DESCARTA en
@@ -1171,7 +1190,7 @@ function _finDescargaLiq() {
 
 // Un archivo por conductor (para repartir a cada uno el suyo).
 async function exportAllPDFs() {
-  const { liq, rangoFechas, conductores, haySeleccion } = _liqADescargar();
+  const { liq, conductores, haySeleccion } = _liqADescargar();
   if (!conductores.length) { alert('Sin datos para exportar con el filtro actual.'); return; }
   const n = conductores.length;
   if (n > 1) {
@@ -1194,7 +1213,9 @@ async function exportAllPDFs() {
     for (let i = 0; i < n; i++) {
       const c = conductores[i];
       _progresoDescargaLiq('<i class="ic ic-download"></i> Descargando ' + (i + 1) + ' de ' + n + '…');
-      try { exportPDF(c, { rangoFechas, liqData: liq }); ok++; }
+      // Cada uno con SU semana: con el filtro en "Todas" hay titulares y
+      // suplentes, y una sola semana para todos es la de uno solo.
+      try { exportPDF(c, { rangoFechas: liqRangoImputDe(c), liqData: liq }); ok++; }
       catch (e) { console.warn('exportAllPDFs:', c, e); fallaron.push(c); }
       if (i < n - 1) await _esperar(LIQ_MS_ENTRE_DESCARGAS);
     }
@@ -1210,7 +1231,7 @@ async function exportAllPDFs() {
 // imprimir de una, es la salida cuando el navegador bloquea la descarga
 // múltiple: un solo archivo nunca dispara ese permiso.
 async function exportLiqCombinado() {
-  const { liq, rangoFechas, conductores } = _liqADescargar();
+  const { liq, conductores } = _liqADescargar();
   if (!conductores.length) { alert('Sin datos para exportar con el filtro actual.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
@@ -1222,7 +1243,7 @@ async function exportLiqCombinado() {
   try {
     for (let i = 0; i < conductores.length; i++) {
       _progresoDescargaLiq('<i class="ic ic-file"></i> Armando ' + (i + 1) + ' de ' + conductores.length + '…');
-      exportPDF(conductores[i], { rangoFechas, liqData: liq, doc, nuevaPagina: i > 0 });
+      exportPDF(conductores[i], { rangoFechas: liqRangoImputDe(conductores[i]), liqData: liq, doc, nuevaPagina: i > 0 });
       // Ceder el hilo para que el avance se vea; armar 44 seguidas congela la
       // pantalla y parece que la app se colgó.
       await _esperar(0);

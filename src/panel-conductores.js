@@ -389,7 +389,6 @@ function exportPDFsporCondicion(condicion) {
   // Respeta el período filtrado en el panel Liquidaciones y aplica los
   // descuentos cargados en el panel (exportPDF los toma por defecto).
   const liq = calcLiquidacionesFiltradas();
-  const rangoFechas = getLiqRangoFechasLabel();
   const grupo = AppData.panelConductores.filter(c => c.condicion === condicion);
   if (!grupo.length) { alert(`No hay conductores con condición "${condicion}" en el panel.`); return; }
 
@@ -400,7 +399,8 @@ function exportPDFsporCondicion(condicion) {
     // Buscar el cadete en las liquidaciones (comparación flexible)
     const key = Object.keys(liq).find(k => k.toUpperCase() === c.nombre.toUpperCase());
     if (key && liq[key].filas.length > 0) {
-      exportPDF(key, { rangoFechas, liqData: liq });
+      // Con la semana de ESE conductor: la del encabezado es la de otra condición.
+      exportPDF(key, { rangoFechas: liqRangoImputDe(key), liqData: liq });
       exportados++;
     }
   });

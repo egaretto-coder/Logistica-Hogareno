@@ -477,6 +477,19 @@ async function deshacerUltimaCuota(adelantoId) {
 }
 
 // Modal detalle: cuotas del adelanto (pagadas y pendientes).
+// A qué liquidación fue cada cuota: la semana del conductor que contiene su
+// fecha ("21/08 → 27/08"), no la fecha suelta. Con la fecha sola, una cuota del
+// viernes 28/08 parecía de la semana que se pagó ese día, cuando cae en la
+// siguiente (28/08 → 03/09), que es donde se volvió a descontar. Las de
+// empleados se cobran en el sueldo del mes: esas siguen con su fecha.
+function _semanaDeCuotaTxt(a, c) {
+  if (adelantoEsEmpleado(a) || typeof semanaDeConductor !== 'function') return c.fecha || '—';
+  const iso = fechaISOde(c.fecha);
+  if (!iso) return c.fecha || '—';
+  const s = semanaDeConductor(a.conductor, iso);
+  const f = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  return f(s.desde) + ' → ' + f(s.hasta);
+}
 function verHistorialAdelanto(adelantoId) {
   const a = AppData.adelantos.find(x => x.id === adelantoId);
   if (!a) return;
@@ -495,7 +508,7 @@ function verHistorialAdelanto(adelantoId) {
       (usd ? '<td class="mono" style="text-align:right">' + (c && _num(c.tipo_cambio) ? '$' + _num(c.tipo_cambio).toLocaleString('es-AR') : '—') + '</td>' +
              '<td class="mono" style="text-align:right">' + (enPesos != null ? fmtPeso(enPesos) : '—') + '</td>' : '') +
       '<td>' + (c ? '<span class="badge badge-green"><i class="ic ic-check"></i> Descontada</span>' : '<span class="badge badge-gray">Pendiente</span>') + '</td>' +
-      '<td class="mono muted">' + (c ? c.fecha : '—') + '</td>' +
+      '<td class="mono muted">' + (c ? _semanaDeCuotaTxt(a, c) : '—') + '</td>' +
     '</tr>');
   }
   const saldo = saldoAdelanto(a);
