@@ -335,6 +335,8 @@ function renderDashboard() {
   }
   _pintarBotonesCond();
   if (dashCondLabel()) labelPeriodo = (labelPeriodo ? labelPeriodo + ' · ' : '') + 'solo ' + dashCondLabel();
+  if (dashTab === 'clientes' && dashPerFilter)
+    labelPeriodo = (labelPeriodo ? labelPeriodo + ' · ' : '') + 'clientes ' + DASH_PER_PLURAL[dashPerFilter].toLowerCase();
   const labelEl = document.getElementById('dash-fecha-label');
   if (labelEl) labelEl.textContent = labelPeriodo;
 
@@ -405,6 +407,125 @@ function switchDashTab(tab) {
   renderDashboard();
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  FACTURACIÓN POR PERÍODO DEL CLIENTE
+//  Lo que se FACTURA en unas fechas no es lo que se ENTREGÓ en ellas: cada
+//  cliente factura por su período (semanal, quincenal o mensual) y el período
+//  se factura ENTERO el jueves que lo cierra. Un quincenal se factura la semana
+//  en que cierra su quincena, con las dos semanas juntas, y la otra semana no
+//  se le factura nada. Contando por fecha de entrega —como hacía el Dashboard—
+//  todo parecía facturarse cada semana y no se podía saber cuánto entra.
+//  Por eso esta solapa cuenta los PERÍODOS QUE CIERRAN en las fechas elegidas,
+//  cada uno completo y con el MISMO rango con que se arma su liquidación en
+//  Detalle de cliente: el número es el de la factura. De paso los cargos y los
+//  envíos traídos de otra semana, que se anclan al viernes que abre el período,
+//  entran siempre: con un rango que no arrancaba en viernes ("Esta semana" va de
+//  lunes a domingo) quedaban afuera sin avisar.
+// ════════════════════════════════════════════════════════════════════════
+let dashPerFilter = 0;   // 0 = todos · 7 semanales · 14 quincenales · 28 mensuales
+const DASH_PER_PLURAL = { 7: 'Semanales', 14: 'Quincenales', 28: 'Mensuales' };
+
+function setDashPerFilter(dias) {
+  dashPerFilter = DASH_PER_PLURAL[_num(dias)] ? _num(dias) : 0;
+  renderDashboard();   // también repinta la etiqueta del período
+}
+
+function _isoDash(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _ddmmIso(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : ''; }
+
+// Entre qué fechas tiene que CERRAR un período para facturarse en lo elegido.
+// Si la fecha final cae en la semana que todavía no cerró, se corre al jueves
+// que la cierra: mirar "esta semana" un miércoles daría $0 —todavía no cerró
+// nada— cuando la pregunta es cuánto se factura el jueves. Una semana que ya
+// cerró se mira tal cual. null = "Todo": sin fechas no hay nada que cierre.
+function _dashVentanaCierre() {
+  const r = getDashFechaRango();
+  if (!r || (!r.desde && !r.hasta)) return null;
+  const v = { desde: r.desde ? _isoDash(r.desde) : '', hasta: r.hasta ? _isoDash(r.hasta) : '', extendidaA: '' };
+  if (v.hasta) {
+    const sem = semanaClienteRango(v.hasta);
+    const hoy = _isoDash(new Date());
+    const cierre = _isoDash(sem.hastaD);
+    if (_isoDash(sem.desdeD) <= hoy && hoy <= cierre && v.hasta < cierre) { v.hasta = cierre; v.extendidaA = cierre; }
+  }
+  return v;
+}
+
+// Para un rango abierto de un lado: desde el envío más viejo, y hasta cuatro
+// semanas adelante (así entra el período en curso de cualquier ciclo).
+function _limitesFechasRegistros() {
+  let min = '';
+  (AppData.records || []).forEach(r => { const f = fechaISOde(r.fecha); if (f && (!min || f < min)) min = f; });
+  const tope = new Date(); tope.setDate(tope.getDate() + 28);
+  return { min, max: _isoDash(tope) };
+}
+
+// Los períodos de un cliente que CIERRAN dentro de la ventana, en orden. Cada
+// uno es el rango de periodoClienteRango: el de su liquidación.
+function _periodosQueCierran(cod, v, limites) {
+  const out = [];
+  const inicio = v.desde || (limites && limites.min) || '';
+  const fin = v.hasta || (limites && limites.max) || '';
+  if (!inicio || !fin || inicio > fin) return out;
+  let p = periodoClienteRango(cod, inicio);
+  for (let i = 0; i < 600; i++) {
+    const cierre = _isoDash(p.hastaD);
+    if (cierre > fin) break;
+    if (cierre >= inicio) out.push(p);
+    const sig = new Date(p.hastaD); sig.setDate(sig.getDate() + 1);
+    p = periodoClienteRango(cod, _isoDash(sig));
+  }
+  return out;
+}
+
+// La liquidación de cada período, repartiendo los envíos del cliente UNA sola
+// vez. Recorrerlos todos por cada período multiplicaba el trabajo: un semestre
+// son 26 semanas por 121 clientes y el Dashboard tardaba un segundo. Los traídos
+// de otra semana van a todas las cajas —los decide su factura_semana, no su
+// fecha— y calcLiquidacionCliente los ubica; son pocos.
+function _liqsPorPeriodo(k, periodos, reg) {
+  if (periodos.length === 1) return [calcLiquidacionCliente(k, periodos[0], { registros: reg })];
+  const cierres = periodos.map(x => _isoDash(x.hastaD));
+  const inicio = _isoDash(periodos[0].desdeD);
+  const cajas = periodos.map(() => []);
+  const arrastrados = [];
+  reg.forEach(r => {
+    if (String(r.factura_semana || '').slice(0, 10)) { arrastrados.push(r); return; }
+    const f = fechaISOde(r.fecha);
+    if (!f || f < inicio || f > cierres[cierres.length - 1]) return;
+    let lo = 0, hi = cierres.length - 1;       // el primer cierre >= la fecha
+    while (lo < hi) { const m = (lo + hi) >> 1; if (cierres[m] < f) lo = m + 1; else hi = m; }
+    cajas[lo].push(r);
+  });
+  return periodos.map((x, i) =>
+    calcLiquidacionCliente(k, x, { registros: arrastrados.length ? cajas[i].concat(arrastrados) : cajas[i] }));
+}
+
+// ¿La ventana llega a algún jueves? Sin jueves no cerró ninguna semana.
+function _ventanaTieneJueves(v) {
+  if (!v.desde || !v.hasta) return true;
+  const d = new Date(v.desde + 'T12:00:00');
+  for (let i = 0; i < 7; i++) {
+    if (_isoDash(d) > v.hasta) return false;
+    if (d.getDay() === 4) return true;
+    d.setDate(d.getDate() + 1);
+  }
+  return true;
+}
+
+// Una fila de la tabla a partir de las liquidaciones de sus períodos.
+function _filaRenta(cod, liqs, periodos) {
+  const s = campo => liqs.reduce((t, l) => t + _num(l && l[campo]), 0);
+  const hoy = _isoDash(new Date());
+  return {
+    cod, nombre: clienteNombreDe(cod), dias: periodoDiasDe(cod),
+    envios: s('totalEnvios'), factura: s('total'), costo: s('pagado'), margen: s('margen'), sinTarifa: s('sinTarifa'),
+    periodos: periodos || [], enCurso: (periodos || []).some(p => _isoDash(p.hastaD) >= hoy)
+  };
+}
+
 // Rango del filtro del dashboard en el formato que usa la facturación.
 function _dashRangoCliente() {
   const r = getDashFechaRango();
@@ -412,9 +533,14 @@ function _dashRangoCliente() {
 }
 
 // Renta por cliente en el período: lo facturado, lo que costó y la diferencia.
-function dashRentaClientes() {
-  const rango = _dashRangoCliente();
-  const clientes = (typeof clientesDeRegistros === 'function') ? clientesDeRegistros(rango) : [];
+function dashRentaClientes() { return dashFacturacionClientes().filas; }
+
+// Facturación por cliente en las fechas elegidas: los períodos que CIERRAN en
+// ellas. Devuelve además los clientes que tuvieron envíos en esas fechas pero
+// no facturan en ellas (su período cierra más adelante): es plata que entra,
+// en otra semana, y sin decirlo parecería que se perdió.
+function dashFacturacionClientes() {
+  const v = _dashVentanaCierre();
   // Una SOLA pasada agrupando los envíos por cliente, en vez de que cada
   // calcLiquidacionCliente vuelva a recorrer los 47.684. Con 121 clientes eran
   // 5,8 millones de vueltas por render y el Dashboard se congelaba 23 s.
@@ -428,21 +554,89 @@ function dashRentaClientes() {
     a.push(r);
   });
   const vacio = [];
-  return clientes.map(c => {
-    const liq = calcLiquidacionCliente(c.cod, rango, { registros: porCliente.get(clienteKey(c.cod)) || vacio });
-    return {
-      cod: c.cod, nombre: clienteNombreDe(c.cod),
-      envios: liq.totalEnvios, factura: liq.total, costo: liq.pagado,
-      margen: liq.margen, sinTarifa: liq.sinTarifa
-    };
-  }).filter(x => x.envios > 0).sort((a, b) => b.margen - a.margen);
+  const clientes = (typeof clientesDeRegistros === 'function') ? clientesDeRegistros(null) : [];
+  const deEseCiclo = cod => !dashPerFilter || periodoDiasDe(cod) === dashPerFilter;
+  const porMargen = (a, b) => b.margen - a.margen;
+
+  // "Todo": sin fechas no hay nada que cierre — se cuenta todo lo entregado.
+  if (!v) {
+    const filas = clientes.filter(c => deEseCiclo(c.cod)).map(c => {
+      const k = clienteKey(c.cod);
+      return _filaRenta(k, [calcLiquidacionCliente(k, null, { registros: porCliente.get(k) || vacio })], []);
+    }).filter(x => x.envios > 0 || x.factura > 0).sort(porMargen);
+    return { filas, noCierran: [], ventana: null };
+  }
+
+  const limites = (v.desde && v.hasta) ? null : _limitesFechasRegistros();
+  const hoy = _isoDash(new Date());
+  const filas = [], noCierran = [];
+  clientes.forEach(c => {
+    const k = clienteKey(c.cod);
+    if (!deEseCiclo(k)) return;
+    const reg = porCliente.get(k) || vacio;
+    const periodos = _periodosQueCierran(k, v, limites);
+    if (periodos.length) {
+      const fila = _filaRenta(k, _liqsPorPeriodo(k, periodos, reg), periodos);
+      if (fila.envios > 0 || fila.factura > 0) filas.push(fila);
+      return;
+    }
+    const enFechas = reg.some(r => {
+      if (!contabilizaRegistro(r)) return false;
+      const f = fechaISOde(r.fecha);
+      return !!f && (!v.desde || f >= v.desde) && (!v.hasta || f <= v.hasta);
+    });
+    if (!enFechas) return;
+    const p = periodoClienteRango(k, v.hasta || hoy);
+    const liq = calcLiquidacionCliente(k, p, { registros: reg });
+    noCierran.push({ cod: k, nombre: clienteNombreDe(k), dias: periodoDiasDe(k), cierra: _isoDash(p.hastaD), lleva: _num(liq.total) });
+  });
+  noCierran.sort((a, b) => a.cierra.localeCompare(b.cierra) || b.lleva - a.lleva);
+  return { filas: filas.sort(porMargen), noCierran, ventana: v };
+}
+
+// Qué período se está facturando en la fila: "Quincenal · 11/09 → 24/09".
+function _txtPeriodoFila(x) {
+  const lbl = periodoLabel(x.dias);
+  if (!x.periodos || !x.periodos.length) return lbl;
+  const n = x.periodos.length;
+  return lbl + (n > 1 ? ' · ' + n + ' períodos' : '') +
+    '<div style="font-size:10px;color:var(--text-muted)">' + _ddmmIso(_isoDash(x.periodos[0].desdeD)) + ' → ' +
+    _ddmmIso(_isoDash(x.periodos[n - 1].hastaD)) + (x.enCurso ? ' · en curso' : '') + '</div>';
+}
+
+// Los botones Todos / Semanales / Quincenales y qué se está contando.
+function _renderDashPerFiltro(data) {
+  const cont = document.getElementById('dash-cli-per');
+  if (!cont) return;
+  // Mensuales solo si hay alguno: un botón que siempre da vacío es ruido.
+  const hayMensual = (AppData.clientes || []).some(c => _num(c.periodo_dias) === 28) || dashPerFilter === 28;
+  const opciones = [[0, 'Todos'], [7, 'Semanales'], [14, 'Quincenales']].concat(hayMensual ? [[28, 'Mensuales']] : []);
+  const v = data.ventana;
+  const txt = v
+    ? 'Cuenta el período de cada cliente que <strong>cierra</strong>' +
+      (v.desde && v.hasta ? ' entre el ' + _ddmmIso(v.desde) + ' y el ' + _ddmmIso(v.hasta)
+        : v.desde ? ' desde el ' + _ddmmIso(v.desde) : ' hasta el ' + _ddmmIso(v.hasta)) +
+      ', completo: un quincenal aparece la semana en que cierra su quincena, con las dos semanas.' +
+      (v.extendidaA ? ' La semana en curso cierra el jueves ' + _ddmmIso(v.extendidaA) + '.' : '')
+    : 'Con <strong>Todo</strong> se cuenta todo lo entregado. Elegí fechas para ver qué se factura en ellas.';
+  cont.innerHTML = '<div class="card" style="margin-bottom:14px;padding:10px 14px">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<span style="font-size:12.5px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Facturación</span>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + opciones.map(o =>
+        '<button class="btn btn-sm dash-per-btn' + (dashPerFilter === o[0] ? ' active' : '') + '" data-per="' + o[0] + '" onclick="setDashPerFilter(' + o[0] + ')">' + o[1] + '</button>'
+      ).join('') + '</div>' +
+      '<span style="font-size:11.5px;color:var(--text-muted);flex:1;min-width:260px">' + txt + '</span>' +
+    '</div></div>';
 }
 
 function renderDashClientes() {
   const body = document.getElementById('dash-cli-body');
   if (!body) return;
   renderDashFuga();   // lo que se paga y no se cobra, antes de la renta
-  const todos = dashRentaClientes();
+  const data = dashFacturacionClientes();
+  const todos = data.filas;
+  const v = data.ventana;
+  _renderDashPerFiltro(data);
   const q = (document.getElementById('dash-cli-search')?.value || '').toLowerCase().trim();
   const lista = todos.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
 
@@ -450,12 +644,15 @@ function renderDashClientes() {
   const costo = todos.reduce((s, x) => s + x.costo, 0);
   const margen = factura - costo;
   const pct = factura > 0 ? (margen * 100 / factura) : 0;
+  const quienes = dashPerFilter ? DASH_PER_PLURAL[dashPerFilter].toLowerCase() : '';
 
   const kpis = document.getElementById('dash-cli-kpis');
   if (kpis) kpis.innerHTML =
     '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
       '<div class="metric-label">Facturación</div><div class="metric-value">' + fmtPeso(factura) + '</div>' +
-      '<div class="metric-sub">' + todos.length + ' cliente(s) con envíos</div></div>' +
+      '<div class="metric-sub">' + (v
+        ? todos.length + ' cliente(s)' + (quienes ? ' ' + quienes : '') + ' facturan' + (todos.some(x => x.enCurso) ? ' · incluye lo que va de la semana' : '')
+        : todos.length + ' cliente(s)' + (quienes ? ' ' + quienes : '') + ' con envíos') + '</div></div>' +
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-truck"></i></div>' +
       '<div class="metric-label">Costo</div><div class="metric-value">' + fmtPeso(costo) + '</div>' +
       '<div class="metric-sub">lo que se les paga a los conductores</div></div>' +
@@ -475,15 +672,40 @@ function renderDashClientes() {
       'acá no se aplica: lo que se le factura a un cliente no depende de quién se lo llevó. Estos números son los del período completo.</div></div>'
     : '';
 
+  // Los que entregaron en estas fechas y facturan más adelante: sin esto, un
+  // quincenal que no cierra esta semana desaparece de la tabla y parece perdido.
+  const nc = document.getElementById('dash-cli-nocierran');
+  if (nc) {
+    const n = data.noCierran.length;
+    const lleva = data.noCierran.reduce((s, x) => s + x.lleva, 0);
+    nc.innerHTML = n
+      ? '<div class="alert alert-info" style="margin:14px 0 0"><i class="ic ic-calendar"></i><div>' +
+        '<strong>' + n + ' cliente(s) tuvieron envíos en estas fechas y facturan más adelante</strong> — su período cierra después. ' +
+        'Llevan <strong>' + fmtPeso(lleva) + '</strong> acumulado, que entra cuando cierren.' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' +
+        data.noCierran.slice(0, 12).map(x =>
+          '<span class="tag" style="background:var(--surface-1);border:1px solid var(--border);color:var(--text-primary);font-size:11px">' +
+          x.nombre + ' · ' + periodoLabel(x.dias).toLowerCase() + ' · cierra el ' + _ddmmIso(x.cierra) + ' · lleva ' + fmtPeso(x.lleva) + '</span>'
+        ).join('') + (n > 12 ? '<span style="font-size:11px;align-self:center">y ' + (n - 12) + ' más</span>' : '') +
+        '</div></div></div>'
+      : '';
+  }
+
   const countEl = document.getElementById('dash-cli-count');
   if (countEl) countEl.textContent = lista.length === todos.length
     ? todos.length + ' cliente(s)'
     : lista.length + ' de ' + todos.length + ' cliente(s)';
 
   if (!lista.length) {
-    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
-      '<div class="empty-title">Sin clientes con envíos</div>' +
-      '<div class="empty-sub">' + (todos.length ? 'Ajustá el buscador' : 'No hay envíos con cliente en el período elegido') + '</div></div></td></tr>';
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
+      '<div class="empty-title">' + (todos.length ? 'Sin coincidencias' : v ? 'Nadie factura en estas fechas' : 'Sin clientes con envíos') + '</div>' +
+      '<div class="empty-sub">' + (todos.length ? 'Ajustá el buscador'
+        // El porqué depende del caso: si las fechas no llegan a ningún jueves no
+        // cerró ni una semana; si llegan, es que el período cierra más adelante.
+        : v ? 'Ningún ' + (quienes ? 'cliente ' + quienes.replace(/es$/, '') : 'cliente') + ' cierra su período en estas fechas. ' +
+          (!_ventanaTieneJueves(v) ? 'Las semanas cierran los jueves, y estas fechas no llegan a ninguno.'
+            : data.noCierran.length ? 'Los que tuvieron envíos facturan más adelante: están en el aviso de arriba.' : '')
+        : 'No hay envíos con cliente en el período elegido') + '</div></div></td></tr>';
     return;
   }
 
@@ -495,6 +717,7 @@ function renderDashClientes() {
         '<div><strong>' + x.nombre + '</strong>' +
         (x.sinTarifa ? '<div style="font-size:10px;color:#b45309">⚠ ' + x.sinTarifa + ' sin tarifa</div>' : '') +
         '</div></div></td>' +
+      '<td style="font-size:12px">' + _txtPeriodoFila(x) + '</td>' +
       '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(x.factura) + '</td>' +
       '<td class="mono" style="text-align:right;color:var(--text-muted)">' + fmtPeso(x.costo) + '</td>' +
@@ -508,10 +731,42 @@ function renderDashClientes() {
 // Renta de UN cliente, abierta por zona: dónde gana y dónde pierde. El total no
 // alcanza — un cliente puede cerrar con buen margen y aun así estar perdiendo
 // plata en dos zonas puntuales.
+// Suma las liquidaciones de varios períodos de un cliente en una sola, juntando
+// las zonas iguales (misma zona, mismo precio y misma condición especial).
+function _sumarLiqsCliente(liqs) {
+  if (liqs.length === 1) return liqs[0];
+  const porZona = new Map();
+  const out = { total: 0, pagado: 0, margen: 0, totalEnvios: 0, sinTarifa: 0, filas: [] };
+  liqs.forEach(l => {
+    ['total', 'pagado', 'margen', 'totalEnvios', 'sinTarifa'].forEach(c => { out[c] += _num(l[c]); });
+    (l.filas || []).forEach(f => {
+      const clave = f.zona + '|' + _num(f.precio) + '|' + (f.dim || '');
+      const a = porZona.get(clave);
+      if (!a) { porZona.set(clave, Object.assign({}, f)); return; }
+      a.count = _num(a.count) + _num(f.count);
+      a.subtotal = _num(a.subtotal) + _num(f.subtotal);
+      a.pagado = _num(a.pagado) + _num(f.pagado);
+    });
+  });
+  out.filas = Array.from(porZona.values());
+  return out;
+}
 function verRentaCliente(cod) {
   const k = clienteKey(cod);
-  const rango = _dashRangoCliente();
-  const liq = calcLiquidacionCliente(k, rango);
+  // Los MISMOS períodos que la fila: si la tabla dice la quincena entera, el
+  // detalle por zona no puede ser de la semana suelta.
+  const v = _dashVentanaCierre();
+  let periodos = v ? _periodosQueCierran(k, v, (v.desde && v.hasta) ? null : _limitesFechasRegistros()) : null;
+  if (v && !periodos.length) periodos = [periodoClienteRango(k, v.hasta || _isoDash(new Date()))];
+  const liqs = periodos
+    ? _liqsPorPeriodo(k, periodos, (AppData.records || []).filter(r => clienteCodDeRegistro(r) === k))
+    : [calcLiquidacionCliente(k, _dashRangoCliente())];
+  const liq = _sumarLiqsCliente(liqs);
+  const fila = _filaRenta(k, liqs, periodos || []);
+  const subtitulo = periodos
+    ? periodoLabel(fila.dias) + ' · ' + (periodos.length > 1 ? periodos.length + ' períodos · ' : '') + 'del ' +
+      periodos[0].desde + ' al ' + periodos[periodos.length - 1].hasta + (fila.enCurso ? ' · en curso' : '')
+    : dashPeriodoLabel();
   const pct = liq.total > 0 ? (liq.margen * 100 / liq.total) : 0;
 
   const filas = liq.filas.slice().sort((a, b) => (b.subtotal - b.pagado) - (a.subtotal - a.pagado));
@@ -531,7 +786,7 @@ function verRentaCliente(cod) {
 
   document.getElementById('modal-title').textContent = 'Renta · ' + clienteNombreDe(k);
   document.getElementById('modal-body').innerHTML =
-    '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + dashPeriodoLabel() + '</div>' +
+    '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + subtitulo + '</div>' +
     '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
       '<div class="metric-card"><div class="metric-label">Facturación</div><div class="metric-value">' + fmtPeso(liq.total) + '</div>' +
         '<div class="metric-sub">' + liq.totalEnvios + ' envíos</div></div>' +

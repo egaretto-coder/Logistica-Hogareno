@@ -496,6 +496,8 @@
   .dash-cond-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   .dash-fecha-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
   .dash-fecha-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .dash-per-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
+  .dash-per-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   .liq-fecha-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
   .liq-fecha-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   /* LOGIN */

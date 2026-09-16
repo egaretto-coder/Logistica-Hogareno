@@ -36,7 +36,12 @@
         <div id="dash-tab-clientes">
           <!-- Aviso cuando el filtro por condición está puesto: acá no aplica. -->
           <div id="dash-cli-nota"></div>
+          <!-- Todos / Semanales / Quincenales: se factura el período que CIERRA en
+               las fechas elegidas, completo (dashFacturacionClientes). -->
+          <div id="dash-cli-per"></div>
           <div class="metrics-grid" id="dash-cli-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
+          <!-- Los que entregaron en estas fechas y facturan más adelante. -->
+          <div id="dash-cli-nocierran"></div>
 
           <!-- Lo que se paga y no se le cobra a nadie. Va ARRIBA de la renta:
                un envío que se paga y factura $0 no aparece en la liquidación de
@@ -52,8 +57,8 @@
               </div>
             </div>
             <div class="table-wrap"><table>
-              <thead><tr><th>Cliente</th><th style="text-align:right">Envíos</th><th style="text-align:right">Facturación</th><th style="text-align:right">Costo</th><th style="text-align:right">Margen</th><th style="width:90px"></th></tr></thead>
-              <tbody id="dash-cli-body"><tr><td colspan="6"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr></tbody>
+              <thead><tr><th>Cliente</th><th>Período</th><th style="text-align:right">Envíos</th><th style="text-align:right">Facturación</th><th style="text-align:right">Costo</th><th style="text-align:right">Margen</th><th style="width:90px"></th></tr></thead>
+              <tbody id="dash-cli-body"><tr><td colspan="7"><div class="empty-state"><div class="empty-sub">Sin datos</div></div></td></tr></tbody>
             </table></div>
           </div>
         </div>
