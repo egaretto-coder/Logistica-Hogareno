@@ -546,22 +546,25 @@ function renderClientes() {
   const porCod = new Map(conEnvios.map(c => [c.cod, c]));
 
   const idsPendientes = new Set(clientesPendientesCodigo().map(c => c.id));
+  const sinTar = clientesSinTarifario();
+  const idsSinTar = new Set(sinTar.map(c => c.id));
   const lista = (AppData.clientes || [])
     .filter(c => !q || String(c.nombre).toLowerCase().includes(q) ||
                  String(c.codigo || '').toLowerCase().includes(q) ||
                  String(c.razon_social || '').toLowerCase().includes(q))
     .filter(c => !cliSoloPendientes || idsPendientes.has(c.id))
+    .filter(c => !cliSoloSinTarifario || idsSinTar.has(c.id))
     // Los dados de baja viven en su propia solapa: acá estorban.
     .filter(c => c.activo !== false)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
   const countEl = document.getElementById('cli-count');
   if (countEl) {
-    const sinTarifa = (AppData.clientes || []).filter(c => clienteNZonas(c.codigo) === 0).length;
     countEl.textContent = ((AppData.clientes || []).filter(c => c.activo !== false).length) + ' cliente(s)' +
       (cliSoloPendientes ? ' · mostrando solo los pendientes' : '') +
+      (cliSoloSinTarifario ? ' · mostrando solo los sin tarifario' : '') +
       (idsPendientes.size ? ' · ' + idsPendientes.size + ' con código pendiente' : '') +
-      (sinTarifa ? ' · ' + sinTarifa + ' sin tarifario' : '');
+      (sinTar.length ? ' · ' + sinTar.length + ' sin tarifario' : '');
   }
 
   // Un solo aviso para lo que hay que decidir: los clientes que aparecen en los
@@ -590,6 +593,10 @@ function renderClientes() {
               : 'Todavía no hay recorridos cargados.')) +
         '</div></div>';
     }
+
+    // Los que no tienen tarifario van PRIMERO: son envíos que ya se están
+    // facturando en $0, no un dato que falta para el futuro.
+    html += _avisoSinTarifario(sinTar);
 
     // Los que quedan pendientes de código, matcheen por nombre o no.
     const pendientes = clientesPendientesCodigo();
@@ -1190,6 +1197,9 @@ function vincularClienteReconocido(i) {
   const c = _cliNuevosReconocidos[i];
   if (!c) return;
   _cliVincPendiente = c;
+  _cliVincSinTarId = null;
+  _vcliTextos('Vincular cuenta', 'La cuenta <strong id="vcli-nombre"></strong> pasa a ser <strong>otra cuenta del cliente que elijas</strong>: ' +
+    'comparte su tarifario y su facturación sale junta.', 'Vincular a');
   document.getElementById('vcli-nombre').textContent = c.nombre + ' (' + c.envios + ' envíos)';
   const sel = document.getElementById('vcli-select');
   sel.innerHTML = '<option value="">Elegí un cliente…</option>' +
@@ -1203,10 +1213,19 @@ function closeVincClienteModal(e) {
   if (!e || e.target.id === 'modal-vinccli-backdrop') {
     document.getElementById('modal-vinccli-backdrop').style.display = 'none';
     _cliVincPendiente = null;
+    _cliVincSinTarId = null;
   }
 }
 async function confirmarVincularCliente() {
   const cod = document.getElementById('vcli-select').value;
+  if (_cliVincSinTarId != null) {
+    if (!cod) { alert('Elegí con qué cliente es el mismo.'); return; }
+    const id = _cliVincSinTarId;
+    document.getElementById('modal-vinccli-backdrop').style.display = 'none';
+    _cliVincSinTarId = null;
+    await unirClienteSinTarifario(id, cod);
+    return;
+  }
   if (!cod) { alert('Elegí a qué cliente vincular esta cuenta.'); return; }
   const c = _cliVincPendiente;
   if (!c) return;
@@ -1239,7 +1258,215 @@ function clientesPendientesCodigo() {
 }
 
 let cliSoloPendientes = false;
-function toggleSoloPendientes() { cliSoloPendientes = !cliSoloPendientes; renderClientes(); }
+// Los dos filtros se excluyen: "solo pendientes" y "solo sin tarifario" a la vez
+// casi nunca coinciden y la grilla quedaría vacía sin que se entienda por qué.
+function toggleSoloPendientes() { cliSoloPendientes = !cliSoloPendientes; if (cliSoloPendientes) cliSoloSinTarifario = false; renderClientes(); }
+
+// ── Clientes sin tarifario ──────────────────────────────────────────────────
+// Un cliente dado de alta SIN ningún precio de venta factura todos sus envíos en
+// $0. La tarjeta lo decía ("zonas con tarifa: ninguna"), pero había que ir a
+// buscarla entre 120. El panel lo cuenta arriba con su filtro —igual que los
+// pendientes de código— y cada uno trae las dos salidas del Panel de
+// conductores: cargarle su tarifario si es un cliente propio, o VINCULARLO si es
+// el mismo cliente que otro que ya tiene tarifario. Pasó de verdad: CENTRO
+// PINTURERIAS MORON se cargó a mano con su CUIT y sus 53 envíos, y su tarifario
+// había entrado por el import como CENTRO PINTURERIA MORON, sin ningún envío.
+let cliSoloSinTarifario = false;
+function toggleSoloSinTarifario() { cliSoloSinTarifario = !cliSoloSinTarifario; if (cliSoloSinTarifario) cliSoloPendientes = false; renderClientes(); }
+
+// Tiene tarifario si tiene ALGÚN precio cargado, aunque su lista empiece más
+// adelante: ese no es un cliente sin tarifario, es un aumento que todavía no rige.
+// Los códigos con algún precio, en UNA pasada: preguntarlo cliente por cliente
+// recorría las 5.445 tarifas 129 veces en cada render del panel.
+function _codigosConTarifario() {
+  const s = new Set();
+  (AppData.clienteTarifas || []).forEach(t => { if (_num(t.precio) > 0) s.add(clienteKey(t.cliente_cod)); });
+  return s;
+}
+function clienteTieneTarifario(cod, conPrecio) {
+  const k = clienteKey(cod);
+  return !!k && (conPrecio || _codigosConTarifario()).has(k);
+}
+
+function clientesSinTarifario() {
+  const envios = new Map();
+  (AppData.records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;
+    const k = clienteCodDeRegistro(r);
+    if (k) envios.set(k, (envios.get(k) || 0) + 1);
+  });
+  const conPrecio = _codigosConTarifario();
+  const activos = (AppData.clientes || []).filter(c => c.activo !== false);
+  const conTarifario = activos.filter(c => clienteTieneTarifario(c.codigo, conPrecio));
+  return activos.filter(c => !clienteTieneTarifario(c.codigo, conPrecio)).map(c => ({
+    id: c.id, cod: clienteKey(c.codigo), nombre: c.nombre,
+    envios: envios.get(clienteCodCanonico(clienteKey(c.codigo))) || 0,
+    parecido: _clienteParecidoConTarifario(c, conTarifario)
+  })).sort((a, b) => b.envios - a.envios || String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+// El cliente CON tarifario que más se parece por nombre ("PINTURERIAS" ≈
+// "PINTURERIA"), con el mismo criterio que las condiciones desalineadas de
+// Dimensiones Especiales. Solo sugiere: unirlos lo decide el operador.
+function _clienteParecidoConTarifario(c, conTarifario) {
+  if (typeof _dimSim !== 'function') return null;
+  let mejor = null;
+  conTarifario.forEach(o => {
+    if (o.id === c.id) return;
+    const s = _dimSim(c.nombre, o.nombre);
+    if (s >= 0.6 && (!mejor || s > mejor.score)) mejor = { id: o.id, cod: clienteKey(o.codigo), nombre: o.nombre, score: s };
+  });
+  return mejor;
+}
+
+function _avisoSinTarifario(lista) {
+  if (!lista.length) return '';
+  const n = lista.length;
+  const envios = lista.reduce((s, x) => s + x.envios, 0);
+  // Los botones van por ID del cliente, no por posición en la lista: la lista se
+  // rearma con cada re-render y un índice viejo abriría a otro cliente.
+  const chips = lista.slice(0, 40).map(c =>
+    '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;color:#1f2937;border:1px solid #fca5a5;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px;white-space:nowrap">' +
+      '<span class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:22px;height:22px;font-size:9px">' + initials(c.nombre) + '</span>' +
+      '<span>' + c.nombre + ' <span style="color:#991b1b">· ' + (c.envios ? c.envios.toLocaleString('es-AR') + ' envío' + (c.envios === 1 ? '' : 's') : 'sin envíos') + '</span>' +
+        (c.parecido ? ' <span style="color:#6b7280" title="Tiene tarifario y el nombre es casi igual">· ¿es ' + c.parecido.nombre + '?</span>' : '') + '</span>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente propio: cargale su lista de precios" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es el mismo cliente que otro que ya tiene tarifario" onclick="vincularSinTarifario(' + c.id + ')"><i class="ic ic-clip"></i> Vincular</button>' +
+    '</span>').join('');
+  return '<div class="alert" style="margin:0 0 12px;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;padding:12px 16px">' +
+    '<i class="ic ic-alert"></i><div style="min-width:0;flex:1">' +
+      '<div style="font-weight:600;margin-bottom:4px">' + n + (n === 1 ? ' cliente no tiene' : ' clientes no tienen') + ' tarifario cargado' +
+        (envios ? ' — ' + envios.toLocaleString('es-AR') + ' envío' + (envios === 1 ? ' se está' : 's se están') + ' facturando en $0' : '') + '</div>' +
+      '<div style="font-size:12px;margin-bottom:10px">Decidí uno por uno: <strong>Tarifario</strong> si es un cliente propio y hay que cargarle su lista de precios; ' +
+        '<strong>Vincular</strong> si es el mismo cliente que otro que ya tiene tarifario, cargado con otro nombre: quedan en una sola ficha. ' +
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="toggleSoloSinTarifario()">' +
+        (cliSoloSinTarifario ? 'Ver todos' : (n === 1 ? 'Ver el que no tiene' : 'Ver los ' + n + ' sin tarifario')) + '</button></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto">' + chips +
+        (n > 40 ? '<span style="align-self:center;font-size:11px">…y ' + (n - 40) + ' más</span>' : '') + '</div>' +
+    '</div></div>';
+}
+
+// Vincular desde el aviso: elegir con qué cliente CON tarifario es el mismo.
+let _cliVincSinTarId = null;
+function vincularSinTarifario(id) {
+  const c = (AppData.clientes || []).find(x => x.id === id);
+  if (!c) return;
+  _cliVincPendiente = null;
+  _cliVincSinTarId = id;
+  const conPrecio = _codigosConTarifario();
+  const sug = _clienteParecidoConTarifario(c, (AppData.clientes || []).filter(x => x.activo !== false && clienteTieneTarifario(x.codigo, conPrecio)));
+  // Envíos por cliente en una sola pasada (una por opción eran 120 × 47.684).
+  const porCod = new Map();
+  (AppData.records || []).forEach(r => { const k = clienteCodDeRegistro(r); if (k) porCod.set(k, (porCod.get(k) || 0) + 1); });
+  const enviosDe = k => porCod.get(clienteCodCanonico(k)) || 0;
+  _vcliTextos('Es el mismo cliente',
+    '<strong>' + c.nombre + '</strong> no tiene tarifario. Si es el mismo cliente que otro que sí lo tiene, cargado con otro nombre, elegilo: ' +
+    'quedan en <strong>una sola ficha</strong> con ese tarifario. No se pierde nada de la ficha: los datos que le falten a la que queda se completan con los de la otra.',
+    'Es el mismo que');
+  const sel = document.getElementById('vcli-select');
+  const opciones = (AppData.clientes || []).filter(x => x.id !== id && x.activo !== false && clienteTieneTarifario(x.codigo, conPrecio))
+    .sort((a, b) => (sug && a.id === sug.id ? -1 : sug && b.id === sug.id ? 1 : String(a.nombre).localeCompare(String(b.nombre))));
+  sel.innerHTML = '<option value="">Elegí un cliente…</option>' + opciones.map(x => {
+    const e = enviosDe(clienteKey(x.codigo));
+    return '<option value="' + clienteKey(x.codigo) + '">' + (sug && x.id === sug.id ? '★ ' : '') + x.nombre + ' — ' +
+      clienteNZonas(x.codigo) + ' zonas · ' + (e ? e + ' envíos' : 'sin envíos') + '</option>';
+  }).join('');
+  sel.value = sug ? sug.cod : '';
+  document.getElementById('modal-vinccli-backdrop').style.display = 'flex';
+}
+
+// Los textos del modal de vincular: lo usan los dos flujos (cuenta nueva de los
+// envíos y cliente sin tarifario), así que cada uno pone los suyos.
+function _vcliTextos(titulo, textoHtml, label) {
+  const t = document.getElementById('vcli-titulo'); if (t) t.textContent = titulo;
+  const x = document.getElementById('vcli-texto'); if (x) x.innerHTML = textoHtml;
+  const l = document.getElementById('vcli-label'); if (l) l.textContent = label;
+}
+
+// Une un cliente SIN tarifario con otro que lo tiene, cuando son el mismo
+// cliente cargado dos veces. Queda como principal el que FACTURA: si el otro no
+// tiene envíos, queda este (su código es el que matchea el listado) y el otro le
+// pasa el tarifario; si el otro también factura, queda el otro y este pasa a ser
+// una cuenta suya. La ficha que se va completa los datos que le falten a la que
+// queda: sin eso, elegir el sentido a ciegas borraba el CUIT y el contacto.
+async function unirClienteSinTarifario(idSin, codOtro) {
+  const sin = (AppData.clientes || []).find(c => c.id === idSin);
+  const otro = (AppData.clientes || []).find(c => clienteKey(c.codigo) === clienteKey(codOtro));
+  if (!sin || !otro || sin.id === otro.id) return false;
+  const NL = String.fromCharCode(10);
+  const enviosDe = k => (AppData.records || []).filter(r => clienteCodDeRegistro(r) === clienteCodCanonico(k)).length;
+  const eSin = enviosDe(clienteKey(sin.codigo)), eOtro = enviosDe(clienteKey(otro.codigo));
+  const principal = eOtro > 0 ? otro : sin;
+  const absorbido = principal === otro ? sin : otro;
+  const kP = clienteKey(principal.codigo), kA = clienteKey(absorbido.codigo);
+
+  // Lo que no se puede absorber sin perder historia: se dice y no se toca nada.
+  const liqs = (AppData.clienteLiquidaciones || []).filter(x => clienteKey(x.cliente_cod) === kA).length;
+  const com = (typeof comisionDeCliente === 'function') ? comisionDeCliente(absorbido.nombre) : null;
+  if (liqs || com) {
+    alert('No se puede unir: la ficha de ' + absorbido.nombre + ' tiene historia que se perdería.' + NL + NL +
+      (liqs ? '· ' + liqs + ' liquidación(es) cerradas' + NL : '') +
+      (com ? '· comisión asignada a ' + com.vendedor + NL : ''));
+    return false;
+  }
+  // Si queda este, sus filas de tarifa en $0 son solo zonas sin precio: se sacan
+  // para que entre el tarifario del otro (si no, unirCuentasCliente lo daría por
+  // duplicado y lo descartaría).
+  const cerosP = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) === kP);
+  if (principal === sin && cerosP.some(t => _num(t.precio) > 0)) {
+    alert(sin.nombre + ' ya tiene precios cargados. Revisá su tarifario antes de unirlo.');
+    return false;
+  }
+
+  const CAMPOS = { razon_social: 'razón social', cuit: 'CUIT', contacto: 'contacto', telefono: 'teléfono',
+                   email: 'mail', direccion: 'dirección', condicion_iva: 'condición de IVA' };
+  const completar = {};
+  Object.keys(CAMPOS).forEach(f => {
+    if (!String(principal[f] || '').trim() && String(absorbido[f] || '').trim()) completar[f] = absorbido[f];
+  });
+  const cuitP = String(principal.cuit || '').replace(/\D/g, ''), cuitA = String(absorbido.cuit || '').replace(/\D/g, '');
+  const zonas = clienteNZonas(otro.codigo);
+  let msg = '¿' + sin.nombre + ' es el mismo cliente que ' + otro.nombre + '?' + NL + NL +
+    'Queda una sola ficha: ' + principal.nombre + ', con las ' + zonas + ' zonas de tarifa' +
+    (principal === sin ? ' que hoy tiene ' + otro.nombre : '') + '.' + NL +
+    (principal === otro && eSin ? 'Los ' + eSin + ' envíos de ' + sin.nombre + ' pasan a facturarse como ' + otro.nombre + '.' + NL : '') +
+    'La ficha de ' + absorbido.nombre + ' se elimina' +
+    (Object.keys(completar).length ? '; su ' + Object.keys(completar).map(f => CAMPOS[f]).join(', ') + ' pasa' + (Object.keys(completar).length > 1 ? 'n' : '') + ' a ' + principal.nombre : '') + '.';
+  if (cuitP && cuitA && cuitP !== cuitA) msg += NL + NL + '⚠ Tienen CUIT distinto (' + principal.cuit + ' y ' + absorbido.cuit + '): son dos razones sociales. ' +
+    'Si se les factura por separado, no los unas: cargale a ' + sin.nombre + ' su propio tarifario.';
+  if (!confirm(msg)) return false;
+
+  try {
+    if (Object.keys(completar).length) {
+      await DB.updateWhere('clientes', 'id', principal.id, completar);
+      Object.assign(principal, completar);
+    }
+    if (principal === sin && cerosP.length) {
+      await DB.deleteWhere('cliente_tarifas', 'cliente_cod', kP);
+      AppData.clienteTarifas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) !== kP);
+    }
+    const ok = await unirCuentasCliente(kP, [kA]);
+    if (!ok) throw new Error('no se pudo registrar la cuenta vinculada');
+    // Las tarifas que pasaron llevan también el nombre de la ficha que queda: el
+    // editor y el borrado del cliente las buscan por nombre.
+    const ajenas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) === kP && normCliente(t.cliente) !== normCliente(principal.nombre));
+    if (ajenas.length) {
+      await DB.updateWhere('cliente_tarifas', 'cliente_cod', kP, { cliente: principal.nombre });
+      ajenas.forEach(t => { t.cliente = principal.nombre; });
+    }
+    if (typeof invalidarIndiceCliTarifas === 'function') invalidarIndiceCliTarifas();
+    persistirClientesLocal();
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    renderClientes();
+    showToast('🔗 ' + principal.nombre + ' quedó en una sola ficha, con ' + zonas + ' zonas de tarifa');
+    return true;
+  } catch (e) {
+    console.warn('unirClienteSinTarifario', e);
+    alert('No se pudo unir: ' + (e.message || e));
+    renderClientes();
+    return false;
+  }
+}
 
 // ── Detección de cuentas del mismo cliente ──────────────────────────────────
 // Raíz del nombre de fantasía: sin el número de cuenta al final ni la forma
