@@ -2532,7 +2532,9 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   if (!codK) { alert('Elegí un cliente primero.'); return; }
   rango = rango || semanaClienteRango(hoyISO());
   const cliente = clienteNombreDe(codK);
-  const liq = calcLiquidacionCliente(codK, rango, { detalle: true });
+  // Desde el historial llega la liquidación ya congelada: la factura que se
+  // mandó no se recalcula con los precios y las correcciones de hoy.
+  const liq = opts.liq || calcLiquidacionCliente(codK, rango, { detalle: true });
   // Puede no haber envíos y sí cargos (un período en el que solo se le cobró
   // una colecta o un viaje particular): esa liquidación también se emite.
   if (!liq.filas.length && !(liq.cargos || []).length) {

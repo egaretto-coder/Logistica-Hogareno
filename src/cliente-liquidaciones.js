@@ -30,10 +30,58 @@ function liquidacionArmada(cod, rango) {
     clienteKey(x.cliente_cod) === k && String(x.semana_hasta).slice(0, 10) === hasta) || null;
 }
 
+// ── Historial: el detalle CONGELADO de la liquidación del cliente ──────────
+// Mismo criterio que el del conductor: los envíos se archivan (y el archivo no
+// guarda los anulados ni los arrastres), así que la factura que se le mandó al
+// cliente tiene que poder rearmarse de lo guardado y no de los registros.
+function snapshotCliente(cod, rango, liqPre) {
+  const liq = liqPre || calcLiquidacionCliente(cod, rango, { detalle: true });
+  return {
+    v: 1, total: _num(liq.total), totalEnvio: _num(liq.totalEnvio), totalCargos: _num(liq.totalCargos),
+    envios: _num(liq.totalEnvios), pagado: _num(liq.pagado), sinTarifa: _num(liq.sinTarifa),
+    arrastrados: _num(liq.arrastrados), anulados: _num(liq.anulados), bonificado: _num(liq.bonificado),
+    semana: liq.semana || '', rango: { desde: rango.desde, hasta: rango.hasta },
+    zonas: liq.filas || [], cargos: liq.cargos || [],
+    // [fecha, tracking, destinatario, zona, condición especial, precio, bonificado, marcas]
+    env: (liq.envios || []).map(e => [e.fecha || '', e.tracking || '', e.destinatario || '', e.zona || '',
+      e.dim || '', _num(e.precio), _num(e.bonificado),
+      (e.anulado ? 1 : 0) + (e.arrastrado ? 2 : 0) + (e.visita ? 4 : 0) + (e.dimSinVenta ? 8 : 0)])
+  };
+}
+
+function liqClienteDesdeSnapshot(snap) {
+  return {
+    filas: snap.zonas || [], cargos: snap.cargos || [],
+    total: _num(snap.total), totalEnvio: _num(snap.totalEnvio), totalCargos: _num(snap.totalCargos),
+    totalEnvios: _num(snap.envios), pagado: _num(snap.pagado), sinTarifa: _num(snap.sinTarifa),
+    margen: _num(snap.total) - _num(snap.pagado), arrastrados: _num(snap.arrastrados),
+    anulados: _num(snap.anulados), bonificado: _num(snap.bonificado), semana: snap.semana || '',
+    dimSinVenta: 0, dimSinVentaMonto: 0, dimSinVentaPagado: 0,
+    envios: (snap.env || []).map(a => ({
+      fecha: a[0] || '', tracking: a[1] || '', destinatario: a[2] || '', zona: a[3] || '',
+      dim: a[4] || '', precio: _num(a[5]), bonificado: _num(a[6]),
+      anulado: !!(_num(a[7]) & 1), arrastrado: !!(_num(a[7]) & 2),
+      visita: !!(_num(a[7]) & 4), dimSinVenta: !!(_num(a[7]) & 8)
+    }))
+  };
+}
+
+async function _guardarSnapshotCliente(rec, snap, reconstruido) {
+  await DB.guardarDetalleLiq({
+    tipo: 'cliente', clave: rec.cliente_cod, semana_desde: rec.semana_desde,
+    liq_id: rec.id || null, envios: snap.envios, bruto: snap.total, neto: snap.total,
+    reconstruido: !!reconstruido, armada_por: rec.armada_por || '', detalle: snap
+  });
+  if (rec.id) await DB.updateWhere('cliente_liquidaciones', 'id', rec.id,
+    { envios: snap.envios, tiene_detalle: true });
+  rec.envios = snap.envios; rec.tiene_detalle = true;
+}
+
 async function marcarLiquidacionLista(cod, rango) {
   const k = clienteKey(cod);
   if (!k) return;
   if (liquidacionArmada(k, rango)) return;
+  const snap = snapshotCliente(k, rango);
   const rec = {
     cliente_cod: k,
     semana_desde: fechaISOde(rango.desde),
@@ -43,12 +91,16 @@ async function marcarLiquidacionLista(cod, rango) {
     // Se congela lo facturado: sin esto, corregir una zona o anular un envío
     // meses después movería para atrás la evaluación de comisiones —y con ella
     // una categoría que ya se está pagando.
-    monto: _num(calcLiquidacionCliente(k, rango).total),
+    monto: _num(snap.total),
     cuenta_comision: false
   };
   try {
     const row = await DB.insertRow('cliente_liquidaciones', rec);
-    AppData.clienteLiquidaciones.push(Object.assign({ id: row && row.id }, rec));
+    const guardada = Object.assign({ id: row && row.id }, rec);
+    AppData.clienteLiquidaciones.push(guardada);
+    // El detalle, para el historial (la factura se rearma de acá).
+    try { await _guardarSnapshotCliente(guardada, snap, false); }
+    catch (e) { console.warn('detalle liquidación cliente', e); }
     showToast('✅ Liquidación de ' + clienteNombreDe(k) + ' marcada como lista — el operador ya puede descargarla');
   } catch (e) { console.warn('marcarLiquidacionLista', e); showToast('⛔ No se pudo marcar'); }
 }

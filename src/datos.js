@@ -471,13 +471,16 @@ async function _hydrateFromSupabaseReal(opts) {
     id: x.id, cliente_cod: String(x.cliente_cod || '').toUpperCase(),
     semana_desde: x.semana_desde || '', semana_hasta: x.semana_hasta || '',
     armada_por: x.armada_por || '', armada_en: x.armada_en || '', obs: x.obs || '',
-    cuenta_comision: !!x.cuenta_comision, monto: _num(x.monto)
+    cuenta_comision: !!x.cuenta_comision, monto: _num(x.monto),
+    // Del historial: los números que la lista muestra sin abrir el detalle.
+    envios: _num(x.envios), tiene_detalle: !!x.tiene_detalle
   }));
   AppData.conductorLiquidaciones = (data.conductor_liquidaciones || []).map(x => ({
     id: x.id, conductor: x.conductor || '',
     semana_desde: String(x.semana_desde || '').slice(0, 10),
     semana_hasta: String(x.semana_hasta || '').slice(0, 10),
-    armada_por: x.armada_por || '', armada_en: x.armada_en || '', monto: _num(x.monto)
+    armada_por: x.armada_por || '', armada_en: x.armada_en || '', monto: _num(x.monto),
+    envios: _num(x.envios), bruto: _num(x.bruto), tiene_detalle: !!x.tiene_detalle
   }));
   AppData.archivoSolicitudes = (data.archivo_solicitudes || []).map(x => ({
     id: x.id, hasta: String(x.hasta || '').slice(0, 10), envios: _num(x.envios),

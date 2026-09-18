@@ -1438,3 +1438,54 @@ alter table public.archivo_solicitudes enable row level security;
 create policy archivo_solicitudes_all on public.archivo_solicitudes
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
 alter publication supabase_realtime add table public.archivo_solicitudes;
+
+-- ---------- HISTORIAL DE LIQUIDACIONES (detalle congelado) ----------
+-- Al archivar, la informacion se perdia de vista: quedaba el monto de la
+-- liquidacion pero no COMO se llego a el, asi que no se podia consultar cuanto
+-- cobro un conductor en agosto, cuantos envios hizo, ni volver a bajar el PDF
+-- que se le entrego. Los envios que lo explican terminan en registros_historico
+-- (solo lectura) o directamente fuera de la ventana cargada.
+--
+-- Recalcular no alcanza y no es lo mismo: las tarifas de CONDUCTOR no tienen
+-- vigencia (a diferencia de cliente_tarifas.vigente_desde), asi que un aumento
+-- reescribe el pasado; y una cuota borrada o un descuento corregido cambian el
+-- neto de una liquidacion que ya se pago. El papel que firmo el conductor tiene
+-- que poder volver a salir IGUAL. Por eso al marcarla lista se guarda un
+-- SNAPSHOT: envio por envio, con su precio, y las imputaciones que la movieron.
+--
+-- Va en su propia tabla y no en columnas de las de arriba porque loadAll hidrata
+-- TODAS las tablas al arrancar: el detalle (jsonb con cientos de envios por
+-- liquidacion) haria el arranque inviable. Se pide de a uno, al abrirlo.
+create table if not exists public.liquidacion_detalle (
+  id bigint generated always as identity primary key,
+  tipo text not null check (tipo in ('conductor', 'cliente')),
+  clave text not null,               -- conductor canonico, o cliente_cod
+  semana_desde date not null,        -- viernes que abre la semana / el periodo
+  liq_id bigint,                     -- fila de conductor_/cliente_liquidaciones
+  envios integer not null default 0,
+  bruto numeric not null default 0,
+  neto numeric not null default 0,   -- en cliente: el total facturado
+  -- Las cerradas ANTES de que existiera el historial se pueden rearmar con los
+  -- envios que sigan cargados, pero con el tarifario de HOY: queda marcado, y
+  -- el monto de la liquidacion no se toca.
+  reconstruido boolean not null default false,
+  armada_por text not null default '',
+  detalle jsonb not null,            -- envios, no entregados e imputaciones
+  created_at timestamptz not null default now(),
+  unique (tipo, clave, semana_desde)
+);
+alter table public.liquidacion_detalle enable row level security;
+create policy liquidacion_detalle_all on public.liquidacion_detalle
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- Columnas nuevas en las dos tablas de liquidaciones: son las que se muestran
+-- en la solapa Historial sin tener que abrir el detalle de cada una. Viven aca
+-- (y no solo en el snapshot) porque estas dos SI se hidratan al arrancar, asi
+-- la tabla y sus KPI se pintan sin una consulta por fila.
+alter table public.conductor_liquidaciones
+  add column if not exists envios integer,          -- null = cerrada antes del historial
+  add column if not exists bruto numeric,
+  add column if not exists tiene_detalle boolean not null default false;
+alter table public.cliente_liquidaciones
+  add column if not exists envios integer,
+  add column if not exists tiene_detalle boolean not null default false;

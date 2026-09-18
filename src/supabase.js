@@ -284,6 +284,36 @@ const DB = {
   // Inserta una fila (append) sin borrar el resto. Usado por el historial de
   // tarifas de km, que NO debe reemplazarse (cada cambio queda registrado).
   // La RLS decide si el usuario tiene permiso (solo analista para km_tarifas).
+  // ── Detalle CONGELADO de una liquidación (historial) ────────────────────
+  // Vive en su propia tabla y NO se hidrata con el resto: las de liquidaciones
+  // se traen enteras al arrancar, y los envíos de cada una serían decenas de MB
+  // en memoria. Acá se lee de a una, recién cuando se abre esa liquidación.
+  async selectDetalleLiq(tipo, clave, semanaISO) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.from('liquidacion_detalle').select('*')
+      .eq('tipo', tipo).eq('clave', clave).eq('semana_desde', semanaISO).limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
+  },
+  // Reabrir y volver a marcar lista pisa el MISMO detalle: la clave es la del
+  // dominio (conductor/cliente + día que abre el período), no el id de la fila,
+  // así no quedan detalles huérfanos de liquidaciones que ya no existen.
+  async guardarDetalleLiq(row) {
+    if (!sb) throw new Error('offline');
+    const { error } = await sb.from('liquidacion_detalle')
+      .upsert(row, { onConflict: 'tipo,clave,semana_desde' });
+    if (error) throw error;
+    return true;
+  },
+  // Cuántas liquidaciones tienen detalle guardado, sin traerlo.
+  async contarDetallesLiq(tipo) {
+    if (!sb) throw new Error('offline');
+    const { count, error } = await sb.from('liquidacion_detalle')
+      .select('id', { count: 'exact', head: true }).eq('tipo', tipo);
+    if (error) throw error;
+    return count || 0;
+  },
+
   async insertRow(table, row) {
     if (!sb) throw new Error('offline');
     const { data, error } = await sb.from(table).insert(row).select();

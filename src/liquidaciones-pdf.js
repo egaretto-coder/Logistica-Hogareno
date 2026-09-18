@@ -913,7 +913,10 @@ function exportPDF(conductor, opts) {
   // Adicional por km de desvío del período liquidado: compensación por retiros
   // de mercadería fuera de ruta. SUMA al total. Cada desvío ya tiene su monto
   // congelado a la tarifa vigente cuando se cargó.
-  const kmAd = kmAdicionalConductor(conductor, rangoImput);
+  // Desde el HISTORIAL llegan las imputaciones ya congeladas: una cuota
+  // borrada o un km cargado después no pueden cambiar un papel ya emitido.
+  const impSnap = opts.imputaciones || null;
+  const kmAd = impSnap ? impSnap.km : kmAdicionalConductor(conductor, rangoImput);
   const kmMonto = kmAd.monto;
   const kmKms = kmAd.km;
   const kmOffset = kmMonto > 0 ? 6 : 0; // renglón extra en la caja si hay adicional
@@ -921,20 +924,20 @@ function exportPDF(conductor, opts) {
   // Recorridos especiales del período: rutas de envíos problemáticos pactadas a
   // un monto fijo. Se paga el DIFERENCIAL contra lo que el día ya liquidaba.
   // SUMA al total.
-  const respAd = recorridoEspecialConductor(conductor, rangoImput);
+  const respAd = impSnap ? impSnap.especial : recorridoEspecialConductor(conductor, rangoImput);
   const respMonto = respAd.monto;
   const respOffset = respMonto > 0 ? 6 : 0;
 
   // Cuota(s) de adelanto imputadas al período liquidado: préstamo que el conductor
   // devuelve en cuotas. RESTA al total. Cada cuota fue registrada explícitamente en
   // el panel Adelantos con su fecha de imputación (misma lógica que el modal en pantalla).
-  const advAd = adelantoDescuentoConductor(conductor, rangoImput);
+  const advAd = impSnap ? impSnap.adelanto : adelantoDescuentoConductor(conductor, rangoImput);
   const advMonto = advAd.monto;
   const advOffset = advMonto > 0 ? 6 : 0; // renglón extra en la caja si hay cuota
 
   // Cuota(s) de extravío cuoteado imputadas al período. RESTA al total (igual que
   // la cuota de adelanto). Cada cuota se registró en la solapa Extravíos con su fecha.
-  const extAd = extravioCuotaDescuento(conductor, rangoImput);
+  const extAd = impSnap ? impSnap.extravio : extravioCuotaDescuento(conductor, rangoImput);
   const extMonto = extAd.monto;
   const extOffset = extMonto > 0 ? 6 : 0;
 

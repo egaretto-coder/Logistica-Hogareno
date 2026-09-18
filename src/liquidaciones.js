@@ -129,13 +129,80 @@ function liqConductorArmada(conductor, semanaISO) {
     normNombre(x.conductor) === k && String(x.semana_desde).slice(0, 10) === sem) || null;
 }
 
-async function marcarLiqConductorLista(conductor) {
+// ════════════════════════════════════════════════════════════════════════
+//  HISTORIAL · el detalle se CONGELA al marcar la liquidación como lista
+//  Lo que se le pagó a un conductor no se puede recalcular después: las tarifas
+//  de conductor NO tienen vigencia, así que con el tarifario de hoy una semana
+//  vieja da otro número, y los envíos terminan archivados (y el archivo no
+//  guarda todos los campos). Por eso se guarda el detalle tal cual salió, en
+//  formato compacto —cada envío es un array, no un objeto con claves repetidas—
+//  y de ahí se rearma el PDF, idéntico al que se descargó ese día.
+// ════════════════════════════════════════════════════════════════════════
+function snapshotConductor(cond, rango, liqPre) {
+  const liq = liqPre || calcLiquidacionesFiltradas();
+  const d = liq[cond] || { total: 0, filas: [], filas_excluidas: [] };
+  const imp = {
+    km: kmAdicionalConductor(cond, rango),
+    especial: recorridoEspecialConductor(cond, rango),
+    adelanto: adelantoDescuentoConductor(cond, rango),
+    extravio: extravioCuotaDescuento(cond, rango),
+    items: {
+      combustible: descItemDescuentoConductor('combustible', cond, rango).monto,
+      extraviados: descItemDescuentoConductor('extraviados', cond, rango).monto,
+      proveedores: descItemDescuentoConductor('proveedores', cond, rango).monto,
+      obs: ''
+    }
+  };
+  const bruto = _num(d.total);
+  return {
+    v: 1, bruto,
+    neto: _num(netoLiquidacion(bruto, imputacionesConductor(cond, rango))),
+    envios: d.filas.length,
+    condicion: (panelConductorDe(cond) || {}).condicion || '',
+    rango: { desde: rango.desde, hasta: rango.hasta },
+    // [tracking, fecha, zona, precio, cliente de la condición, condición especial]
+    ent: d.filas.map(f => [f.tracking || '', f.fecha || '', f.zona || '', _num(f.precio),
+      f.es_dim_especial ? (f.dim_cliente || '') : '', f.es_dim_especial ? (f.dim_condicion || '') : '']),
+    noent: (d.filas_excluidas || []).map(f => [f.tracking || '', f.fecha || '', f.zona || '', f.estado || '']),
+    imp
+  };
+}
+
+// Vuelve a armar lo que espera el PDF a partir del detalle guardado.
+function liqDesdeSnapshot(cond, snap) {
+  const filas = (snap.ent || []).map(a => ({
+    tracking: a[0] || '', fecha: a[1] || '', zona: a[2] || '', estado: 'Entregado',
+    precio: _num(a[3]), subtotal: _num(a[3]), tipo: '',
+    es_dim_especial: !!a[5], dim_cliente: a[4] || '', dim_condicion: a[5] || ''
+  }));
+  const out = {};
+  out[cond] = {
+    conductor: cond, total: _num(snap.bruto), filas,
+    filas_excluidas: (snap.noent || []).map(a => ({ tracking: a[0] || '', fecha: a[1] || '', zona: a[2] || '', estado: a[3] || '' }))
+  };
+  return out;
+}
+
+// Guarda el detalle y deja en la liquidación los números que la lista del
+// historial muestra sin abrirla (envíos y bruto).
+async function _guardarSnapshotConductor(rec, snap, reconstruido) {
+  await DB.guardarDetalleLiq({
+    tipo: 'conductor', clave: rec.conductor, semana_desde: rec.semana_desde,
+    liq_id: rec.id || null, envios: snap.envios, bruto: snap.bruto, neto: snap.neto,
+    reconstruido: !!reconstruido, armada_por: rec.armada_por || '', detalle: snap
+  });
+  if (rec.id) await DB.updateWhere('conductor_liquidaciones', 'id', rec.id,
+    { envios: snap.envios, bruto: snap.bruto, tiene_detalle: true });
+  rec.envios = snap.envios; rec.bruto = snap.bruto; rec.tiene_detalle = true;
+}
+
+async function marcarLiqConductorLista(conductor, liqPre) {
   const cond = (typeof conductorCanonico === 'function' ? conductorCanonico(conductor) : conductor) || conductor;
   const semC = semanaDeConductor(cond);
   const sem = _liqISO(semC.desde);
   if (liqConductorArmada(cond, sem)) return;
   const r = { desdeD: semC.desde, hastaD: semC.hasta };
-  const liq = calcLiquidacionesFiltradas();
+  const liq = liqPre || calcLiquidacionesFiltradas();
   const rec = {
     conductor: cond,
     semana_desde: sem,
@@ -152,7 +219,13 @@ async function marcarLiqConductorLista(conductor) {
   };
   try {
     const row = await DB.insertRow('conductor_liquidaciones', rec);
-    AppData.conductorLiquidaciones = (AppData.conductorLiquidaciones || []).concat([Object.assign({ id: row && row.id }, rec)]);
+    const guardada = Object.assign({ id: row && row.id }, rec);
+    AppData.conductorLiquidaciones = (AppData.conductorLiquidaciones || []).concat([guardada]);
+    // El detalle, para el historial: el PDF se rearma de acá cuando los envíos
+    // ya no estén. Si falla, la liquidación igual queda marcada: lo que no
+    // puede pasar es lo contrario, que se guarde un detalle de algo sin cerrar.
+    try { await _guardarSnapshotConductor(guardada, snapshotConductor(cond, liqRangoImputDe(cond), liq), false); }
+    catch (e) { console.warn('detalle liquidación conductor', e); }
     persistirLiqConductorLocal();
     showToast('✅ ' + cond + ' — liquidación lista, el tesorero ya puede descargarla');
     renderLiquidaciones();
@@ -185,7 +258,7 @@ async function marcarTodasLiqConductor() {
   if (!cs.length) { showToast('No hay ninguna sin armar en lo que estás viendo'); return; }
   if (!confirm('¿Marcar como listas las ' + cs.length + ' liquidaciones que estás viendo?' + String.fromCharCode(10) +
     'El tesorero va a poder descargarlas y enviarlas.')) return;
-  for (const c of cs) await marcarLiqConductorLista(c);
+  for (const c of cs) await marcarLiqConductorLista(c, liq);
 }
 
 // Los envíos de la semana de pago de CADA conductor. No se puede filtrar por un
@@ -209,9 +282,11 @@ function filtrarRecordsLiq(records) {
 // en el panel Liquidaciones (incluye dimensiones especiales y Super SLA).
 // La usan el modal individual y las exportaciones masivas de PDFs, para que
 // TODOS los PDFs respeten el mismo período que se ve en pantalla.
-function calcLiquidacionesFiltradas() {
+// `recs` permite calcular una semana que NO es la del panel: lo usa el
+// historial para reconstruir el detalle de una liquidación vieja.
+function calcLiquidacionesFiltradas(recs) {
   const liqBase = {};
-  filtrarRecordsLiq(AppData.records).forEach(r => {
+  (recs || filtrarRecordsLiq(AppData.records)).forEach(r => {
     const cond = conductorCanonico(r.cadete); if (!cond) return;
     const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
     const estadoNorm = (r.estado || '').toUpperCase().trim();

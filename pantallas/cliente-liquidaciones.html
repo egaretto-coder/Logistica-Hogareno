@@ -14,6 +14,13 @@
           </div>
         </div>
 
+        <div class="tabs" id="cliq-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="cliq-btn-semana" onclick="switchCliqTab('semana')"><i class="ic ic-file"></i> Semana</button>
+          <button class="tab" id="cliq-btn-historial" onclick="switchCliqTab('historial')"><i class="ic ic-list"></i> Historial</button>
+        </div>
+
+        <div id="cliq-tab-semana">
+
         <div class="alert alert-info" style="margin-bottom:16px">
           <i class="ic ic-file"></i><div>Acá se <strong>descargan</strong> las liquidaciones que el administrativo ya revisó y marcó como listas desde <strong>Detalle de cliente</strong>.
           Las que todavía no armó aparecen en gris: no se pueden bajar, para que no salga un PDF con datos a medio corregir.
@@ -48,6 +55,30 @@
               </tbody>
             </table>
           </div>
+        </div>
+        </div><!-- /cliq-tab-semana -->
+
+        <!-- ══════════ SOLAPA: HISTORIAL ══════════ -->
+        <div id="cliq-tab-historial" style="display:none">
+          <div class="card" style="margin-bottom:16px;padding:14px 18px">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+              <input type="month" id="cliq-hist-mes" onchange="renderHistorial('cliente')" aria-label="Mes del historial">
+              <button class="btn btn-sm" onclick="document.getElementById('cliq-hist-mes').value='';renderHistorial('cliente')" title="Ver todo el historial, sin filtrar por mes">Todos</button>
+              <input type="search" id="cliq-hist-search" placeholder="🔍 Buscar cliente..." oninput="renderHistorial('cliente')"
+                style="width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <span style="font-size:11.5px;color:var(--text-muted);flex:1;min-width:240px">Las liquidaciones ya emitidas, con su <strong>detalle congelado</strong>: la factura sale igual a la que se le mandó al cliente.</span>
+            </div>
+          </div>
+          <div class="metrics-grid" id="cliq-hist-kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
+          <div id="cliq-hist-aviso"></div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Cliente</th><th>Período</th><th style="text-align:right">Envíos</th>
+              <th style="text-align:right">Facturado</th><th>Armada</th><th style="width:160px"></th>
+            </tr></thead>
+            <tbody id="cliq-hist-rows"></tbody>
+          </table></div></div>
         </div>
 
       </div>

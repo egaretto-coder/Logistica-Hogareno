@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v225';
+const CACHE = 'liq-cache-v226';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -22,6 +22,7 @@ const APP_SHELL = [
   // Pantallas (JS)
   './src/dashboard.js',
   './src/liquidaciones.js',
+  './src/historial.js',
   './src/cierre.js',
   './src/liquidaciones-pdf.js',
   './src/conductores.js',
