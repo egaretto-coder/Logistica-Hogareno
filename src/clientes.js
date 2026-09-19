@@ -100,6 +100,26 @@ function clientesDeRegistros(rango) {
 // Fecha desde la que rige la tarifa "original": es anterior a cualquier envío
 // del sistema, así que una tarifa sin vigencia cargada aplica a todo.
 const TARIFA_DESDE_SIEMPRE = '2000-01-01';
+// Las fechas DISTINTAS desde las que rige alguna lista de ese cliente, de la
+// más vieja a la más nueva. Es lo que hay que respetar: cada envío se factura
+// con la que regía el día que se entregó.
+function vigenciasDe(cod) {
+  const k = clienteKey(cod);
+  const s = new Set();
+  (AppData.clienteTarifas || []).forEach(t => {
+    if (clienteKey(t.cliente_cod) !== k) return;
+    s.add(tarifaVigenteDesde(t));
+  });
+  return Array.from(s).sort();
+}
+// Un cliente tiene HISTORIAL cuando reemplazarle el tarifario entero le
+// cambiaría el precio a envíos ya entregados: o tiene más de una lista, o la
+// única que tiene arranca en una fecha (no es la original "desde siempre").
+function tieneHistorialPrecios(cod) {
+  const v = vigenciasDe(cod);
+  return v.length > 1 || (v.length === 1 && v[0] !== TARIFA_DESDE_SIEMPRE);
+}
+
 function tarifaVigenteDesde(t) {
   const v = String((t && t.vigente_desde) || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : TARIFA_DESDE_SIEMPRE;
@@ -1959,11 +1979,20 @@ async function eliminarCliente(id) {
 // como si no tuvieran ninguna (bug real).
 let tarifasClienteNombre = '';
 let tarifasClienteCod = '';
+let tarifasClienteVig = '';       // la vigencia que se está editando
 function openTarifasCliente(id) {
   const c = AppData.clientes.find(x => x.id === id);
   if (!c) return;
   tarifasClienteNombre = c.nombre;
   tarifasClienteCod = clienteKey(c.codigo);
+  // Qué listas tiene hoy. Si ya tiene alguna, guardar NO puede aplastarlas:
+  // hay que decidir si esto CORRIGE la que rige o si es una lista NUEVA que
+  // arranca en una fecha. Antes el editor borraba todas y dejaba una sola
+  // "desde siempre", así que un aumento cargado con su fecha desaparecía y los
+  // envíos viejos pasaban a cobrarse con los precios nuevos.
+  const vigs = vigenciasDe(tarifasClienteCod);
+  tarifasClienteVig = vigs.length ? vigs[vigs.length - 1] : TARIFA_DESDE_SIEMPRE;
+  _pintarModoTarifas(vigs);
   document.getElementById('modal-cli-tarifas-title').textContent = 'Tarifario de venta · ' + c.nombre;
   // Zonas: las del tarifario base (AppData.tarifas) + las que ya tenga el cliente.
   const zonas = new Set(AppData.tarifas.map(t => String(t.zona || '').toUpperCase().trim()).filter(Boolean));
@@ -1986,6 +2015,50 @@ function openTarifasCliente(id) {
   document.getElementById('mcli-tarifas-body').innerHTML = rows || '<div class="muted" style="padding:10px">No hay zonas en el tarifario base. Cargá zonas en Tarifas primero, o subí el tarifario por Excel.</div>';
   document.getElementById('modal-cli-tarifas-backdrop').style.display = 'flex';
 }
+// El selector de modo. Solo aparece si el cliente YA tiene precios cargados:
+// en la primera carga no hay nada que corregir ni historial que cuidar.
+function _pintarModoTarifas(vigs) {
+  const box = document.getElementById('mcli-tar-modo');
+  if (!box) return;
+  if (!vigs.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  box.style.display = 'block';
+  const vig = vigs[vigs.length - 1];
+  const rige = vig === TARIFA_DESDE_SIEMPRE ? 'la lista original' : 'la lista que rige desde el ' + _precFmt(vig);
+  const hoy = _hoyISO();
+  box.innerHTML =
+    '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-bottom:8px">' +
+      '<input type="radio" name="mcli-tar-modo" value="corregir" checked onchange="_modoTarifasCambio()" style="margin-top:3px">' +
+      '<span><strong>Corregir ' + rige + '</strong>' +
+        '<div class="muted" style="font-size:11.5px">Se arregla un precio mal cargado. ' +
+          (vigs.length > 2 ? 'Las ' + (vigs.length - 1) + ' listas anteriores no se tocan.'
+           : vigs.length === 2 ? 'La lista anterior no se toca.' : 'No cambia ninguna fecha.') + '</div></span>' +
+    '</label>' +
+    '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
+      '<input type="radio" name="mcli-tar-modo" value="nueva" onchange="_modoTarifasCambio()" style="margin-top:3px">' +
+      '<span><strong>Es una lista nueva, desde</strong> ' +
+        '<input type="date" id="mcli-tar-desde" value="' + hoy + '" onchange="_modoTarifasCambio()" disabled>' +
+        '<div class="muted" style="font-size:11.5px">Un aumento. Los envíos entregados antes de esa fecha siguen con el precio que tenían.</div>' +
+        '<div id="mcli-tar-aviso" style="font-size:11.5px;color:#b45309;margin-top:3px"></div></span>' +
+    '</label>';
+}
+function _modoTarifasCambio() {
+  const modo = (document.querySelector('input[name="mcli-tar-modo"]:checked') || {}).value || 'corregir';
+  const f = document.getElementById('mcli-tar-desde');
+  if (f) f.disabled = modo !== 'nueva';
+  const av = document.getElementById('mcli-tar-aviso');
+  if (!av) return;
+  const d = (f && f.value) || '';
+  // Una fecha pasada SÍ recalcula lo ya entregado desde ese día: es válido
+  // (un aumento retroactivo pactado) pero tiene que decirse.
+  av.innerHTML = (modo === 'nueva' && d && d < _hoyISO())
+    ? 'Esa fecha ya pasó: los envíos entregados desde el ' + _precFmt(d) + ' se van a recalcular con estos precios.'
+    : '';
+}
+
 function closeCliTarifasModal(e) {
   if (!e || e.target.id === 'modal-cli-tarifas-backdrop') document.getElementById('modal-cli-tarifas-backdrop').style.display = 'none';
 }
@@ -1993,24 +2066,41 @@ async function guardarTarifasCliente() {
   const nombre = tarifasClienteNombre;
   const cod = tarifasClienteCod;
   if (!cod) { alert('Ese cliente no tiene código cargado, así que la tarifa no se podría aplicar a ningún envío. Corregí el código en su ficha primero.'); return; }
+  // Qué vigencia se está escribiendo: la que rige (corrección) o una nueva.
+  const modo = (document.querySelector('input[name="mcli-tar-modo"]:checked') || {}).value || 'corregir';
+  let desde = tarifasClienteVig || TARIFA_DESDE_SIEMPRE;
+  if (modo === 'nueva') {
+    desde = (document.getElementById('mcli-tar-desde') || {}).value || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(desde)) { alert('Elegí desde qué fecha rige la lista nueva.'); return; }
+    if (desde < _hoyISO() && !confirm('La lista nueva rige desde el ' + _precFmt(desde) + ', que ya pasó.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Los envíos entregados desde ese día se van a recalcular con estos precios. ¿Aplicar igual?')) return;
+  }
   const inputs = Array.from(document.querySelectorAll('#mcli-tarifas-body input[data-zona]'));
-  const nuevas = inputs.map(inp => ({ cliente: nombre, cliente_cod: cod, zona: inp.getAttribute('data-zona'), precio: parseFloat(inp.value) || 0 }))
+  const nuevas = inputs.map(inp => ({ cliente: nombre, cliente_cod: cod, zona: inp.getAttribute('data-zona'),
+    precio: parseFloat(inp.value) || 0, vigente_desde: desde }))
     .filter(t => t.precio > 0);
   try {
-    // Reemplaza el tarifario del cliente (borrar + insertar). Se borra por las
-    // DOS claves: por código, y por nombre para llevarse las filas viejas que
-    // este mismo editor había guardado sin código — si no, quedarían duplicadas.
-    await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);
-    await DB.deleteWhere('cliente_tarifas', 'cliente', nombre);
+    // Se reemplaza SOLO la vigencia que se está escribiendo. Borrar por
+    // cliente_cod —como hacía antes— se llevaba puestas TODAS las listas del
+    // cliente, así que un aumento con fecha desaparecía y los envíos viejos
+    // pasaban a cobrarse con los precios nuevos. Se borra por id para no tocar
+    // las otras fechas, e incluye las filas huérfanas que este mismo editor
+    // había dejado sin código (si no, quedarían duplicadas).
+    const bajas = (AppData.clienteTarifas || []).filter(t =>
+      (clienteKey(t.cliente_cod) === cod || (!t.cliente_cod && normCliente(t.cliente) === normCliente(nombre))) &&
+      tarifaVigenteDesde(t) === desde);
+    const ids = bajas.map(t => t.id).filter(id => id != null);
+    if (ids.length) await DB.deleteIn('cliente_tarifas', 'id', ids);
     let inserted = [];
     if (nuevas.length) inserted = await guardarClienteTarifas(nuevas);
-    AppData.clienteTarifas = AppData.clienteTarifas
-      .filter(t => clienteKey(t.cliente_cod) !== cod && normCliente(t.cliente) !== normCliente(nombre))
-      .concat(inserted);
+    const fuera = new Set(ids);
+    AppData.clienteTarifas = AppData.clienteTarifas.filter(t => !fuera.has(t.id)).concat(inserted);
     persistirClientesLocal();
     document.getElementById('modal-cli-tarifas-backdrop').style.display = 'none';
     renderClientes();
-    showToast('✅ Tarifario de ' + nombre + ' guardado (' + nuevas.length + ' zonas)');
+    showToast('✅ Tarifario de ' + nombre + ' guardado (' + nuevas.length + ' zonas' +
+      (modo === 'nueva' ? ' · rige desde el ' + _precFmt(desde) : '') + ')');
   } catch (e) { console.warn('guardarTarifasCliente:', e); alert('No se pudo guardar el tarifario: ' + (e.message || e)); }
 }
 // Inserta filas de cliente_tarifas y devuelve las filas con id.
@@ -2192,6 +2282,9 @@ async function _procesarTarifarios(files, vigenteDesde) {
     if (!confirm('Los recorridos todavía se están cargando, así que los códigos de cliente pueden no encontrarse ' +
       'y quedar provisionales.\n\nConviene esperar unos segundos y reintentar.\n\n¿Importar igual?')) return;
   }
+  // Se pregunta UNA sola vez por corrida, no una por cliente: con 100
+  // planillas, un confirm por cada uno es imposible de contestar.
+  _impPisarHistorial = null;
   const resultados = [];
   for (const file of files) {
     try { resultados.push(await _importarUnTarifario(file, vigenteDesde)); }
@@ -2204,6 +2297,11 @@ async function _procesarTarifarios(files, vigenteDesde) {
   renderClientes();
   _resumenImportTarifarios(resultados);
 }
+
+// Respuesta para TODA la corrida: si el archivo trae clientes que ya tienen
+// listas con fecha, ¿se les reemplaza el tarifario entero (y se pierde el
+// historial) o se los saltea? null = todavía no se preguntó.
+let _impPisarHistorial = null;
 
 // Lee y aplica UN archivo. Devuelve qué hizo, para el resumen.
 function _importarUnTarifario(file, vigenteDesde) {
@@ -2223,7 +2321,7 @@ function _importarUnTarifario(file, vigenteDesde) {
 async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde) {
   const wb = XLSX.read(bytes, { type: 'array' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
-  const res = { archivo: nombreArchivo, clientes: [], zonasDesconocidas: [], repetidas: 0, ignoradas: 0 };
+  const res = { archivo: nombreArchivo, clientes: [], salteados: [], zonasDesconocidas: [], repetidas: 0, ignoradas: 0 };
   if (rows.length < 2) throw new Error('El archivo está vacío');
 
   const norm = x => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
@@ -2372,9 +2470,33 @@ async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde) {
         AppData.clienteTarifas = (AppData.clienteTarifas || [])
           .filter(t => !(clienteKey(t.cliente_cod) === cod && tarifaVigenteDesde(t) === vigenteDesde))
           .concat(ins);
+      } else if (tieneHistorialPrecios(cod)) {
+        // ALTA sobre un cliente que YA tiene listas con fecha: reemplazar se
+        // lleva puesto el historial y sus envíos viejos pasan a cobrarse con
+        // los precios nuevos. Eso no puede pasar en silencio — y menos en una
+        // carga de 100 planillas, donde nadie revisa cliente por cliente.
+        if (_impPisarHistorial === null) {
+          _impPisarHistorial = confirm(
+            'Hay clientes en el archivo que ya tienen listas de precios con fecha (' + cli.nombre + ' es el primero).' +
+            String.fromCharCode(10) + String.fromCharCode(10) +
+            'Importar el tarifario REEMPLAZA toda su historia: los envíos ya entregados pasarían a cobrarse con los precios nuevos, ' +
+            'y las liquidaciones viejas que todavía no se cerraron cambiarían de total.' +
+            String.fromCharCode(10) + String.fromCharCode(10) +
+            'Para cargar precios nuevos sin tocar lo anterior está "Actualizar lista de precios", que le pone la fecha desde la que rigen.' +
+            String.fromCharCode(10) + String.fromCharCode(10) +
+            'Aceptar = reemplazar igual, y perder el historial de esos clientes' + String.fromCharCode(10) +
+            'Cancelar = saltearlos (los demás se importan igual)');
+        }
+        if (!_impPisarHistorial) {
+          res.salteados.push({ nombre: cli.nombre, cod, listas: vigenciasDe(cod).length });
+          continue;
+        }
+        await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);
+        const ins = await guardarClienteTarifas(filas);
+        AppData.clienteTarifas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) !== cod).concat(ins);
       } else {
-        // ALTA: reemplaza el tarifario de ESE cliente, con toda su historia. Es lo
-        // que corresponde al cargar un cliente nuevo o rehacerle la lista entera.
+        // ALTA: reemplaza el tarifario de ESE cliente. Sin listas con fecha no
+        // hay historial que perder — es el alta de siempre.
         await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);
         const ins = await guardarClienteTarifas(filas);
         AppData.clienteTarifas = (AppData.clienteTarifas || []).filter(t => clienteKey(t.cliente_cod) !== cod).concat(ins);
@@ -2467,6 +2589,7 @@ function _resumenImportTarifarios(resultados) {
   const conError = resultados.filter(r => r.error);
   const clientes = ok.reduce((a, r) => a.concat(r.clientes), []);
   const provisionales = clientes.filter(c => c.origen === 'provisional');
+  const salteados = ok.reduce((a, r) => a.concat(r.salteados || []), []);
   const zonasTotal = clientes.reduce((s, c) => s + c.zonas, 0);
   const nuevos = clientes.filter(c => c.nuevo).length;
   const repetidas = ok.reduce((s, r) => s + r.repetidas, 0);
@@ -2491,6 +2614,14 @@ function _resumenImportTarifarios(resultados) {
       '<div>Clientes: <strong>' + clientes.length + '</strong>' + (nuevos ? ' (' + nuevos + ' nuevos)' : '') + '</div>' +
       '<div>Tarifas: <strong>' + zonasTotal + '</strong></div>' +
     '</div>' +
+    (salteados.length
+      ? '<div class="alert" style="margin-bottom:10px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe"><i class="ic ic-alert"></i><div>' +
+        '<strong>' + salteados.length + ' cliente(s) se saltearon para no perderles el historial de precios.</strong> ' +
+        'Ya tienen listas con fecha, así que reemplazarles el tarifario les cambiaría el precio a envíos ya entregados. ' +
+        'Cargales la lista nueva con <strong>"Actualizar lista de precios"</strong>, que le pone la fecha desde la que rige: ' +
+        salteados.map(s => s.nombre + ' (' + s.listas + ' listas)').join(' · ') +
+        '</div></div>'
+      : '') +
     (provisionales.length
       ? '<div class="alert" style="margin-bottom:10px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74"><i class="ic ic-alert"></i><div><strong>' +
         provisionales.length + ' cliente(s) quedaron con código provisional.</strong> No se encontró su código en los envíos, ' +

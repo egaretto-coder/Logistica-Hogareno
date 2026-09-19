@@ -973,8 +973,12 @@
       <button class="modal-close" onclick="closeCliTarifasModal()"><i class="ic ic-x"></i></button>
     </div>
     <div class="alert alert-info" style="margin-bottom:10px">
-      <i class="ic ic-dollar"></i> Precio que le <strong>cobrás al cliente</strong> por cada envío entregado en esa zona. Dejá en blanco (o 0) las zonas que no factures.
+      <i class="ic ic-dollar"></i><div>Precio que le <strong>cobrás al cliente</strong> por cada envío entregado en esa zona. Dejá en blanco (o 0) las zonas que no factures.</div>
     </div>
+    <!-- Corregir la lista que rige, o cargar una nueva con su fecha. Aparece
+         solo si el cliente ya tiene precios: en la primera carga no hay nada
+         que corregir ni historial que cuidar. Lo llena _pintarModoTarifas(). -->
+    <div id="mcli-tar-modo" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px"></div>
     <div id="mcli-tarifas-body" style="overflow-y:auto;flex:1;padding-right:4px;min-height:80px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
       <button class="btn" onclick="closeCliTarifasModal()">Cancelar</button>
