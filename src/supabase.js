@@ -22,15 +22,93 @@ try {
   console.warn('[Supabase] No se pudo inicializar el cliente:', e);
 }
 
+// OJO: estos helpers llevan prefijo _db a proposito. Un `function`, `let` o
+// `const` en el tope de un src/*.js es un binding GLOBAL: si dos archivos
+// declaran el mismo nombre, el segundo tira SyntaxError y queda SIN EJECUTAR
+// ENTERO —no falla solo esa linea—. Paso: `_esperar` ya existia en
+// liquidaciones-pdf.js y el panel de Liquidaciones se quedo sin un solo
+// handler. Lo agarro el banco de humo.
+// ── Cuántas páginas se piden A LA VEZ ───────────────────────────────────────
+// El navegador abre ~6 conexiones por host y PostgREST empieza a devolver 500 y
+// 522 (timeout) cuando le caen decenas de páginas juntas. Traer 'registros'
+// entero son 78 páginas de 1000, y el historial otras 14: disparadas todas de
+// una vez, el servidor devolvía errores y —como el Promise.all corta al primer
+// error— se perdía la carga COMPLETA. Medido en produccion: 21 respuestas 500 y
+// 17 respuestas 522 en los dos minutos en que se apretó "Cargar historial
+// completo"; el boton volvia a su estado normal y parecia que no hacia nada.
+const DB_MAX_EN_VUELO = 6;
+let _dbMaxEnVuelo = DB_MAX_EN_VUELO;
+let _dbEnVuelo = 0;
+let _dbExitosSeguidos = 0;
+const _dbColaReqs = [];
+function _dbDespachar() {
+  while (_dbEnVuelo < _dbMaxEnVuelo && _dbColaReqs.length) {
+    _dbEnVuelo++;
+    _dbColaReqs.shift()();
+  }
+}
+function _dbTomarTurno() {
+  if (_dbEnVuelo < _dbMaxEnVuelo) { _dbEnVuelo++; return Promise.resolve(); }
+  return new Promise(res => _dbColaReqs.push(res));
+}
+function _dbSoltarTurno() { _dbEnVuelo--; _dbDespachar(); }
+async function _dbConTurno(fn) {
+  await _dbTomarTurno();
+  try { return await fn(); } finally { _dbSoltarTurno(); }
+}
+// Si el servidor se queja, reintentar con la MISMA presión no sirve de nada:
+// vuelve a saturarse y la carga igual se cae. Hay que mandarle menos.
+function _dbAchicarVentana() {
+  _dbExitosSeguidos = 0;
+  if (_dbMaxEnVuelo > 2) { _dbMaxEnVuelo--; }
+}
+// Y recuperarse de a poco: si quedara achicada para siempre, cada login
+// siguiente pagaría el peaje de una saturación puntual.
+function _dbMarcarExito() {
+  if (_dbMaxEnVuelo >= DB_MAX_EN_VUELO) return;
+  if (++_dbExitosSeguidos >= 8) { _dbExitosSeguidos = 0; _dbMaxEnVuelo++; _dbDespachar(); }
+}
+
+// 500, 502, 503, 504, 522 y 429 son transitorios: el servidor está saturado, no
+// hay nada malo con la consulta. Reintentar esa página —esperando cada vez un
+// poco más— la recupera, en vez de tirar abajo toda la carga por una.
+const DB_ESTADOS_REINTENTABLES = [429, 500, 502, 503, 504, 520, 521, 522, 524];
+function _dbValeReintentar(err) {
+  if (!err) return false;
+  const code = Number(err.status || err.code);
+  if (DB_ESTADOS_REINTENTABLES.indexOf(code) >= 0) return true;
+  // Sin status: casi siempre es la red cortada a mitad del fetch.
+  const msg = String(err.message || '').toLowerCase();
+  return !code && (msg.includes('fetch') || msg.includes('network') || msg.includes('timeout'));
+}
+function _dbEsperar(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+// Pide UNA página, con turno y con reintentos.
+async function _dbPedirPagina(hacerQuery, desde, hasta, intentos = 6) {
+  let ultimo = null;
+  for (let i = 0; i < intentos; i++) {
+    const r = await _dbConTurno(() => hacerQuery().range(desde, hasta));
+    if (!r.error) { _dbMarcarExito(); return r; }
+    ultimo = r.error;
+    if (!_dbValeReintentar(r.error) || i === intentos - 1) break;
+    _dbAchicarVentana();                      // menos presión, no solo más espera
+    await _dbEsperar(300 * Math.pow(2, Math.min(i, 4)));   // 0,3s .. 4,8s
+  }
+  throw ultimo;
+}
+
 // Capa de acceso a datos
 const DB = {
   get ready() { return !!sb; },
 
-  // Trae TODAS las páginas de una consulta EN PARALELO (PostgREST limita a 1000
-  // filas por request). Pide la 1ª página con el count exacto y, si faltan filas,
-  // dispara el resto de páginas a la vez. Antes se hacía "de a 1000 EN SERIE",
-  // lo que en 'registros' (~10k) tardaba varios segundos en el login/refresh.
-  async _fetchAllParallel(table, { orderCol = null, filter = null } = {}) {
+  // Trae TODAS las páginas de una consulta (PostgREST limita a 1000 filas por
+  // request). Pide la 1ª con el count exacto y, si faltan filas, trae el resto
+  // en paralelo pero DE A DB_MAX_EN_VUELO: en serie, 'registros' tardaba
+  // varios segundos en cada login; todas juntas, el servidor devolvía 500 y la
+  // carga entera se perdía. `onProgress(hechas, total)` permite mostrar avance
+  // en las cargas largas — sin eso, "Cargar historial completo" son 90 páginas
+  // sin una sola señal de que algo está pasando.
+  async _fetchAllParallel(table, { orderCol = null, filter = null, onProgress = null } = {}) {
     const PAGE = 1000;
     const mk = (withCount) => {
       let q = withCount
@@ -40,17 +118,22 @@ const DB = {
       if (filter) q = filter(q);
       return q;
     };
-    const first = await mk(true).range(0, PAGE - 1);
-    if (first.error) throw first.error;
+    const first = await _dbPedirPagina(() => mk(true), 0, PAGE - 1);
     let out = first.data || [];
     const total = (first.count != null) ? first.count : out.length;
-    if (out.length >= PAGE && total > PAGE) {
+    const paginas = (out.length >= PAGE && total > PAGE) ? Math.ceil(total / PAGE) : 1;
+    if (onProgress) { try { onProgress(1, paginas); } catch (e) {} }
+    if (paginas > 1) {
+      let hechas = 1;
+      // Las páginas se disparan todas, pero cada una espera su turno: el
+      // semáforo deja pasar de a DB_MAX_EN_VUELO.
       const reqs = [];
-      for (let p = 1, pages = Math.ceil(total / PAGE); p < pages; p++) {
-        reqs.push(mk(false).range(p * PAGE, p * PAGE + PAGE - 1));
+      for (let p = 1; p < paginas; p++) {
+        reqs.push(_dbPedirPagina(() => mk(false), p * PAGE, p * PAGE + PAGE - 1)
+          .then(r => { hechas++; if (onProgress) { try { onProgress(hechas, paginas); } catch (e) {} } return r; }));
       }
       const results = await Promise.all(reqs);
-      for (const r of results) { if (r.error) throw r.error; out = out.concat(r.data || []); }
+      for (const r of results) out = out.concat(r.data || []);
     }
     return out;
   },
@@ -63,16 +146,17 @@ const DB = {
   // Registros dentro de una ventana de días (server-side, por fecha_date).
   // Incluye los sin fecha parseable (fecha_date null) por seguridad.
   // desdeISO null = traer todo el historial.
-  async selectRegistrosVentana(desdeISO) {
+  async selectRegistrosVentana(desdeISO, onProgress) {
     return this._fetchAllParallel('registros', {
       orderCol: 'id',
+      onProgress: onProgress || null,
       filter: desdeISO ? (q => q.or('fecha_date.gte.' + desdeISO + ',fecha_date.is.null')) : null
     });
   },
 
   // Trae todos los registros archivados (tabla registros_historico).
-  async selectHistorico() {
-    return this._fetchAllParallel('registros_historico', { orderCol: 'id' });
+  async selectHistorico(onProgress) {
+    return this._fetchAllParallel('registros_historico', { orderCol: 'id', onProgress: onProgress || null });
   },
 
   // TODOS los recorridos de un cliente (vivos + archivados), sin importar la

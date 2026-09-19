@@ -901,10 +901,15 @@ async function cargarHistorialCompleto(btn) {
   if (!window.DB || !DB.ready) { showToast('Sin conexión'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Cargando historial…'; }
   try {
-    const [vivos, historico] = await Promise.all([
-      DB.selectRegistrosVentana(null),
-      DB.selectHistorico()
-    ]);
+    // Las dos tablas EN SERIE, no en paralelo: juntas son ~92 páginas y, aun
+    // con el semáforo, encolarlas de a dos tablas solo alarga la espera sin
+    // traer nada más rápido. Y el botón tiene que mostrar que algo pasa: son
+    // 90.000 filas y sin señal parece colgado.
+    const avisar = (etapa) => (hechas, total) => {
+      if (btn) btn.textContent = '⏳ ' + etapa + ' ' + hechas + '/' + total;
+    };
+    const vivos = await DB.selectRegistrosVentana(null, avisar('Recorridos'));
+    const historico = await DB.selectHistorico(avisar('Archivados'));
     const mapVivo = r => ({
       id: r.id,
       cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
@@ -939,7 +944,13 @@ async function cargarHistorialCompleto(btn) {
     if (typeof renderDashboard === 'function') renderDashboard();
   } catch (e) {
     console.warn('cargarHistorialCompleto:', e);
-    showToast('⚠️ No se pudo cargar el historial completo');
+    // Un toast que se va solo hacía parecer que el botón no hacía NADA: el
+    // operador lo apretaba de nuevo y volvía a fallar. Esto es una carga larga
+    // que o anduvo o no anduvo, y hay que poder leer por qué.
+    alert('No se pudo cargar el historial completo.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      (e && (e.message || e.details) ? 'El servidor respondió: ' + (e.message || e.details) + String.fromCharCode(10) + String.fromCharCode(10) : '') +
+      'Son decenas de miles de registros: probá de nuevo en un momento. Si vuelve a fallar, ' +
+      'los paneles siguen funcionando con la ventana de días que ya está cargada.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📥 Cargar historial completo'; }
   }
