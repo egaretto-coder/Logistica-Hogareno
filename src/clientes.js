@@ -597,6 +597,8 @@ function renderClientes() {
     // Los que no tienen tarifario van PRIMERO: son envíos que ya se están
     // facturando en $0, no un dato que falta para el futuro.
     html += _avisoSinTarifario(sinTar);
+    // Los que SÍ lo tienen pero quedó sin código: hoy facturan, mañana capaz no.
+    html += _avisoTarifasSinCodigo();
 
     // Los que quedan pendientes de código, matcheen por nombre o no.
     const pendientes = clientesPendientesCodigo();
@@ -1278,10 +1280,111 @@ function toggleSoloSinTarifario() { cliSoloSinTarifario = !cliSoloSinTarifario; 
 // adelante: ese no es un cliente sin tarifario, es un aumento que todavía no rige.
 // Los códigos con algún precio, en UNA pasada: preguntarlo cliente por cliente
 // recorría las 5.445 tarifas 129 veces en cada render del panel.
+// A qué cliente le corresponde una tarifa guardada SIN código. Es el MISMO
+// criterio con el que `clienteTarifaEnZona` la resuelve hoy —el cliente cuyo
+// CÓDIGO coincide con ese nombre—, así que lo que el panel cuenta como "tiene
+// tarifario" es exactamente lo que se está facturando. Un criterio más ancho
+// acá daría por cargado a un cliente que en realidad factura $0.
+function _codTarifaSinCodigo(t) {
+  const n = normCliente(t.cliente);
+  if (!n) return '';
+  const idx = _idxCodPorNombre();
+  return idx.get(n) || '';
+}
+let _idxCodNom = null;
+function _idxCodPorNombre() {
+  const arr = AppData.clientes || [];
+  if (_idxCodNom && (_idxCodNom.src !== arr || _idxCodNom.n !== arr.length)) _idxCodNom = null;
+  if (_idxCodNom) return _idxCodNom.map;
+  const map = new Map();
+  arr.forEach(c => { const k = clienteKey(c.codigo); if (k) map.set(normCliente(k), k); });
+  _idxCodNom = { src: arr, n: arr.length, map };
+  return map;
+}
+
 function _codigosConTarifario() {
   const s = new Set();
-  (AppData.clienteTarifas || []).forEach(t => { if (_num(t.precio) > 0) s.add(clienteKey(t.cliente_cod)); });
+  (AppData.clienteTarifas || []).forEach(t => {
+    if (!(_num(t.precio) > 0)) return;
+    // Las que quedaron sin código se cuentan por el mismo respaldo con el que
+    // se facturan: si no, el panel diría "sin tarifario" de un cliente que SÍ
+    // tiene sus 45 zonas cargadas y cobrando.
+    if (t.cliente_cod) { s.add(clienteKey(t.cliente_cod)); return; }
+    const k = _codTarifaSinCodigo(t);
+    if (k) s.add(k);
+  });
   return s;
+}
+
+// ── Tarifas guardadas sin código ────────────────────────────────────────────
+// Se facturan de casualidad: mientras el código del cliente sea igual a su
+// nombre. Si alguien lo renombra, o si el cliente pasa a facturar con otra
+// cuenta, dejan de aplicar y el envío se factura en $0 SIN QUE NADIE LO NOTE.
+// Por eso se avisan y se pueden reparar de una vez.
+function tarifasSinCodigo() {
+  const grupos = new Map();
+  (AppData.clienteTarifas || []).forEach(t => {
+    if (t.cliente_cod) return;
+    const n = String(t.cliente || '').trim();
+    if (!n) return;
+    let g = grupos.get(normCliente(n));
+    if (!g) { g = { nombre: n, zonas: 0, cod: _codTarifaSinCodigo(t), ids: [] }; grupos.set(normCliente(n), g); }
+    g.zonas++;
+    if (t.id != null) g.ids.push(t.id);
+  });
+  return Array.from(grupos.values()).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+function _avisoTarifasSinCodigo() {
+  const grupos = tarifasSinCodigo();
+  if (!grupos.length) return '';
+  const conCod = grupos.filter(g => g.cod);
+  const sinCod = grupos.filter(g => !g.cod);
+  const zonas = grupos.reduce((s, g) => s + g.zonas, 0);
+  return '<div class="alert" style="margin:0 0 12px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
+    '<i class="ic ic-alert"></i><div>' +
+      '<strong>' + grupos.length + ' tarifario(s) quedaron guardados sin el código del cliente</strong> (' + zonas + ' precios). ' +
+      'Se están aplicando por el nombre, así que hoy facturan bien, pero es frágil: si al cliente se le cambia el nombre o pasa a facturar con otra cuenta, ' +
+      'sus envíos pasan a $0 sin ningún aviso. ' +
+      (conCod.length
+        ? '<button class="btn btn-sm" style="margin-left:6px" onclick="repararTarifasSinCodigo()"><i class="ic ic-check"></i> Asignarles el código</button>'
+        : '') +
+      '<div style="font-size:11.5px;margin-top:6px">' +
+        conCod.map(g => g.nombre + ' (' + g.zonas + ')').join(' · ') +
+        (sinCod.length
+          ? '<div style="margin-top:4px;color:#b91c1c">Sin cliente que les corresponda —hay que crearlo o corregirle el nombre—: ' +
+            sinCod.map(g => g.nombre + ' (' + g.zonas + ')').join(' · ') + '</div>'
+          : '') +
+      '</div>' +
+    '</div></div>';
+}
+
+async function repararTarifasSinCodigo() {
+  const grupos = tarifasSinCodigo().filter(g => g.cod && g.ids.length);
+  if (!grupos.length) { showToast('No hay tarifas para reparar'); return; }
+  const zonas = grupos.reduce((s, g) => s + g.ids.length, 0);
+  if (!confirm('Asignarle el código a ' + zonas + ' precio(s) de ' + grupos.length + ' cliente(s):' +
+    String.fromCharCode(10) + String.fromCharCode(10) +
+    grupos.map(g => '· ' + g.nombre + ' → ' + g.cod + ' (' + g.ids.length + ' zonas)').join(String.fromCharCode(10)) +
+    String.fromCharCode(10) + String.fromCharCode(10) +
+    'No cambia ningún precio: solo deja la tarifa atada al cliente por su código, que es por donde matchean los envíos.')) return;
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    for (const g of grupos) {
+      // Por ID y no por nombre: una fila del mismo nombre que YA tenga otro
+      // código es de otra cuenta y no hay que tocarla.
+      await DB.updateIn('cliente_tarifas', 'id', g.ids, { cliente_cod: g.cod });
+      const set = new Set(g.ids);
+      (AppData.clienteTarifas || []).forEach(t => { if (set.has(t.id)) t.cliente_cod = g.cod; });
+    }
+    invalidarIndiceCliTarifas();
+    persistirClientesLocal();
+    renderClientes();
+    showToast('✅ ' + zonas + ' precio(s) quedaron atados a su cliente');
+  } catch (e) {
+    console.warn('repararTarifasSinCodigo:', e);
+    alert('No se pudo reparar: ' + (e.message || e));
+  }
 }
 function clienteTieneTarifario(cod, conPrecio) {
   const k = clienteKey(cod);
@@ -1847,11 +1950,20 @@ async function eliminarCliente(id) {
 }
 
 // ── Editor de tarifas por zona (por cliente) ────────────────────────────────
+// OJO: la tarifa se guarda con el CÓDIGO del cliente, que es por donde matchea
+// toda la facturación (`clienteTarifaEnZona` indexa por `cliente_cod`). Este
+// editor guardaba solo el nombre, así que la lista quedaba colgando de un
+// respaldo por nombre —funciona mientras el código del cliente SEA su nombre—
+// y, peor, el panel no la contaba: 6 clientes cargaron sus 45 zonas desde el
+// botón "Tarifario" del aviso de sin-tarifario y el aviso los seguía mostrando
+// como si no tuvieran ninguna (bug real).
 let tarifasClienteNombre = '';
+let tarifasClienteCod = '';
 function openTarifasCliente(id) {
   const c = AppData.clientes.find(x => x.id === id);
   if (!c) return;
   tarifasClienteNombre = c.nombre;
+  tarifasClienteCod = clienteKey(c.codigo);
   document.getElementById('modal-cli-tarifas-title').textContent = 'Tarifario de venta · ' + c.nombre;
   // Zonas: las del tarifario base (AppData.tarifas) + las que ya tenga el cliente.
   const zonas = new Set(AppData.tarifas.map(t => String(t.zona || '').toUpperCase().trim()).filter(Boolean));
@@ -1879,15 +1991,22 @@ function closeCliTarifasModal(e) {
 }
 async function guardarTarifasCliente() {
   const nombre = tarifasClienteNombre;
+  const cod = tarifasClienteCod;
+  if (!cod) { alert('Ese cliente no tiene código cargado, así que la tarifa no se podría aplicar a ningún envío. Corregí el código en su ficha primero.'); return; }
   const inputs = Array.from(document.querySelectorAll('#mcli-tarifas-body input[data-zona]'));
-  const nuevas = inputs.map(inp => ({ cliente: nombre, zona: inp.getAttribute('data-zona'), precio: parseFloat(inp.value) || 0 }))
+  const nuevas = inputs.map(inp => ({ cliente: nombre, cliente_cod: cod, zona: inp.getAttribute('data-zona'), precio: parseFloat(inp.value) || 0 }))
     .filter(t => t.precio > 0);
   try {
-    // Reemplaza el tarifario del cliente (borrar + insertar).
+    // Reemplaza el tarifario del cliente (borrar + insertar). Se borra por las
+    // DOS claves: por código, y por nombre para llevarse las filas viejas que
+    // este mismo editor había guardado sin código — si no, quedarían duplicadas.
+    await DB.deleteWhere('cliente_tarifas', 'cliente_cod', cod);
     await DB.deleteWhere('cliente_tarifas', 'cliente', nombre);
     let inserted = [];
     if (nuevas.length) inserted = await guardarClienteTarifas(nuevas);
-    AppData.clienteTarifas = AppData.clienteTarifas.filter(t => normCliente(t.cliente) !== normCliente(nombre)).concat(inserted);
+    AppData.clienteTarifas = AppData.clienteTarifas
+      .filter(t => clienteKey(t.cliente_cod) !== cod && normCliente(t.cliente) !== normCliente(nombre))
+      .concat(inserted);
     persistirClientesLocal();
     document.getElementById('modal-cli-tarifas-backdrop').style.display = 'none';
     renderClientes();

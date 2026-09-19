@@ -264,6 +264,17 @@ const DB = {
     }
   },
 
+  // Actualiza las filas cuyo col este en la lista (en lotes de 200, igual que
+  // deleteIn, para no exceder el largo de URL de PostgREST). Reparar 270 filas
+  // de a una serian 270 idas a la red.
+  async updateIn(table, col, valores, campos) {
+    if (!sb) throw new Error('offline');
+    for (let i = 0; i < valores.length; i += 200) {
+      const { error } = await sb.from(table).update(campos).in(col, valores.slice(i, i + 200));
+      if (error) throw error;
+    }
+  },
+
   // Inserta filas en lotes y devuelve los ids generados (en el mismo orden).
   async insertRows(table, rows) {
     if (!sb) throw new Error('offline');
