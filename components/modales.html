@@ -865,6 +865,39 @@
   </div>
 </div>
 
+<!-- PASAR UN AJUSTE A BONO -->
+<!-- Un ajuste cambia el sueldo para siempre; un bono se paga una vez. Cuando se
+     carga uno por el otro, el sueldo queda mal para siempre y el ciclo de 3
+     meses arranca de una fecha equivocada. Acá se corrige: el importe se mueve
+     al bono del mes y el ajuste queda marcado, no borrado. -->
+<div class="modal-backdrop" id="modal-abono-backdrop" onclick="cerrarPasarABono(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:500px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-undo"></i> Pasar el ajuste a bono</span>
+      <button class="modal-close" onclick="cerrarPasarABono()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0;font-size:12px" id="mabono-quien"></div>
+      <div id="mabono-efecto" style="font-size:12.5px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Concepto del bono</label>
+        <input type="text" id="mabono-concepto" class="form-input" style="width:100%"
+          placeholder="Ej: bono por turno nocturno">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Por qué se corrige <span style="color:#b91c1c">*</span></label>
+        <input type="text" id="mabono-motivo" class="form-input" style="width:100%"
+          placeholder="Ej: se cargó como aumento y era un bono">
+      </div>
+      <div id="mabono-aviso" style="font-size:11.5px;display:flex;flex-direction:column;gap:3px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarPasarABono()">Cancelar</button>
+        <button class="btn btn-primary" id="mabono-ok" onclick="confirmarPasarABono()">Pasar a bono</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CLIENTE (datos) -->
 <div class="modal-backdrop" id="modal-cliente-backdrop" onclick="closeClienteModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:440px" onclick="event.stopPropagation()">
@@ -1293,8 +1326,11 @@
       </div>
 
       <div class="form-group" style="margin:0">
-        <label class="form-label">🎯 Bono por eficiencia ($)</label>
+        <label class="form-label">🎯 Bono ($)</label>
         <input type="number" id="msld-bono" class="form-input" placeholder="0" min="0" step="1000" style="width:100%" oninput="recalcSueldoModal()" />
+        <!-- Los bonos registrados del mes: de dónde salió el número. Un importe
+             que aparece solo en el recibo que se firma no se puede explicar. -->
+        <div id="msld-bono-info" style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)"></div>
       </div>
 
       <!-- Adelantos registrados del empleado: tildar una cuota la imputa a este

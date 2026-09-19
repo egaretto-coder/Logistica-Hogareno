@@ -1489,3 +1489,42 @@ alter table public.conductor_liquidaciones
 alter table public.cliente_liquidaciones
   add column if not exists envios integer,
   add column if not exists tiene_detalle boolean not null default false;
+
+-- ---------- BONOS (un pago de una vez, que NO cambia el sueldo) ----------
+-- Un AJUSTE cambia el sueldo para siempre y corre el ciclo de 3 meses; un BONO
+-- se paga UNA vez, en un mes. Se cargaba uno por el otro porque el bono no
+-- tenia donde anotarse antes de liquidar: el unico campo de bono vive dentro
+-- de empleado_sueldos, que recien existe cuando alguien liquida el mes. Paso
+-- de verdad: todo Asesoria Comercial quedo con el sueldo $240.000 mas alto
+-- para siempre, y su proximo ajuste corrido, por un premio de un mes.
+create table if not exists public.empleado_bonos (
+  id bigint generated always as identity primary key,
+  empleado_id bigint not null references public.empleados(id) on delete cascade,
+  periodo text not null,                       -- YYYY-MM: el mes en que se paga
+  monto numeric not null default 0,
+  concepto text not null default '',
+  -- De donde salio: cargado a mano, o un ajuste que se corrigio.
+  origen text not null default 'manual',       -- manual | ajuste_revertido
+  origen_ajuste_id bigint,
+  creado_por text not null default '',
+  created_at timestamptz not null default now()
+);
+-- Sin unique por (empleado, periodo): en un mes puede haber mas de un bono
+-- (productividad y turno nocturno son dos conceptos distintos y en el recibo
+-- tienen que poder nombrarse por separado). La liquidacion los suma.
+create index if not exists idx_emp_bonos_periodo on public.empleado_bonos (periodo);
+create index if not exists idx_emp_bonos_emp on public.empleado_bonos (empleado_id);
+alter table public.empleado_bonos enable row level security;
+create policy empleado_bonos_all on public.empleado_bonos
+  for all to authenticated using (true) with check (true);
+alter publication supabase_realtime add table public.empleado_bonos;
+
+-- Un ajuste cargado por error NO se borra: si desapareciera, el sueldo volveria
+-- atras sin que nadie pueda decir por que. Se marca revertido, con quien y por
+-- que, y deja de contar para el ciclo de 3 meses (ultimoAjusteDe) y para el
+-- sueldo historico (sueldoVigenteEn).
+alter table public.empleado_ajustes
+  add column if not exists revertido boolean not null default false,
+  add column if not exists revertido_en timestamptz,
+  add column if not exists revertido_por text default '',
+  add column if not exists revertido_motivo text default '';

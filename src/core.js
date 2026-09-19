@@ -299,6 +299,7 @@ let AppData = {
   empleadoAjustes: [],
   empleadoPostergaciones: [],   // ajustes que se decidió NO dar todavía, con su justificación
   empleadoHorasExtra: [],       // horas extras registradas el día que se hicieron
+  empleadoBonos: [],            // bonos del mes: se pagan UNA vez y no tocan el sueldo
   empleadoReaperturas: [],      // pedidos de reabrir una liquidación ya pagada
   conductorFiscal: [],          // cuenta, contrato y monotributo de cada conductor
   conductorFacturas: [],        // lo transferido por período y su comprobante

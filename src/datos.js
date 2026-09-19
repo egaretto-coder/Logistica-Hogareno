@@ -75,6 +75,8 @@ function loadSavedConfig() {
   if (empp) { try { AppData.empleadoPostergaciones = JSON.parse(empp) || []; } catch(e) {} }
   const emphe = localStorage.getItem('liq_empleado_horas_extra');
   if (emphe) { try { AppData.empleadoHorasExtra = JSON.parse(emphe) || []; } catch(e) {} }
+  const empbo = localStorage.getItem('liq_empleado_bonos');
+  if (empbo) { try { AppData.empleadoBonos = JSON.parse(empbo) || []; } catch(e) {} }
   const empre = localStorage.getItem('liq_empleado_reaperturas');
   if (empre) { try { AppData.empleadoReaperturas = JSON.parse(empre) || []; } catch(e) {} }
   const asol = localStorage.getItem('liq_archivo_solicitudes');
@@ -337,7 +339,10 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.empleadoAjustes = (data.empleado_ajustes || []).map(a => ({
     id: a.id, empleado_id: a.empleado_id, fecha: a.fecha || '', periodo: a.periodo || '',
     pct: _num(a.pct), sueldo_anterior: _num(a.sueldo_anterior), sueldo_nuevo: _num(a.sueldo_nuevo),
-    motivo: a.motivo || '', aplicado_por: a.aplicado_por || ''
+    motivo: a.motivo || '', aplicado_por: a.aplicado_por || '',
+    revertido: !!a.revertido, revertido_en: a.revertido_en || '',
+    revertido_por: a.revertido_por || '', revertido_motivo: a.revertido_motivo || '',
+    created_at: a.created_at || ''
   }));
   AppData.empleadoPostergaciones = (data.empleado_postergaciones || []).map(p => ({
     id: p.id, empleado_id: p.empleado_id, fecha: p.fecha || '',
@@ -347,6 +352,12 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.empleadoHorasExtra = (data.empleado_horas_extra || []).map(h => ({
     id: h.id, empleado_id: h.empleado_id, fecha: String(h.fecha || '').slice(0, 10),
     horas: _num(h.horas), motivo: h.motivo || '', creado_por: h.creado_por || ''
+  }));
+  AppData.empleadoBonos = (data.empleado_bonos || []).map(b => ({
+    id: b.id, empleado_id: b.empleado_id, periodo: b.periodo || '', monto: _num(b.monto),
+    concepto: b.concepto || '', origen: b.origen || 'manual',
+    origen_ajuste_id: b.origen_ajuste_id || null, creado_por: b.creado_por || '',
+    created_at: b.created_at || ''
   }));
   AppData.empleadoReaperturas = (data.empleado_sueldo_reaperturas || []).map(r => ({
     id: r.id, empleado_id: r.empleado_id, periodo: r.periodo || '', motivo: r.motivo || '',
@@ -564,6 +575,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_empleado_licencias', JSON.stringify(AppData.empleadoLicencias || []));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
+    localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));
     localStorage.setItem('liq_conductor_fiscal', JSON.stringify(AppData.conductorFiscal || []));
     localStorage.setItem('liq_conductor_facturas', JSON.stringify(AppData.conductorFacturas || []));

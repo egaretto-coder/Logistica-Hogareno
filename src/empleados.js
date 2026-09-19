@@ -192,11 +192,41 @@ function jornadaTexto(e) {
 // ── Estado de ajuste ────────────────────────────────────────────────────────
 // Próxima fecha de ajuste = ingreso + N×3 meses, posterior al ÚLTIMO ajuste
 // aplicado (o al ingreso si nunca se ajustó).
-function ultimoAjusteDe(empId) {
-  const lista = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === empId);
-  if (!lista.length) return null;
-  return lista.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0];
+// Un ajuste que se cargó por error y se corrigió NO cuenta para nada: ni para
+// el ciclo de 3 meses ni para el sueldo histórico. No se borra —si
+// desapareciera, el sueldo volvería atrás sin que nadie pueda decir por qué—,
+// queda marcado y se muestra como lo que fue.
+function ajusteVigente(a) { return !!a && !a.revertido; }
+
+// Los ajustes de un empleado, del más nuevo al más viejo. Dos del mismo día se
+// desempatan por id: al corregir uno hay que saber cuál fue el último.
+function ajustesDeEmpleado(empId, incluirRevertidos) {
+  return (AppData.empleadoAjustes || [])
+    .filter(a => a.empleado_id === empId && (incluirRevertidos || ajusteVigente(a)))
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || (_num(b.id) - _num(a.id)));
 }
+
+function ultimoAjusteDe(empId) {
+  return ajustesDeEmpleado(empId)[0] || null;
+}
+
+// -- Bonos -------------------------------------------------------------------
+// Un AJUSTE cambia el sueldo para siempre; un BONO se paga UNA vez, en un mes.
+// Se confundían porque el bono no tenía dónde anotarse antes de liquidar: el
+// único campo vivía dentro de empleado_sueldos, que recién existe cuando
+// alguien liquida el mes. Ahora se registran acá y la liquidación los trae
+// sumados, igual que las horas extras.
+function bonosDe(empId, periodo) {
+  return (AppData.empleadoBonos || [])
+    .filter(b => b.empleado_id === empId && b.periodo === periodo)
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+}
+function bonosDelMes(empId, periodo) {
+  return bonosDe(empId, periodo).reduce((a, b) => a + _num(b.monto), 0);
+}
+// El mes al que pertenece un ajuste: el elegido al aplicarlo y, para los
+// viejos que no lo guardaron, el de su fecha.
+function mesDeAjuste(a) { return a.periodo || String(a.fecha || '').slice(0, 7); }
 
 // ── Postergaciones ──────────────────────────────────────────────────────────
 // A veces la empresa decide no dar el aumento cuando toca. Antes eso no se
@@ -279,6 +309,7 @@ function persistirEmpleadosLocal() {
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra));
+    localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
     localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
@@ -600,14 +631,22 @@ function verHistorialEmpleado(empId) {
       const a = h.row;
       const de = _num(a.sueldo_anterior), aa = _num(a.sueldo_nuevo);
       const pct = de > 0 ? Math.round(((aa - de) / de) * 1000) / 10 : _num(a.pct);
-      return '<tr>' +
+      // Un ajuste corregido queda a la vista, tachado: es la única forma de
+      // explicar después por qué el sueldo volvió atrás.
+      const rev = !ajusteVigente(a);
+      return '<tr' + (rev ? ' style="opacity:.62"' : '') + '>' +
         '<td class="mono" style="font-size:11px;white-space:nowrap">' + _empFmt(a.fecha) + '</td>' +
-        '<td><span class="badge" style="background:#dcfce7;color:#166534">Aumento</span></td>' +
-        '<td style="font-size:12px">' + (de > 0 ? fmtPeso(de) + ' → <strong>' + fmtPeso(aa) + '</strong>' : fmtPeso(aa)) +
+        '<td><span class="badge" style="background:' + (rev ? '#f1f5f9;color:#475569' : '#dcfce7;color:#166534') + '">' +
+          (rev ? 'Corregido' : 'Aumento') + '</span></td>' +
+        '<td style="font-size:12px' + (rev ? ';text-decoration:line-through' : '') + '">' +
+          (de > 0 ? fmtPeso(de) + ' → <strong>' + fmtPeso(aa) + '</strong>' : fmtPeso(aa)) +
           (pct ? ' <span class="muted">(+' + pct + '%)</span>' : '') +
           (a.motivo ? '<div style="font-size:10.5px;color:var(--text-muted)">' + a.motivo + '</div>' : '') + '</td>' +
         '<td class="muted" style="font-size:10.5px">' + (a.aplicado_por || '—') + '</td>' +
-        '<td></td></tr>';
+        '<td style="font-size:10.5px;color:var(--text-secondary)">' + (rev
+          ? 'Pasó a bono de ' + _mesTexto(mesDeAjuste(a)) +
+            (a.revertido_motivo ? '<div class="muted">' + a.revertido_motivo + '</div>' : '')
+          : '') + '</td></tr>';
     }
     const p = h.row;
     const esVig = vig && vig.id === p.id;
@@ -929,6 +968,7 @@ function renderAjustesPanel() {
   const fueraCiclo = activos.filter(e => !leToca(e)).sort(porFecha);
 
   _renderMesesAjuste(activos, mesSel);
+  _renderAplicadosMes(mesSel);
 
   const info = document.getElementById('emp-ajuste-info');
   if (info) info.innerHTML =
@@ -966,6 +1006,187 @@ function renderAjustesPanel() {
   }
   cont.innerHTML = html;
   _actualizarPreviewAjuste();
+}
+
+// ========================================================================
+//  LO QUE YA SE AJUSTÓ EN ESE MES (el control)
+// ========================================================================
+// La tabla de abajo dice a quién LE TOCA ajustar. Es otra pregunta que la del
+// que revisa: *qué hizo el operador este mes*, le tocara o no. Sin esto, un
+// aumento cargado de más no se ve desde ningún lado —solo abriendo la ficha de
+// cada empleado— y un ajuste que debía ser un bono queda corriendo para
+// siempre.
+function ajustesDelMes(mes) {
+  return (AppData.empleadoAjustes || [])
+    .filter(a => mesDeAjuste(a) === mes)
+    .sort((a, b) => String(b.created_at || b.fecha).localeCompare(String(a.created_at || a.fecha)) || (_num(b.id) - _num(a.id)));
+}
+
+// Por qué este ajuste no se puede deshacer. Devuelve null si se puede.
+function _motivoNoRevertible(a) {
+  const e = (AppData.empleados || []).find(x => x.id === a.empleado_id);
+  if (!e) return 'el empleado ya no está en el padrón';
+  // Deshacer significa devolver el sueldo al anterior. Si después hubo otro
+  // aumento, hacerlo le borraría ESE otro aumento sin avisar.
+  const post = ajustesDeEmpleado(a.empleado_id).filter(x => x.id !== a.id &&
+    (String(x.fecha).localeCompare(String(a.fecha)) > 0 ||
+     (String(x.fecha) === String(a.fecha) && _num(x.id) > _num(a.id))));
+  if (post.length) return 'tiene un aumento posterior (' + _empFmt(post[post.length - 1].fecha) + '): deshacer este le pisaría el sueldo';
+  if (Math.round(_num(e.sueldo)) !== Math.round(_num(a.sueldo_nuevo)))
+    return 'su sueldo hoy es ' + fmtPeso(_num(e.sueldo)) + ' y este ajuste lo había dejado en ' + fmtPeso(_num(a.sueldo_nuevo)) + ': se editó a mano después';
+  const s = sueldoDe(a.empleado_id, mesDeAjuste(a));
+  if (s && s.pagado) return 'la liquidación de ' + _mesTexto(mesDeAjuste(a)) + ' ya está pagada: primero hay que reabrirla';
+  return null;
+}
+
+function _renderAplicadosMes(mes) {
+  const cont = document.getElementById('emp-ajuste-aplicados');
+  if (!cont) return;
+  const lista = ajustesDelMes(mes);
+  const vig = lista.filter(ajusteVigente);
+  const revs = lista.length - vig.length;
+  const masa = vig.reduce((t, a) => t + (_num(a.sueldo_nuevo) - _num(a.sueldo_anterior)), 0);
+  if (!lista.length) {
+    cont.innerHTML = '<div class="card" style="margin-bottom:14px;padding:12px 18px;font-size:12px;color:var(--text-muted)">' +
+      '<i class="ic ic-check"></i> No se aplicó ningún ajuste en <strong>' + _mesTexto(mes) + '</strong>.</div>';
+    return;
+  }
+  const filas = lista.map(a => {
+    const e = (AppData.empleados || []).find(x => x.id === a.empleado_id) || { nombre: '(borrado)' };
+    const de = _num(a.sueldo_anterior), aa = _num(a.sueldo_nuevo), dif = aa - de;
+    const pct = de > 0 ? Math.round((dif / de) * 1000) / 10 : _num(a.pct);
+    const rev = !ajusteVigente(a);
+    const no = rev ? null : _motivoNoRevertible(a);
+    return '<tr' + (rev ? ' style="opacity:.6"' : '') + '>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div>' +
+        '<div><strong' + (rev ? ' style="text-decoration:line-through"' : '') + '>' + e.nombre + '</strong>' +
+        '<div class="muted" style="font-size:10px">' + ((e.area || '') + (e.puesto ? ' · ' + e.puesto : '')) + '</div></div></div></td>' +
+      '<td class="mono" style="text-align:right;font-size:11.5px">' + fmtPeso(de) + ' → <strong>' + fmtPeso(aa) + '</strong></td>' +
+      '<td class="mono" style="text-align:right;font-weight:700;color:' + (rev ? 'var(--text-muted)' : '#166534') + '">' +
+        (rev ? '—' : '+' + fmtPeso(dif)) + (pct && !rev ? '<div style="font-size:9.5px;font-weight:400;color:var(--text-muted)">+' + pct + '%</div>' : '') + '</td>' +
+      '<td style="font-size:11.5px">' + (a.motivo || '<span class="muted">sin motivo</span>') +
+        (rev ? '<div style="font-size:10px;color:#92400e">↩ pasó a bono' + (a.revertido_motivo ? ': ' + a.revertido_motivo : '') + '</div>' : '') + '</td>' +
+      '<td class="muted" style="font-size:10.5px;white-space:nowrap">' + (a.aplicado_por || '—') +
+        '<div>' + (a.created_at ? _fechaCorta(a.created_at) : _empFmt(a.fecha)) + '</div></td>' +
+      '<td style="text-align:right">' + (rev
+        ? '<span class="badge" style="background:#f1f5f9;color:#475569;font-size:9.5px">corregido</span>'
+        : (no
+            ? '<span class="muted" style="font-size:10px" title="' + String(no).replace(/"/g, '&quot;') + '">no se puede deshacer</span>'
+            : '<button class="btn btn-sm" style="padding:3px 8px;font-size:10.5px;border-color:#fcd34d;color:#92400e" ' +
+              'onclick="abrirPasarABono(' + a.id + ')" title="No era un aumento: se paga una sola vez este mes">↩ Pasar a bono</button>')) +
+      '</td></tr>';
+  }).join('');
+
+  cont.innerHTML = '<div class="card" style="margin-bottom:14px">' +
+    '<div class="card-header"><span class="card-title">Ya ajustados en ' + _mesTexto(mes) + '</span>' +
+      '<span style="font-size:11.5px;color:var(--text-muted)">' + vig.length + ' ajuste(s) · <strong>+' + fmtPeso(masa) + '</strong> por mes a la nómina' +
+      (revs ? ' · ' + revs + ' corregido(s)' : '') + '</span></div>' +
+    '<div style="padding:8px 18px 0;font-size:11.5px;color:var(--text-muted)">Lo que se aplicó en este mes, le tocara o no. ' +
+      'Si alguno era un <strong>bono</strong> —se paga una vez y no cambia el sueldo— se corrige desde acá.</div>' +
+    '<div class="table-wrap"><table><thead><tr>' +
+      '<th>Empleado</th><th style="text-align:right">Sueldo</th><th style="text-align:right">Aumento</th>' +
+      '<th>Motivo</th><th>Quién</th><th></th>' +
+    '</tr></thead><tbody>' + filas + '</tbody></table></div></div>';
+}
+
+// -- Corregir: esto no era un aumento, era un bono --------------------------
+let _abonoAjusteId = null;
+function abrirPasarABono(ajusteId) {
+  const a = (AppData.empleadoAjustes || []).find(x => x.id === ajusteId);
+  if (!a) return;
+  const no = _motivoNoRevertible(a);
+  if (no) { alert('No se puede pasar a bono: ' + no + '.'); return; }
+  const e = (AppData.empleados || []).find(x => x.id === a.empleado_id);
+  _abonoAjusteId = ajusteId;
+  const dif = _num(a.sueldo_nuevo) - _num(a.sueldo_anterior);
+  const mes = mesDeAjuste(a);
+  const s = sueldoDe(a.empleado_id, mes);
+  const prox = proximoAjuste(e);
+  // .alert es display:flex: todo el contenido tiene que ir dentro de UN hijo,
+  // si no el texto se parte en una tira vertical de una palabra por linea.
+  document.getElementById('mabono-quien').innerHTML =
+    '<div><strong>' + e.nombre + '</strong> · ' + _mesTexto(mes) + '<br>' +
+    'El aumento de <strong>' + fmtPeso(dif) + '</strong> pasa a ser un bono de ese mes.</div>';
+  document.getElementById('mabono-concepto').value = a.motivo ? ('Bono ' + a.motivo.toLowerCase()) : 'Bono';
+  document.getElementById('mabono-motivo').value = '';
+  document.getElementById('mabono-efecto').innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px"><span>Su sueldo vuelve a</span><strong>' + fmtPeso(_num(a.sueldo_anterior)) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;gap:10px"><span>Bono en ' + _mesTexto(mes) + '</span><strong style="color:#166534">+' + fmtPeso(dif) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;gap:10px"><span>Cobra este mes</span><strong>' + fmtPeso(_num(a.sueldo_anterior) + dif) + '</strong></div>' +
+    '<div class="muted" style="margin-top:6px;font-size:11px">Este mes cobra lo mismo. La diferencia es que el mes que viene ' +
+      'vuelve a cobrar ' + fmtPeso(_num(a.sueldo_anterior)) + ', y su ciclo de ajuste deja de contarse desde ' + _mesTexto(mes) + '.</div>';
+  // Lo que el operador no ve y le va a cambiar: el próximo ajuste se corre para
+  // atrás (el ajuste corregido deja de contar) y la liquidación del mes, si ya
+  // estaba armada, se reescribe.
+  let avisos = '';
+  if (prox) avisos += '<div style="color:#92400e">· Su próximo ajuste vuelve a calcularse desde su aumento anterior.</div>';
+  if (s) {
+    avisos += '<div style="color:#92400e">· Su liquidación de ' + _mesTexto(mes) + ' ya está armada: se le pasa el importe de sueldo a bono. El total a pagar no cambia.</div>';
+    if (_num(s.monto_horas_extra) > 0) avisos += '<div style="color:#b91c1c">· Tiene horas extras liquidadas: su valor por hora salió del sueldo aumentado, revisalo.</div>';
+  } else {
+    avisos += '<div class="muted">· Todavía no se liquidó ' + _mesTexto(mes) + ': el bono aparece solo al abrir su liquidación.</div>';
+  }
+  document.getElementById('mabono-aviso').innerHTML = avisos;
+  document.getElementById('modal-abono-backdrop').style.display = 'flex';
+}
+function cerrarPasarABono(ev) {
+  if (!ev || ev.target.id === 'modal-abono-backdrop') {
+    document.getElementById('modal-abono-backdrop').style.display = 'none';
+    _abonoAjusteId = null;
+  }
+}
+
+async function confirmarPasarABono() {
+  if (_abonoAjusteId == null) return;
+  const a = (AppData.empleadoAjustes || []).find(x => x.id === _abonoAjusteId);
+  if (!a) return;
+  // Se revalida acá: entre que se abrió la ventana y ahora pudo entrar otro
+  // aumento desde otra sesión, y deshacer entonces pisaría ese sueldo.
+  const no = _motivoNoRevertible(a);
+  if (no) { alert('No se puede pasar a bono: ' + no + '.'); cerrarPasarABono(); renderAjustesPanel(); return; }
+  const e = (AppData.empleados || []).find(x => x.id === a.empleado_id);
+  const concepto = (document.getElementById('mabono-concepto').value || '').trim() || 'Bono';
+  const motivo = (document.getElementById('mabono-motivo').value || '').trim();
+  if (!motivo) { alert('Escribí por qué se corrige: queda en el historial del empleado y es lo que explica que el sueldo haya vuelto atrás.'); return; }
+  const dif = _num(a.sueldo_nuevo) - _num(a.sueldo_anterior);
+  const mes = mesDeAjuste(a);
+  const quien = (currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const btn = document.getElementById('mabono-ok');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    const bono = { empleado_id: a.empleado_id, periodo: mes, monto: dif, concepto,
+      origen: 'ajuste_revertido', origen_ajuste_id: a.id, creado_por: quien };
+    const row = await DB.insertRow('empleado_bonos', bono);
+    const marca = { revertido: true, revertido_en: new Date().toISOString(), revertido_por: quien, revertido_motivo: motivo };
+    await DB.updateWhere('empleado_ajustes', 'id', a.id, marca);
+    await DB.updateWhere('empleados', 'id', a.empleado_id, { sueldo: _num(a.sueldo_anterior) });
+    // Si el mes ya estaba armado (y no pagado), el importe se mueve de sueldo a
+    // bono: el total a pagar es el mismo, así que el corte transferencia /
+    // efectivo que el operador ya cargó sigue valiendo.
+    const s = sueldoDe(a.empleado_id, mes);
+    if (s && !s.pagado && Math.round(_num(s.sueldo_base)) === Math.round(_num(a.sueldo_nuevo))) {
+      const campos = { sueldo_base: _num(a.sueldo_anterior), bono_eficiencia: _num(s.bono_eficiencia) + dif };
+      campos.total = Math.round(campos.sueldo_base + _num(s.monto_horas_extra) + campos.bono_eficiencia -
+        (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0));
+      await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
+      Object.assign(s, campos);
+    }
+    (AppData.empleadoBonos = AppData.empleadoBonos || []).push(
+      Object.assign({ id: row && row.id, created_at: new Date().toISOString() }, bono));
+    Object.assign(a, marca);
+    if (e) e.sueldo = _num(a.sueldo_anterior);
+    persistirEmpleadosLocal();
+    cerrarPasarABono();
+    renderAjustesPanel();
+    showToast('↩ ' + (e ? e.nombre : '') + ': ' + fmtPeso(dif) + ' pasó a bono de ' + _mesTexto(mes));
+  } catch (err) {
+    console.warn('pasarABono', err);
+    alert('No se pudo corregir: ' + (err.message || err) + String.fromCharCode(10) +
+      'Revisá el ajuste antes de volver a intentarlo: puede haber quedado a medio aplicar.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Pasar a bono'; }
+  }
 }
 
 // AAAA-MM de una fecha.
@@ -1175,7 +1396,7 @@ function renderSueldosPanel() {
     const s = sueldoDe(e.id, periodo);
     const base = s ? _num(s.sueldo_base) : _num(e.sueldo);
     const extras = s ? _num(s.monto_horas_extra) : 0;
-    const bono = s ? _num(s.bono_eficiencia) : 0;
+    const bono = s ? _num(s.bono_eficiencia) : bonosDelMes(e.id, periodo);
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
     const total = s ? _num(s.total) : base;
     // Sin liquidación cargada no hay forma de pago: se define al liquidar.
@@ -1242,6 +1463,14 @@ function renderSueldosPanel() {
     const sx = sueldoDe(e.id, periodo);
     return !sx || Math.abs(_num(sx.horas_extra) - r) > 0.001;
   });
+  // Un bono registrado que nadie liquidó es plata que se le debe a alguien y
+  // que se pasa de largo sola, igual que las horas extras.
+  const conBonos = lista.filter(e => {
+    const b = bonosDelMes(e.id, periodo);
+    if (!(b > 0)) return false;
+    const sx = sueldoDe(e.id, periodo);
+    return !sx || Math.abs(_num(sx.bono_eficiencia) - b) > 0.5;
+  });
   const reapPendientes = reaperturasPendientes();
   const puedeAutTop = (typeof puedeAutorizar === 'function') && puedeAutorizar();
   const av = document.getElementById('emp-sueldo-aviso');
@@ -1267,6 +1496,13 @@ function renderSueldosPanel() {
         _mesTexto(periodo) + '. Se cargaron en <strong>Vacaciones → Horas extras</strong> y al abrir su liquidación vienen ya sumadas: ' +
         conHs.slice(0, 6).map(x => x.nombre + ' (' + horasExtraDelMes(x.id, periodo) + ' h)').join(' · ') +
         (conHs.length > 6 ? ' …y ' + (conHs.length - 6) + ' más' : '') + '</div></div>'
+      : '') +
+    (conBonos.length
+      ? '<div class="alert" style="margin:0 0 14px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0">' +
+        '<i class="ic ic-dollar"></i><div><strong>' + conBonos.length + ' empleado(s) tienen bonos registrados sin liquidar</strong> en ' +
+        _mesTexto(periodo) + '. Al abrir su liquidación vienen ya sumados: ' +
+        conBonos.slice(0, 6).map(x => x.nombre + ' (' + fmtPeso(bonosDelMes(x.id, periodo)) + ')').join(' · ') +
+        (conBonos.length > 6 ? ' …y ' + (conBonos.length - 6) + ' más' : '') + '</div></div>'
       : '');
 
   // Transferencia y efectivo suman SOLO lo liquidado: de lo que falta liquidar
@@ -1641,7 +1877,11 @@ function openSueldoModal(empId) {
   // el operador solo anota CUÁNTAS horas extras se hicieron.
   const vhCalc = valorHoraDe(e, s ? _num(s.sueldo_base) : _num(e.sueldo));
   document.getElementById('msld-valor-hora').value = (s && _num(s.valor_hora_extra)) ? _num(s.valor_hora_extra) : (vhCalc || '');
-  document.getElementById('msld-bono').value = s ? _num(s.bono_eficiencia) : '';
+  // Los bonos se registran antes de liquidar (un premio, o un ajuste que se
+  // corrigió): acá se traen sumados. Si la liquidación ya está guardada manda
+  // lo que quedó registrado y el detalle de abajo señala la diferencia.
+  const boReg = bonosDelMes(empId, periodo);
+  document.getElementById('msld-bono').value = s ? _num(s.bono_eficiencia) : (boReg || '');
   document.getElementById('msld-desc-adelanto').checked = s ? !!s.descuenta_adelanto : false;
   document.getElementById('msld-adelanto').value = s ? _num(s.monto_adelanto) : '';
   // Se propone el MONTO: el guardado si ya se liquidó, y si no el que sale de
@@ -1656,10 +1896,38 @@ function openSueldoModal(empId) {
   document.getElementById('msld-obs').value = s ? (s.obs || '') : '';
   _pintarValorHora(e, s);
   _pintarHorasExtra(empId, periodo, s);
+  _pintarBonos(empId, periodo, s);
   renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
+// De dónde sale el bono: qué concepto y de dónde vino. Un número que aparece
+// solo en el recibo que el empleado firma no se puede explicar.
+function _pintarBonos(empId, periodo, s) {
+  const box = document.getElementById('msld-bono-info');
+  if (!box) return;
+  const lista = bonosDe(empId, periodo);
+  const total = lista.reduce((t, b) => t + _num(b.monto), 0);
+  if (!lista.length) {
+    box.innerHTML = '<span class="muted">Sin bonos registrados en ' + _mesTexto(periodo) + ' — se puede escribir uno acá.</span>';
+    return;
+  }
+  const det = lista.map(b => (b.concepto || 'bono') + ': ' + fmtPeso(_num(b.monto)) +
+    (b.origen === 'ajuste_revertido' ? ' <span class="muted">(era un ajuste)</span>' : '')).join(' · ');
+  const guardado = s ? _num(s.bono_eficiencia) : null;
+  const difiere = guardado !== null && Math.abs(guardado - total) > 0.5;
+  box.innerHTML = '<strong>' + fmtPeso(total) + '</strong> registrado(s) en ' + _mesTexto(periodo) +
+    ' <span class="muted">— ' + det + '</span>' +
+    (difiere
+      ? '<div style="margin-top:4px;color:#b45309">La liquidación tiene ' + fmtPeso(guardado) +
+        '. <button class="btn btn-sm" style="padding:1px 7px;font-size:10px" onclick="_traerBonos(' + total + ')">Traer los registrados</button></div>'
+      : '');
+}
+function _traerBonos(total) {
+  const el = document.getElementById('msld-bono');
+  if (el) { el.value = total; recalcSueldoModal(); }
+}
+
 // De dónde salen las horas extras del mes: qué días y por qué. Sin eso el
 // número aparece solo y el operador no puede cotejarlo con nada.
 function _pintarHorasExtra(empId, periodo, s) {
@@ -2233,7 +2501,7 @@ function empleadoActivoEnMes(e, periodo) {
 // antes de que se registrara) se deshace el %: es una estimación y se marca.
 function sueldoVigenteEn(e, periodo) {
   const fin = _histFinDeMes(periodo);
-  const aj = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === e.id)
+  const aj = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === e.id && ajusteVigente(a))
     .slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
   let antes = null, despues = null;
   aj.forEach(a => {
@@ -2270,7 +2538,9 @@ function calcMesEmpleados(periodo) {
       b = v.sueldo; est = v.estimado; if (est) estimados++;
       hh = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
       hc = hh ? Math.round(hh * valorHoraDe(e, b)) : 0;
-      bo = 0; fuente = 'nomina';
+      // Un bono ya decidido es costo del mes aunque la liquidación no esté
+      // armada: si no, el mes cierra por debajo de lo que se va a pagar.
+      bo = bonosDelMes(e.id, periodo); fuente = 'nomina';
     }
     if (e.registrado === false) noReg++; else reg++;
     base += b; heHoras += hh; heCosto += hc; bonos += bo;

@@ -25,7 +25,7 @@ const RT_TABLAS = [
   'cliente_cuentas', 'zona_alias',
   'vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
-  'empleados', 'empleado_ajustes', 'empleado_postergaciones', 'empleado_horas_extra',
+  'empleados', 'empleado_ajustes', 'empleado_postergaciones', 'empleado_horas_extra', 'empleado_bonos',
   'empleado_sueldo_reaperturas', 'empleado_sueldos', 'empleado_cierres', 'empleado_licencias', 'conductor_liquidaciones', 'archivo_solicitudes', 'conductor_fiscal', 'conductor_facturas', 'vacaciones', 'rendiciones', 'cliente_cargos',
 ];
 
