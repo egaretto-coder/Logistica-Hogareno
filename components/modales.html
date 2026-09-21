@@ -1291,6 +1291,35 @@
           </select>
         </div>
       </div>
+      <!-- El sábado puede tener otro horario (sale al mediodía). Solo aparece
+           para quien trabaja los sábados: de las horas semanales sale el valor
+           de la hora extra, y contar el sábado entero la abarataba. -->
+      <div id="memp-sab-wrap" style="display:none;flex-direction:column;gap:8px">
+        <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer;margin:0">
+          <input type="checkbox" id="memp-sab-on" onchange="_toggleSabado()"> El sábado tiene otro horario
+        </label>
+        <div id="memp-sab-row" style="display:none;gap:12px;flex-wrap:wrap">
+          <div class="form-group" style="margin:0;flex:1;min-width:110px">
+            <label class="form-label">Entrada sábado</label>
+            <input type="time" id="memp-sab-entrada" class="form-input" style="width:100%" onchange="_previewJornada()" oninput="_previewJornada()" />
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:110px">
+            <label class="form-label">Salida sábado</label>
+            <input type="time" id="memp-sab-salida" class="form-input" style="width:100%" onchange="_previewJornada()" oninput="_previewJornada()" />
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:150px">
+            <label class="form-label">Almuerzo sábado</label>
+            <select id="memp-sab-almuerzo" class="form-input" style="width:100%" onchange="_previewJornada()">
+              <option value="0">Sin horario de almuerzo</option>
+              <option value="30">30 minutos</option>
+              <option value="45">45 minutos</option>
+              <option value="60">1 hora</option>
+              <option value="90">1 hora y media</option>
+              <option value="120">2 horas</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <div id="memp-jornada" style="font-size:11px;color:var(--text-muted);margin-top:-4px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button class="btn" onclick="closeEmpleadoModal()">Cancelar</button>

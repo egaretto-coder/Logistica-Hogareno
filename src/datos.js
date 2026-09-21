@@ -331,6 +331,9 @@ async function _hydrateFromSupabaseReal(opts) {
     // los legajos viejos que todavía no tienen horario cargado.
     hora_entrada: e.hora_entrada || '', hora_salida: e.hora_salida || '',
     almuerzo_min: _num(e.almuerzo_min) || 0,
+    // Horario propio de los sábados ('' = el mismo de la semana).
+    sab_entrada: e.sab_entrada || '', sab_salida: e.sab_salida || '',
+    sab_almuerzo_min: _num(e.sab_almuerzo_min) || 0,
     horas_diarias: e.horas_diarias === null || e.horas_diarias === undefined ? 8 : _num(e.horas_diarias),
     dias_laborales: e.dias_laborales === null || e.dias_laborales === undefined ? 5 : _num(e.dias_laborales),
     pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),

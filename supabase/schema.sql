@@ -1550,3 +1550,12 @@ alter table public.empleado_sueldos
   add column if not exists vac_dias numeric not null default 0,
   add column if not exists monto_vacaciones numeric not null default 0,
   add column if not exists vac_descuento numeric not null default 0;
+
+-- ---------- HORARIO PROPIO DE LOS SABADOS ----------
+-- Para quien trabaja de lunes a sabado y el sabado hace menos horas. NULL = el
+-- sabado tiene el mismo horario que la semana. De las horas semanales sale el
+-- valor de la hora extra, y contar el sabado como un dia entero la abarataba.
+alter table public.empleados
+  add column if not exists sab_entrada text,
+  add column if not exists sab_salida text,
+  add column if not exists sab_almuerzo_min integer;

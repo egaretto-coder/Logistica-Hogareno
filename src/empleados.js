@@ -144,11 +144,28 @@ function horasDiariasDe(e) {
   return h != null ? h : _num(e && e.horas_diarias);
 }
 
+// El sábado puede tener su propio horario: hay quien trabaja de lunes a
+// sábado y el sábado sale al mediodía. Contarlo como un día entero inflaba las
+// horas semanales y, con ellas, ABARATABA la hora extra (sueldo ÷ horas del
+// mes). Solo aplica a quien trabaja los sábados; sin cargar, el sábado tiene
+// el mismo horario que la semana, que es lo que había.
+function horasSabado(e) {
+  if (!e || !_horaTxt(e.sab_entrada) || !_horaTxt(e.sab_salida)) return null;
+  return horasDelHorario({ hora_entrada: e.sab_entrada, hora_salida: e.sab_salida, almuerzo_min: e.sab_almuerzo_min });
+}
+function tieneHorarioSabado(e) {
+  return _num(e && e.dias_laborales) >= 6 && horasSabado(e) != null;
+}
+
 function horarioTexto(e) {
   const ent = _horaTxt(e && e.hora_entrada), sal = _horaTxt(e && e.hora_salida);
   if (!ent || !sal) return '';
   const alm = _num(e && e.almuerzo_min);
-  return ent + ' a ' + sal + (alm ? ' · ' + _almuerzoTxt(alm) + ' de almuerzo' : ' · sin almuerzo');
+  const semana = ent + ' a ' + sal + (alm ? ' · ' + _almuerzoTxt(alm) + ' de almuerzo' : ' · sin almuerzo');
+  if (!tieneHorarioSabado(e)) return semana;
+  const sa = _num(e.sab_almuerzo_min);
+  return (_num(e.dias_laborales) === 7 ? 'Dom a vie ' : 'Lun a vie ') + semana +
+    ' · Sáb ' + _horaTxt(e.sab_entrada) + ' a ' + _horaTxt(e.sab_salida) + (sa ? ' · ' + _almuerzoTxt(sa) + ' de almuerzo' : '');
 }
 function _almuerzoTxt(min) {
   const m = _num(min);
@@ -180,12 +197,16 @@ function diasLaboralesTexto(e) {
   return JORNADA_DIAS[d] || (d + (d === 1 ? ' día' : ' días') + ' por semana');
 }
 function horasSemanales(e) {
-  return Math.round(horasDiariasDe(e) * _num(e && e.dias_laborales) * 10) / 10;
+  const dias = _num(e && e.dias_laborales);
+  // Con horario de sábado: los demás días a su horario y el sábado al suyo.
+  if (tieneHorarioSabado(e)) return Math.round((horasDiariasDe(e) * (dias - 1) + horasSabado(e)) * 10) / 10;
+  return Math.round(horasDiariasDe(e) * dias * 10) / 10;
 }
 function jornadaTexto(e) {
   const h = horasDiariasDe(e);
   if (!h) return 'Jornada sin definir';
   const hs = horasSemanales(e);
+  if (tieneHorarioSabado(e)) return h + ' h por día y ' + horasSabado(e) + ' h los sábados · ' + diasLaboralesTexto(e) + ' · ' + hs + ' h semanales';
   return h + ' h por día · ' + diasLaboralesTexto(e) + (hs ? ' · ' + hs + ' h semanales' : '');
 }
 
@@ -749,9 +770,19 @@ function openAddEmpleadoModal() {
   document.getElementById('memp-salida').value = '';
   document.getElementById('memp-almuerzo').value = '0';
   document.getElementById('memp-dias').value = '5';
+  _setSabado(null);
   _previewJornada();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
+// Carga (o limpia) el horario del sábado en la ficha.
+function _setSabado(e) {
+  const on = !!(e && _horaTxt(e.sab_entrada) && _horaTxt(e.sab_salida));
+  const chk = document.getElementById('memp-sab-on'); if (chk) chk.checked = on;
+  const en = document.getElementById('memp-sab-entrada'); if (en) en.value = on ? _horaTxt(e.sab_entrada) : '';
+  const sa = document.getElementById('memp-sab-salida'); if (sa) sa.value = on ? _horaTxt(e.sab_salida) : '';
+  const al = document.getElementById('memp-sab-almuerzo'); if (al) al.value = String(on ? (_num(e.sab_almuerzo_min) || 0) : 0);
+}
+function _toggleSabado() { _previewJornada(); }
 function editEmpleado(id) {
   const e = AppData.empleados.find(x => x.id === id);
   if (!e) return;
@@ -776,6 +807,7 @@ function editEmpleado(id) {
   document.getElementById('memp-salida').value = _horaTxt(e.hora_salida);
   document.getElementById('memp-almuerzo').value = String(_num(e.almuerzo_min) || 0);
   document.getElementById('memp-dias').value = String(_num(e.dias_laborales) || 5);
+  _setSabado(e);
   _previewJornada();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
@@ -793,6 +825,18 @@ function _previewJornada() {
     dias_laborales: parseInt(document.getElementById('memp-dias')?.value, 10) || 0,
     sueldo: parseFloat(document.getElementById('memp-sueldo')?.value) || 0,
   };
+  // El bloque del sábado solo tiene sentido para quien trabaja los sábados.
+  const trabajaSab = fake.dias_laborales >= 6;
+  const wrap = document.getElementById('memp-sab-wrap');
+  if (wrap) wrap.style.display = trabajaSab ? 'flex' : 'none';
+  const sabOn = trabajaSab && !!document.getElementById('memp-sab-on')?.checked;
+  const row = document.getElementById('memp-sab-row');
+  if (row) row.style.display = sabOn ? 'flex' : 'none';
+  if (sabOn) {
+    fake.sab_entrada = document.getElementById('memp-sab-entrada')?.value || '';
+    fake.sab_salida = document.getElementById('memp-sab-salida')?.value || '';
+    fake.sab_almuerzo_min = parseInt(document.getElementById('memp-sab-almuerzo')?.value, 10) || 0;
+  }
   const h = horasDelHorario(fake);
   if (h == null) {
     box.innerHTML = 'Cargá la <strong>entrada</strong> y la <strong>salida</strong> para que salgan las horas y el valor de la hora.';
@@ -801,7 +845,13 @@ function _previewJornada() {
   const hs = horasSemanales(Object.assign({}, fake, { horas_diarias: h }));
   const vh = valorHoraDe(Object.assign({}, fake, { horas_diarias: h }));
   const cruza = _minDeHora(fake.hora_salida) <= _minDeHora(fake.hora_entrada);
+  const hSab = sabOn ? horasSabado(fake) : null;
+  if (sabOn && hSab == null) {
+    box.innerHTML = 'Cargá la <strong>entrada</strong> y la <strong>salida del sábado</strong>, o destildá "El sábado tiene otro horario".';
+    return;
+  }
   box.innerHTML = 'Son <strong>' + h + ' h por día</strong>' + (cruza ? ' (turno que cruza la medianoche)' : '') +
+    (hSab != null ? ' y <strong>' + hSab + ' h los sábados</strong>' : '') +
     ' · <strong>' + hs + ' h semanales</strong> (' + (JORNADA_DIAS[fake.dias_laborales] || fake.dias_laborales + ' días').toLowerCase() + ')' +
     (vh ? ' · valor hora <strong>' + fmtPeso(vh) + '</strong> (' + fmtPeso(fake.sueldo) + ' ÷ ' +
       (Math.round(hs * SEMANAS_POR_MES * 10) / 10) + ' h mensuales)' : '');
@@ -819,6 +869,18 @@ async function guardarEmpleadoModal() {
   // horas_diarias se GUARDA calculada, no cargada: así los cálculos que ya la
   // leían siguen andando, pero el dato de verdad es el horario.
   const horas = horasDelHorario({ hora_entrada: entrada, hora_salida: salida, almuerzo_min: almuerzo }) || 0;
+  // El horario del sábado, solo si trabaja los sábados y lo tildó. Tildado y
+  // a medio cargar no se guarda: el valor de la hora saldría de un horario que
+  // no existe.
+  const conSab = dias >= 6 && !!document.getElementById('memp-sab-on')?.checked;
+  const sabEntrada = conSab ? _horaTxt(document.getElementById('memp-sab-entrada')?.value) : '';
+  const sabSalida = conSab ? _horaTxt(document.getElementById('memp-sab-salida')?.value) : '';
+  const sabAlm = conSab ? (parseInt(document.getElementById('memp-sab-almuerzo')?.value, 10) || 0) : 0;
+  if (conSab && (!sabEntrada || !sabSalida ||
+      horasDelHorario({ hora_entrada: sabEntrada, hora_salida: sabSalida, almuerzo_min: sabAlm }) == null)) {
+    alert('Cargá la entrada y la salida del sábado, o destildá "El sábado tiene otro horario".');
+    return;
+  }
   const rec = {
     nombre,
     dni: (document.getElementById('memp-dni').value || '').trim(),
@@ -841,6 +903,9 @@ async function guardarEmpleadoModal() {
     almuerzo_min: almuerzo,
     horas_diarias: horas,
     dias_laborales: dias,
+    sab_entrada: conSab ? sabEntrada : null,
+    sab_salida: conSab ? sabSalida : null,
+    sab_almuerzo_min: conSab ? sabAlm : null,
     activo: true
   };
   try {
