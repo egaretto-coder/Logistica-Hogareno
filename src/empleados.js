@@ -1166,9 +1166,15 @@ async function confirmarPasarABono() {
     // efectivo que el operador ya cargó sigue valiendo.
     const s = sueldoDe(a.empleado_id, mes);
     if (s && !s.pagado && Math.round(_num(s.sueldo_base)) === Math.round(_num(a.sueldo_nuevo))) {
-      const campos = { sueldo_base: _num(a.sueldo_anterior), bono_eficiencia: _num(s.bono_eficiencia) + dif };
-      campos.total = Math.round(campos.sueldo_base + _num(s.monto_horas_extra) + campos.bono_eficiencia -
-        (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0));
+      const campos = Object.assign({ sueldo_base: _num(a.sueldo_anterior), bono_eficiencia: _num(s.bono_eficiencia) + dif },
+        _recalcVacLiq(s, _num(a.sueldo_anterior)));
+      campos.total = totalLiquidacionSueldo(Object.assign({}, s, campos));
+      // Sin vacaciones el total es el mismo; con vacaciones cambia apenas (se
+      // pagan sobre el sueldo corregido): el efectivo absorbe la diferencia.
+      if (campos.total !== _num(s.total)) {
+        const mT = Math.min(_num(s.monto_transferencia), Math.max(0, campos.total));
+        campos.monto_transferencia = mT; campos.monto_efectivo = campos.total - mT;
+      }
       await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
       Object.assign(s, campos);
     }
@@ -1375,6 +1381,35 @@ async function aplicarAjusteSueldos() {
 // ════════════════════════════════════════════════════════════════════════
 //  TAB 3 — LIQUIDACIÓN DE SUELDOS (mensual)
 // ════════════════════════════════════════════════════════════════════════
+
+// Vacaciones (art. 155 LCT): los días de vacaciones se pagan a sueldo ÷ 25, y
+// NO a ÷ 30 como el resto del mes. No se suman ARRIBA del sueldo completo —eso
+// pagaría dos veces los mismos días—: esos días SALEN del sueldo a ÷ 30 y
+// ENTRAN como vacaciones a ÷ 25. La diferencia es lo que el trabajador cobra
+// de más por estar de vacaciones. Son dos renglones del recibo que se firma.
+function vacArt155(base, dias) {
+  const b = _num(base);
+  const d = Math.min(31, Math.max(0, _num(dias)));
+  const monto = Math.round(d * b / 25);
+  // Con el mes entero de vacaciones no se descuenta más que el sueldo.
+  const descuento = Math.min(Math.round(d * b / 30), Math.round(b));
+  return { dias: d, valorDia: b / 25, valorDiaSueldo: b / 30, monto, descuento, plus: monto - descuento };
+}
+
+// El total de una liquidación a partir de sus conceptos. UNA sola cuenta: la
+// usan el ajuste individual, la corrección de un ajuste que era bono y el
+// modal. Antes cada uno sumaba a mano y una vez que aparece un concepto nuevo,
+// el que no lo suma deja la liquidación con un total que no cierra.
+function totalLiquidacionSueldo(s) {
+  return Math.round(_num(s.sueldo_base) - _num(s.vac_descuento) + _num(s.monto_vacaciones) +
+    _num(s.monto_horas_extra) + _num(s.bono_eficiencia) - (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0));
+}
+// Si cambia el sueldo base de una liquidación, sus vacaciones cambian con él:
+// se pagan sobre el sueldo que percibe.
+function _recalcVacLiq(s, base) {
+  const v = vacArt155(base, s.vac_dias);
+  return { monto_vacaciones: v.monto, vac_descuento: v.descuento };
+}
 function sueldoDe(empId, periodo) {
   return (AppData.empleadoSueldos || []).find(s => s.empleado_id === empId && s.periodo === periodo);
 }
@@ -1388,7 +1423,7 @@ function renderSueldosPanel() {
   const lista = (AppData.empleados || []).filter(e => e.activo !== false)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-title">Sin empleados</div></div></td></tr>';
+    cont.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-title">Sin empleados</div></div></td></tr>';
     return;
   }
   let totT = 0, totE = 0, totG = 0;
@@ -1399,6 +1434,12 @@ function renderSueldosPanel() {
     const bono = s ? _num(s.bono_eficiencia) : bonosDelMes(e.id, periodo);
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
     const total = s ? _num(s.total) : base;
+    // Vacaciones: liquidadas, o registradas en Vacaciones y todavía no.
+    const vacDias = s ? _num(s.vac_dias) : 0;
+    const vacMonto = s ? _num(s.monto_vacaciones) : 0;
+    const vacDesc = s ? _num(s.vac_descuento) : 0;
+    const vacReg = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0;
+    const vacFalta = vacReg > 0 && (!s || Math.abs(vacDias - vacReg) > 0.001);
     // Sin liquidación cargada no hay forma de pago: se define al liquidar.
     const mT = s ? _num(s.monto_transferencia) : 0;
     const mE = s ? _num(s.monto_efectivo) : 0;
@@ -1423,11 +1464,18 @@ function renderSueldosPanel() {
           reapOk.map(r => _fechaCorta(r.solicitado_en) + ': ' + (r.motivo || 'sin motivo') + (r.resuelto_por ? ' (autorizó ' + r.resuelto_por + ')' : '')).join(' · ').replace(/"/g, '&quot;') +
           '">reabierta ' + (reapOk.length === 1 ? '1 vez' : reapOk.length + ' veces') + '</span>' : '') +
         '<div class="muted" style="font-size:10px">' + (e.puesto || '') + '</div></div></div></td>' +
-      '<td class="mono" style="text-align:right">' + fmtPeso(base) + '</td>' +
+      // Con vacaciones, el sueldo es el de los días trabajados: los otros van
+      // aparte, a ÷ 25. Así la fila suma y da el total.
+      '<td class="mono" style="text-align:right">' + fmtPeso(base - vacDesc) +
+        (vacDesc ? '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">de ' + fmtPeso(base) + '</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (extras ? '+' + fmtPeso(extras) : '—') +
         (hsFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Registradas en Vacaciones → Horas extras y todavía no liquidadas">' +
           (Math.round(hsReg * 100) / 100) + ' h registradas</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (bono ? '+' + fmtPeso(bono) : '—') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (vacMonto ? '+' + fmtPeso(vacMonto) +
+          '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">' + vacDias + (vacDias === 1 ? ' día' : ' días') + '</div>' : '—') +
+        (vacFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Cargadas en Vacaciones y todavía no liquidadas">' +
+          vacReg + (vacReg === 1 ? ' día cargado' : ' días cargados') + '</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right;color:#b91c1c">' + (adel ? '-' + fmtPeso(adel) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(total) + '</td>' +
       '<td style="font-size:11px">' + (s
@@ -1471,6 +1519,14 @@ function renderSueldosPanel() {
     const sx = sueldoDe(e.id, periodo);
     return !sx || Math.abs(_num(sx.bono_eficiencia) - b) > 0.5;
   });
+  // Vacaciones cargadas en el mes que la liquidación todavía no paga: se le
+  // pagaría el mes completo a ÷ 30 y no a ÷ 25, que es de menos.
+  const conVac = lista.filter(e => {
+    const r = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0;
+    if (!(r > 0)) return false;
+    const sx = sueldoDe(e.id, periodo);
+    return !sx || Math.abs(_num(sx.vac_dias) - r) > 0.001;
+  });
   const reapPendientes = reaperturasPendientes();
   const puedeAutTop = (typeof puedeAutorizar === 'function') && puedeAutorizar();
   const av = document.getElementById('emp-sueldo-aviso');
@@ -1496,6 +1552,13 @@ function renderSueldosPanel() {
         _mesTexto(periodo) + '. Se cargaron en <strong>Vacaciones → Horas extras</strong> y al abrir su liquidación vienen ya sumadas: ' +
         conHs.slice(0, 6).map(x => x.nombre + ' (' + horasExtraDelMes(x.id, periodo) + ' h)').join(' · ') +
         (conHs.length > 6 ? ' …y ' + (conHs.length - 6) + ' más' : '') + '</div></div>'
+      : '') +
+    (conVac.length
+      ? '<div class="alert" style="margin:0 0 14px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe">' +
+        '<i class="ic ic-calendar"></i><div><strong>' + conVac.length + ' empleado(s) tienen vacaciones en ' + _mesTexto(periodo) +
+        ' sin liquidar.</strong> Esos días se pagan a sueldo ÷ 25 (art. 155) y al abrir su liquidación vienen ya cargados: ' +
+        conVac.slice(0, 6).map(x => x.nombre + ' (' + vacacionesDiasDelMes(x.id, periodo) + ' días)').join(' \u00b7 ') +
+        (conVac.length > 6 ? ' …y ' + (conVac.length - 6) + ' más' : '') + '</div></div>'
       : '') +
     (conBonos.length
       ? '<div class="alert" style="margin:0 0 14px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0">' +
@@ -1596,10 +1659,11 @@ async function aplicarAjusteIndividual() {
     // quedar con el sueldo nuevo: si no, el recibo saldría con el viejo.
     const s = sueldoDe(e.id, periodo);
     if (s && !s.pagado) {
-      const nuevoTotal = nuevo + _num(s.monto_horas_extra) + _num(s.bono_eficiencia) -
-        (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0);
+      // Las vacaciones se pagan sobre el sueldo que percibe: cambian con él.
+      const campos = Object.assign({ sueldo_base: nuevo }, _recalcVacLiq(s, nuevo));
+      const nuevoTotal = totalLiquidacionSueldo(Object.assign({}, s, campos));
       const mT = Math.round(nuevoTotal * _num(s.pct_transferencia) / 100);
-      const campos = { sueldo_base: nuevo, total: nuevoTotal, monto_transferencia: mT, monto_efectivo: nuevoTotal - mT };
+      Object.assign(campos, { total: nuevoTotal, monto_transferencia: mT, monto_efectivo: nuevoTotal - mT });
       await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
       Object.assign(s, campos);
     }
@@ -1882,6 +1946,12 @@ function openSueldoModal(empId) {
   // lo que quedó registrado y el detalle de abajo señala la diferencia.
   const boReg = bonosDelMes(empId, periodo);
   document.getElementById('msld-bono').value = s ? _num(s.bono_eficiencia) : (boReg || '');
+  // Las vacaciones del mes se traen de Vacaciones, como las horas extras. Si la
+  // liquidación ya está guardada manda lo que quedó y el detalle avisa la
+  // diferencia.
+  const vacReg = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(empId, periodo) : 0;
+  const elVac = document.getElementById('msld-vac-dias');
+  if (elVac) elVac.value = s ? (_num(s.vac_dias) || '') : (vacReg || '');
   document.getElementById('msld-desc-adelanto').checked = s ? !!s.descuenta_adelanto : false;
   document.getElementById('msld-adelanto').value = s ? _num(s.monto_adelanto) : '';
   // Se propone el MONTO: el guardado si ya se liquidó, y si no el que sale de
@@ -1897,10 +1967,38 @@ function openSueldoModal(empId) {
   _pintarValorHora(e, s);
   _pintarHorasExtra(empId, periodo, s);
   _pintarBonos(empId, periodo, s);
+  _pintarVacacionesSueldo(empId, periodo, s);
   renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
+// De dónde salen los días de vacaciones: qué cargas caen en el mes. Sin eso
+// el número aparece solo y no se puede cotejar con el calendario.
+function _pintarVacacionesSueldo(empId, periodo, s) {
+  const box = document.getElementById('msld-vac-info');
+  if (!box) return;
+  const lista = (typeof vacacionesDelMesDe === 'function') ? vacacionesDelMesDe(empId, periodo) : [];
+  const total = lista.reduce((t, x) => t + x.dias, 0);
+  if (!lista.length) {
+    box.innerHTML = '<span class="muted">Sin vacaciones cargadas en ' + _mesTexto(periodo) + '. Se cargan en <strong>Vacaciones</strong>.</span>';
+    return;
+  }
+  const det = lista.map(x => _empFmt(x.desde).slice(0, 5) + ' al ' + _empFmt(x.hasta).slice(0, 5) + ' (' + x.dias + ' d' +
+    (x.v.estado && x.v.estado !== 'tomada' ? ', ' + x.v.estado : '') + ')').join(' \u00b7 ');
+  const guardadas = s ? _num(s.vac_dias) : null;
+  const difiere = guardadas !== null && Math.abs(guardadas - total) > 0.001;
+  box.innerHTML = '<strong>' + total + (total === 1 ? ' día' : ' días') + '</strong> cargados en ' + _mesTexto(periodo) +
+    ' <span class="muted">— ' + det + '</span>' +
+    (difiere
+      ? '<div style="margin-top:4px;color:#b45309">La liquidación tiene ' + guardadas + ' días. ' +
+        '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px" onclick="_traerVacacionesSueldo(' + total + ')">Traer los cargados</button></div>'
+      : '');
+}
+function _traerVacacionesSueldo(dias) {
+  const el = document.getElementById('msld-vac-dias');
+  if (el) { el.value = dias; recalcSueldoModal(); }
+}
+
 // De dónde sale el bono: qué concepto y de dónde vino. Un número que aparece
 // solo en el recibo que el empleado firma no se puede explicar.
 function _pintarBonos(empId, periodo, s) {
@@ -2009,7 +2107,17 @@ function recalcSueldoModal() {
   const adelCuotas = _totalCuotasSueldo(periodoMod);
   const adel = adelManual + adelCuotas;
   const extras = Math.round(horas * vh);
-  const total = Math.round(base + extras + bono - adel);
+  const elVacD = document.getElementById('msld-vac-dias');
+  const vac = vacArt155(base, parseFloat(elVacD && elVacD.value) || 0);
+  const total = Math.round(base - vac.descuento + vac.monto + extras + bono - adel);
+  // La cuenta a la vista, debajo del campo: son dos renglones que se van a
+  // firmar y hay que poder explicar de dónde sale cada uno.
+  const elVacC = document.getElementById('msld-vac-calc');
+  if (elVacC) elVacC.innerHTML = vac.dias
+    ? vac.dias + ' días × ' + fmtPeso(Math.round(vac.valorDia)) + ' (sueldo ÷ 25) = <strong>' + fmtPeso(vac.monto) + '</strong>' +
+      '<div class="muted">salen del sueldo ' + vac.dias + ' × ' + fmtPeso(Math.round(vac.valorDiaSueldo)) + ' (÷ 30) = ' + fmtPeso(vac.descuento) +
+      ' · cobra <strong>+' + fmtPeso(vac.plus) + '</strong> por estar de vacaciones</div>'
+    : '';
   // La transferencia se ESCRIBE en pesos (el operador tiene el comprobante a la
   // vista) y el efectivo es la diferencia. El porcentaje se sigue guardando,
   // pero calculado: es para los reportes, no para cargar.
@@ -2035,7 +2143,8 @@ function recalcSueldoModal() {
   document.getElementById('msld-split').innerHTML =
     '<span><i class="ic ic-card"></i> Transferencia: <strong>' + fmtPeso(mT) + '</strong></span>' +
     '<span style="margin-left:14px;color:' + (mE < 0 ? '#b91c1c' : 'inherit') + '"><i class="ic ic-dollar"></i> Efectivo: <strong>' + fmtPeso(mE) + '</strong></span>';
-  return { base, horas, vh, extras, bono, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE };
+  return { base, horas, vh, extras, bono, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
+           vacDias: vac.dias, vacMonto: vac.monto, vacDesc: vac.descuento };
 }
 async function guardarSueldo(marcarPagado, conRecibo) {
   if (sueldoModalEmpId == null) return;
@@ -2077,6 +2186,7 @@ async function guardarSueldo(marcarPagado, conRecibo) {
     empleado_id: sueldoModalEmpId, periodo,
     sueldo_base: c.base, horas_extra: c.horas, valor_hora_extra: c.vh, monto_horas_extra: c.extras,
     bono_eficiencia: c.bono, descuenta_adelanto: c.descAd, monto_adelanto: c.adel,
+    vac_dias: c.vacDias, monto_vacaciones: c.vacMonto, vac_descuento: c.vacDesc,
     total: c.total, pct_transferencia: c.pct, monto_transferencia: c.mT, monto_efectivo: c.mE,
     pagado: !!marcarPagado, obs: (document.getElementById('msld-obs').value || '').trim()
   };
@@ -2138,10 +2248,13 @@ function _datosRecibo(e, periodo) {
   const bono = s ? _num(s.bono_eficiencia) : 0;
   const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
   const total = s ? _num(s.total) : base;
+  const vacDias = s ? _num(s.vac_dias) : 0;
+  const vacMonto = s ? _num(s.monto_vacaciones) : 0;
+  const vacDesc = s ? _num(s.vac_descuento) : 0;
   const pct = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(e.id);
   const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
   const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pct / 100);
-  return { s, base, horas, vh, extras, bono, adel, total, pct, mT, mE,
+  return { s, base, horas, vh, extras, bono, adel, total, pct, mT, mE, vacDias, vacMonto, vacDesc,
            obs: (s && s.obs) || '', pagado: !!(s && s.pagado) };
 }
 
@@ -2232,7 +2345,12 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
 
   // ── Conceptos ────────────────────────────────────────────────────────────
   const body = [];
-  body.push(['Sueldo básico', _mesTexto(periodo), fmtPeso(d.base), '']);
+  // Con vacaciones, el sueldo básico es el de los días trabajados y los días
+  // de vacaciones van en su propio renglón, a sueldo / 25 (art. 155).
+  body.push(['Sueldo básico', _mesTexto(periodo) + (d.vacDias ? ' sin los ' + d.vacDias + ' días de vacaciones' : ''),
+    fmtPeso(d.base - d.vacDesc), '']);
+  if (d.vacMonto) body.push(['Vacaciones (art. 155 LCT)', d.vacDias + ' días x ' + fmtPeso(Math.round(d.base / 25)) + ' por día',
+    fmtPeso(d.vacMonto), '']);
   if (d.extras) body.push(['Horas extras', d.horas + ' h x ' + fmtPeso(d.vh) + ' por hora', fmtPeso(d.extras), '']);
   if (d.bono) body.push(['Bono de eficiencia', '', fmtPeso(d.bono), '']);
   if (d.adel) body.push(['Adelanto descontado', 'a cuenta de haberes', '', fmtPeso(d.adel)]);
@@ -2266,7 +2384,7 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
     doc.text(val, RECIBO.der, ty, { align: 'right' });
     ty += 5.4;
   };
-  renglon('Total haberes', fmtPeso(d.base + d.extras + d.bono));
+  renglon('Total haberes', fmtPeso(d.base - d.vacDesc + d.vacMonto + d.extras + d.bono));
   if (d.adel) renglon('Total descuentos', '-' + fmtPeso(d.adel), [185, 28, 28]);
   _pdfTrazo(doc, MARCA.linea); doc.setLineWidth(0.2); doc.line(RX, ty - 3.2, RECIBO.der, ty - 3.2);
   _pdfRelleno(doc, MARCA.navy); doc.roundedRect(RX, ty, 84, 15, 1.8, 1.8, 'F');
@@ -2525,14 +2643,15 @@ function sueldoVigenteEn(e, periodo) {
 // a su valor hora.
 function calcMesEmpleados(periodo) {
   const detalle = [];
-  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, liquidados = 0, estimados = 0;
+  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, vacPlus = 0, liquidados = 0, estimados = 0;
   (AppData.empleados || []).forEach(e => {
     if (!empleadoActivoEnMes(e, periodo)) return;
     const s = sueldoDe(e.id, periodo);
-    let b, hh, hc, bo, fuente, est = false;
+    let b, hh, hc, bo, vp, fuente, est = false;
     if (s) {
       b = _num(s.sueldo_base); hh = _num(s.horas_extra); hc = _num(s.monto_horas_extra);
       bo = _num(s.bono_eficiencia); fuente = 'liquidado'; liquidados++;
+      vp = _num(s.monto_vacaciones) - _num(s.vac_descuento);
     } else {
       const v = sueldoVigenteEn(e, periodo);
       b = v.sueldo; est = v.estimado; if (est) estimados++;
@@ -2541,18 +2660,20 @@ function calcMesEmpleados(periodo) {
       // Un bono ya decidido es costo del mes aunque la liquidación no esté
       // armada: si no, el mes cierra por debajo de lo que se va a pagar.
       bo = bonosDelMes(e.id, periodo); fuente = 'nomina';
+      // Las vacaciones cargadas también cuestan: se pagan a ÷ 25, no a ÷ 30.
+      vp = vacArt155(b, (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0).plus;
     }
     if (e.registrado === false) noReg++; else reg++;
-    base += b; heHoras += hh; heCosto += hc; bonos += bo;
+    base += b; heHoras += hh; heCosto += hc; bonos += bo; vacPlus += vp;
     detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false,
-      base: b, he_horas: hh, he_costo: hc, bono: bo, fuente, estimado: est });
+      base: b, he_horas: hh, he_costo: hc, bono: bo, vac: vp, fuente, estimado: est });
   });
   const total = reg + noReg;
   return {
     periodo, emp_registrados: reg, emp_no_registrados: noReg, total,
     sueldos_base: base, promedio_sueldo: total ? Math.round(base / total) : 0,
     horas_extra_horas: Math.round(heHoras * 100) / 100, horas_extra_costo: heCosto,
-    bonos, costo_total: base + heCosto + bonos, liquidados, estimados, detalle
+    bonos, vacaciones_plus: vacPlus, costo_total: base + heCosto + bonos + vacPlus, liquidados, estimados, detalle
   };
 }
 

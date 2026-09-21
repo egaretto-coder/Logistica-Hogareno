@@ -256,6 +256,31 @@ function horasExtraDelMes(empId, periodo) {
   return Math.round(horasExtraDe(empId, periodo).reduce((s, h) => s + _num(h.horas), 0) * 100) / 100;
 }
 
+// Las vacaciones de un empleado que caen en un mes (AAAA-MM), con los días de
+// CADA carga que quedan adentro: una del 25/09 al 08/10 son 6 días en
+// septiembre y 8 en octubre. Se cuentan igual que en el resto del módulo
+// (corridos, los dos extremos incluidos) y la cancelada no cuenta. Es lo que la
+// liquidación del mes trae, igual que las horas extras.
+function vacacionesDelMesDe(empId, periodo) {
+  const p = String(periodo || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(p)) return [];
+  const [y, m] = p.split('-').map(Number);
+  const ini = p + '-01';
+  const fin = p + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0');
+  return (AppData.vacaciones || [])
+    .filter(v => v.empleado_id === empId && vacCuenta(v))
+    .map(v => {
+      const d = String(v.fecha_desde || '').slice(0, 10) > ini ? String(v.fecha_desde).slice(0, 10) : ini;
+      const h = String(v.fecha_hasta || '').slice(0, 10) < fin ? String(v.fecha_hasta).slice(0, 10) : fin;
+      return { v, desde: d, hasta: h, dias: d <= h ? vacDiasEntre(d, h) : 0 };
+    })
+    .filter(x => x.dias > 0)
+    .sort((a, b) => a.desde.localeCompare(b.desde));
+}
+function vacacionesDiasDelMes(empId, periodo) {
+  return vacacionesDelMesDe(empId, periodo).reduce((s, x) => s + x.dias, 0);
+}
+
 function renderHorasExtra() {
   const cont = document.getElementById('vac-hs-rows');
   if (!cont) return;

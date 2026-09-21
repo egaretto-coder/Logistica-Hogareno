@@ -386,6 +386,7 @@ async function _hydrateFromSupabaseReal(opts) {
     valor_hora_extra: _num(s.valor_hora_extra), monto_horas_extra: _num(s.monto_horas_extra),
     bono_eficiencia: _num(s.bono_eficiencia), descuenta_adelanto: !!s.descuenta_adelanto,
     monto_adelanto: _num(s.monto_adelanto), total: _num(s.total),
+    vac_dias: _num(s.vac_dias), monto_vacaciones: _num(s.monto_vacaciones), vac_descuento: _num(s.vac_descuento),
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
   }));

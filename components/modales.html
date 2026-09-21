@@ -1337,6 +1337,16 @@
         <div id="msld-bono-info" style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)"></div>
       </div>
 
+      <!-- Vacaciones del mes (art. 155 LCT): esos días se pagan a sueldo ÷ 25 y
+           salen del sueldo a ÷ 30. Se traen de Vacaciones, como las horas
+           extras; el campo queda editable. -->
+      <div class="form-group" style="margin:0">
+        <label class="form-label"><i class="ic ic-calendar"></i> Vacaciones (días del mes)</label>
+        <input type="number" id="msld-vac-dias" class="form-input" placeholder="0" min="0" max="31" step="1" style="width:100%" oninput="recalcSueldoModal()" />
+        <div id="msld-vac-calc" style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)"></div>
+        <div id="msld-vac-info" style="margin-top:4px;font-size:11.5px;color:var(--text-secondary)"></div>
+      </div>
+
       <!-- Adelantos registrados del empleado: tildar una cuota la imputa a este
            mes y la descuenta del neto (igual que en la liquidación del conductor).
            El campo manual de abajo queda para descuentos que no vienen de un

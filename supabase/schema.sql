@@ -1538,3 +1538,15 @@ alter table public.empleado_ajustes
 -- facturarlas de nuevo. Antes de esta fecha el cliente factura SEMANAL.
 -- NULL = el periodo rige desde siempre (lo que ya habia).
 alter table public.clientes add column if not exists periodo_desde date;
+
+-- ---------- VACACIONES EN LA LIQUIDACION MENSUAL (art. 155 LCT) ----------
+-- Los dias de vacaciones se pagan a sueldo / 25, y NO a sueldo / 30 como el
+-- resto del mes. No se suman arriba del sueldo completo —eso pagaria dos veces
+-- los mismos dias—: se descuentan del sueldo a /30 (vac_descuento) y se pagan
+-- a /25 (monto_vacaciones). Se guardan los dos importes porque son dos
+-- renglones del recibo que se firma. total = sueldo_base - vac_descuento +
+-- monto_vacaciones + horas extra + bono - adelanto.
+alter table public.empleado_sueldos
+  add column if not exists vac_dias numeric not null default 0,
+  add column if not exists monto_vacaciones numeric not null default 0,
+  add column if not exists vac_descuento numeric not null default 0;
