@@ -333,7 +333,7 @@ function calcLiquidacionCliente(cliente, rango, opts) {
     // se lo sacara de su semana original se facturaría dos veces.
     const arr = String(r.factura_semana || '').slice(0, 10);
     if (arr) {
-      if (!semana || arr !== semana) return;
+      if (!semana || anclaDePeriodo(cKey, arr) !== semana) return;
       arrastrados++;
     } else if (desde || hasta) {
       const f = parseFechaReg(r.fecha); if (!f) return;
@@ -3224,7 +3224,7 @@ function cargosDeSemana(cod, semana) {
   const k = clienteKey(cod);
   if (!k || !semana) return [];
   return (AppData.clienteCargos || [])
-    .filter(c => clienteKey(c.cliente_cod) === k && String(c.semana || '').slice(0, 10) === semana)
+    .filter(c => clienteKey(c.cliente_cod) === k && anclaDePeriodo(k, c.semana) === semana)
     .sort((a, b) => String(a.concepto).localeCompare(String(b.concepto)) || _num(a.id) - _num(b.id));
 }
 
@@ -3294,41 +3294,94 @@ async function arrastrarEnviosASemana(indices, semanaISO) {
 //  corte nunca parte una semana del cadete y el viernes que ABRE el período
 //  sigue siendo la clave que ancla los arrastres y los cargos.
 // ════════════════════════════════════════════════════════════════════════
+// La quincena y el mes son de CALENDARIO: del 1 al 15 (se factura el 16), del
+// 16 a fin de mes (se factura el 1) y del 1 a fin de mes. Es como se les
+// factura. Antes eran "dos / cuatro semanas Vie→Jue" ancladas en una fecha
+// interna, que no coincidían NUNCA con la quincena real: filtrando quincenales
+// en el Dashboard daba $0 la semana en que se les facturaba.
 const PERIODOS_CLIENTE = {
   7:  { label: 'Semanal',    detalle: 'Viernes a jueves' },
-  14: { label: 'Quincenal',  detalle: 'Dos semanas, de viernes a jueves' },
-  28: { label: 'Mensual',    detalle: 'Cuatro semanas, de viernes a jueves' },
+  14: { label: 'Quincenal',  detalle: 'Del 1 al 15 y del 16 a fin de mes' },
+  28: { label: 'Mensual',    detalle: 'Del 1 a fin de mes' },
 };
 function periodoLabel(dias) { return (PERIODOS_CLIENTE[_num(dias) || 7] || PERIODOS_CLIENTE[7]).label; }
 
-function periodoDiasDe(cod) {
+function periodoDiasDe(cod) { return _regimenPeriodo(cod).dias; }
+// Desde qué fecha rige ese período ('' = desde siempre).
+function periodoDesdeDe(cod) { return _regimenPeriodo(cod).desde; }
+
+// El período de un cliente y desde cuándo rige, en UNA búsqueda.
+function _regimenPeriodo(cod) {
   const k = clienteKey(cod);
-  const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
+  const c = k ? (AppData.clientes || []).find(x => clienteKey(x.codigo) === k) : null;
   const d = _num(c && c.periodo_dias) || 7;
-  return PERIODOS_CLIENTE[d] ? d : 7;
+  const desde = String((c && c.periodo_desde) || '').slice(0, 10);
+  return { dias: PERIODOS_CLIENTE[d] ? d : 7, desde: /^\d{4}-\d{2}-\d{2}$/.test(desde) ? desde : '' };
 }
 
-// Semanas transcurridas desde un viernes de referencia (02/01/1970 fue viernes).
-// Da una grilla ESTABLE: qué viernes abre un período no depende de qué día se
-// mire, así que la liquidación de un quincenal cae siempre en las mismas fechas.
-function _semanasDesdeEpoca(viernes) {
-  const base = Date.UTC(1970, 0, 2);
-  const v = Date.UTC(viernes.getFullYear(), viernes.getMonth(), viernes.getDate());
-  return Math.floor((v - base) / 604800000);
+function _isoLocalCli(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 // Período de facturación de un cliente que CONTIENE la fecha dada.
-// Sin cliente (o semanal) devuelve la semana de siempre.
+// OJO con `periodo_desde`: el período RIGE DESDE UNA FECHA, igual que una lista
+// de precios. Sin eso, pasar un cliente de semanal a quincenal reinterpretaba
+// TODO su pasado — sus semanas ya cerradas dejaban de coincidir con ninguna
+// quincena, aparecían "sin liquidar" y el panel invitaba a facturarlas de
+// nuevo. Antes de esa fecha el cliente facturaba SEMANAL.
 function periodoClienteRango(cod, iso) {
-  const semana = semanaClienteRango(iso);
-  const dias = periodoDiasDe(cod);
-  if (dias === 7) return Object.assign({}, semana, { dias: 7, semanas: 1 });
-  const n = dias / 7;
-  const atras = ((_semanasDesdeEpoca(semana.desdeD) % n) + n) % n;
-  const desde = new Date(semana.desdeD); desde.setDate(desde.getDate() - atras * 7); desde.setHours(0, 0, 0, 0);
-  const hasta = new Date(desde); hasta.setDate(desde.getDate() + n * 7 - 1); hasta.setHours(23, 59, 59, 999);
+  const reg = _regimenPeriodo(cod);
+  const d0 = iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00') : new Date();
+  const isoD = _isoLocalCli(d0);
   const fmt = x => String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear();
-  return { desde: fmt(desde), hasta: fmt(hasta), desdeD: desde, hastaD: hasta, dias, semanas: n };
+  const armar = (a, b) => {
+    const desdeD = new Date(a); desdeD.setHours(0, 0, 0, 0);
+    const hastaD = new Date(b); hastaD.setHours(23, 59, 59, 999);
+    return { desde: fmt(desdeD), hasta: fmt(hastaD), desdeD, hastaD, dias: reg.dias };
+  };
+  const anterior = reg.dias !== 7 && reg.desde && isoD < reg.desde;
+  if (reg.dias === 7 || anterior) {
+    const s = semanaClienteRango(isoD);
+    if (anterior) {
+      // La última semana se CORTA el día anterior a que empiece a regir el
+      // período nuevo: si no, esos días quedarían en la semana Y en la primera
+      // quincena, y se facturarían dos veces.
+      const tope = new Date(reg.desde + 'T12:00:00'); tope.setDate(tope.getDate() - 1);
+      if (s.hastaD > tope) { const r = armar(s.desdeD, tope); r.dias = 7; return r; }
+    }
+    return Object.assign({}, s, { dias: 7 });
+  }
+  const y = d0.getFullYear(), m = d0.getMonth();
+  let a, b;
+  if (reg.dias === 28) { a = new Date(y, m, 1); b = new Date(y, m + 1, 0); }
+  else if (d0.getDate() <= 15) { a = new Date(y, m, 1); b = new Date(y, m, 15); }
+  else { a = new Date(y, m, 16); b = new Date(y, m + 1, 0); }
+  // El primer período nuevo ARRANCA el día que empieza a regir, aunque no sea
+  // el 1 ni el 16: lo de antes ya se liquidó semanal.
+  if (reg.desde) { const ini = new Date(reg.desde + 'T12:00:00'); if (a < ini) a = ini; }
+  return armar(a, b);
+}
+
+// El período anterior o el siguiente al que contiene esa fecha. Las flechas de
+// Detalle de cliente movían 7 días: con una quincena del 1 al 15, pasar a la
+// "siguiente" desde el 1 caía el 8 — la MISMA quincena — y parecía que no
+// hacía nada.
+function periodoVecino(cod, iso, dir) {
+  const r = periodoClienteRango(cod, iso);
+  const d = new Date(dir > 0 ? r.hastaD : r.desdeD);
+  d.setDate(d.getDate() + (dir > 0 ? 1 : -1));
+  return periodoClienteRango(cod, _isoLocalCli(d));
+}
+
+// A qué período pertenece el ANCLA de un envío traído de otra semana o de un
+// cargo: la fecha que abre el período en que se cobran. Se compara por el
+// período que la contiene y no por igualdad: si el cliente cambia de ciclo,
+// las anclas viejas son viernes y el período nuevo abre el 1 o el 16 — por
+// igualdad, esos envíos y cargos desaparecerían de toda liquidación sin aviso.
+function anclaDePeriodo(cod, iso) {
+  const s = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  return viernesDeRango(periodoClienteRango(cod, s));
 }
 
 // Corre un input date al viernes que ABRE el período de ese cliente.
@@ -3339,19 +3392,107 @@ function snapPeriodoCliente(inputId, cod) {
   el.value = v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
 }
 
-// Guarda el período elegido en la ficha.
+// La última liquidación CERRADA del cliente (ISO de su último día), o ''.
+function _ultimaLiqCerradaCli(cod) {
+  const k = clienteKey(cod);
+  let max = '';
+  (AppData.clienteLiquidaciones || []).forEach(x => {
+    if (clienteKey(x.cliente_cod) !== k) return;
+    const h = String(x.semana_hasta || '').slice(0, 10);
+    if (h > max) max = h;
+  });
+  return max;
+}
+// El primer día en que puede empezar a regir un período nuevo sin tocar nada
+// cerrado: el día siguiente a la última liquidación cerrada.
+function _primerDiaLibrePeriodo(cod) {
+  const u = _ultimaLiqCerradaCli(cod);
+  if (!u) return '';
+  const d = new Date(u + 'T12:00:00'); d.setDate(d.getDate() + 1);
+  return _isoLocalCli(d);
+}
+// Propuesta de fecha: el primer día en que ese período ARRANCA (el 1 o el 16,
+// el 1 del mes, o un viernes) que no pise nada cerrado.
+function _proponerDesdePeriodo(cod, dias) {
+  const libre = _primerDiaLibrePeriodo(cod);
+  if (!libre) return '';                    // nunca se liquidó: rige desde siempre
+  const d = new Date(libre + 'T12:00:00');
+  for (let i = 0; i < 62; i++) {
+    const dia = d.getDate();
+    const ok = dias === 7 ? d.getDay() === 5 : dias === 28 ? dia === 1 : (dia === 1 || dia === 16);
+    if (ok) return _isoLocalCli(d);
+    d.setDate(d.getDate() + 1);
+  }
+  return libre;
+}
+
+// Elegir otro período NO se guarda al instante: primero se dice desde cuándo
+// rige. Guardarlo en el acto reinterpretaba todo el pasado del cliente.
+function elegirPeriodoCliente(cod, dias) {
+  const box = document.getElementById('card-periodo-cambio');
+  if (!box) return;
+  const d = PERIODOS_CLIENTE[_num(dias)] ? _num(dias) : 7;
+  const actual = periodoDiasDe(cod);
+  if (d === actual) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const ultima = _ultimaLiqCerradaCli(cod);
+  const propuesta = _proponerDesdePeriodo(cod, d);
+  box.style.display = 'block';
+  box.innerHTML =
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<span style="font-size:12px">Pasa a <strong>' + periodoLabel(d).toLowerCase() + '</strong> desde</span>' +
+      '<input type="date" id="card-periodo-desde" value="' + propuesta + '"' +
+        (ultima ? ' min="' + _primerDiaLibrePeriodo(cod) + '"' : '') + '>' +
+      '<button class="btn btn-sm btn-primary" onclick="guardarPeriodoCliente(\'' + jsAttr(clienteKey(cod)) + '\',' + d + ')">Aplicar</button>' +
+      '<button class="btn btn-sm" onclick="verCardCliente(\'' + jsAttr(clienteKey(cod)) + '\')">Cancelar</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text-muted);margin-top:5px">' +
+      (ultima
+        ? 'Su última liquidación cerrada termina el <strong>' + _precFmt(ultima) + '</strong>: lo anterior a la fecha que elijas sigue facturándose ' +
+          periodoLabel(actual).toLowerCase() + ' y lo ya cerrado no se toca.'
+        : 'Nunca se le cerró una liquidación, así que puede regir <strong>desde siempre</strong>: dejá la fecha vacía.') +
+    '</div>';
+}
+
+// Guarda el período elegido en la ficha, con la fecha desde la que rige.
 async function guardarPeriodoCliente(cod, dias) {
   const k = clienteKey(cod);
   const c = (AppData.clientes || []).find(x => clienteKey(x.codigo) === k);
   if (!c) return;
   const d = PERIODOS_CLIENTE[_num(dias)] ? _num(dias) : 7;
+  const el = document.getElementById('card-periodo-desde');
+  let desde = el ? String(el.value || '').slice(0, 10) : '';
+  const libre = _primerDiaLibrePeriodo(k);
+  // Lo cerrado no se reinterpreta: un período nuevo no puede arrancar antes
+  // del día siguiente a la última liquidación cerrada.
+  if (libre && (!desde || desde < libre)) {
+    alert('El período nuevo tiene que arrancar después de la última liquidación cerrada de ' + clienteNombreDe(k) +
+      ' (termina el ' + _precFmt(_ultimaLiqCerradaCli(k)) + ').' + String.fromCharCode(10) + String.fromCharCode(10) +
+      'Si arrancara antes, esas semanas ya facturadas dejarían de coincidir con el período nuevo, aparecerían como sin liquidar y se podrían facturar dos veces.');
+    return;
+  }
+  // Un cliente que ya cambió de período y liquidó con él no se puede volver a
+  // cambiar sin perder cómo se armaron esas liquidaciones: antes de la fecha
+  // nueva, la app lo trataría como semanal.
+  const reg = _regimenPeriodo(k);
+  const ult = _ultimaLiqCerradaCli(k);
+  if (reg.dias !== 7 && ult && ult >= (reg.desde || '0000-00-00')) {
+    alert(clienteNombreDe(k) + ' ya factura ' + periodoLabel(reg.dias).toLowerCase() +
+      (reg.desde ? ' desde el ' + _precFmt(reg.desde) : '') + ' y tiene liquidaciones cerradas con ese período.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Cambiarlo reescribiría cómo se armaron esas liquidaciones: la app solo recuerda UN cambio de período por cliente.');
+    return;
+  }
+  // Semanal no necesita fecha: antes de cualquier cambio todo cliente era semanal.
+  const campos = { periodo_dias: d, periodo_desde: d === 7 ? null : (desde || null) };
   try {
-    await DB.updateWhere('clientes', 'id', c.id, { periodo_dias: d });
-    c.periodo_dias = d;
+    await DB.updateWhere('clientes', 'id', c.id, campos);
+    Object.assign(c, campos);
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
     if (typeof renderClientes === 'function') renderClientes();
+    if (document.getElementById('card-periodo')) verCardCliente(k);
     showToast('✅ ' + clienteNombreDe(k) + ': facturación ' + periodoLabel(d).toLowerCase() +
-      ' (' + d + ' días)');
+      (campos.periodo_desde ? ' desde el ' + _precFmt(campos.periodo_desde) : ''));
   } catch (e) { console.warn('guardarPeriodoCliente', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }
 
@@ -3364,20 +3505,20 @@ function _cardPeriodo(k, c) {
   const opts = Object.keys(PERIODOS_CLIENTE).map(d => {
     const info = PERIODOS_CLIENTE[d];
     return '<option value="' + d + '"' + (_num(d) === actual ? ' selected' : '') + '>' +
-      info.label + ' · cada ' + d + ' días</option>';
+      info.label + ' · ' + info.detalle.toLowerCase() + '</option>';
   }).join('');
   const r = periodoClienteRango(k);
+  const desde = periodoDesdeDe(k);
   return '<div style="padding:12px 0;border-top:1px solid var(--border)">' +
     '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">' +
       'Período de facturación</div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-      '<select id="card-periodo" onchange="guardarPeriodoCliente(\'' + esc + '\', this.value)" ' +
+      '<select id="card-periodo" onchange="elegirPeriodoCliente(\'' + esc + '\', this.value)" ' +
         'style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">' + opts + '</select>' +
-      '<span style="font-size:11.5px;color:var(--text-muted)">' + PERIODOS_CLIENTE[actual].detalle +
-      ' · el período en curso va del <strong>' + r.desde + '</strong> al <strong>' + r.hasta + '</strong></span>' +
+      '<span style="font-size:11.5px;color:var(--text-muted)">el período en curso va del <strong>' + r.desde +
+        '</strong> al <strong>' + r.hasta + '</strong>' +
+        (desde && actual !== 7 ? ' · rige desde el <strong>' + _precFmt(desde) + '</strong> (antes, semanal)' : '') + '</span>' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">' +
-      'Se cuenta por semanas enteras Vie→Jue, el mismo ciclo con el que se le paga al conductor: ' +
-      'así el corte no parte una semana del cadete.</div>' +
+    '<div id="card-periodo-cambio" style="display:none;margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px"></div>' +
   '</div>';
 }

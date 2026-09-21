@@ -1528,3 +1528,13 @@ alter table public.empleado_ajustes
   add column if not exists revertido_en timestamptz,
   add column if not exists revertido_por text default '',
   add column if not exists revertido_motivo text default '';
+
+-- ---------- DESDE CUANDO RIGE EL PERIODO DEL CLIENTE ----------
+-- La quincena y el mes son de CALENDARIO (del 1 al 15, del 16 a fin de mes, del
+-- 1 a fin de mes): asi se les factura. Y el periodo rige DESDE UNA FECHA, igual
+-- que una lista de precios: sin esto, pasar un cliente de semanal a quincenal
+-- reinterpretaba todo su pasado — sus semanas ya cerradas dejaban de coincidir
+-- con ninguna quincena, aparecian "sin liquidar" y el panel invitaba a
+-- facturarlas de nuevo. Antes de esta fecha el cliente factura SEMANAL.
+-- NULL = el periodo rige desde siempre (lo que ya habia).
+alter table public.clientes add column if not exists periodo_desde date;

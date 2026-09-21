@@ -40,8 +40,18 @@ function dcliCambioSemana() {
   if (typeof snapPeriodoCliente === 'function') snapPeriodoCliente('dcli-semana', cod);
   renderDetalleCliente();
 }
-function dcliSemanaAnterior() { dcliMoverSemana(-7); }
-function dcliSemanaSiguiente() { dcliMoverSemana(7); }
+// Avanzan de a un PERÍODO del cliente, no de a 7 días: con una quincena del 1
+// al 15, siete días más adelante es la MISMA quincena.
+function dcliMoverPeriodo(dir) {
+  const el = document.getElementById('dcli-semana');
+  if (!el) return;
+  const cod = document.getElementById('dcli-select')?.value || '';
+  const p = periodoVecino(cod, el.value || undefined, dir);
+  el.value = _isoLocalCli(p.desdeD);
+  renderDetalleCliente();
+}
+function dcliSemanaAnterior() { dcliMoverPeriodo(-1); }
+function dcliSemanaSiguiente() { dcliMoverPeriodo(1); }
 
 let dcliSoloSinDim = false;
 function toggleDcliSinDim() {
@@ -125,7 +135,7 @@ function renderDetalleCliente() {
 
   const rango = dcliRango();
   const rangoEl = document.getElementById('dcli-rango');
-  if (rangoEl) rangoEl.textContent = rango.desde + ' → ' + rango.hasta;
+  if (rangoEl) rangoEl.textContent = (cod ? periodoLabel(rango.dias) + ' · ' : '') + rango.desde + ' → ' + rango.hasta;
 
   if (!cod) {
     wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
@@ -142,7 +152,7 @@ function renderDetalleCliente() {
   (AppData.records || []).forEach((r, i) => {
     if (clienteCodDeRegistro(r) !== clienteKey(cod)) return;
     const arr = String(r.factura_semana || '').slice(0, 10);
-    if (arr) { if (arr === semanaISO) idxs.push(i); return; }
+    if (arr) { if (anclaDePeriodo(cod, arr) === semanaISO) idxs.push(i); return; }
     const f = parseFechaReg(r.fecha);
     if (!f) return;
     if (f < rango.desdeD || f > rango.hastaD) return;
@@ -627,10 +637,11 @@ function correccionesDeLiquidacion(cod, rango) {
     const arr = String(r.factura_semana || '').slice(0, 10);
     const f = parseFechaReg(r.fecha);
     const enSuFecha = !!f && (!desde || f >= desde) && (!hasta || f <= hasta);
-    const entra = arr ? (!!semana && arr === semana) : enSuFecha;
+    const anc = arr ? anclaDePeriodo(cKey, arr) : '';
+    const entra = arr ? (!!semana && anc === semana) : enSuFecha;
     // Un envío cuya fecha cae en este período pero que se factura en otro SALIÓ
     // de acá: no está en la tabla, y sin embargo explica plata que falta.
-    const salio = !!arr && enSuFecha && arr !== semana;
+    const salio = !!arr && enSuFecha && anc !== semana;
     if (!entra && !salio) return;
     if (!contabilizaRegistro(r) && !envioAnuladoCliente(r)) return;
 
@@ -693,7 +704,7 @@ function _correccionesSoloPago(cod, rango) {
     if (clienteCodDeRegistro(r) !== cKey) return false;
     if (precioManualDe(r) === null || precioManualDe(r) === undefined) return false;
     const arr = String(r.factura_semana || '').slice(0, 10);
-    if (arr) return !!semana && arr === semana;
+    if (arr) return !!semana && anclaDePeriodo(cKey, arr) === semana;
     const f = parseFechaReg(r.fecha);
     return !!f && (!desde || f >= desde) && (!hasta || f <= hasta);
   });
@@ -856,7 +867,7 @@ function _traerCandidatos() {
     if (!cKey || clienteCodDeRegistro(r) !== cKey) return;
     if (!contabilizaRegistro(r)) return;
     const arr = String(r.factura_semana || '').slice(0, 10);
-    if (arr === semana) return;                       // ya está en esta liquidación
+    if (arr && anclaDePeriodo(cKey, arr) === semana) return;   // ya está en esta liquidación
     let suPeriodo = null;
     if (!arr) {
       const f = parseFechaReg(r.fecha);
@@ -1031,7 +1042,7 @@ function _dcliManualesDeSemana(cod, rango) {
     if (clienteCodDeRegistro(r) !== cKey) return;
     if (!contabilizaRegistro(r)) return;
     const arr = String(r.factura_semana || '').slice(0, 10);
-    if (arr) { if (arr === semana) out.push(r); return; }
+    if (arr) { if (anclaDePeriodo(cKey, arr) === semana) out.push(r); return; }
     const f = parseFechaReg(r.fecha);
     if (f && f >= rango.desdeD && f <= rango.hastaD) out.push(r);
   });

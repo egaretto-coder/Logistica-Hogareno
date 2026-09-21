@@ -270,6 +270,7 @@ async function _hydrateFromSupabaseReal(opts) {
     contacto: c.contacto || '', telefono: c.telefono || '', email: c.email || '', obs: c.obs || '',
     // Cada cuánto se le factura, en días: 7 semanal · 14 quincenal · 28 mensual.
     periodo_dias: _num(c.periodo_dias) || 7,
+    periodo_desde: c.periodo_desde ? String(c.periodo_desde).slice(0, 10) : '',
     activo: c.activo !== false,
     fecha_baja: String(c.fecha_baja || '').slice(0, 10), motivo_baja: c.motivo_baja || ''
   }));

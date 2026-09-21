@@ -503,13 +503,15 @@ function _liqsPorPeriodo(k, periodos, reg) {
     calcLiquidacionCliente(k, x, { registros: arrastrados.length ? cajas[i].concat(arrastrados) : cajas[i] }));
 }
 
-// ¿La ventana llega a algún jueves? Sin jueves no cerró ninguna semana.
+// ¿La ventana llega a algún cierre? Las semanas cierran los jueves, y las
+// quincenas y los meses el 15 y el último día del mes.
 function _ventanaTieneJueves(v) {
   if (!v.desde || !v.hasta) return true;
   const d = new Date(v.desde + 'T12:00:00');
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 32; i++) {
     if (_isoDash(d) > v.hasta) return false;
-    if (d.getDay() === 4) return true;
+    const fin = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() === d.getDate();
+    if (d.getDay() === 4 || d.getDate() === 15 || fin) return true;
     d.setDate(d.getDate() + 1);
   }
   return true;
@@ -703,7 +705,7 @@ function renderDashClientes() {
         // El porqué depende del caso: si las fechas no llegan a ningún jueves no
         // cerró ni una semana; si llegan, es que el período cierra más adelante.
         : v ? 'Ningún ' + (quienes ? 'cliente ' + quienes.replace(/es$/, '') : 'cliente') + ' cierra su período en estas fechas. ' +
-          (!_ventanaTieneJueves(v) ? 'Las semanas cierran los jueves, y estas fechas no llegan a ninguno.'
+          (!_ventanaTieneJueves(v) ? 'Las semanas cierran los jueves y las quincenas el 15 y a fin de mes, y estas fechas no llegan a ningún cierre.'
             : data.noCierran.length ? 'Los que tuvieron envíos facturan más adelante: están en el aviso de arriba.' : '')
         : 'No hay envíos con cliente en el período elegido') + '</div></div></td></tr>';
     return;
