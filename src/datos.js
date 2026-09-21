@@ -75,6 +75,8 @@ function loadSavedConfig() {
   if (empp) { try { AppData.empleadoPostergaciones = JSON.parse(empp) || []; } catch(e) {} }
   const emphe = localStorage.getItem('liq_empleado_horas_extra');
   if (emphe) { try { AppData.empleadoHorasExtra = JSON.parse(emphe) || []; } catch(e) {} }
+  const puhor = localStorage.getItem('liq_puesto_horarios');
+  if (puhor) { try { AppData.puestoHorarios = JSON.parse(puhor) || []; } catch(e) {} }
   const empbo = localStorage.getItem('liq_empleado_bonos');
   if (empbo) { try { AppData.empleadoBonos = JSON.parse(empbo) || []; } catch(e) {} }
   const empre = localStorage.getItem('liq_empleado_reaperturas');
@@ -334,6 +336,8 @@ async function _hydrateFromSupabaseReal(opts) {
     // Horario propio de los sábados ('' = el mismo de la semana).
     sab_entrada: e.sab_entrada || '', sab_salida: e.sab_salida || '',
     sab_almuerzo_min: _num(e.sab_almuerzo_min) || 0,
+    // Tiene un horario distinto al de su puesto: el del puesto no le pisa el suyo.
+    horario_propio: !!e.horario_propio,
     horas_diarias: e.horas_diarias === null || e.horas_diarias === undefined ? 8 : _num(e.horas_diarias),
     dias_laborales: e.dias_laborales === null || e.dias_laborales === undefined ? 5 : _num(e.dias_laborales),
     pct_transferencia: e.pct_transferencia === null || e.pct_transferencia === undefined ? 100 : _num(e.pct_transferencia),
@@ -356,6 +360,12 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.empleadoHorasExtra = (data.empleado_horas_extra || []).map(h => ({
     id: h.id, empleado_id: h.empleado_id, fecha: String(h.fecha || '').slice(0, 10),
     horas: _num(h.horas), motivo: h.motivo || '', creado_por: h.creado_por || ''
+  }));
+  AppData.puestoHorarios = (data.puesto_horarios || []).map(h => ({
+    id: h.id, area: h.area || '', puesto: h.puesto || '', dias_laborales: _num(h.dias_laborales) || 5,
+    hora_entrada: h.hora_entrada || '', hora_salida: h.hora_salida || '', almuerzo_min: _num(h.almuerzo_min) || 0,
+    sab_entrada: h.sab_entrada || '', sab_salida: h.sab_salida || '', sab_almuerzo_min: _num(h.sab_almuerzo_min) || 0,
+    actualizado_por: h.actualizado_por || '', updated_at: h.updated_at || ''
   }));
   AppData.empleadoBonos = (data.empleado_bonos || []).map(b => ({
     id: b.id, empleado_id: b.empleado_id, periodo: b.periodo || '', monto: _num(b.monto),
@@ -581,6 +591,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
     localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
+    localStorage.setItem('liq_puesto_horarios', JSON.stringify(AppData.puestoHorarios || []));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));
     localStorage.setItem('liq_conductor_fiscal', JSON.stringify(AppData.conductorFiscal || []));
     localStorage.setItem('liq_conductor_facturas', JSON.stringify(AppData.conductorFacturas || []));

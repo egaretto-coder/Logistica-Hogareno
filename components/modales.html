@@ -865,6 +865,19 @@
   </div>
 </div>
 
+<!-- HORARIOS POR PUESTO -->
+<!-- El horario es del puesto y se aplica a todos sus empleados; el sueldo es
+     de cada uno. Lo llena _renderListaPuestos / editarHorarioPuesto. -->
+<div class="modal-backdrop" id="modal-puestohor-backdrop" onclick="cerrarHorariosPuesto(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:760px;width:100%;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-calendar"></i> Horario de cada puesto</span>
+      <button class="modal-close" onclick="cerrarHorariosPuesto()"><i class="ic ic-x"></i></button>
+    </div>
+    <div id="mph-body"></div>
+  </div>
+</div>
+
 <!-- PASAR UN AJUSTE A BONO -->
 <!-- Un ajuste cambia el sueldo para siempre; un bono se paga una vez. Cuando se
      carga uno por el otro, el sueldo queda mal para siempre y el ciclo de 3
@@ -1180,11 +1193,11 @@
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label">Área</label>
-          <select id="memp-area" class="form-input" style="width:100%" onchange="_poblarPuestos()"></select>
+          <select id="memp-area" class="form-input" style="width:100%" onchange="_poblarPuestos(); _syncHorarioPuesto()"></select>
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:170px">
           <label class="form-label">Puesto</label>
-          <select id="memp-puesto-sel" class="form-input" style="width:100%"></select>
+          <select id="memp-puesto-sel" class="form-input" style="width:100%" onchange="_syncHorarioPuesto()"></select>
           <input type="text" id="memp-puesto" class="form-input" placeholder="Puesto" style="width:100%;display:none" />
           <span id="memp-puesto-ayuda" style="font-size:10px;color:var(--text-muted)"></span>
         </div>
@@ -1251,6 +1264,14 @@
           <input type="date" id="memp-ingreso" class="form-input" style="width:100%" />
           <span style="font-size:10px;color:var(--text-muted)">Define cuándo le toca cada ajuste (cada 3 meses).</span>
         </div>
+      </div>
+      <!-- El horario es del PUESTO: si el puesto lo tiene, se toma de ahí y
+           los campos quedan bloqueados. El sueldo sigue siendo de cada uno. -->
+      <div id="memp-horario-puesto" style="display:none;font-size:12px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
+        <div id="memp-horario-puesto-txt"></div>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin:6px 0 0;font-size:11.5px">
+          <input type="checkbox" id="memp-horario-propio" onchange="_syncHorarioPuesto()"> Este empleado trabaja en otro horario
+        </label>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:150px">

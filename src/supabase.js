@@ -206,7 +206,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoBonos, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoBonos, puestoHorarios, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -237,6 +237,7 @@ const DB = {
         this.selectAll('empleado_postergaciones', 'id'),
         this.selectAll('empleado_horas_extra', 'id'),
         this.selectAll('empleado_bonos', 'id'),
+        this.selectAll('puesto_horarios', 'id'),
         this.selectAll('empleado_sueldo_reaperturas', 'id'),
         this.selectAll('conductor_fiscal', 'conductor'),
         this.selectAll('conductor_facturas', 'id'),
@@ -265,7 +266,7 @@ const DB = {
         importaciones, supersla_solicitudes: superSlaSolic,
         dimensiones_catalogo: dimCatalogo,
         empleados, empleado_ajustes: empleadoAjustes, empleado_postergaciones: empleadoPosterg,
-        empleado_horas_extra: empleadoHsExtra, empleado_bonos: empleadoBonos,
+        empleado_horas_extra: empleadoHsExtra, empleado_bonos: empleadoBonos, puesto_horarios: puestoHorarios,
         empleado_sueldo_reaperturas: empleadoReap,
         conductor_fiscal: condFiscal, conductor_facturas: condFacturas,
         empleado_sueldos: empleadoSueldos, vacaciones,

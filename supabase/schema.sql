@@ -1559,3 +1559,32 @@ alter table public.empleados
   add column if not exists sab_entrada text,
   add column if not exists sab_salida text,
   add column if not exists sab_almuerzo_min integer;
+
+-- ---------- EL HORARIO ES DEL PUESTO ----------
+-- Todos los que ocupan un puesto trabajan en su horario, y de el sale el valor
+-- de la hora extra. El sueldo si es de cada uno. Cargado empleado por empleado
+-- se desincronizaba (tres Coordinadores con dos horarios). Al guardar el
+-- horario del puesto se copia a sus empleados, salvo a los que tienen
+-- horario_propio.
+create table if not exists public.puesto_horarios (
+  id bigint generated always as identity primary key,
+  area text not null,
+  puesto text not null,
+  dias_laborales integer not null default 5,
+  hora_entrada text not null default '',
+  hora_salida text not null default '',
+  almuerzo_min integer not null default 0,
+  sab_entrada text,
+  sab_salida text,
+  sab_almuerzo_min integer,
+  actualizado_por text not null default '',
+  updated_at timestamptz not null default now(),
+  unique (area, puesto)
+);
+alter table public.puesto_horarios enable row level security;
+create policy puesto_horarios_all on public.puesto_horarios
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+alter publication supabase_realtime add table public.puesto_horarios;
+
+alter table public.empleados
+  add column if not exists horario_propio boolean not null default false;

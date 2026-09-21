@@ -210,6 +210,290 @@ function jornadaTexto(e) {
   return h + ' h por día · ' + diasLaboralesTexto(e) + (hs ? ' · ' + hs + ' h semanales' : '');
 }
 
+// ── El horario es del PUESTO ────────────────────────────────────────────────
+// Todos los que ocupan un puesto trabajan en su horario, y de él sale el valor
+// de la hora extra. El SUELDO sí es de cada uno —cambia por ajustes y
+// antigüedad— y por eso no se toca. Cargado empleado por empleado el horario se
+// desincronizaba: los tres Coordinadores terminaron con dos horarios distintos,
+// o sea con dos valores de hora extra para el mismo trabajo.
+// Se guarda en el puesto (`puesto_horarios`) y se COPIA a sus empleados al
+// guardarlo: así todas las cuentas que ya leían el horario de la ficha siguen
+// andando, y la copia no se desfasa porque se escribe en los dos únicos lugares
+// donde el horario cambia (el puesto y la ficha). El que trabaja distinto se
+// marca `horario_propio` y el del puesto no le pisa el suyo.
+function horarioDePuesto(area, puesto) {
+  const a = String(area || '').trim(), p = normNombre(puesto);
+  if (!a || !p) return null;
+  return (AppData.puestoHorarios || []).find(h => h.area === a && normNombre(h.puesto) === p) || null;
+}
+function empleadosDePuesto(area, puesto) {
+  const a = String(area || '').trim(), p = normNombre(puesto);
+  return (AppData.empleados || []).filter(e => e.activo !== false && e.area === a && normNombre(e.puesto) === p)
+    .sort((x, y) => String(x.nombre).localeCompare(String(y.nombre)));
+}
+// El horario de algo (un puesto o un empleado) en una forma comparable: el
+// sábado solo cuenta si trabaja los sábados y está completo.
+function _horarioDe(x) {
+  const dias = _num(x && x.dias_laborales) || 0;
+  const sab = dias >= 6 && _horaTxt(x && x.sab_entrada) && _horaTxt(x && x.sab_salida);
+  return {
+    dias_laborales: dias, hora_entrada: _horaTxt(x && x.hora_entrada), hora_salida: _horaTxt(x && x.hora_salida),
+    almuerzo_min: _num(x && x.almuerzo_min) || 0,
+    sab_entrada: sab ? _horaTxt(x.sab_entrada) : '', sab_salida: sab ? _horaTxt(x.sab_salida) : '',
+    sab_almuerzo_min: sab ? (_num(x.sab_almuerzo_min) || 0) : 0,
+  };
+}
+function _mismoHorario(a, b) { return JSON.stringify(_horarioDe(a)) === JSON.stringify(_horarioDe(b)); }
+// Lo que se escribe en la ficha de un empleado que sigue el horario del puesto.
+function _camposDesdePuesto(ph) {
+  const h = _horarioDe(ph);
+  return {
+    dias_laborales: h.dias_laborales, hora_entrada: h.hora_entrada, hora_salida: h.hora_salida, almuerzo_min: h.almuerzo_min,
+    sab_entrada: h.sab_entrada || null, sab_salida: h.sab_salida || null, sab_almuerzo_min: h.sab_entrada ? h.sab_almuerzo_min : null,
+    horas_diarias: horasDelHorario(h) || 0,
+  };
+}
+function sigueHorarioPuesto(e) { return !!horarioDePuesto(e && e.area, e && e.puesto) && !(e && e.horario_propio); }
+
+// ── Panel: el horario de cada puesto ────────────────────────────────────────
+let _mphEdit = null;          // { area, puesto } que se está editando
+function abrirHorariosPuesto() {
+  _mphEdit = null;
+  _renderListaPuestos();
+  document.getElementById('modal-puestohor-backdrop').style.display = 'flex';
+}
+function cerrarHorariosPuesto(ev) {
+  if (!ev || ev.target.id === 'modal-puestohor-backdrop') document.getElementById('modal-puestohor-backdrop').style.display = 'none';
+}
+function _renderListaPuestos() {
+  const body = document.getElementById('mph-body');
+  if (!body) return;
+  const fila = (area, puesto) => {
+    const ph = horarioDePuesto(area, puesto);
+    const emps = empleadosDePuesto(area, puesto);
+    // Los que NO coinciden con el horario del puesto (o, si el puesto no tiene
+    // horario todavía, cuántos horarios distintos hay entre sus empleados).
+    const siguen = emps.filter(e => !e.horario_propio);
+    const distintos = ph ? siguen.filter(e => !_mismoHorario(e, ph)).length
+      : new Set(emps.filter(e => horasDelHorario(e) != null).map(e => JSON.stringify(_horarioDe(e)))).size;
+    const aviso = ph ? (distintos ? distintos + ' con otro horario' : '')
+      : (distintos > 1 ? distintos + ' horarios distintos entre sus empleados' : '');
+    return '<tr>' +
+      '<td><strong>' + puesto + '</strong></td>' +
+      '<td style="font-size:11.5px">' + (ph ? horarioTexto(ph) + '<div class="muted">' + horasSemanales(ph) + ' h semanales</div>'
+        : '<span style="color:#b45309">sin horario</span>') + '</td>' +
+      '<td style="font-size:11.5px;text-align:right">' + emps.length +
+        (aviso ? '<div style="color:#b45309;font-size:10.5px">' + aviso + '</div>' : '') + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-sm" style="padding:3px 9px;font-size:11px" ' +
+        'onclick="editarHorarioPuesto(\'' + jsAttr(area) + '\',\'' + jsAttr(puesto) + '\')">' + (ph ? 'Editar' : 'Cargar') + '</button></td>' +
+    '</tr>';
+  };
+  let html = '';
+  RRHH_AREAS.forEach(a => {
+    const ps = puestosDeArea(a);
+    if (!ps || !ps.length) return;
+    html += '<tr><td colspan="4" style="background:var(--surface-2);font-weight:700;font-size:11.5px">' + a + '</td></tr>' +
+      ps.map(p => fila(a, p)).join('');
+  });
+  // Los que tienen un puesto que no está en la lista no pueden seguir el horario
+  // de ningún puesto hasta que se los reasigne: conservan el suyo.
+  const fuera = (AppData.empleados || []).filter(e => e.activo !== false && puestoFueraDeLista(e));
+  body.innerHTML =
+    '<div class="alert alert-info" style="margin:0 0 12px;font-size:12px"><i class="ic ic-calendar"></i><div>' +
+      'El horario es del <strong>puesto</strong>: todos sus empleados trabajan en ese horario, y de él sale el valor de la hora extra. ' +
+      'El <strong>sueldo</strong> sigue siendo de cada uno. Si alguien del puesto trabaja distinto, marcalo con <strong>horario propio</strong> y no se toca.</div></div>' +
+    (fuera.length
+      ? '<div class="alert" style="margin:0 0 12px;font-size:11.5px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d"><i class="ic ic-alert"></i><div>' +
+        '<strong>' + fuera.length + ' empleado(s) tienen un puesto que no está en la lista</strong> y conservan su horario hasta que se los reasigne en su ficha: ' +
+        fuera.map(e => e.nombre + ' (' + (e.puesto || 'sin puesto') + ')').join(' \u00b7 ') + '</div></div>'
+      : '') +
+    '<div class="table-wrap" style="max-height:55vh;overflow:auto"><table><thead><tr>' +
+      '<th>Puesto</th><th>Horario</th><th style="text-align:right">Empleados</th><th></th>' +
+    '</tr></thead><tbody>' + html + '</tbody></table></div>';
+}
+
+function editarHorarioPuesto(area, puesto) {
+  _mphEdit = { area, puesto };
+  const ph = horarioDePuesto(area, puesto);
+  const emps = empleadosDePuesto(area, puesto);
+  // Sin horario del puesto se propone el más común entre sus empleados: casi
+  // siempre ya está cargado en alguno y no hay que tipearlo de nuevo.
+  let base = ph;
+  if (!base) {
+    const cuenta = new Map();
+    emps.filter(e => horasDelHorario(e) != null).forEach(e => {
+      const k = JSON.stringify(_horarioDe(e)); cuenta.set(k, (cuenta.get(k) || 0) + 1);
+    });
+    let mejor = null, n = 0;
+    cuenta.forEach((c, k) => { if (c > n) { n = c; mejor = k; } });
+    base = mejor ? JSON.parse(mejor) : { dias_laborales: 5, hora_entrada: '', hora_salida: '', almuerzo_min: 0 };
+  }
+  const h = _horarioDe(base);
+  const opt = (v, t, sel) => '<option value="' + v + '"' + (String(v) === String(sel) ? ' selected' : '') + '>' + t + '</option>';
+  const almOpts = sel => [[0, 'Sin horario de almuerzo'], [30, '30 minutos'], [45, '45 minutos'], [60, '1 hora'], [90, '1 hora y media'], [120, '2 horas']]
+    .map(([v, t]) => opt(v, t, sel)).join('');
+  const diasOpts = Object.keys(JORNADA_DIAS).map(d => opt(d, JORNADA_DIAS[d], h.dias_laborales)).join('') +
+    [4, 3, 2, 1].map(d => opt(d, d + (d === 1 ? ' día' : ' días') + ' por semana', h.dias_laborales)).join('');
+  const campo = (lab, html) => '<div class="form-group" style="margin:0;flex:1;min-width:120px"><label class="form-label">' + lab + '</label>' + html + '</div>';
+  const inp = (id, v) => '<input type="time" id="' + id + '" class="form-input" style="width:100%" value="' + v + '" oninput="_previewHorarioPuesto()" onchange="_previewHorarioPuesto()">';
+  document.getElementById('mph-body').innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+      '<button class="btn btn-sm" onclick="_renderListaPuestos()">← Puestos</button>' +
+      '<strong>' + puesto + '</strong><span class="muted">· ' + area + '</span></div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      campo('Días de trabajo', '<select id="mph-dias" class="form-input" style="width:100%" onchange="_previewHorarioPuesto()">' + diasOpts + '</select>') +
+      campo('Entrada', inp('mph-entrada', h.hora_entrada)) +
+      campo('Salida', inp('mph-salida', h.hora_salida)) +
+      campo('Almuerzo', '<select id="mph-almuerzo" class="form-input" style="width:100%" onchange="_previewHorarioPuesto()">' + almOpts(h.almuerzo_min) + '</select>') +
+    '</div>' +
+    '<div id="mph-sab-wrap" style="margin-bottom:10px">' +
+      '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer;margin:0 0 8px">' +
+        '<input type="checkbox" id="mph-sab-on"' + (h.sab_entrada ? ' checked' : '') + ' onchange="_previewHorarioPuesto()"> El sábado tiene otro horario</label>' +
+      '<div id="mph-sab-row" style="display:flex;gap:10px;flex-wrap:wrap">' +
+        campo('Entrada sábado', inp('mph-sab-entrada', h.sab_entrada)) +
+        campo('Salida sábado', inp('mph-sab-salida', h.sab_salida)) +
+        campo('Almuerzo sábado', '<select id="mph-sab-almuerzo" class="form-input" style="width:100%" onchange="_previewHorarioPuesto()">' + almOpts(h.sab_almuerzo_min) + '</select>') +
+      '</div>' +
+    '</div>' +
+    '<div id="mph-resumen" style="font-size:12px;margin-bottom:10px"></div>' +
+    (emps.length
+      ? '<div class="table-wrap"><table><thead><tr><th>Empleado</th><th>Horario hoy</th><th style="text-align:right">Hora extra</th><th>Horario propio</th></tr></thead>' +
+        '<tbody id="mph-emps">' + emps.map(e =>
+          '<tr><td><strong>' + e.nombre + '</strong></td>' +
+          '<td style="font-size:11px">' + (horarioTexto(e) || '<span style="color:#b45309">sin horario</span>') + '</td>' +
+          '<td style="font-size:11px;text-align:right" id="mph-vh-' + e.id + '"></td>' +
+          '<td><label style="font-size:11px;display:flex;gap:6px;align-items:center;cursor:pointer">' +
+            '<input type="checkbox" class="mph-propio" data-id="' + e.id + '"' + (e.horario_propio ? ' checked' : '') +
+            ' onchange="_previewHorarioPuesto()"> trabaja distinto</label></td></tr>').join('') +
+        '</tbody></table></div>'
+      : '<div class="muted" style="font-size:12px">Todavía no hay empleados en este puesto: el horario se les va a aplicar al asignárselo.</div>') +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      '<button class="btn" onclick="_renderListaPuestos()">Volver</button>' +
+      '<button class="btn btn-primary" id="mph-guardar" onclick="guardarHorarioPuesto()"><i class="ic ic-save"></i> Guardar y aplicar</button>' +
+    '</div>';
+  _previewHorarioPuesto();
+}
+
+// El horario que está cargado en el formulario del puesto.
+function _horarioFormPuesto() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const dias = parseInt(v('mph-dias'), 10) || 0;
+  const sabOn = dias >= 6 && !!(document.getElementById('mph-sab-on') || {}).checked;
+  return {
+    dias_laborales: dias, hora_entrada: v('mph-entrada'), hora_salida: v('mph-salida'),
+    almuerzo_min: parseInt(v('mph-almuerzo'), 10) || 0,
+    sab_entrada: sabOn ? v('mph-sab-entrada') : '', sab_salida: sabOn ? v('mph-sab-salida') : '',
+    sab_almuerzo_min: sabOn ? (parseInt(v('mph-sab-almuerzo'), 10) || 0) : 0, _sabOn: sabOn,
+  };
+}
+function _previewHorarioPuesto() {
+  const f = _horarioFormPuesto();
+  const wrap = document.getElementById('mph-sab-wrap'); if (wrap) wrap.style.display = f.dias_laborales >= 6 ? 'block' : 'none';
+  const row = document.getElementById('mph-sab-row'); if (row) row.style.display = f._sabOn ? 'flex' : 'none';
+  const res = document.getElementById('mph-resumen');
+  const h = horasDelHorario(f);
+  const hSab = f._sabOn ? horasSabado(f) : null;
+  if (res) res.innerHTML = h == null
+    ? '<span style="color:#b45309">Cargá la entrada y la salida.</span>'
+    : (f._sabOn && hSab == null)
+      ? '<span style="color:#b45309">Cargá la entrada y la salida del sábado, o destildalo.</span>'
+      : 'Son <strong>' + h + ' h por día</strong>' + (hSab != null ? ' y <strong>' + hSab + ' h los sábados</strong>' : '') +
+        ' · <strong>' + horasSemanales(Object.assign({}, f, { horas_diarias: h })) + ' h semanales</strong>';
+  // La hora extra de cada uno: con SU sueldo y el horario del puesto.
+  const emps = _mphEdit ? empleadosDePuesto(_mphEdit.area, _mphEdit.puesto) : [];
+  emps.forEach(e => {
+    const cel = document.getElementById('mph-vh-' + e.id); if (!cel) return;
+    const propio = !!(document.querySelector('.mph-propio[data-id="' + e.id + '"]') || {}).checked;
+    const antes = valorHoraDe(e);
+    const despues = propio || h == null ? antes : valorHoraDe(Object.assign({}, e, f, { horas_diarias: h }));
+    cel.innerHTML = propio ? '<span class="muted">' + (antes ? fmtPeso(antes) : '—') + ' (no cambia)</span>'
+      : (antes && antes !== despues ? fmtPeso(antes) + ' → ' : '') + '<strong>' + (despues ? fmtPeso(despues) : '—') + '</strong>';
+  });
+}
+
+async function guardarHorarioPuesto() {
+  if (!_mphEdit) return;
+  const { area, puesto } = _mphEdit;
+  const f = _horarioFormPuesto();
+  if (horasDelHorario(f) == null) { alert('Cargá la entrada y la salida del puesto.'); return; }
+  if (f._sabOn && horasSabado(f) == null) { alert('Cargá la entrada y la salida del sábado, o destildá "El sábado tiene otro horario".'); return; }
+  const emps = empleadosDePuesto(area, puesto);
+  const propios = new Set(Array.from(document.querySelectorAll('.mph-propio')).filter(c => c.checked).map(c => parseInt(c.dataset.id, 10)));
+  const aplicar = emps.filter(e => !propios.has(e.id));
+  const cambian = aplicar.filter(e => !_mismoHorario(e, f));
+  const NL = String.fromCharCode(10);
+  if (!confirm('Horario de ' + puesto + ' (' + area + '): ' + horarioTexto(f) + '.' + NL + NL +
+    (cambian.length
+      ? 'Cambia el horario de ' + cambian.length + ' empleado(s), y con él su valor de hora extra:' + NL +
+        cambian.map(e => '· ' + e.nombre + ': hora extra ' + (valorHoraDe(e) ? fmtPeso(valorHoraDe(e)) : '—') + ' → ' +
+          fmtPeso(valorHoraDe(Object.assign({}, e, f, { horas_diarias: horasDelHorario(f) })))).join(NL)
+      : 'Ningún empleado cambia de horario.') +
+    (propios.size ? NL + NL + propios.size + ' conservan su horario propio.' : '') +
+    NL + NL + 'El sueldo de cada uno no se toca.')) return;
+  const quien = (typeof currentUser !== 'undefined' && currentUser) ? (currentUser.nombre || currentUser.usuario || '') : '';
+  const fila = { area, puesto, dias_laborales: f.dias_laborales, hora_entrada: f.hora_entrada, hora_salida: f.hora_salida,
+    almuerzo_min: f.almuerzo_min, sab_entrada: f.sab_entrada || null, sab_salida: f.sab_salida || null,
+    sab_almuerzo_min: f.sab_entrada ? f.sab_almuerzo_min : null, actualizado_por: quien, updated_at: new Date().toISOString() };
+  const btn = document.getElementById('mph-guardar'); if (btn) btn.disabled = true;
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    const prev = horarioDePuesto(area, puesto);
+    if (prev && prev.id != null) {
+      await DB.updateWhere('puesto_horarios', 'id', prev.id, fila);
+      Object.assign(prev, fila, { sab_entrada: f.sab_entrada, sab_salida: f.sab_salida, sab_almuerzo_min: f.sab_almuerzo_min });
+    } else {
+      const row = await DB.insertRow('puesto_horarios', fila);
+      (AppData.puestoHorarios = AppData.puestoHorarios || []).push(Object.assign({ id: row && row.id }, fila,
+        { sab_entrada: f.sab_entrada, sab_salida: f.sab_salida, sab_almuerzo_min: f.sab_almuerzo_min }));
+    }
+    const campos = _camposDesdePuesto(f);
+    for (const e of emps) {
+      const propio = propios.has(e.id);
+      const upd = propio ? { horario_propio: true } : Object.assign({}, campos, { horario_propio: false });
+      if (propio && e.horario_propio) continue;           // ya estaba así
+      if (!propio && !e.horario_propio && _mismoHorario(e, f)) continue;
+      await DB.updateWhere('empleados', 'id', e.id, upd);
+      Object.assign(e, upd, propio ? {} : { sab_entrada: campos.sab_entrada || '', sab_salida: campos.sab_salida || '', sab_almuerzo_min: campos.sab_almuerzo_min || 0 });
+    }
+    persistirEmpleadosLocal();
+    showToast('✅ Horario de ' + puesto + ' guardado' + (cambian.length ? ' · ' + cambian.length + ' empleado(s) actualizados' : ''));
+    _renderListaPuestos();
+    if (typeof renderEmpleados === 'function') renderEmpleados();
+  } catch (err) {
+    console.warn('guardarHorarioPuesto', err);
+    alert('No se pudo guardar: ' + (err.message || err));
+  } finally { if (btn) btn.disabled = false; }
+}
+
+// ── En la ficha: el horario viene del puesto ────────────────────────────────
+const _CAMPOS_HORARIO_FICHA = ['memp-dias', 'memp-entrada', 'memp-salida', 'memp-almuerzo',
+  'memp-sab-on', 'memp-sab-entrada', 'memp-sab-salida', 'memp-sab-almuerzo'];
+function _syncHorarioPuesto() {
+  const box = document.getElementById('memp-horario-puesto');
+  if (!box) return;
+  const area = (document.getElementById('memp-area') || {}).value || '';
+  const ph = horarioDePuesto(area, _puestoElegido());
+  const propio = !!(document.getElementById('memp-horario-propio') || {}).checked;
+  const bloquear = !!ph && !propio;
+  if (ph) {
+    box.style.display = 'block';
+    document.getElementById('memp-horario-puesto-txt').innerHTML = '<i class="ic ic-calendar"></i> Horario del puesto <strong>' + ph.puesto + '</strong>: ' +
+      horarioTexto(ph) + ' · ' + diasLaboralesTexto(ph).toLowerCase() + (propio ? ' <span class="muted">— este empleado tiene otro</span>' : '');
+    if (bloquear) {
+      const h = _horarioDe(ph);
+      document.getElementById('memp-dias').value = String(h.dias_laborales || 5);
+      document.getElementById('memp-entrada').value = h.hora_entrada;
+      document.getElementById('memp-salida').value = h.hora_salida;
+      document.getElementById('memp-almuerzo').value = String(h.almuerzo_min || 0);
+      _setSabado(h);
+    }
+  } else {
+    box.style.display = 'none';
+  }
+  _CAMPOS_HORARIO_FICHA.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = bloquear; });
+  _previewJornada();
+}
+
 // ── Estado de ajuste ────────────────────────────────────────────────────────
 // Próxima fecha de ajuste = ingreso + N×3 meses, posterior al ÚLTIMO ajuste
 // aplicado (o al ingreso si nunca se ajustó).
@@ -331,6 +615,7 @@ function persistirEmpleadosLocal() {
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra));
     localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
+    localStorage.setItem('liq_puesto_horarios', JSON.stringify(AppData.puestoHorarios || []));
     localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas));
     localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
     localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
@@ -511,7 +796,11 @@ function renderEmpleados() {
       // de él. Se muestran juntos para que se vea de dónde salen.
       '<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:3px">' +
         (horarioTexto(e)
-          ? '<span><i class="ic ic-calendar"></i> ' + horarioTexto(e) + '</span>'
+          ? '<span><i class="ic ic-calendar"></i> ' + horarioTexto(e) +
+            (horarioDePuesto(e.area, e.puesto)
+              ? (e.horario_propio ? ' <span class="badge" style="background:#fffbeb;color:#92400e;font-size:9px">horario propio</span>'
+                                  : ' <span class="muted" style="font-size:10px">(del puesto)</span>')
+              : '') + '</span>'
           : '<span style="color:#b45309"><i class="ic ic-alert"></i> Sin horario cargado</span>') +
         '<span' + (horasDiariasDe(e) ? '' : ' style="color:#b45309"') + '>' + jornadaTexto(e) +
           (valorHoraDe(e) ? ' · hora <strong>' + fmtPeso(valorHoraDe(e)) + '</strong>' : '') + '</span>' +
@@ -771,7 +1060,8 @@ function openAddEmpleadoModal() {
   document.getElementById('memp-almuerzo').value = '0';
   document.getElementById('memp-dias').value = '5';
   _setSabado(null);
-  _previewJornada();
+  const hp = document.getElementById('memp-horario-propio'); if (hp) hp.checked = false;
+  _syncHorarioPuesto();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
 // Carga (o limpia) el horario del sábado en la ficha.
@@ -808,7 +1098,8 @@ function editEmpleado(id) {
   document.getElementById('memp-almuerzo').value = String(_num(e.almuerzo_min) || 0);
   document.getElementById('memp-dias').value = String(_num(e.dias_laborales) || 5);
   _setSabado(e);
-  _previewJornada();
+  const hp = document.getElementById('memp-horario-propio'); if (hp) hp.checked = !!e.horario_propio;
+  _syncHorarioPuesto();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
 
@@ -908,6 +1199,12 @@ async function guardarEmpleadoModal() {
     sab_almuerzo_min: conSab ? sabAlm : null,
     activo: true
   };
+  // Si el puesto tiene horario y el empleado no tiene uno propio, el horario
+  // es el del puesto: se toma de ahí y no de los campos de la pantalla.
+  const phEmp = horarioDePuesto(rec.area, rec.puesto);
+  const propioEmp = !!(document.getElementById('memp-horario-propio') || {}).checked;
+  if (phEmp && !propioEmp) Object.assign(rec, _camposDesdePuesto(phEmp));
+  rec.horario_propio = !!(phEmp && propioEmp);
   try {
     if (empleadoEditId != null) {
       await DB.updateWhere('empleados', 'id', empleadoEditId, rec);
