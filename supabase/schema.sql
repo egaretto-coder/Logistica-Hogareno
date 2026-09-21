@@ -1588,3 +1588,69 @@ alter publication supabase_realtime add table public.puesto_horarios;
 
 alter table public.empleados
   add column if not exists horario_propio boolean not null default false;
+
+-- ---------- REPASO 21/09/2026 ----------
+-- 1) Realtime: tablas que la app escucha y no estaban en la publicación (y las
+--    liquidaciones de clientes, que no estaban en ningún lado: el tesorero no
+--    veía una liquidación marcada lista hasta recargar).
+do $$
+declare t text;
+begin
+  foreach t in array array['cliente_liquidaciones','proveedores','empleado_postergaciones','empleado_horas_extra',
+                           'empleado_sueldo_reaperturas','conductor_fiscal','conductor_facturas']
+  loop
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+-- 2) El archivo histórico guarda el envío ENTERO. La función copiaba 17 de 28
+--    columnas (se perdían cliente, destinatario, dirección, visita pagada,
+--    carga manual, arrastre y anulación) y exigía analista cuando la app ya deja
+--    autorizar al supervisor. Si se agrega una columna a registros, va también
+--    acá y en la función.
+alter table public.registros_historico
+  add column if not exists manual boolean not null default false,
+  add column if not exists clave text,
+  add column if not exists factura_semana date,
+  add column if not exists anulado_cliente boolean not null default false,
+  add column if not exists motivo_anulacion text default '';
+
+create or replace function public.puede_autorizar()
+returns boolean language sql stable security definer set search_path to 'public' as $$
+  select exists (select 1 from public.perfiles
+                 where id = auth.uid() and rol in ('analista', 'supervisor') and coalesce(activo, true));
+$$;
+revoke execute on function public.puede_autorizar() from anon;
+
+create or replace function public.archivar_registros(antes_de date)
+returns integer language plpgsql security definer set search_path to 'public' as $function$
+declare movidos integer;
+begin
+  if not public.puede_autorizar() then
+    raise exception 'Solo un supervisor o un analista puede archivar registros';
+  end if;
+  with mov as (
+    delete from public.registros r where r.fecha_date is not null and r.fecha_date < antes_de returning r.*
+  )
+  insert into public.registros_historico
+    (id_original, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha,
+     fecha_date, precio_manual, zona_manual, cliente, dim_especial, dim_cliente, cobro_destino, created_at,
+     direccion, destinatario, contabiliza_manual, motivo_contab, cliente_cod,
+     manual, clave, factura_semana, anulado_cliente, motivo_anulacion)
+  select id, cadete, tracking, fecha, localidad, zona, zona_precio, estado, precio_bd, carga_fecha,
+     fecha_date, precio_manual, zona_manual, cliente, dim_especial, dim_cliente, cobro_destino, created_at,
+     direccion, destinatario, contabiliza_manual, motivo_contab, cliente_cod,
+     manual, clave, factura_semana, anulado_cliente, motivo_anulacion
+  from mov;
+  get diagnostics movidos = row_count;
+  return movidos;
+end $function$;
+
+-- 3) Seguridad: el respaldo del catálogo de dimensiones quedó SIN RLS (legible y
+--    escribible con la clave pública). RLS sin políticas: solo el service role.
+alter table public.dimensiones_catalogo_bkp_20260825 enable row level security;
+revoke all on public.dimensiones_catalogo_bkp_20260825 from anon, authenticated;
+alter function public.acceso_max_intentos() set search_path = public;
+alter function public.acceso_minutos_bloqueo() set search_path = public;

@@ -700,8 +700,9 @@ function renderDashClientes() {
 
   if (!lista.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
-      '<div class="empty-title">' + (todos.length ? 'Sin coincidencias' : v ? 'Nadie factura en estas fechas' : 'Sin clientes con envíos') + '</div>' +
+      '<div class="empty-title">' + (todos.length ? 'Sin coincidencias' : AppData._cargandoRegistros ? 'Cargando los envíos…' : v ? 'Nadie factura en estas fechas' : 'Sin clientes con envíos') + '</div>' +
       '<div class="empty-sub">' + (todos.length ? 'Ajustá el buscador'
+        : AppData._cargandoRegistros ? 'La facturación se completa sola cuando terminan de bajar.'
         // El porqué depende del caso: si las fechas no llegan a ningún jueves no
         // cerró ni una semana; si llegan, es que el período cierra más adelante.
         : v ? 'Ningún ' + (quienes ? 'cliente ' + quienes.replace(/es$/, '') : 'cliente') + ' cierra su período en estas fechas. ' +

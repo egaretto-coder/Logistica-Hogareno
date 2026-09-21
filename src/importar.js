@@ -45,18 +45,9 @@ async function renderArchivoPanel() {
   }
 }
 
-// Ejecuta el archivado de registros anteriores a la fecha elegida.
-async function ejecutarArchivado() {
-  if (!esAnalista()) { showToast('⛔ Solo un analista puede archivar'); return; }
-  const iso = document.getElementById('arch-fecha')?.value;
-  if (!iso) { showToast('Elegí una fecha de corte'); return; }
-  const est = document.getElementById('arch-estado');
-  if (!confirm('¿Archivar todos los registros ANTERIORES al ' + iso + '?\n\nSe mueven a la tabla histórica (no se borran) y dejan de cargarse en el día a día.')) return;
-  if (est) est.textContent = '⏳ Archivando…';
-  const movidos = await archivarRegistrosAntesDe(iso);
-  if (est) est.textContent = movidos > 0 ? ('✓ ' + movidos + ' archivados') : (movidos === 0 ? 'Sin registros anteriores a esa fecha' : '⚠️ Error');
-  renderArchivoPanel();
-}
+// (El archivado por fecha se sacó: el archivo va por CIERRE —ver cierre.js—.
+// Archivar por fecha podía llevarse envíos con plata pendiente de un lado, y
+// la función quedaba viva sin ningún botón que la llamara.)
 
 function handleFileUpload(e) {
   const file = e.target.files[0];

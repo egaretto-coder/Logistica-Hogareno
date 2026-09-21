@@ -474,8 +474,7 @@ function persistirClientesLocal() {
 // El panel es la BASE DE DATOS de clientes: ficha, cuentas vinculadas y
 // tarifario. La liquidación se arma en "Detalle de cliente" y se descarga desde
 // "Liquidación de clientes", que ahora son pantallas propias.
-// Se conserva el nombre de la función porque el router la llama.
-function switchClientesTab() { renderClientes(); }
+// El router llama a switchClientesTab (más abajo, con las solapas).
 
 // ── Render lista de clientes ────────────────────────────────────────────────
 // Ficha de cada cliente: identificación, contacto y cómo viene facturando.

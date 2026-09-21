@@ -114,7 +114,8 @@ const DB = {
       let q = withCount
         ? sb.from(table).select('*', { count: 'exact' })
         : sb.from(table).select('*');
-      if (orderCol) q = q.order(orderCol);   // orden estable para paginar consistente
+      // Orden estable para paginar consistente. Puede ser más de una columna.
+      if (orderCol) [].concat(orderCol).forEach(c => { q = q.order(c); });
       if (filter) q = filter(q);
       return q;
     };
@@ -146,12 +147,26 @@ const DB = {
   // Registros dentro de una ventana de días (server-side, por fecha_date).
   // Incluye los sin fecha parseable (fecha_date null) por seguridad.
   // desdeISO null = traer todo el historial.
+  // OJO con el ORDEN: paginar la ventana ordenando por id obligaba al servidor a
+  // recorrer los 80.000 envíos de la tabla viva en CADA página, descartando los
+  // viejos —las filas de la ventana son las más nuevas—: ~1 s por página y ~20
+  // páginas en cada arranque. Ordenando por fecha usa el índice de fecha_date y
+  // lee solo la ventana: 24 ms por página, medido sobre la base real. La 'OR
+  // fecha_date is null' se pide aparte porque no deja usar el índice (casi
+  // siempre viene vacía). Al final se ordena por id para que AppData.records
+  // quede EXACTAMENTE en el mismo orden que antes.
   async selectRegistrosVentana(desdeISO, onProgress) {
-    return this._fetchAllParallel('registros', {
-      orderCol: 'id',
-      onProgress: onProgress || null,
-      filter: desdeISO ? (q => q.or('fecha_date.gte.' + desdeISO + ',fecha_date.is.null')) : null
-    });
+    if (!desdeISO) return this._fetchAllParallel('registros', { orderCol: 'id', onProgress: onProgress || null });
+    const [enVentana, sinFecha] = await Promise.all([
+      this._fetchAllParallel('registros', {
+        orderCol: ['fecha_date', 'id'], onProgress: onProgress || null,
+        filter: q => q.gte('fecha_date', desdeISO)
+      }),
+      this._fetchAllParallel('registros', { orderCol: 'id', filter: q => q.is('fecha_date', null) }),
+    ]);
+    const out = enVentana.concat(sinFecha);
+    out.sort((a, b) => a.id - b.id);
+    return out;
   },
 
   // Trae todos los registros archivados (tabla registros_historico).

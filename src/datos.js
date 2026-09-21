@@ -139,6 +139,103 @@ function ventanaDesdeISO() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// UNA sola forma de pasar una fila de 'registros' de la nube a AppData. El mismo
+// mapeo estaba copiado en CUATRO lugares —las dos hidrataciones y el historial
+// completo, vivos y archivados— y cada campo nuevo había que sumarlo en todos:
+// la hidratación del arranque se quedó una vez sin cliente_cod y la facturación
+// entera veía una base vacía (bug real). Ahora lo usan además los cambios que
+// llegan por Realtime: un campo que falte acá falta en todos lados y se nota,
+// en vez de faltar en uno solo y en silencio.
+function mapRegistroNube(r) {
+  return {
+    id: r.id, // id de la fila en la nube: permite ediciones puntuales sin reescribir la base
+    cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
+    zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
+    direccion: r.direccion || '', destinatario: r.destinatario || '',
+    cliente: r.cliente || '',           // nombre de fantasía (para mostrar)
+    cliente_cod: r.cliente_cod || '',   // IDENTIDAD del cliente que factura
+    dim_especial: r.dim_especial || '', // dimensión especial asignada (nombre) — vacío = ninguna
+    dim_cliente: r.dim_cliente || '',   // cliente de esa dimensión (para resolver el precio por zona)
+    cobro_destino: _num(r.cobro_destino), // lo que el conductor cobra al destinatario y debe rendir
+    estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
+    manual: !!r.manual,                 // envío cargado a mano desde el editor de Conductores
+    // Visita hecha sin entrega: se paga igual, pero el estado del envío NO cambia.
+    contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
+    zona_manual: !!r.zona_manual,       // la zona fue definida/corregida a mano
+    // Semana en la que se FACTURA (arrastre). null = por su fecha.
+    factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
+    // Gesto comercial: no se le factura al cliente, pero al conductor se le paga.
+    anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
+    // null = sin corrección; número = precio corregido a mano por el operador
+    precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
+  };
+}
+
+// Los envíos ARCHIVADOS que trajo "Cargar historial completo". Cualquier
+// recarga de los vivos —la que dispara otro usuario al editar un envío— tiene
+// que conservarlos: si no, desaparecían de la memoria mientras el panel seguía
+// diciendo "historial completo", y un reporte o una reconstrucción armados
+// después salían cortos sin ningún aviso (bug real).
+function _archivadosEnMemoria() {
+  return AppData.historialCompleto ? (AppData.records || []).filter(r => r && r._historico) : [];
+}
+
+// ¿Dicen lo mismo? Compara solo lo que viene de la nube, con la misma
+// tolerancia que el mapeo ('' y null son "sin dato"; 5 y "5" son lo mismo).
+function _mismoRegistro(a, b) {
+  if (!a) return false;
+  for (const k in b) {
+    const x = a[k], y = b[k];
+    if (x === y) continue;
+    if ((x === null || x === undefined || x === '') && (y === null || y === undefined || y === '')) continue;
+    if ((typeof x === 'number' || typeof y === 'number') && _num(x) === _num(y)) continue;
+    return false;
+  }
+  return true;
+}
+
+// Aplica a AppData.records los cambios de envíos que llegaron por Realtime, uno
+// por uno, en vez de volver a bajar la tabla entera. Bajarla son ~21.000 filas y
+// 13 MB, y se hacía ante CUALQUIER cambio de un envío: el autoguardado de
+// Detalle de conductores escribe cada 2,5 s, así que mientras alguien corregía
+// envíos, su propia sesión —por el eco— y la de todos los demás volvían a bajar
+// la base completa una y otra vez.
+// Devuelve cuántos envíos cambiaron de verdad: 0 es el eco de lo propio, y ahí
+// no hay nada que repintar.
+function aplicarCambiosRegistros(cambios) {
+  if (!cambios || !cambios.length) return 0;
+  const desde = AppData.historialCompleto ? null : ventanaDesdeISO();
+  const recs = (AppData.records || []).slice();   // array NUEVO: los cachés van por identidad
+  const pos = new Map();
+  recs.forEach((r, i) => { if (r && r.id !== null && r.id !== undefined) pos.set(r.id, i); });
+  const borrar = new Set();
+  let n = 0;
+  cambios.forEach(({ ev, fila }) => {
+    const i = pos.get(fila.id);
+    if (ev === 'DELETE') {
+      if (i !== undefined && !borrar.has(i)) { borrar.add(i); n++; }
+      return;
+    }
+    // Un envío corregido a una fecha que quedó fuera de la ventana sale de la
+    // memoria, igual que si se hubiera recargado todo.
+    const f = String(fila.fecha_date || '').slice(0, 10);
+    const enVentana = !desde || !f || f >= desde;
+    const nuevo = mapRegistroNube(fila);
+    if (i !== undefined) {
+      if (!enVentana) { if (!borrar.has(i)) { borrar.add(i); n++; } return; }
+      if (!_mismoRegistro(recs[i], nuevo)) { recs[i] = nuevo; n++; }
+    } else if (enVentana) {
+      pos.set(fila.id, recs.length);
+      recs.push(nuevo);
+      n++;
+    }
+  });
+  if (!n) return 0;
+  AppData.records = borrar.size ? recs.filter((_, i) => !borrar.has(i)) : recs;
+  invalidarLiquidaciones();
+  return n;
+}
+
 // DD/MM/YYYY → YYYY-MM-DD (o null si no es parseable), para fecha_date.
 function fechaISOde(fechaStr) {
   const m = String(fechaStr || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -235,29 +332,7 @@ async function _hydrateFromSupabaseReal(opts) {
     .sort((a, b) => new Date(a.vigente_desde) - new Date(b.vigente_desde));
   // OJO: con sinRegistros, data.registros viene null y NO se toca AppData.records
   // (si mapeáramos null quedaría vacío y se perdería la base en memoria).
-  if (data.registros) AppData.records = data.registros.map(r => ({
-    id: r.id, // id de la fila en la nube: permite ediciones puntuales sin reescribir la base
-    cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
-    zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-    direccion: r.direccion || '', destinatario: r.destinatario || '',
-    cliente: r.cliente || '', // nombre de fantasía (para mostrar)
-    cliente_cod: r.cliente_cod || '', // IDENTIDAD del cliente que factura
-    dim_especial: r.dim_especial || '', // dimensión especial asignada (nombre) — vacío = ninguna
-    dim_cliente: r.dim_cliente || '',   // cliente de esa dimensión (para resolver el precio por zona)
-    cobro_destino: _num(r.cobro_destino), // monto que el conductor cobra al destinatario y debe rendir
-    estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
-    manual: !!r.manual, // true = envío cargado a mano desde el editor de Conductores
-    // Visita hecha sin entrega: se paga igual, pero el estado del envío NO cambia.
-    contabiliza_manual: !!r.contabiliza_manual,
-    motivo_contab: r.motivo_contab || '',
-    zona_manual: !!r.zona_manual, // true = la zona fue definida/corregida a mano
-    // Semana en la que se FACTURA (arrastre). null = por su fecha.
-    factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
-    // Gesto comercial: no se le factura al cliente, pero al conductor se le paga.
-    anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
-    // null = sin corrección; número = precio corregido a mano por el operador
-    precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
-  }));
+  if (data.registros) AppData.records = _archivadosEnMemoria().concat(data.registros.map(mapRegistroNube));
 
   // Clientes (facturación) + su tarifario de venta por zona.
   AppData.proveedores = (data.proveedores || []).map(p => ({
@@ -633,28 +708,10 @@ async function _hydrateRegistrosReal() {
   AppData._cargandoRegistros = true;
   actualizarEstadoCarga();
   try {
-    const filas = await DB.selectRegistrosVentana(AppData.historialCompleto ? null : ventanaDesdeISO());
-    AppData.records = (filas || []).map(r => ({
-      id: r.id,
-      cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
-      zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-      direccion: r.direccion || '', destinatario: r.destinatario || '',
-      cliente: r.cliente || '',
-      // IDENTIDAD del cliente que factura. Esta ruta es la del ARRANQUE (la
-      // hidratación en dos fases) y se había quedado sin copiarla: los envíos
-      // llegaban sin cliente y toda la facturación —cards, cuentas, tarifario,
-      // liquidación— veía una base vacía, mientras que al re-hidratar por otro
-      // camino sí aparecían. Cualquier campo nuevo hay que sumarlo en LAS DOS.
-      cliente_cod: r.cliente_cod || '',
-      cobro_destino: _num(r.cobro_destino),
-      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '',
-      estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
-      manual: !!r.manual, zona_manual: !!r.zona_manual,
-      factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
-      anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
-      contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
-      precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
-    }));
+    // Con avance: son ~20 páginas y sin una señal el arranque parece colgado.
+    const filas = await DB.selectRegistrosVentana(AppData.historialCompleto ? null : ventanaDesdeISO(),
+      (hechas, total) => { AppData._cargaRegProgreso = { hechas, total }; actualizarEstadoCarga(); });
+    AppData.records = _archivadosEnMemoria().concat((filas || []).map(mapRegistroNube));
     invalidarLiquidaciones();   // base nueva en memoria: recalcular totales
     if (window.__perfLog) window.__perfLog('cargar recorridos (' + AppData.records.length + ')', _t0);
     return true;
@@ -663,6 +720,7 @@ async function _hydrateRegistrosReal() {
     return false;
   } finally {
     AppData._cargandoRegistros = false;
+    AppData._cargaRegProgreso = null;
     actualizarEstadoCarga();
   }
 }
@@ -670,15 +728,28 @@ async function _hydrateRegistrosReal() {
 // Aviso visible mientras bajan los recorridos (así el operador entiende que los
 // números todavía se están completando, en vez de ver una pantalla vacía).
 function actualizarEstadoCarga() {
+  const cargando = !!AppData._cargandoRegistros;
+  const p = AppData._cargaRegProgreso;
+  const partes = (cargando && p && p.total > 1) ? p.hechas + ' de ' + p.total : '';
   const el = document.getElementById('sidebar-record-count');
-  if (!el) return;
-  if (AppData._cargandoRegistros) {
-    el.textContent = '⏳ Cargando recorridos…';
-  } else {
-    // Mismo texto que escribe el Dashboard al renderizar.
-    el.textContent = AppData.records.length
-      ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
-      : 'Sin datos cargados';
+  if (el) {
+    el.textContent = cargando
+      ? '⏳ Cargando recorridos…' + (partes ? ' ' + partes : '')
+      // Mismo texto que escribe el Dashboard al renderizar.
+      : AppData.records.length
+        ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
+        : 'Sin datos cargados';
+  }
+  // Y en el Dashboard, ARRIBA: mientras bajan los envíos los números dan $0 y
+  // "sin clientes con envíos", y eso se lee como que la app se colgó o que no
+  // hay datos. Pasó de verdad: se reiniciaba la app una y otra vez esperando
+  // que se destrabara, y cada reinicio volvía a empezar la carga.
+  const b = document.getElementById('dash-cargando');
+  if (b) {
+    b.style.display = cargando ? 'flex' : 'none';
+    const t = document.getElementById('dash-cargando-txt');
+    if (t && cargando) t.innerHTML = '<strong>Cargando los envíos de los últimos ' + VENTANA_DIAS_REGISTROS + ' días' +
+      (partes ? ' (' + partes + ')' : '') + '…</strong> Los números de abajo se completan solos cuando termina: no hace falta recargar la app.';
   }
 }
 
@@ -926,35 +997,9 @@ async function cargarHistorialCompleto(btn) {
     };
     const vivos = await DB.selectRegistrosVentana(null, avisar('Recorridos'));
     const historico = await DB.selectHistorico(avisar('Archivados'));
-    const mapVivo = r => ({
-      id: r.id,
-      cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
-      zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-      direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
-      cliente_cod: r.cliente_cod || '',
-      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
-      estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
-      manual: !!r.manual, zona_manual: !!r.zona_manual,
-      factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
-      anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
-      contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
-      precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
-    });
-    const mapHist = r => ({
-      id: null, _historico: true,
-      cadete: r.cadete, tracking: r.tracking, fecha: r.fecha, localidad: r.localidad,
-      zona: r.zona || r.localidad, zona_precio: r.zona_precio || '',
-      direccion: r.direccion || '', destinatario: r.destinatario || '', cliente: r.cliente || '',
-      cliente_cod: r.cliente_cod || '',
-      dim_especial: r.dim_especial || '', dim_cliente: r.dim_cliente || '', cobro_destino: _num(r.cobro_destino),
-      estado: r.estado, precio_bd: _num(r.precio_bd), carga_fecha: r.carga_fecha || '',
-      manual: !!r.manual, zona_manual: !!r.zona_manual,
-      factura_semana: r.factura_semana ? String(r.factura_semana).slice(0, 10) : null,
-      anulado_cliente: !!r.anulado_cliente, motivo_anulacion: r.motivo_anulacion || '',
-      contabiliza_manual: !!r.contabiliza_manual, motivo_contab: r.motivo_contab || '',
-      precio_manual: (r.precio_manual === null || r.precio_manual === undefined) ? null : _num(r.precio_manual)
-    });
-    AppData.records = historico.map(mapHist).concat(vivos.map(mapVivo));
+    const mapHist = r => Object.assign(mapRegistroNube(r), { id: null, _historico: true });
+    AppData.records = historico.map(mapHist).concat(vivos.map(mapRegistroNube));
+    invalidarLiquidaciones();
     AppData.historialCompleto = true;
     showToast('✅ Historial completo: ' + AppData.records.length + ' registros (' + historico.length + ' archivados)');
     if (typeof renderDashboard === 'function') renderDashboard();

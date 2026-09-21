@@ -27,6 +27,10 @@ const RT_TABLAS = [
   'importaciones', 'supersla_solicitudes', 'dimensiones_catalogo',
   'empleados', 'empleado_ajustes', 'empleado_postergaciones', 'empleado_horas_extra', 'empleado_bonos', 'puesto_horarios',
   'empleado_sueldo_reaperturas', 'empleado_sueldos', 'empleado_cierres', 'empleado_licencias', 'conductor_liquidaciones', 'archivo_solicitudes', 'conductor_fiscal', 'conductor_facturas', 'vacaciones', 'rendiciones', 'cliente_cargos',
+  // Faltaba: el administrativo marca la liquidación del cliente como LISTA y el
+  // tesorero —que descarga solo lo listo— no se enteraba hasta recargar la app.
+  // Es la mitad del circuito de dos manos, y no llegaba.
+  'cliente_liquidaciones', 'proveedores',
 ];
 
 let _rtCanal = null;
@@ -38,6 +42,12 @@ let _rtMuteHasta = 0;   // ignorar echos de nuestras propias escrituras hasta es
 // la base y dejaba la UI trabada varios segundos.
 let _rtTablasSucias = new Set();
 let _rtUltimaCargaRegistros = Date.now();   // para no rebajar recorridos de más
+// Los cambios de ENVÍOS se aplican de a uno (aplicarCambiosRegistros) en vez de
+// volver a bajar la tabla: ~21.000 filas por cada envío que alguien corregía.
+// Una ráfaga grande —un import son miles— sí se resuelve recargando todo.
+const RT_MAX_INCREMENTAL = 400;
+let _rtCambiosReg = [];
+let _rtRegCompleto = false;   // llegó algo que no se puede aplicar suelto: recarga completa
 
 // Qué tablas mira cada pantalla. Si ninguna de las que cambió está acá, NO se
 // re-renderiza la pantalla activa (evita repintar de prepo mientras el operador
@@ -45,6 +55,7 @@ let _rtUltimaCargaRegistros = Date.now();   // para no rebajar recorridos de má
 const RT_PANTALLA_TABLAS = {
   'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias'],
   'upload':                 ['registros', 'importaciones', 'archivo_solicitudes', 'conductor_liquidaciones', 'cliente_liquidaciones'],
+  'beneficios':             ['descuentos_items', 'proveedores'],
   'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
                              'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas', 'conductor_liquidaciones'],
   'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'zona_alias'],
@@ -53,14 +64,13 @@ const RT_PANTALLA_TABLAS = {
   'config-supersla':        ['super_sla', 'panel_conductores', 'supersla_solicitudes'],
   'dimensiones-especiales': ['dimensiones_catalogo'],
   'extraviados':            ['descuentos_items', 'descuento_cuotas'],
-  'beneficios':             ['descuentos_items'],
   'km-desvio':              ['km_desvio', 'km_tarifas'],
   'adelantos':              ['adelantos', 'adelanto_cuotas'],
-  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'tarifas', 'super_sla', 'panel_conductores', 'cliente_cargos'],
-  'clientes':               ['clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'registros'],
-  'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos'],
+  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'tarifas', 'super_sla', 'panel_conductores', 'cliente_cargos', 'cliente_liquidaciones'],
+  'clientes':               ['clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'registros', 'cliente_liquidaciones', 'comision_clientes'],
+  'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos', 'cliente_liquidaciones'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
-                             'clientes', 'cliente_tarifas', 'registros', 'config'],
+                             'clientes', 'cliente_tarifas', 'registros', 'config', 'cliente_liquidaciones'],
   'vacaciones':             ['vacaciones', 'empleados', 'empleado_licencias'],
   'gestion-permisos':       ['rol_permisos', 'roles'],
 };
@@ -114,13 +124,31 @@ function _rtReprogramar(ms) {
 // sola recarga. Anota QUÉ tabla cambió para recargar solo lo necesario.
 function _rtOnCambio(payload) {
   const t = payload && (payload.table || (payload.new && payload.new.table));
+  if (t === 'registros' && !_rtRegCompleto) {
+    const ev = payload.eventType;
+    const fila = ev === 'DELETE' ? payload.old : payload.new;
+    // Solo se aplica suelto si llegó la fila entera. Si falta algo (un error del
+    // canal, una fila sin sus columnas) no se adivina: se recarga todo.
+    const entera = !!fila && fila.id !== null && fila.id !== undefined &&
+      (ev === 'DELETE' || ('cadete' in fila && 'fecha' in fila && 'estado' in fila)) &&
+      !(payload.errors && payload.errors.length);
+    if (entera && _rtCambiosReg.length < RT_MAX_INCREMENTAL) {
+      _rtCambiosReg.push({ ev, fila });
+      _rtReprogramar(1500);
+      return;
+    }
+    _rtRegCompleto = true;
+    _rtCambiosReg = [];
+  }
   if (t) _rtTablasSucias.add(t);
   _rtReprogramar(1500);
 }
 
 async function sincronizarEnVivo() {
   if (!currentUser) return;                        // sin sesión, no sincronizamos
-  if (AppData._hidratando) { _rtReprogramar(2000); return; }
+  // Tampoco mientras bajan los envíos del arranque: el cambio se aplicaría sobre
+  // la base vieja y la carga lo pisaría. Queda en la cola y va después.
+  if (AppData._hidratando || AppData._cargandoRegistros) { _rtReprogramar(2000); return; }
   // Guardado grande en curso: leer ahora traería la tabla a medio escribir.
   if (_rtEscrituraEnVuelo > 0) { _rtReprogramar(2000); return; }
   if (_rtEdicionEnCurso()) { _rtReprogramar(3500); return; }   // no pisar al operador
@@ -132,20 +160,34 @@ async function sincronizarEnVivo() {
   // como red de seguridad, recargamos recorridos si hace rato que no lo hacemos.
   const sucias = _rtTablasSucias;
   _rtTablasSucias = new Set();
-  const desconocido = sucias.size === 0;
+  const cambiosReg = _rtCambiosReg;
+  _rtCambiosReg = [];
+  _rtRegCompleto = false;
+  const desconocido = sucias.size === 0 && !cambiosReg.length;
   const haceMucho = (Date.now() - _rtUltimaCargaRegistros) > 120000;   // 2 min
   const tocoRegistros = sucias.has('registros') || (desconocido && haceMucho);
   if (tocoRegistros) _rtUltimaCargaRegistros = Date.now();
 
   try {
+    // Los envíos que cambiaron se aplican de a uno. Si además hubo que recargar
+    // la tabla entera, eso ya los trae y la cola se descarta.
+    let cambioReg = false;
+    if (!tocoRegistros && cambiosReg.length && typeof aplicarCambiosRegistros === 'function')
+      cambioReg = aplicarCambiosRegistros(cambiosReg) > 0;
     // Si nadie tocó 'registros', se refresca todo MENOS esa tabla: la sync pasa
-    // de bajar varios MB a un puñado de filas.
-    await hydrateFromSupabase({ sinRegistros: !tocoRegistros });
+    // de bajar varios MB a un puñado de filas. Y si lo único que cambió fueron
+    // envíos, ya está todo aplicado: no hace falta ir a la nube.
+    if (sucias.size || desconocido) await hydrateFromSupabase({ sinRegistros: !tocoRegistros });
 
     // Re-render solo si la pantalla activa mira alguna de las tablas que cambió.
+    const tablas = Array.from(sucias);
+    if (cambioReg) tablas.push('registros');
+    // El eco de lo que acaba de guardar esta misma sesión: no cambió nada, y
+    // repintar solo movería la pantalla debajo del operador.
+    if (!tablas.length && !desconocido) return;
     const pagina = (typeof paginaActivaId === 'function') ? paginaActivaId() : null;
     const mira = RT_PANTALLA_TABLAS[pagina] || null;
-    const afecta = desconocido || !mira || Array.from(sucias).some(t => mira.indexOf(t) >= 0);
+    const afecta = desconocido || !mira || tablas.some(t => mira.indexOf(t) >= 0);
     if (afecta && typeof rerenderPaginaActiva === 'function') {
       rerenderPaginaActiva();
       if (typeof showToast === 'function') showToast('🔄 Datos actualizados');
