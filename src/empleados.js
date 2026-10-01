@@ -701,20 +701,29 @@ function toggleAgruparArea() {
   renderEmpleados();
 }
 
-function renderEmpleados() {
-  const cont = document.getElementById('emp-cards');
-  if (!cont) return;
+// La lista que muestra el panel: buscador + filtros + orden, en UN solo lugar.
+// La descarga a Excel sale de acá y no de otra consulta: si filtrara distinto
+// que la pantalla, el archivo diría otra cosa que lo que el operador está
+// mirando — es el mismo bug que tuvo Liquidación de conductores, donde la tabla
+// filtraba por condición y la descarga se bajaba igual las de todos.
+function empleadosFiltrados() {
   const q = (document.getElementById('emp-search')?.value || '').toLowerCase().trim();
-  const selReg = document.getElementById('emp-filtro-registrado');
-  if (selReg) { if (selReg.value !== empFiltroReg) empFiltroReg = selReg.value || 'todos'; else selReg.value = empFiltroReg; }
-  const todos = (AppData.empleados || []).filter(e => e.activo !== false);
-  const lista = todos
+  return (AppData.empleados || []).filter(e => e.activo !== false)
     .filter(e => !q || String(e.nombre).toLowerCase().includes(q) || String(e.puesto || '').toLowerCase().includes(q) || String(e.area || '').toLowerCase().includes(q) || String(e.dni || '').includes(q))
     .filter(e => !empSoloAjuste || leTocaAjuste(e))
     .filter(e => empFiltroReg === 'todos' ||
                  (empFiltroReg === 'no' ? e.registrado === false : e.registrado !== false))
     .filter(e => !empSoloPuestoFuera || puestoFueraDeLista(e))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+function renderEmpleados() {
+  const cont = document.getElementById('emp-cards');
+  if (!cont) return;
+  const selReg = document.getElementById('emp-filtro-registrado');
+  if (selReg) { if (selReg.value !== empFiltroReg) empFiltroReg = selReg.value || 'todos'; else selReg.value = empFiltroReg; }
+  const todos = (AppData.empleados || []).filter(e => e.activo !== false);
+  const lista = empleadosFiltrados();
 
   // Resumen
   const nTocan = todos.filter(leTocaAjuste).length;
@@ -883,6 +892,92 @@ function renderEmpleados() {
   cont.innerHTML = Array.from(grupos.keys())
     .sort((a, b) => ordenArea(a) - ordenArea(b) || String(a).localeCompare(String(b)))
     .map(a => _empCabeceraArea(a, grupos.get(a)) + grupos.get(a).map(tarjeta).join('')).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  EL PLANTEL CON SUS SUELDOS, EN EXCEL
+//  Baja lo que la pantalla está mostrando —misma lista, mismos filtros— y lo
+//  dice en la primera fila: un archivo filtrado que no avisa que lo está es un
+//  papel que miente. Los montos van como NÚMERO y no como texto con "$": en
+//  Excel se tienen que poder sumar, que es para lo que se baja.
+//  Dos hojas, porque son dos preguntas: "quién cobra cuánto" y "cuánto cuesta
+//  cada área".
+// ════════════════════════════════════════════════════════════════════════
+function exportEmpleadosExcel() {
+  const lista = empleadosFiltrados();
+  if (!lista.length) { alert('No hay empleados para exportar con los filtros puestos.'); return; }
+  const ESTADO = { vencido: 'Ajuste vencido', toca: 'Le toca el ajuste', al_dia: 'Al día', sin_fecha: 'Sin fecha de ingreso' };
+  const total = (AppData.empleados || []).filter(e => e.activo !== false).length;
+
+  const filtros = [];
+  const q = ((document.getElementById('emp-search') || {}).value || '').trim();
+  if (q) filtros.push('búsqueda "' + q + '"');
+  if (empFiltroReg === 'si') filtros.push('solo registrados');
+  if (empFiltroReg === 'no') filtros.push('solo sin registrar');
+  if (empSoloAjuste) filtros.push('solo los que necesitan ajuste');
+  if (empSoloPuestoFuera) filtros.push('solo los que tienen el puesto fuera de la lista');
+
+  // ── Hoja 1: una fila por empleado ──────────────────────────────────────
+  const aoa = [
+    ['Plantel y sueldos · ' + lista.length + (lista.length === total ? ' empleado(s) activo(s)' : ' de ' + total + ' empleado(s) activo(s)') +
+      (filtros.length ? ' · FILTRADO: ' + filtros.join(' · ') : '') +
+      ' · Generado el ' + new Date().toLocaleString('es-AR')],
+    ['NOMBRE', 'DNI', 'ÁREA', 'PUESTO', 'REGISTRADO', 'INGRESO', 'ANTIGÜEDAD', 'SUELDO',
+     'HS. SEMANALES', 'VALOR HORA', 'ÚLTIMO AUMENTO', 'SUELDO ANTERIOR', 'AUMENTO %',
+     'PRÓXIMO AJUSTE', 'ESTADO DEL AJUSTE', 'TELÉFONO', 'EMAIL', 'DOMICILIO'],
+  ];
+  lista.forEach(e => {
+    const ult = ultimoAjusteDe(e.id);
+    const est = estadoAjuste(e);
+    const prox = est.fecha ? _mesTexto(_yyyymm(est.fecha)) : '';
+    aoa.push([
+      e.nombre || '', e.dni || '', _areaDe(e), e.puesto || '',
+      e.registrado === false ? 'No' : 'Sí',
+      _empFmt(e.fecha_ingreso), antiguedadTexto(e),
+      _num(e.sueldo),
+      horasSemanales(e) || '', valorHoraDe(e) || '',
+      ult ? _empFmt(ult.fecha) : '', ult ? _num(ult.sueldo_anterior) : '', ult ? _num(ult.pct) : '',
+      prox, ESTADO[est.estado] || '',
+      e.telefono || '', e.email || '', domicilioTexto(e) || ''
+    ]);
+  });
+  aoa.push([]);
+  aoa.push(['TOTAL', '', '', '', '', '', '', lista.reduce((s, e) => s + _num(e.sueldo), 0)]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 26 }, { wch: 12 }, { wch: 18 }, { wch: 24 }, { wch: 11 }, { wch: 11 }, { wch: 16 },
+    { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 15 }, { wch: 11 }, { wch: 16 }, { wch: 19 },
+    { wch: 15 }, { wch: 24 }, { wch: 34 }];
+  ws['!rows'] = [{ hpx: 22 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 17 } }];
+
+  // ── Hoja 2: cuánto cuesta cada área ────────────────────────────────────
+  const porArea = new Map();
+  lista.forEach(e => {
+    const a = _areaDe(e);
+    if (!porArea.has(a)) porArea.set(a, { n: 0, masa: 0 });
+    const x = porArea.get(a); x.n++; x.masa += _num(e.sueldo);
+  });
+  const masaTotal = Array.from(porArea.values()).reduce((s, x) => s + x.masa, 0);
+  const aoa2 = [
+    ['Sueldos vigentes por área · ' + lista.length + ' empleado(s)' + (filtros.length ? ' (filtrado)' : '')],
+    ['ÁREA', 'EMPLEADOS', 'SUMA DE SUELDOS', '% DEL TOTAL', 'SUELDO PROMEDIO'],
+  ];
+  Array.from(porArea.entries())
+    .sort((a, b) => b[1].masa - a[1].masa)
+    .forEach(([area, x]) => aoa2.push([area, x.n, x.masa,
+      masaTotal ? Math.round(x.masa * 1000 / masaTotal) / 10 : 0, Math.round(x.masa / x.n)]));
+  aoa2.push([]);
+  aoa2.push(['TOTAL', lista.length, masaTotal, 100, lista.length ? Math.round(masaTotal / lista.length) : 0]);
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+  ws2['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 13 }, { wch: 17 }];
+  ws2['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Empleados');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Por área');
+  XLSX.writeFile(wb, 'Empleados_sueldos_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  showToast('📥 ' + lista.length + ' empleado(s) exportados a Excel' + (filtros.length ? ' (con los filtros puestos)' : ''));
 }
 
 // ════════════════════════════════════════════════════════════════════════

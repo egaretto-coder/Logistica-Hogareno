@@ -32,6 +32,8 @@
               <option value="si">Solo registrados</option>
               <option value="no">Solo NO registrados</option>
             </select>
+            <button class="btn btn-sm" onclick="exportEmpleadosExcel()"
+              title="Bajar a Excel la lista que estás viendo, con los sueldos y el resumen por área"><i class="ic ic-download"></i> Excel</button>
             <button class="btn btn-sm" id="emp-btn-agrupar" onclick="toggleAgruparArea()"
               title="Mostrar las tarjetas agrupadas por área, con cuántos son y cuánto suman sus sueldos"><i class="ic ic-users"></i> Agrupar por área</button>
             <span id="emp-count" style="font-size:12px;color:var(--text-muted)"></span>
