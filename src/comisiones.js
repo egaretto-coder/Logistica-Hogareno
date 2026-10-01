@@ -224,19 +224,28 @@ function persistirComisionesLocal() {
 // ════════════════════════════════════════════════════════════════════════
 //  SOLAPAS
 // ════════════════════════════════════════════════════════════════════════
+// La solapa abierta se RECUERDA. El router vuelve a entrar por showPage cada
+// vez que la sincronización en vivo re-renderiza la pantalla activa, y abría
+// siempre la primera: al operador se le cerraba sola, a los pocos segundos, la
+// solapa que estaba mirando — y como no la había tocado nadie, parecía que la
+// app se movía sola (bug real). Mismo criterio que Monotributos y Vacaciones,
+// que ya guardaban la suya.
+let comTab = 'vend';
 function switchComisionesTab(tab) {
+  comTab = ['vend', 'clientes', 'cierre'].indexOf(tab) >= 0 ? tab : 'vend';
   ['vend', 'clientes', 'cierre'].forEach(t => {
     const panel = document.getElementById('com-tab-' + t);
     const btn = document.getElementById('com-btn-' + t);
-    if (panel) panel.style.display = (t === tab) ? '' : 'none';
-    if (btn) btn.classList.toggle('active', t === tab);
+    if (panel) panel.style.display = (t === comTab) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === comTab);
   });
-  if (tab === 'vend') renderVendedoresYEscala();
-  else if (tab === 'clientes') renderComisionClientes();
+  if (comTab === 'vend') renderVendedoresYEscala();
+  else if (comTab === 'clientes') renderComisionClientes();
   else renderCierreMensual();
 }
 
-function renderComisiones() { switchComisionesTab('vend'); }
+// Entrar a la pantalla = reabrir la solapa que quedó.
+function renderComisiones() { switchComisionesTab(comTab); }
 
 // ════════════════════════════════════════════════════════════════════════
 //  TAB 1 — VENDEDORES + SUPERVISOR + ESCALA

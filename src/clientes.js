@@ -502,6 +502,11 @@ function switchClientesTab(t) {
   if (esBajas) renderClientesBajas(); else renderClientes();
 }
 
+// Entrar a la pantalla reabre la solapa que quedó, no siempre la primera: el
+// re-render de la sincronización en vivo pasa por acá y sacaba al operador de
+// "Bajas" a los pocos segundos.
+function renderClientesPagina() { switchClientesTab(cliTab); }
+
 function clientesDadosDeBaja() {
   return (AppData.clientes || []).filter(c => c.activo === false)
     .sort((a, b) => String(b.fecha_baja || '').localeCompare(String(a.fecha_baja || '')) ||

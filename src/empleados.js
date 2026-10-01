@@ -640,20 +640,27 @@ function persistirEmpleadosLocal() {
 // ════════════════════════════════════════════════════════════════════════
 //  SOLAPAS
 // ════════════════════════════════════════════════════════════════════════
+// La solapa abierta se recuerda: el re-render de la sincronización en vivo
+// vuelve a entrar por showPage, y abriendo siempre "Plantel" se le cerraba al
+// operador la que estaba usando (liquidando un mes, por ejemplo) a los pocos
+// segundos y sin que nadie la tocara.
+let empTab = 'plantel';
+const EMP_TABS = ['plantel', 'ajustes', 'sueldos', 'historial', 'bajas'];
 function switchEmpleadosTab(tab) {
-  ['plantel', 'ajustes', 'sueldos', 'historial', 'bajas'].forEach(t => {
+  empTab = EMP_TABS.indexOf(tab) >= 0 ? tab : 'plantel';
+  EMP_TABS.forEach(t => {
     const panel = document.getElementById('emp-tab-' + t);
     const btn = document.getElementById('emp-btn-' + t);
-    if (panel) panel.style.display = (t === tab) ? '' : 'none';
-    if (btn) btn.classList.toggle('active', t === tab);
+    if (panel) panel.style.display = (t === empTab) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === empTab);
   });
-  if (tab === 'plantel') renderEmpleados();
-  else if (tab === 'ajustes') renderAjustesPanel();
-  else if (tab === 'bajas') renderBajas();
-  else if (tab === 'historial') renderHistorialEmpleados();
+  if (empTab === 'plantel') renderEmpleados();
+  else if (empTab === 'ajustes') renderAjustesPanel();
+  else if (empTab === 'bajas') renderBajas();
+  else if (empTab === 'historial') renderHistorialEmpleados();
   else renderSueldosPanel();
 }
-function renderEmpleadosPagina() { switchEmpleadosTab('plantel'); }
+function renderEmpleadosPagina() { switchEmpleadosTab(empTab); }
 
 // ════════════════════════════════════════════════════════════════════════
 //  TAB 1 — PLANTEL (cards)

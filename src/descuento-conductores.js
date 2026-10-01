@@ -4,15 +4,21 @@
 // ════════════════════════════════════════════════════════════════════════
 
 // Sub-solapas del panel "Beneficios" (Combustible / Proveedores).
+// La sub-solapa abierta se recuerda, por lo mismo que en Comisiones y
+// Empleados: el re-render de la sincronización en vivo entra por showPage y
+// devolvía al operador a Combustible mientras cargaba un servicio de proveedor.
+let benefTab = 'combustible';
 function switchBeneficioTab(tab) {
+  benefTab = (tab === 'proveedores') ? 'proveedores' : 'combustible';
   ['combustible', 'proveedores'].forEach(t => {
     const panel = document.getElementById('benef-tab-' + t);
     const btn = document.getElementById('benef-btn-' + t);
-    if (panel) panel.style.display = (t === tab) ? '' : 'none';
-    if (btn) btn.classList.toggle('active', t === tab);
+    if (panel) panel.style.display = (t === benefTab) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === benefTab);
   });
-  if (typeof renderDescItems === 'function') renderDescItems(tab);
+  if (typeof renderDescItems === 'function') renderDescItems(benefTab);
 }
+function renderBeneficiosPagina() { switchBeneficioTab(benefTab); }
 
 // ===== KM DE DESVÍO =====
 // El modal guarda el ID de la fila, no su posición: queda abierto mientras el

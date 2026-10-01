@@ -57,21 +57,23 @@ function showPage(id) {
   if (id === 'dashboard') renderDashboard();
   if (id === 'liquidaciones') renderLiquidaciones();
   if (id === 'dimensiones-especiales') renderDimensionesEspeciales();
-  if (id === 'descuento-conductores') switchDescTab('combustible');
   if (id === 'conductores') renderConductorSelect();
   if (id === 'extraviados' && typeof renderDescItems === 'function') renderDescItems('extraviados');
-  if (id === 'beneficios' && typeof switchBeneficioTab === 'function') switchBeneficioTab('combustible');
+  if (id === 'beneficios' && typeof renderBeneficiosPagina === 'function') renderBeneficiosPagina();
   if (id === 'km-desvio' && typeof renderKmDesvio === 'function') renderKmDesvio();
   if (id === 'adelantos' && typeof renderAdelantos === 'function') renderAdelantos();
   if (id === 'config-tarifas') renderTarifas();
   if (id === 'config-supersla') renderSuperSLA();
   if (id === 'panel-conductores') renderPanelConductores();
   if (id === 'monotributos' && typeof renderMonotributosPagina === 'function') renderMonotributosPagina();
-  if (id === 'clientes' && typeof switchClientesTab === 'function') switchClientesTab('activos');
+  if (id === 'clientes' && typeof renderClientesPagina === 'function') renderClientesPagina();
   if (id === 'detalle-cliente' && typeof renderDetalleClientePagina === 'function') renderDetalleClientePagina();
   if (id === 'cliente-liquidaciones' && typeof renderClienteLiquidacionesPagina === 'function') renderClienteLiquidacionesPagina();
-  if (id === 'comisiones' && typeof switchComisionesTab === 'function') switchComisionesTab('vend');
-  if (id === 'empleados' && typeof switchEmpleadosTab === 'function') switchEmpleadosTab('plantel');
+  // OJO: cada panel reabre la solapa que el operador tenía, no la primera. La
+  // sincronización en vivo re-renderiza la pantalla activa pasando por acá, y
+  // con la solapa fija se la cerraba sola a los pocos segundos.
+  if (id === 'comisiones' && typeof renderComisiones === 'function') renderComisiones();
+  if (id === 'empleados' && typeof renderEmpleadosPagina === 'function') renderEmpleadosPagina();
   if (id === 'vacaciones' && typeof renderVacacionesPagina === 'function') renderVacacionesPagina();
   if (id === 'rendiciones' && typeof renderRendiciones === 'function') renderRendiciones();
   if (id === 'gestion-permisos') renderGestionPermisos();
