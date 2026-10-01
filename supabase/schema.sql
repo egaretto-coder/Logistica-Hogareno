@@ -1654,3 +1654,18 @@ alter table public.dimensiones_catalogo_bkp_20260825 enable row level security;
 revoke all on public.dimensiones_catalogo_bkp_20260825 from anon, authenticated;
 alter function public.acceso_max_intentos() set search_path = public;
 alter function public.acceso_minutos_bloqueo() set search_path = public;
+
+-- ---------- VIATICOS (area Ventas) + COSTO POR AREA ----------
+-- Los vendedores trabajan en la calle: los viaticos se cargan AL liquidar, se
+-- suman al total que se paga (no son sueldo ni bono: van en su propio renglon
+-- del recibo) y entran en el costo del mes. Quien los cobra lo decide
+-- RRHH_AREAS_VIATICOS en src/empleados.js, no la base.
+alter table public.empleado_sueldos
+  add column if not exists monto_viaticos numeric not null default 0,
+  add column if not exists viaticos_detalle text not null default '';
+
+-- El cierre del mes los congela junto con el resto. El reparto POR AREA sale de
+-- empleado_cierres.detalle, que ahora guarda el area de cada empleado: mover a
+-- alguien de area no reescribe los meses ya cerrados.
+alter table public.empleado_cierres
+  add column if not exists viaticos numeric not null default 0;

@@ -18,6 +18,21 @@ const RRHH_MESES_AJUSTE = 3;
 // sumar un área acá no necesita tocar la base.
 const RRHH_AREAS = ['Gerencia', 'Administracion', 'Coordinacion', 'Logistica', 'Asesoria Comercial', 'Ventas'];
 
+// Las áreas que cobran VIÁTICOS: trabajan en la calle y los gastos de traslado
+// se les pagan junto con el sueldo del mes. Es una LISTA y no un `if` suelto
+// para que sumar un área sea cambiar una línea y no buscar por el archivo.
+const RRHH_AREAS_VIATICOS = ['Ventas'];
+// El área, normalizada para comparar (sin acentos ni mayúsculas): en la base es
+// texto libre a propósito y "Logistica" tiene que encontrarse con "Logística".
+function _areaKey(a) {
+  return String(a || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+}
+// Para mostrar y agrupar. Sin área cargada no se inventa una: se dice.
+function _areaDe(e) { return String((e && e.area) || '').trim() || '(sin área)'; }
+function empleadoCobraViaticos(e) {
+  return RRHH_AREAS_VIATICOS.some(a => _areaKey(a) === _areaKey(e && e.area));
+}
+
 // Puestos válidos de cada área. Escrito a mano, el mismo puesto entra como
 // "COORDINADOR NOCHE", "Coordinacion nocturna" y "coordinador", y después no se
 // puede agrupar ni comparar a nadie. Se elige de la lista del área elegida.
@@ -654,10 +669,35 @@ let empFiltroReg = 'todos';
 // que alguien los reasigne sabiendo qué decía cada uno.
 let empSoloPuestoFuera = false;
 function toggleFiltroPuesto() { empSoloPuestoFuera = !empSoloPuestoFuera; renderEmpleados(); }
+// Los encabezados de área: cuántos son y cuánto suman sus sueldos. El header
+// ocupa la fila entera de la grilla (grid-column), así las tarjetas siguen
+// acomodándose solas abajo.
+function _empCabeceraArea(area, emps) {
+  const masa = emps.reduce((s, e) => s + _num(e.sueldo), 0);
+  return '<div style="grid-column:1/-1;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;' +
+      'margin:6px 0 -4px;padding-bottom:6px;border-bottom:1px solid var(--border)">' +
+    '<strong style="font-size:13px"><i class="ic ic-users"></i> ' + area + '</strong>' +
+    '<span style="font-size:11.5px;color:var(--text-muted)">' + emps.length +
+      (emps.length === 1 ? ' persona' : ' personas') + ' · ' + fmtPeso(masa) + ' de sueldos</span>' +
+  '</div>';
+}
+
 function setFiltroRegistrado(v) {
   empFiltroReg = v;
   const sel = document.getElementById('emp-filtro-registrado');
   if (sel) sel.value = v;
+  renderEmpleados();
+}
+
+// El plantel agrupado por área: es como se mira la nómina cuando la pregunta es
+// por sector y no por persona. Se recuerda la elección, así el operador no la
+// vuelve a tocar en cada entrada.
+let empAgruparArea = (function () {
+  try { return localStorage.getItem('liq_emp_agrupa') !== 'no'; } catch (e) { return true; }
+})();
+function toggleAgruparArea() {
+  empAgruparArea = !empAgruparArea;
+  try { localStorage.setItem('liq_emp_agrupa', empAgruparArea ? 'si' : 'no'); } catch (e) {}
   renderEmpleados();
 }
 
@@ -721,7 +761,11 @@ function renderEmpleados() {
     return;
   }
 
-  cont.innerHTML = lista.map(e => {
+  const btnAgr = document.getElementById('emp-btn-agrupar');
+  if (btnAgr) btnAgr.classList.toggle('active', empAgruparArea);
+
+  // Una tarjeta. Se arma aparte para poder agruparlas por área sin duplicar nada.
+  const tarjeta = e => {
     const est = estadoAjuste(e);
     const post = postergacionVigente(e);
     // Un ajuste postergado NO es un ajuste vencido: la fecha ya se corrió a
@@ -819,7 +863,26 @@ function renderEmpleados() {
         '</div>'
         : '') +
     '</div>';
-  }).join('');
+  };
+
+  // Plano, o agrupado por área. El encabezado de cada grupo ocupa la fila entera
+  // de la grilla y las tarjetas se siguen acomodando solas abajo.
+  if (!empAgruparArea) { cont.innerHTML = lista.map(tarjeta).join(''); return; }
+  const grupos = new Map();
+  lista.forEach(e => {
+    const a = _areaDe(e);
+    if (!grupos.has(a)) grupos.set(a, []);
+    grupos.get(a).push(e);
+  });
+  // Las áreas salen en el orden de RRHH_AREAS —el mismo de la ficha— y las que
+  // no están en la lista van al final: así el panel se lee siempre igual.
+  const ordenArea = a => {
+    const i = RRHH_AREAS.findIndex(x => _areaKey(x) === _areaKey(a));
+    return i < 0 ? RRHH_AREAS.length : i;
+  };
+  cont.innerHTML = Array.from(grupos.keys())
+    .sort((a, b) => ordenArea(a) - ordenArea(b) || String(a).localeCompare(String(b)))
+    .map(a => _empCabeceraArea(a, grupos.get(a)) + grupos.get(a).map(tarjeta).join('')).join('');
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1764,7 +1827,8 @@ function vacArt155(base, dias) {
 // el que no lo suma deja la liquidación con un total que no cierra.
 function totalLiquidacionSueldo(s) {
   return Math.round(_num(s.sueldo_base) - _num(s.vac_descuento) + _num(s.monto_vacaciones) +
-    _num(s.monto_horas_extra) + _num(s.bono_eficiencia) - (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0));
+    _num(s.monto_horas_extra) + _num(s.bono_eficiencia) + _num(s.monto_viaticos) -
+    (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0));
 }
 // Si cambia el sueldo base de una liquidación, sus vacaciones cambian con él:
 // se pagan sobre el sueldo que percibe.
@@ -1785,7 +1849,7 @@ function renderSueldosPanel() {
   const lista = (AppData.empleados || []).filter(e => e.activo !== false)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-title">Sin empleados</div></div></td></tr>';
+    cont.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-title">Sin empleados</div></div></td></tr>';
     return;
   }
   let totT = 0, totE = 0, totG = 0;
@@ -1794,6 +1858,7 @@ function renderSueldosPanel() {
     const base = s ? _num(s.sueldo_base) : _num(e.sueldo);
     const extras = s ? _num(s.monto_horas_extra) : 0;
     const bono = s ? _num(s.bono_eficiencia) : bonosDelMes(e.id, periodo);
+    const viat = s ? _num(s.monto_viaticos) : 0;
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
     const total = s ? _num(s.total) : base;
     // Vacaciones: liquidadas, o registradas en Vacaciones y todavía no.
@@ -1834,6 +1899,8 @@ function renderSueldosPanel() {
         (hsFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Registradas en Vacaciones → Horas extras y todavía no liquidadas">' +
           (Math.round(hsReg * 100) / 100) + ' h registradas</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (bono ? '+' + fmtPeso(bono) : '—') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (viat ? '+' + fmtPeso(viat) : '—') +
+        (!s && empleadoCobraViaticos(e) ? '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">a cargar</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (vacMonto ? '+' + fmtPeso(vacMonto) +
           '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">' + vacDias + (vacDias === 1 ? ' día' : ' días') + '</div>' : '—') +
         (vacFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Cargadas en Vacaciones y todavía no liquidadas">' +
@@ -2330,10 +2397,32 @@ function openSueldoModal(empId) {
   _pintarHorasExtra(empId, periodo, s);
   _pintarBonos(empId, periodo, s);
   _pintarVacacionesSueldo(empId, periodo, s);
+  _pintarViaticos(e, s);
   renderAdelantosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
+// Viáticos: el bloque se muestra SOLO a las áreas que los cobran (hoy, Ventas).
+// La excepción es una liquidación que ya los tiene cargados: si el empleado
+// cambió de área, esconder el campo haría desaparecer del total una plata que
+// ya está puesta, sin ninguna explicación.
+function _pintarViaticos(e, s) {
+  const wrap = document.getElementById('msld-viaticos-wrap');
+  if (!wrap) return;
+  const corresponde = empleadoCobraViaticos(e);
+  const cargado = _num(s && s.monto_viaticos) > 0;
+  wrap.style.display = (corresponde || cargado) ? '' : 'none';
+  const inp = document.getElementById('msld-viaticos');
+  if (inp) inp.value = s ? (_num(s.monto_viaticos) || '') : '';
+  const det = document.getElementById('msld-viaticos-detalle');
+  if (det) det.value = s ? (s.viaticos_detalle || '') : '';
+  const info = document.getElementById('msld-viaticos-info');
+  if (info) info.innerHTML = corresponde
+    ? 'Se suman al total y se pagan con el sueldo del mes. Los cobra <strong>' + _areaDe(e) + '</strong>.'
+    : '<span style="color:#b45309">' + _areaDe(e) + ' no es un área con viáticos (' + RRHH_AREAS_VIATICOS.join(' · ') +
+      '), pero esta liquidación ya los tiene cargados.</span>';
+}
+
 // De dónde salen los días de vacaciones: qué cargas caen en el mes. Sin eso
 // el número aparece solo y no se puede cotejar con el calendario.
 function _pintarVacacionesSueldo(empId, periodo, s) {
@@ -2471,7 +2560,9 @@ function recalcSueldoModal() {
   const extras = Math.round(horas * vh);
   const elVacD = document.getElementById('msld-vac-dias');
   const vac = vacArt155(base, parseFloat(elVacD && elVacD.value) || 0);
-  const total = Math.round(base - vac.descuento + vac.monto + extras + bono - adel);
+  const elVia = document.getElementById('msld-viaticos');
+  const viaticos = Math.max(0, Math.round(parseFloat(elVia && elVia.value) || 0));
+  const total = Math.round(base - vac.descuento + vac.monto + extras + bono + viaticos - adel);
   // La cuenta a la vista, debajo del campo: son dos renglones que se van a
   // firmar y hay que poder explicar de dónde sale cada uno.
   const elVacC = document.getElementById('msld-vac-calc');
@@ -2505,7 +2596,7 @@ function recalcSueldoModal() {
   document.getElementById('msld-split').innerHTML =
     '<span><i class="ic ic-card"></i> Transferencia: <strong>' + fmtPeso(mT) + '</strong></span>' +
     '<span style="margin-left:14px;color:' + (mE < 0 ? '#b91c1c' : 'inherit') + '"><i class="ic ic-dollar"></i> Efectivo: <strong>' + fmtPeso(mE) + '</strong></span>';
-  return { base, horas, vh, extras, bono, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
+  return { base, horas, vh, extras, bono, viaticos, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
            vacDias: vac.dias, vacMonto: vac.monto, vacDesc: vac.descuento };
 }
 async function guardarSueldo(marcarPagado, conRecibo) {
@@ -2548,6 +2639,8 @@ async function guardarSueldo(marcarPagado, conRecibo) {
     empleado_id: sueldoModalEmpId, periodo,
     sueldo_base: c.base, horas_extra: c.horas, valor_hora_extra: c.vh, monto_horas_extra: c.extras,
     bono_eficiencia: c.bono, descuenta_adelanto: c.descAd, monto_adelanto: c.adel,
+    monto_viaticos: c.viaticos,
+    viaticos_detalle: ((document.getElementById('msld-viaticos-detalle') || {}).value || '').trim(),
     vac_dias: c.vacDias, monto_vacaciones: c.vacMonto, vac_descuento: c.vacDesc,
     total: c.total, pct_transferencia: c.pct, monto_transferencia: c.mT, monto_efectivo: c.mE,
     pagado: !!marcarPagado, obs: (document.getElementById('msld-obs').value || '').trim()
@@ -2608,6 +2701,8 @@ function _datosRecibo(e, periodo) {
   const vh = s ? _num(s.valor_hora_extra) : 0;
   const extras = s ? _num(s.monto_horas_extra) : 0;
   const bono = s ? _num(s.bono_eficiencia) : 0;
+  const viaticos = s ? _num(s.monto_viaticos) : 0;
+  const viaticosDet = (s && s.viaticos_detalle) || '';
   const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
   const total = s ? _num(s.total) : base;
   const vacDias = s ? _num(s.vac_dias) : 0;
@@ -2616,7 +2711,7 @@ function _datosRecibo(e, periodo) {
   const pct = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(e.id);
   const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
   const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pct / 100);
-  return { s, base, horas, vh, extras, bono, adel, total, pct, mT, mE, vacDias, vacMonto, vacDesc,
+  return { s, base, horas, vh, extras, bono, viaticos, viaticosDet, adel, total, pct, mT, mE, vacDias, vacMonto, vacDesc,
            obs: (s && s.obs) || '', pagado: !!(s && s.pagado) };
 }
 
@@ -2715,6 +2810,7 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
     fmtPeso(d.vacMonto), '']);
   if (d.extras) body.push(['Horas extras', d.horas + ' h x ' + fmtPeso(d.vh) + ' por hora', fmtPeso(d.extras), '']);
   if (d.bono) body.push(['Bono de eficiencia', '', fmtPeso(d.bono), '']);
+  if (d.viaticos) body.push(['Viáticos', d.viaticosDet || 'gastos de traslado del mes', fmtPeso(d.viaticos), '']);
   if (d.adel) body.push(['Adelanto descontado', 'a cuenta de haberes', '', fmtPeso(d.adel)]);
 
   doc.autoTable({
@@ -3005,15 +3101,16 @@ function sueldoVigenteEn(e, periodo) {
 // a su valor hora.
 function calcMesEmpleados(periodo) {
   const detalle = [];
-  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, vacPlus = 0, liquidados = 0, estimados = 0;
+  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, vacPlus = 0, viaticos = 0, liquidados = 0, estimados = 0;
   (AppData.empleados || []).forEach(e => {
     if (!empleadoActivoEnMes(e, periodo)) return;
     const s = sueldoDe(e.id, periodo);
-    let b, hh, hc, bo, vp, fuente, est = false;
+    let b, hh, hc, bo, vp, vi, fuente, est = false;
     if (s) {
       b = _num(s.sueldo_base); hh = _num(s.horas_extra); hc = _num(s.monto_horas_extra);
       bo = _num(s.bono_eficiencia); fuente = 'liquidado'; liquidados++;
       vp = _num(s.monto_vacaciones) - _num(s.vac_descuento);
+      vi = _num(s.monto_viaticos);
     } else {
       const v = sueldoVigenteEn(e, periodo);
       b = v.sueldo; est = v.estimado; if (est) estimados++;
@@ -3024,19 +3121,48 @@ function calcMesEmpleados(periodo) {
       bo = bonosDelMes(e.id, periodo); fuente = 'nomina';
       // Las vacaciones cargadas también cuestan: se pagan a ÷ 25, no a ÷ 30.
       vp = vacArt155(b, (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0).plus;
+      // Los viáticos no se registran por fuera: se cargan AL liquidar. Sin
+      // liquidación no hay un número que estimar, y poner uno inventado sería
+      // peor que mostrar el mes un poco corto.
+      vi = 0;
     }
     if (e.registrado === false) noReg++; else reg++;
-    base += b; heHoras += hh; heCosto += hc; bonos += bo; vacPlus += vp;
-    detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false,
-      base: b, he_horas: hh, he_costo: hc, bono: bo, vac: vp, fuente, estimado: est });
+    base += b; heHoras += hh; heCosto += hc; bonos += bo; vacPlus += vp; viaticos += vi;
+    detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false, area: _areaDe(e),
+      base: b, he_horas: hh, he_costo: hc, bono: bo, vac: vp, viaticos: vi, fuente, estimado: est });
   });
   const total = reg + noReg;
   return {
     periodo, emp_registrados: reg, emp_no_registrados: noReg, total,
     sueldos_base: base, promedio_sueldo: total ? Math.round(base / total) : 0,
     horas_extra_horas: Math.round(heHoras * 100) / 100, horas_extra_costo: heCosto,
-    bonos, vacaciones_plus: vacPlus, costo_total: base + heCosto + bonos + vacPlus, liquidados, estimados, detalle
+    bonos, vacaciones_plus: vacPlus, viaticos,
+    costo_total: base + heCosto + bonos + vacPlus + viaticos, liquidados, estimados, detalle
   };
+}
+
+// El costo del mes repartido por ÁREA. Sale del MISMO detalle que arma el total
+// —el congelado si el mes se cerró, el calculado si no—, así las dos lecturas no
+// pueden discrepar: el costo por área siempre suma el costo del mes.
+function costoPorArea(detalle) {
+  const m = new Map();
+  (detalle || []).forEach(r => {
+    // Los cierres viejos no guardaban el área: se resuelve con la ficha de hoy,
+    // que es lo único que queda. Si esa persona ya no está, cae en (sin área).
+    const area = r.area ? _areaDe(r) : _areaDe((AppData.empleados || []).find(e => e.id === r.id));
+    let a = m.get(area);
+    if (!a) { a = { area, empleados: 0, base: 0, he_costo: 0, bonos: 0, vac: 0, viaticos: 0, costo: 0 }; m.set(area, a); }
+    a.empleados++;
+    a.base += _num(r.base); a.he_costo += _num(r.he_costo); a.bonos += _num(r.bono);
+    a.vac += _num(r.vac); a.viaticos += _num(r.viaticos);
+    a.costo += _num(r.base) + _num(r.he_costo) + _num(r.bono) + _num(r.vac) + _num(r.viaticos);
+  });
+  return Array.from(m.values()).sort((x, y) => y.costo - x.costo);
+}
+// El detalle que corresponde mostrar: el del cierre si el mes está cerrado.
+function _histDetalleDe(x) {
+  if (x.cierre && Array.isArray(x.cierre.detalle) && x.cierre.detalle.length) return x.cierre.detalle;
+  return (x.vivo && x.vivo.detalle) || [];
 }
 
 function cierreEmpleadosDe(periodo) {
@@ -3054,7 +3180,7 @@ function _histDatosMes(periodo) {
     total: _num(c.emp_registrados) + _num(c.emp_no_registrados),
     sueldos_base: _num(c.sueldos_base), promedio_sueldo: _num(c.promedio_sueldo),
     horas_extra_horas: _num(c.horas_extra_horas), horas_extra_costo: _num(c.horas_extra_costo),
-    bonos: _num(c.bonos), costo_total: _num(c.costo_total),
+    bonos: _num(c.bonos), viaticos: _num(c.viaticos), costo_total: _num(c.costo_total),
     liquidados: _num(c.liquidados), estimados: _num(c.estimados)
   };
   return { periodo, datos, vivo, cierre: c };
@@ -3185,10 +3311,89 @@ function renderHistorialEmpleados() {
     card('calendar', 'Horas extras', fmtPeso(kd.horas_extra_costo),
       (kd.horas_extra_horas ? String(kd.horas_extra_horas).replace('.', ',') + ' h' : 'sin horas extras'),
       _histVarPesos(kd.horas_extra_costo, pr && pr.horas_extra_costo)) +
-    card('trend', 'Costo total de sueldos', fmtPeso(kd.costo_total), 'sueldos + horas extras + bonos',
+    card('trend', 'Costo total de sueldos', fmtPeso(kd.costo_total), 'sueldos + horas extras + bonos + viáticos',
       _histVarPesos(kd.costo_total, pr && pr.costo_total));
 
   cont.innerHTML = datos.map((x, i) => _histFila(x, previoDe(i), hoy)).join('');
+  _renderCostoPorArea(datos);
+}
+
+// Cuánto cuesta cada ÁREA por mes. Es la lectura que el total del mes no da:
+// "la nómina subió" no dice dónde subió, y el aumento de un área se lee recién
+// cuando se la compara con las demás. Una fila por área, una columna por mes.
+function _renderCostoPorArea(datos) {
+  const cont = document.getElementById('emp-hist-areas');
+  if (!cont) return;
+  if (!datos || !datos.length) { cont.innerHTML = ''; return; }
+  // Los meses se muestran del más nuevo al más viejo, igual que la tabla de arriba.
+  const porMes = datos.map(x => ({ periodo: x.periodo, cerrado: !!x.cierre, areas: costoPorArea(_histDetalleDe(x)) }));
+  const areas = [];
+  porMes.forEach(m => m.areas.forEach(a => { if (areas.indexOf(a.area) < 0) areas.push(a.area); }));
+  if (!areas.length) { cont.innerHTML = ''; return; }
+  const dato = (m, area) => m.areas.find(a => a.area === area) || null;
+  // Se ordenan por lo que cuestan en el mes de referencia (el primero).
+  areas.sort((x, y) => _num((dato(porMes[0], y) || {}).costo) - _num((dato(porMes[0], x) || {}).costo));
+  const totalMes = m => m.areas.reduce((t, a) => t + a.costo, 0);
+  const celda = (m, area) => {
+    const a = dato(m, area);
+    if (!a) return '<td class="mono" style="text-align:right;color:var(--text-muted)">—</td>';
+    const tot = totalMes(m);
+    return '<td class="mono" style="text-align:right">' + fmtPeso(Math.round(a.costo)) +
+      '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">' + a.empleados + ' pers.' +
+      (tot ? ' · ' + (a.costo * 100 / tot).toFixed(0) + '%' : '') +
+      (a.viaticos ? ' · viáticos ' + fmtPeso(Math.round(a.viaticos)) : '') + '</div></td>';
+  };
+  cont.innerHTML =
+    '<div class="card"><div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<div><strong><i class="ic ic-users"></i> Costo por área</strong>' +
+      '<div style="font-size:11.5px;color:var(--text-muted)">Sueldos + horas extras + bonos + vacaciones + viáticos de cada área, mes a mes. ' +
+      'Sale del mismo detalle que el costo total de arriba.</div></div>' +
+      '<button class="btn btn-sm" style="margin-left:auto" onclick="exportCostoPorAreaPDF()"><i class="ic ic-download"></i> PDF</button>' +
+    '</div><div class="table-wrap"><table><thead><tr><th>Área</th>' +
+      porMes.map(m => '<th style="text-align:right">' + _histMesLabel(m.periodo) +
+        (m.cerrado ? '<div style="font-size:9.5px;font-weight:400;color:var(--text-muted)">cerrado</div>' : '') + '</th>').join('') +
+    '</tr></thead><tbody>' +
+      areas.map(area => '<tr><td><strong>' + area + '</strong></td>' + porMes.map(m => celda(m, area)).join('') + '</tr>').join('') +
+      '<tr style="background:var(--surface-0)"><td><strong>TOTAL</strong></td>' +
+        porMes.map(m => '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(Math.round(totalMes(m))) + '</td>').join('') +
+      '</tr>' +
+    '</tbody></table></div></div>';
+}
+
+// El mismo cuadro, en papel: una fila por área y una columna por mes.
+function exportCostoPorAreaPDF() {
+  const n = parseInt((document.getElementById('emp-hist-meses') || {}).value, 10) || 6;
+  const meses = _histMeses(n);
+  if (!meses.length) { alert('No hay meses para exportar.'); return; }
+  const porMes = meses.map(_histDatosMes).map(x => ({ periodo: x.periodo, areas: costoPorArea(_histDetalleDe(x)) }));
+  const areas = [];
+  porMes.forEach(m => m.areas.forEach(a => { if (areas.indexOf(a.area) < 0) areas.push(a.area); }));
+  const dato = (m, area) => m.areas.find(a => a.area === area) || null;
+  areas.sort((x, y) => _num((dato(porMes[0], y) || {}).costo) - _num((dato(porMes[0], x) || {}).costo));
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+  doc.setFontSize(15); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
+  doc.text('Costo de personal por área', 14, 17);
+  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
+  doc.text('Últimos ' + meses.length + ' meses · Generado: ' + new Date().toLocaleString('es-AR') +
+    ' · Sueldos + horas extras + bonos + vacaciones + viáticos', 14, 23);
+  const body = areas.map(area => [area].concat(porMes.map(m => {
+    const a = dato(m, area);
+    return a ? fmtPeso(Math.round(a.costo)) + ' (' + a.empleados + ')' : '-';
+  })));
+  body.push(['TOTAL'].concat(porMes.map(m => fmtPeso(Math.round(m.areas.reduce((t, a) => t + a.costo, 0))))));
+  const cols = {}; porMes.forEach((m, i) => { cols[i + 1] = { halign: 'right' }; });
+  doc.autoTable({
+    startY: 28,
+    head: [['Área'].concat(porMes.map(m => _histMesLabel(m.periodo)))],
+    body, theme: 'striped',
+    headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
+    alternateRowStyles: { fillColor: [244, 247, 252] },
+    columnStyles: cols, margin: { left: 14, right: 14 }
+  });
+  doc.save('Costo_por_area_' + new Date().toLocaleDateString('es-AR').replace(/\//g, '-') + '.pdf');
+  showToast('📥 Costo por área descargado');
 }
 
 // Congela los números del mes. Cualquiera que liquida puede cerrar: es un
@@ -3208,6 +3413,7 @@ async function cerrarMesEmpleados(periodo) {
     '· Empleados: ' + d.total + ' (' + d.emp_registrados + ' registrados, ' + d.emp_no_registrados + ' no registrados)' + NL +
     '· Promedio de sueldo: ' + fmtPeso(d.promedio_sueldo) + NL +
     '· Horas extras: ' + fmtPeso(d.horas_extra_costo) + NL +
+    (d.viaticos ? '· Viáticos: ' + fmtPeso(d.viaticos) + NL : '') +
     '· Costo total: ' + fmtPeso(d.costo_total) +
     (d.total - d.liquidados > 0
       ? NL + NL + (d.total - d.liquidados) + ' de ' + d.total + ' salen de la nómina, no de una liquidación cargada.'
@@ -3220,7 +3426,7 @@ async function cerrarMesEmpleados(periodo) {
     emp_registrados: d.emp_registrados, emp_no_registrados: d.emp_no_registrados,
     sueldos_base: d.sueldos_base, promedio_sueldo: d.promedio_sueldo,
     horas_extra_horas: d.horas_extra_horas, horas_extra_costo: d.horas_extra_costo,
-    bonos: d.bonos, costo_total: d.costo_total,
+    bonos: d.bonos, viaticos: d.viaticos, costo_total: d.costo_total,
     liquidados: d.liquidados, estimados: d.estimados, detalle: d.detalle,
     cerrado_por: quien, cerrado_en: new Date().toISOString()
   };

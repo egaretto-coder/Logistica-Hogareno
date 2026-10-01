@@ -32,6 +32,8 @@
               <option value="si">Solo registrados</option>
               <option value="no">Solo NO registrados</option>
             </select>
+            <button class="btn btn-sm" id="emp-btn-agrupar" onclick="toggleAgruparArea()"
+              title="Mostrar las tarjetas agrupadas por área, con cuántos son y cuánto suman sus sueldos"><i class="ic ic-users"></i> Agrupar por área</button>
             <span id="emp-count" style="font-size:12px;color:var(--text-muted)"></span>
           </div>
 
@@ -113,7 +115,7 @@
           <div class="card"><div class="table-wrap"><table>
             <thead><tr>
               <th>Empleado</th><th style="text-align:right">Sueldo</th><th style="text-align:right">H. extras</th>
-              <th style="text-align:right">Bono</th><th style="text-align:right">Vacaciones</th><th style="text-align:right">Adelanto</th>
+              <th style="text-align:right">Bono</th><th style="text-align:right">Viáticos</th><th style="text-align:right">Vacaciones</th><th style="text-align:right">Adelanto</th>
               <th style="text-align:right">Total</th><th>Forma de pago</th><th style="width:150px"></th>
             </tr></thead>
             <tbody id="emp-sueldos-rows"></tbody>
@@ -128,7 +130,8 @@
           <div class="alert alert-info" style="margin-bottom:14px">
             <i class="ic ic-alert"></i><div>Cada mes se compara contra el anterior. Mientras un mes no se cierra, sus números se <strong>calculan</strong> con lo que hay hoy: la liquidación del mes si está cargada y, si no, el sueldo que regía ese mes según el historial de ajustes.
             <strong>Cerrar el mes</strong> congela los números: después, cambiar una ficha (pasar a alguien a registrado, corregir un sueldo, cargar una baja) no reescribe el pasado. En un mes sin cerrar, la división registrados / no registrados sale de la ficha actual.
-            El <strong>costo total</strong> es sueldo + horas extras + bonos; los adelantos no lo bajan, porque son plata que ya se prestó.</div>
+            El <strong>costo total</strong> es sueldo + horas extras + bonos + vacaciones + viáticos; los adelantos no lo bajan, porque son plata que ya se prestó.
+            Abajo de la tabla, el mismo costo <strong>repartido por área</strong>.</div>
           </div>
           <div class="card" style="margin-bottom:14px;padding:12px 16px">
             <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -152,6 +155,9 @@
             </tr></thead>
             <tbody id="emp-hist-rows"></tbody>
           </table></div></div>
+          <!-- Cuánto cuesta cada área, mes a mes: el total de arriba no dice
+               DÓNDE subió la nómina. -->
+          <div id="emp-hist-areas" style="margin-top:14px"></div>
         </div>
 
         <!-- TAB 4 — BAJAS: personal que salió de la empresa. La baja es lógica,

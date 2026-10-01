@@ -474,6 +474,8 @@ async function _hydrateFromSupabaseReal(opts) {
     valor_hora_extra: _num(s.valor_hora_extra), monto_horas_extra: _num(s.monto_horas_extra),
     bono_eficiencia: _num(s.bono_eficiencia), descuenta_adelanto: !!s.descuenta_adelanto,
     monto_adelanto: _num(s.monto_adelanto), total: _num(s.total),
+    // Viáticos: los cobra quien trabaja en la calle, con el sueldo del mes.
+    monto_viaticos: _num(s.monto_viaticos), viaticos_detalle: s.viaticos_detalle || '',
     vac_dias: _num(s.vac_dias), monto_vacaciones: _num(s.monto_vacaciones), vac_descuento: _num(s.vac_descuento),
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
@@ -484,7 +486,7 @@ async function _hydrateFromSupabaseReal(opts) {
     emp_registrados: _num(c.emp_registrados), emp_no_registrados: _num(c.emp_no_registrados),
     sueldos_base: _num(c.sueldos_base), promedio_sueldo: _num(c.promedio_sueldo),
     horas_extra_horas: _num(c.horas_extra_horas), horas_extra_costo: _num(c.horas_extra_costo),
-    bonos: _num(c.bonos), costo_total: _num(c.costo_total),
+    bonos: _num(c.bonos), viaticos: _num(c.viaticos), costo_total: _num(c.costo_total),
     liquidados: _num(c.liquidados), estimados: _num(c.estimados),
     detalle: Array.isArray(c.detalle) ? c.detalle : [],
     cerrado_por: c.cerrado_por || '', cerrado_en: c.cerrado_en || ''

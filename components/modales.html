@@ -1397,6 +1397,16 @@
         <div id="msld-vac-info" style="margin-top:4px;font-size:11.5px;color:var(--text-secondary)"></div>
       </div>
 
+      <!-- Viáticos: los cobra quien trabaja en la calle (área Ventas). No son
+           sueldo ni bono: van en su propio renglón del recibo y se suman al
+           total del mes. El bloque se oculta para las áreas que no los cobran. -->
+      <div class="form-group" style="margin:0;display:none" id="msld-viaticos-wrap">
+        <label class="form-label"><i class="ic ic-truck"></i> Viáticos del mes</label>
+        <input type="number" id="msld-viaticos" class="form-input" placeholder="0" min="0" step="1000" style="width:100%" oninput="recalcSueldoModal()" />
+        <input type="text" id="msld-viaticos-detalle" class="form-input" placeholder="Detalle (opcional): combustible, peajes, viajes…" style="width:100%;margin-top:6px" />
+        <div id="msld-viaticos-info" style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)"></div>
+      </div>
+
       <!-- Adelantos registrados del empleado: tildar una cuota la imputa a este
            mes y la descuenta del neto (igual que en la liquidación del conductor).
            El campo manual de abajo queda para descuentos que no vienen de un
