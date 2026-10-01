@@ -1948,14 +1948,42 @@ function renderSueldosPanel() {
   const periodo = (mesEl && mesEl.value) || '';
   const cont = document.getElementById('emp-sueldos-rows');
   if (!cont) return;
-  const lista = (AppData.empleados || []).filter(e => e.activo !== false)
+  const todos = (AppData.empleados || []).filter(e => e.activo !== false)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  // El buscador filtra SOLO las filas. Los avisos del mes (ajustes pendientes,
+  // horas extras, bonos, vacaciones sin liquidar) y los totales siguen midiendo
+  // el MES ENTERO: el operador busca a una persona para liquidarla, no para
+  // analizar un subconjunto, y un total que se mueve con el buscador se lee
+  // como si hubiera cambiado el mes.
+  const q = (((document.getElementById('emp-sueldo-search') || {}).value) || '').toLowerCase().trim();
+  const lista = q
+    ? todos.filter(e => String(e.nombre || '').toLowerCase().includes(q) ||
+                        String(e.puesto || '').toLowerCase().includes(q) ||
+                        String(e.area || '').toLowerCase().includes(q) ||
+                        String(e.dni || '').includes(q))
+    : todos;
+  const cEl = document.getElementById('emp-sueldo-count');
+  if (cEl) cEl.textContent = !todos.length ? ''
+    : (lista.length === todos.length
+        ? todos.length + ' empleado(s)'
+        : 'Mostrando ' + lista.length + ' de ' + todos.length);
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-title">Sin empleados</div></div></td></tr>';
-    return;
+    cont.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-title">' +
+      (todos.length ? 'Sin coincidencias' : 'Sin empleados') + '</div>' +
+      (todos.length ? '<div class="empty-sub">Ningún empleado activo coincide con la búsqueda.</div>' : '') +
+      '</div></td></tr>';
+    // Los avisos y los totales del mes se siguen pintando abajo: el buscador no
+    // los toca. Con la tabla vacía por el filtro, igual tienen que verse.
   }
+  // Los totales son del MES, así que se suman sobre todos y no sobre lo filtrado.
   let totT = 0, totE = 0, totG = 0;
-  cont.innerHTML = lista.map(e => {
+  todos.forEach(e => {
+    const s = sueldoDe(e.id, periodo);
+    totT += s ? _num(s.monto_transferencia) : 0;
+    totE += s ? _num(s.monto_efectivo) : 0;
+    totG += s ? _num(s.total) : _num(e.sueldo);
+  });
+  cont.innerHTML = lista.length ? lista.map(e => {
     const s = sueldoDe(e.id, periodo);
     const base = s ? _num(s.sueldo_base) : _num(e.sueldo);
     const extras = s ? _num(s.monto_horas_extra) : 0;
@@ -1982,7 +2010,6 @@ function renderSueldosPanel() {
     const reapPend = reaperturaPendiente(e.id, periodo);
     const reapOk = reaperturasAprobadas(e.id, periodo);
     const puedeAut = (typeof puedeAutorizar === 'function') && puedeAutorizar();
-    totT += mT; totE += mE; totG += total;
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(e.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(e.nombre) + '</div><div><strong>' + e.nombre + '</strong>' +
         (e.registrado === false ? ' <span class="badge" style="background:#fff7ed;color:#9a3412;font-size:9px">no reg.</span>' : '') +
@@ -2030,13 +2057,14 @@ function renderSueldosPanel() {
         (s ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="exportReciboSueldoPDF(' + e.id + ')" title="Recibo para firmar al momento del pago"><i class="ic ic-download"></i> Recibo</button>' : '') +
       '</div></td>' +
     '</tr>';
-  }).join('');
+  }).join('') : cont.innerHTML;
 
   // Liquidar el mes es el momento en que se paga: si alguien tiene el aumento
   // pendiente, se le está por pagar de menos. Se avisa acá, no en otra solapa.
-  const pend = lista.filter(leTocaAjuste);
+  // Todos los avisos miran `todos`: son del mes, no de lo que filtró el buscador.
+  const pend = todos.filter(leTocaAjuste);
   // Quiénes tienen horas extras registradas que la liquidación todavía no toma.
-  const conHs = lista.filter(e => {
+  const conHs = todos.filter(e => {
     const r = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
     if (!(r > 0)) return false;
     const sx = sueldoDe(e.id, periodo);
@@ -2044,7 +2072,7 @@ function renderSueldosPanel() {
   });
   // Un bono registrado que nadie liquidó es plata que se le debe a alguien y
   // que se pasa de largo sola, igual que las horas extras.
-  const conBonos = lista.filter(e => {
+  const conBonos = todos.filter(e => {
     const b = bonosDelMes(e.id, periodo);
     if (!(b > 0)) return false;
     const sx = sueldoDe(e.id, periodo);
@@ -2052,7 +2080,7 @@ function renderSueldosPanel() {
   });
   // Vacaciones cargadas en el mes que la liquidación todavía no paga: se le
   // pagaría el mes completo a ÷ 30 y no a ÷ 25, que es de menos.
-  const conVac = lista.filter(e => {
+  const conVac = todos.filter(e => {
     const r = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0;
     if (!(r > 0)) return false;
     const sx = sueldoDe(e.id, periodo);
@@ -2102,7 +2130,7 @@ function renderSueldosPanel() {
   // Transferencia y efectivo suman SOLO lo liquidado: de lo que falta liquidar
   // todavía no se sabe con qué corte se paga, y meterlo con un reparto supuesto
   // daría un número que nadie puede usar para preparar la plata.
-  const sinLiq = lista.filter(e => !sueldoDe(e.id, periodo)).length;
+  const sinLiq = todos.filter(e => !sueldoDe(e.id, periodo)).length;
   const tot = document.getElementById('emp-sueldos-total');
   if (tot) tot.innerHTML =
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-card"></i></div><div class="metric-label">Transferencia</div><div class="metric-value">' + fmtPeso(totT) + '</div>' +
