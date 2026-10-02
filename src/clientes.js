@@ -304,6 +304,14 @@ function semanaClienteRango(iso) {
 function calcLiquidacionCliente(cliente, rango, opts) {
   const cKey = clienteKey(cliente);
   const conDetalle = !!(opts && opts.detalle);
+  // porFecha: contar lo que se MOVIÓ entre dos fechas, no lo que se factura en
+  // un período. Es lo que necesita el Dashboard, donde la pregunta es "qué pasó
+  // del 25 al 30" y no "qué factura cierra ahí". Cambia dos cosas: el arrastre
+  // no manda —mueve dónde se COBRA el envío, no cuándo se entregó— y los cargos
+  // entran por la FECHA del servicio y no por el período al que se imputan.
+  // Nadie que arme una factura lo pasa: lo que se le cobra al cliente sigue
+  // saliendo del período, intacto.
+  const porFecha = !!(opts && opts.porFecha);
   const envios = [];
   const desde = rango && rango.desdeD ? rango.desdeD : null;
   const hasta = rango && rango.hastaD ? rango.hastaD : null;
@@ -332,7 +340,7 @@ function calcLiquidacionCliente(cliente, rango, opts) {
     // se cobra en la semana que indica ese campo y NO en la de su fecha: si no
     // se lo sacara de su semana original se facturaría dos veces.
     const arr = String(r.factura_semana || '').slice(0, 10);
-    if (arr) {
+    if (arr && !porFecha) {
       if (!semana || anclaDePeriodo(cKey, arr) !== semana) return;
       arrastrados++;
     } else if (desde || hasta) {
@@ -386,7 +394,7 @@ function calcLiquidacionCliente(cliente, rango, opts) {
   const pagado = filas.reduce((s, f) => s + _num(f.pagado), 0);
   // Cargos que no vienen de un envío: colecta, viajes particulares, otros.
   // Van aparte de las zonas porque en la factura son otro concepto.
-  const cargos = cargosDeSemana(cKey, semana);
+  const cargos = porFecha ? cargosEntreFechas(cKey, desde, hasta) : cargosDeSemana(cKey, semana);
   const totalCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
   // Margen = lo que se le cobra al cliente menos lo que se le paga al conductor
   // por esos mismos envíos. Es el número que conecta las dos liquidaciones.
@@ -3222,6 +3230,26 @@ function cargoDatosTxt(c) {
     else if (dir || z) p.push(dir || z);
   }
   return p.join(' · ');
+}
+
+// Los cargos por la FECHA DEL SERVICIO, no por el período al que se imputan: un
+// cargo viejo se puede facturar en el período en curso, y para "qué se movió el
+// lunes" lo que vale es el día en que se prestó. Sin fechas, todos los suyos.
+function cargosEntreFechas(cod, desdeD, hastaD) {
+  const k = clienteKey(cod);
+  if (!k) return [];
+  const iso = d => d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0') : '';
+  const di = iso(desdeD), hi = iso(hastaD);
+  return (AppData.clienteCargos || []).filter(c => {
+    if (clienteKey(c.cliente_cod) !== k) return false;
+    if (!di && !hi) return true;
+    const f = String(c.fecha || '').slice(0, 10);
+    if (!f) return false;            // sin fecha no se puede ubicar en el rango
+    if (di && f < di) return false;
+    if (hi && f > hi) return false;
+    return true;
+  }).sort((a, b) => String(a.concepto).localeCompare(String(b.concepto)) || _num(a.id) - _num(b.id));
 }
 
 function cargosDeSemana(cod, semana) {
