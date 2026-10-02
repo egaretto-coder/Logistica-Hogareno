@@ -5,14 +5,20 @@
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Período</span>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <!-- El marcado tiene que coincidir con dashFechaPreset, que arranca
-                   en 'mes': si el botón activo fuera otro, la pantalla mostraría
-                   el mes y el operador leería que está viendo todo. -->
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'todo')">Todo</button>
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'hoy')">Hoy</button>
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'semana')">Esta semana</button>
-              <button class="btn btn-sm dash-fecha-btn active" onclick="setDashFechaPreset(this,'mes')">Este mes</button>
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'personalizado')">Personalizado</button>
+            </div>
+            <!-- El mes es el corte natural de este panel, así que en vez de un
+                 botón fijo "Este mes" va un NAVEGADOR: ‹ al anterior, › al
+                 siguiente y el campo para saltar a cualquiera. Tocar cualquiera
+                 de los tres pone el período en ese mes. El marcado sale del
+                 estado (_pintarPresetFecha), no del botón que se tocó. -->
+            <div class="date-range" id="dash-mes-nav">
+              <button class="btn btn-sm" id="dash-mes-prev" onclick="dashMoverMes(-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+              <input type="month" id="dash-mes" onchange="dashElegirMes(this.value)" aria-label="Mes a ver">
+              <button class="btn btn-sm" id="dash-mes-next" onclick="dashMoverMes(1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
             </div>
             <div id="dash-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
               <div class="date-range">

@@ -164,6 +164,41 @@ function renderDashConductoresPanel(liqParam) {
 // atajos y el rango a mano siguen igual: el default es un punto de partida, no
 // una restricción.
 let dashFechaPreset = 'mes'; // 'todo' | 'hoy' | 'semana' | 'mes' | 'personalizado'
+// QUÉ mes se está mirando (AAAA-MM). Vacío = el corriente. Antes "Este mes" era
+// siempre el de hoy y para ver el anterior había que armar el rango a mano;
+// comparar contra el mes pasado es la mitad de las preguntas que se le hacen a
+// este panel.
+let dashMes = '';
+// Los nombres van acá y no se toman prestados de otro módulo: la etiqueta de
+// este panel no puede depender de que empleados.js esté cargado — el banco lo
+// agarró mostrando "2026-08" donde tenía que decir "Agosto 2026".
+const _DASH_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function _dashMesTexto(yyyymm) {
+  const n = _DASH_MESES[(+String(yyyymm).slice(5, 7)) - 1];
+  if (!n) return String(yyyymm || '');
+  return n.charAt(0).toUpperCase() + n.slice(1) + ' ' + String(yyyymm).slice(0, 4);
+}
+function _dashMesActivo() {
+  if (/^\d{4}-\d{2}$/.test(dashMes)) return dashMes;
+  const h = new Date();
+  return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+}
+// Mover de a un mes, y saltar a uno cualquiera. Los dos ponen el período en
+// "mes": tocar el navegador es elegir un mes, no hace falta apretar nada más.
+function dashMoverMes(n) {
+  const m = _dashMesActivo();
+  const d = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1 + _num(n), 1);
+  dashMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  dashFechaPreset = 'mes';
+  renderDashboard();
+}
+function dashElegirMes(v) {
+  if (!/^\d{4}-\d{2}$/.test(String(v || ''))) return;   // vaciarlo no cambia nada
+  dashMes = v;
+  dashFechaPreset = 'mes';
+  renderDashboard();
+}
 
 // Convierte DD/MM/YYYY → objeto Date (mediodia para evitar problemas de TZ)
 function parseFechaReg(fechaStr) {
@@ -213,8 +248,10 @@ function getDashFechaRango() {
     return { desde: lunes, hasta: dom };
   }
   if (dashFechaPreset === 'mes') {
-    const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1, 0, 0, 0);
-    const fin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59);
+    const m = _dashMesActivo();
+    const a = +m.slice(0, 4), mm = +m.slice(5, 7) - 1;
+    const ini = new Date(a, mm, 1, 0, 0, 0);
+    const fin = new Date(a, mm + 1, 0, 23, 59, 59);   // día 0 del siguiente = último de este
     return { desde: ini, hasta: fin };
   }
   if (dashFechaPreset === 'personalizado') {
@@ -288,11 +325,31 @@ function filtrarRecordsPorFecha(records) {
 
 function setDashFechaPreset(btn, preset) {
   dashFechaPreset = preset;
-  document.querySelectorAll('.dash-fecha-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const customDiv = document.getElementById('dash-fecha-custom');
-  customDiv.style.display = preset === 'personalizado' ? 'flex' : 'none';
-  renderDashboard();
+  renderDashboard();   // _pintarPresetFecha marca el que corresponde
+}
+
+// Se marca contra el ESTADO, no contra el botón que se tocó: tocar el navegador
+// de mes tiene que apagar el preset que estuviera marcado, y marcar solo el
+// clickeado ya dejó una vez un grupo de botones diciendo una cosa mientras el
+// panel filtraba otra (el filtro por condición).
+function _pintarPresetFecha() {
+  document.querySelectorAll('.dash-fecha-btn').forEach(b => {
+    const m = /setDashFechaPreset\(this,'([a-z]+)'\)/.exec(b.getAttribute('onclick') || '');
+    b.classList.toggle('active', !!m && m[1] === dashFechaPreset);
+  });
+  const custom = document.getElementById('dash-fecha-custom');
+  if (custom) custom.style.display = dashFechaPreset === 'personalizado' ? 'flex' : 'none';
+  // El navegador de mes se resalta cuando es el que manda, y muestra siempre el
+  // mes que se está viendo —si no, se queda mostrando otro y el operador cree
+  // que está mirando ese.
+  const inp = document.getElementById('dash-mes');
+  if (inp && inp.value !== _dashMesActivo()) inp.value = _dashMesActivo();
+  const nav = document.getElementById('dash-mes-nav');
+  if (nav) {
+    const on = dashFechaPreset === 'mes';
+    nav.style.borderColor = on ? 'var(--accent)' : '';
+    nav.style.boxShadow = on ? '0 0 0 3px var(--accent-light)' : '';
+  }
 }
 
 function renderDashboard() {
@@ -328,6 +385,10 @@ function renderDashboard() {
   let labelPeriodo = '';
   if (dashFechaPreset === 'todo') {
     labelPeriodo = '— todos los registros';
+  } else if (dashFechaPreset === 'mes') {
+    // "Octubre 2026" se lee de un vistazo; "01/10/2026 → 31/10/2026" hay que
+    // leerlo dos veces para darse cuenta de que es un mes entero.
+    labelPeriodo = _dashMesTexto(_dashMesActivo());
   } else if (rango) {
     if (rango.desde && rango.hasta) {
       labelPeriodo = fmt(rango.desde) + ' → ' + fmt(rango.hasta);
@@ -340,6 +401,7 @@ function renderDashboard() {
     labelPeriodo = 'Seleccioná un rango de fechas';
   }
   _pintarBotonesCond();
+  _pintarPresetFecha();
   if (dashCondLabel()) labelPeriodo = (labelPeriodo ? labelPeriodo + ' · ' : '') + 'solo ' + dashCondLabel();
   if (dashTab === 'clientes' && dashPerFilter)
     labelPeriodo = (labelPeriodo ? labelPeriodo + ' · ' : '') + 'clientes ' + DASH_PER_PLURAL[dashPerFilter].toLowerCase();
