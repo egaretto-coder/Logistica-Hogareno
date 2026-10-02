@@ -62,17 +62,27 @@
         <div id="cliq-tab-historial" style="display:none">
           <div class="card" style="margin-bottom:16px;padding:14px 18px">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
-              <input type="month" id="cliq-hist-mes" onchange="renderHistorial('cliente')" aria-label="Mes del historial">
-              <button class="btn btn-sm" onclick="document.getElementById('cliq-hist-mes').value='';renderHistorial('cliente')" title="Ver todo el historial, sin filtrar por mes">Todos</button>
-              <input type="search" id="cliq-hist-search" placeholder="🔍 Buscar cliente..." oninput="renderHistorial('cliente')"
-                style="width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
-              <span style="font-size:11.5px;color:var(--text-muted);flex:1;min-width:240px">Las liquidaciones ya emitidas, con su <strong>detalle congelado</strong>: la factura sale igual a la que se le mandó al cliente.</span>
+              <!-- Elegir a un cliente es el camino del caso que importa: el cliente
+                   pregunta por una liquidación vieja. Con uno elegido el mes y el
+                   buscador dejan de filtrar —nadie sabe de qué mes era— y se ve
+                   TODO lo suyo, agrupado por año. -->
+              <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-users"></i> Cliente</span>
+              <select id="cliq-hist-cliente" onchange="renderHistorial('cliente')" aria-label="Ver el historial de un cliente"
+                style="min-width:230px;max-width:320px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px"></select>
+              <span id="cliq-hist-filtros" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+                <input type="month" id="cliq-hist-mes" onchange="renderHistorial('cliente')" aria-label="Mes del historial">
+                <button class="btn btn-sm" onclick="document.getElementById('cliq-hist-mes').value='';renderHistorial('cliente')" title="Ver todo el historial, sin filtrar por mes">Todos</button>
+                <input type="search" id="cliq-hist-search" placeholder="🔍 Buscar cliente..." oninput="renderHistorial('cliente')"
+                  style="width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+              </span>
+              <span id="cliq-hist-ayuda" style="font-size:11.5px;color:var(--text-muted);flex:1;min-width:240px">Las liquidaciones ya emitidas, con su <strong>detalle congelado</strong>: la factura sale igual a la que se le mandó al cliente.</span>
             </div>
           </div>
           <div class="metrics-grid" id="cliq-hist-kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"></div>
           <div id="cliq-hist-aviso"></div>
-          <div class="card"><div class="table-wrap"><table>
+          <div id="cliq-hist-cajacli"></div>
+          <div class="card" id="cliq-hist-tabla"><div class="table-wrap"><table>
             <thead><tr>
               <th>Cliente</th><th>Período</th><th style="text-align:right">Envíos</th>
               <th style="text-align:right">Facturado</th><th>Armada</th><th style="width:160px"></th>

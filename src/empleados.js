@@ -1164,6 +1164,9 @@ function verHistorialEmpleado(empId) {
 
 // ── ABM empleado ─────────────────────────────────────────────────────────────
 let empleadoEditId = null;
+// Con qué sueldo se abrió la ficha. Es lo único que permite saber, al guardar,
+// si el sueldo CAMBIÓ — y por lo tanto si hay un aumento que registrar.
+let _empSueldoAlAbrir = null;
 // Carga las opciones del selector de área (vacío = sin asignar).
 function poblarAreasEmpleado(sel) {
   const el = document.getElementById('memp-area');
@@ -1211,6 +1214,7 @@ function _puestoElegido() {
 
 function openAddEmpleadoModal() {
   empleadoEditId = null;
+  _empSueldoAlAbrir = null;   // un alta no tiene sueldo anterior: no hay aumento que registrar
   document.getElementById('modal-emp-title').textContent = 'Nuevo empleado';
   ['memp-nombre','memp-dni','memp-telefono','memp-email','memp-direccion','memp-puesto',
    'memp-nacimiento','memp-localidad','memp-cp','memp-t-pantalon','memp-t-remera','memp-t-calzado']
@@ -1227,6 +1231,8 @@ function openAddEmpleadoModal() {
   _setSabado(null);
   const hp = document.getElementById('memp-horario-propio'); if (hp) hp.checked = false;
   _syncHorarioPuesto();
+  _resetModoSueldoFicha();
+  _previewSueldoFicha();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
 }
 // Carga (o limpia) el horario del sábado en la ficha.
@@ -1242,6 +1248,7 @@ function editEmpleado(id) {
   const e = AppData.empleados.find(x => x.id === id);
   if (!e) return;
   empleadoEditId = id;
+  _empSueldoAlAbrir = _num(e.sueldo);
   document.getElementById('modal-emp-title').textContent = 'Editar empleado';
   document.getElementById('memp-nombre').value = e.nombre || '';
   document.getElementById('memp-dni').value = e.dni || '';
@@ -1265,7 +1272,85 @@ function editEmpleado(id) {
   _setSabado(e);
   const hp = document.getElementById('memp-horario-propio'); if (hp) hp.checked = !!e.horario_propio;
   _syncHorarioPuesto();
+  _resetModoSueldoFicha();
+  _previewSueldoFicha();
   document.getElementById('modal-emp-backdrop').style.display = 'flex';
+}
+
+// El mes en el que se registra un aumento hecho desde la ficha: el corriente.
+// La ficha no pregunta el mes —se está editando HOY— y para fechar un aumento
+// en otro mes está el panel de Ajustes, que es donde se hace esa decisión.
+function _mesAjusteFicha() {
+  return (typeof mesActualYYYYMM === 'function') ? mesActualYYYYMM() : new Date().toISOString().slice(0, 7);
+}
+// El modo vuelve a "es un aumento" cada vez que se abre una ficha. Los radios
+// conservan lo último elegido, así que sin esto quien una vez marcó
+// "corrección" se la llevaba puesta a la ficha del empleado SIGUIENTE — y ese
+// aumento volvía a quedar sin historial y en silencio, que es exactamente lo
+// que este bloque viene a evitar.
+function _resetModoSueldoFicha() {
+  const si = document.getElementById('memp-ajuste-si');
+  const no = document.getElementById('memp-ajuste-no');
+  if (si) si.checked = true;
+  if (no) no.checked = false;
+}
+// ¿Quedó marcado que el cambio de sueldo es un aumento? Lo consultan el preview
+// y el guardado, así que sale de UN solo lugar.
+function _fichaEsAumento() {
+  const si = document.getElementById('memp-ajuste-si');
+  return !!(si && si.checked);
+}
+// Mientras se edita, avisa que el sueldo está cambiando y hace elegir QUÉ es.
+// El aviso aparece solo cuando el número difiere del que traía la ficha: en un
+// alta, o si no se tocó el sueldo, no hay nada que preguntar.
+function _previewSueldoFicha() {
+  _previewJornada();   // el valor de la hora sale del sueldo: se mueve con él
+  const wrap = document.getElementById('memp-ajuste-wrap');
+  if (!wrap) return;
+  const nuevo = parseFloat((document.getElementById('memp-sueldo') || {}).value) || 0;
+  const cambio = empleadoEditId != null && _empSueldoAlAbrir != null && nuevo !== _empSueldoAlAbrir;
+  wrap.style.display = cambio ? 'flex' : 'none';
+  if (!cambio) return;
+  const dif = nuevo - _empSueldoAlAbrir;
+  const pct = _empSueldoAlAbrir > 0 ? Math.round((dif / _empSueldoAlAbrir) * 1000) / 10 : 0;
+  const txt = document.getElementById('memp-ajuste-txt');
+  if (txt) txt.innerHTML = 'El sueldo pasa de <strong>' + fmtPeso(_empSueldoAlAbrir) + '</strong> a <strong>' +
+    fmtPeso(nuevo) + '</strong> <span style="color:var(' + (dif > 0 ? '--success' : '--warning') + ')">(' +
+    (dif > 0 ? '+' : '') + fmtPeso(dif) + (pct ? ' · ' + (dif > 0 ? '+' : '') + pct + '%' : '') + ')</span>. ¿Qué es?';
+  const periodo = _mesAjusteFicha();
+  const sub = document.getElementById('memp-ajuste-si-sub');
+  if (sub) sub.textContent = 'Queda en su historial, fechado en ' + _mesTexto(periodo) +
+    ', y su próximo ajuste pasa a ' + _mesTexto(_mesMas(periodo, RRHH_MESES_AJUSTE)) + '.';
+  // Si el mes ya está liquidado, el aumento lo alcanza o no según esté pagado:
+  // es la consecuencia que no se ve desde acá y la que deja un recibo viejo.
+  const s = sueldoDe(empleadoEditId, periodo);
+  const liq = document.getElementById('memp-ajuste-liq');
+  if (liq) {
+    const mostrar = !!s && _fichaEsAumento();
+    liq.style.display = mostrar ? '' : 'none';
+    if (mostrar) {
+      liq.textContent = s.pagado
+        ? 'La liquidación de ' + _mesTexto(periodo) + ' ya está PAGADA: el aumento no la cambia. Si corresponde pagarlo este mes, reabrila y volvé a liquidarla.'
+        : 'La liquidación de ' + _mesTexto(periodo) + ' ya está cargada: se actualiza con el sueldo nuevo.';
+      liq.style.color = s.pagado ? 'var(--warning)' : 'var(--text-secondary)';
+    }
+  }
+}
+
+// Deja el aumento hecho desde la ficha en el historial, igual que si se hubiera
+// aplicado desde el panel de Ajustes: misma tabla, el mismo fechado al 1º del
+// mes y la misma sincronización de la liquidación. El SUELDO no se toca acá:
+// lo guarda la ficha con el resto de los campos.
+async function _registrarAjusteFicha(e, anterior, nuevo, periodo) {
+  const pct = anterior > 0 ? Math.round(((nuevo - anterior) / anterior) * 1000) / 10 : 0;
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const rec = { empleado_id: e.id, fecha: periodo + '-01', periodo, pct,
+                sueldo_anterior: anterior, sueldo_nuevo: nuevo,
+                motivo: 'Cargado desde la ficha del empleado', aplicado_por: quien };
+  const row = await DB.insertRow('empleado_ajustes', rec);
+  if (!Array.isArray(AppData.empleadoAjustes)) AppData.empleadoAjustes = [];
+  AppData.empleadoAjustes.push(Object.assign({ id: row && row.id }, rec));
+  await _sincronizarLiqConSueldo(e.id, periodo, nuevo);
 }
 
 // Anticipa lo que se desprende del horario: horas por día, horas semanales y
@@ -1370,20 +1455,54 @@ async function guardarEmpleadoModal() {
   const propioEmp = !!(document.getElementById('memp-horario-propio') || {}).checked;
   if (phEmp && !propioEmp) Object.assign(rec, _camposDesdePuesto(phEmp));
   rec.horario_propio = !!(phEmp && propioEmp);
+
+  // El sueldo cambió desde que se abrió la ficha. Arriba se eligió qué es; acá
+  // se confirma la CONSECUENCIA, que es lo que no se ve: el aumento corre el
+  // ciclo de 3 meses, y la corrección deja al empleado sin rastro del cambio.
+  const sueldoCambio = empleadoEditId != null && _empSueldoAlAbrir != null && rec.sueldo !== _empSueldoAlAbrir;
+  const esAjuste = sueldoCambio && _fichaEsAumento();
+  const periodoAj = _mesAjusteFicha();
+  if (esAjuste) {
+    if (!confirm('El sueldo de ' + nombre + ' pasa de ' + fmtPeso(_empSueldoAlAbrir) + ' a ' + fmtPeso(rec.sueldo) + '.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Queda registrado como ajuste de ' + _mesTexto(periodoAj) + ' en su historial.' + String.fromCharCode(10) +
+      'Su próximo ajuste pasa a ' + _mesTexto(_mesMas(periodoAj, RRHH_MESES_AJUSTE)) + '.')) return;
+  } else if (sueldoCambio) {
+    if (!confirm('El sueldo de ' + nombre + ' pasa de ' + fmtPeso(_empSueldoAlAbrir) + ' a ' + fmtPeso(rec.sueldo) + '.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Marcaste que es una CORRECCIÓN del dato: no queda en el historial y no mueve el ciclo de ajustes.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Si fue un aumento, cancelá y elegí "Es un aumento".')) return;
+  }
+  let ajusteOk = esAjuste;
   try {
     if (empleadoEditId != null) {
       await DB.updateWhere('empleados', 'id', empleadoEditId, rec);
       const e = AppData.empleados.find(x => x.id === empleadoEditId);
       if (e) Object.assign(e, rec);
+      if (e && esAjuste) {
+        try { await _registrarAjusteFicha(e, _empSueldoAlAbrir, rec.sueldo, periodoAj); }
+        catch (err) {
+          // El sueldo YA se guardó. Si el historial no entró y esto se avisara
+          // con un toast, el aumento volvería a quedar sin rastro — que es
+          // justo lo que este bloque viene a evitar.
+          console.warn('_registrarAjusteFicha', err);
+          ajusteOk = false;
+          alert('El sueldo se guardó, pero NO se pudo registrar el ajuste en el historial:' +
+            String.fromCharCode(10) + (err.message || err) + String.fromCharCode(10) + String.fromCharCode(10) +
+            'Cargalo desde "Ajustes de sueldo" para que quede el historial.');
+        }
+      }
     } else {
       const row = await DB.insertRow('empleados', rec);
       AppData.empleados.push(Object.assign({ id: row.id }, rec));
     }
     persistirEmpleadosLocal();
     empleadoEditId = null;
+    _empSueldoAlAbrir = null;
     document.getElementById('modal-emp-backdrop').style.display = 'none';
     renderEmpleados();
-    showToast('✅ Empleado guardado');
+    showToast('✅ Empleado guardado' + (ajusteOk ? ' · ajuste registrado en el historial' : ''));
   } catch (e) { console.warn('guardarEmpleadoModal', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }
 async function eliminarEmpleado(id) {
@@ -1410,8 +1529,9 @@ async function eliminarEmpleado(id) {
 // lo que evita que a alguien se le pase el aumento. Pero la empresa a veces
 // aumenta igual —una paritaria, un ascenso, corregir un sueldo que quedó
 // atrás— y desde acá no se podía: había que esperar a que le tocara, o
-// editarle el sueldo a mano en la ficha, que NO deja historial y le rompe el
-// ciclo (el próximo se sigue contando desde el aumento anterior).
+// editarle el sueldo a mano en la ficha, que entonces NO dejaba historial y le
+// rompía el ciclo. Hoy la ficha pregunta si es un aumento y lo registra, pero
+// el lugar para hacerlo de a muchos y con su motivo sigue siendo este panel.
 // Los que no les toca se muestran aparte y DESTILDADOS: sumarlos es una
 // decisión, no el caso normal, y tildarlos por defecto convertiría un
 // "Aplicar ajuste" distraído en un aumento a toda la nómina.
@@ -1942,6 +2062,23 @@ function sueldoDe(empId, periodo) {
   return (AppData.empleadoSueldos || []).find(s => s.empleado_id === empId && s.periodo === periodo);
 }
 
+// Si cambia el sueldo y la liquidación de ese mes ya está cargada y NO pagada,
+// tiene que quedar con el sueldo nuevo: si no, el recibo sale con el viejo.
+// Va en UNA sola función porque la usan el ajuste individual y el aumento
+// hecho desde la ficha, y dos copias de esta cuenta terminan discrepando.
+async function _sincronizarLiqConSueldo(empId, periodo, nuevo) {
+  const s = sueldoDe(empId, periodo);
+  if (!s || s.pagado) return false;
+  // Las vacaciones se pagan sobre el sueldo que percibe: cambian con él.
+  const campos = Object.assign({ sueldo_base: nuevo }, _recalcVacLiq(s, nuevo));
+  const total = totalLiquidacionSueldo(Object.assign({}, s, campos));
+  const mT = Math.round(total * _num(s.pct_transferencia) / 100);
+  Object.assign(campos, { total: total, monto_transferencia: mT, monto_efectivo: total - mT });
+  await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
+  Object.assign(s, campos);
+  return true;
+}
+
 function renderSueldosPanel() {
   const mesEl = document.getElementById('emp-sueldo-periodo');
   if (mesEl && !mesEl.value) mesEl.value = (typeof mesActualYYYYMM === 'function') ? mesActualYYYYMM() : new Date().toISOString().slice(0, 7);
@@ -2214,18 +2351,9 @@ async function aplicarAjusteIndividual() {
     const row = await DB.insertRow('empleado_ajustes', rec);
     e.sueldo = nuevo;
     AppData.empleadoAjustes.push(Object.assign({ id: row && row.id }, rec));
-    // La liquidación del mes en curso, si está cargada y NO pagada, tiene que
-    // quedar con el sueldo nuevo: si no, el recibo saldría con el viejo.
-    const s = sueldoDe(e.id, periodo);
-    if (s && !s.pagado) {
-      // Las vacaciones se pagan sobre el sueldo que percibe: cambian con él.
-      const campos = Object.assign({ sueldo_base: nuevo }, _recalcVacLiq(s, nuevo));
-      const nuevoTotal = totalLiquidacionSueldo(Object.assign({}, s, campos));
-      const mT = Math.round(nuevoTotal * _num(s.pct_transferencia) / 100);
-      Object.assign(campos, { total: nuevoTotal, monto_transferencia: mT, monto_efectivo: nuevoTotal - mT });
-      await DB.updateWhere('empleado_sueldos', 'id', s.id, campos);
-      Object.assign(s, campos);
-    }
+    // La liquidación del mes, si está cargada y no pagada, queda con el sueldo
+    // nuevo: la misma cuenta que usa el aumento hecho desde la ficha.
+    await _sincronizarLiqConSueldo(e.id, periodo, nuevo);
     persistirEmpleadosLocal();
     document.getElementById('modal-ajuste1-backdrop').style.display = 'none';
     _aj1Id = null;

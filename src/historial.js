@@ -60,8 +60,12 @@ function _histSwitch(tipo, tab) {
 // el otro aparece en los dos, porque en los dos es cierta —lo contrario sería
 // que la semana del 28/09 no figure en ningún lado.
 function histLiquidaciones(tipo) {
-  const mes = _histVal(tipo, 'mes');
-  const q = String(_histVal(tipo, 'search') || '').toLowerCase().trim();
+  // Con un cliente elegido el mes y el buscador NO se aplican: el caso es "me
+  // reclaman una factura vieja" y nadie sabe de qué mes era. Filtrar por el mes
+  // en curso la escondería y parecería que esa liquidación no existe.
+  const sel = _histClaveSel(tipo);
+  const mes = sel ? '' : _histVal(tipo, 'mes');
+  const q = sel ? '' : String(_histVal(tipo, 'search') || '').toLowerCase().trim();
   const filas = (_histEsConductor(tipo) ? (AppData.conductorLiquidaciones || []) : (AppData.clienteLiquidaciones || []))
     .map(x => {
       const clave = _histEsConductor(tipo) ? (x.conductor || '') : (x.cliente_cod || '');
@@ -76,9 +80,164 @@ function histLiquidaciones(tipo) {
         armada_por: x.armada_por || '', armada_en: x.armada_en || ''
       };
     })
+    .filter(x => !sel || x.clave === sel)
     .filter(x => !mes || (x.desde.slice(0, 7) === mes || x.hasta.slice(0, 7) === mes))
     .filter(x => !q || x.nombre.toLowerCase().includes(q) || x.clave.toLowerCase().includes(q));
   return filas.sort((a, b) => b.desde.localeCompare(a.desde) || b.monto - a.monto);
+}
+
+// ── EL HISTORIAL DE UNO SOLO ────────────────────────────────────────────
+// La pregunta de este panel no es solo "qué se cerró este mes": es "el cliente
+// llama preguntando por una factura de hace cuatro meses". Para eso hay que
+// poder ELEGIRLO y ver todo lo suyo de una, con la fecha en que se armó, el
+// período, lo facturado y el PDF a mano. La tabla cruzada por mes obligaba a
+// adivinar el mes y a buscarlo entre 427 filas.
+function _histEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+function _histClaveSel(tipo) { return String(_histVal(tipo, 'cliente') || ''); }
+
+// Quiénes tienen liquidaciones cerradas, con cuántas tiene cada uno. Solo esos:
+// ofrecer el padrón entero haría buscar entre clientes que no cerraron nada.
+function _histConLiquidaciones(tipo) {
+  const esCond = _histEsConductor(tipo);
+  const filas = esCond ? (AppData.conductorLiquidaciones || []) : (AppData.clienteLiquidaciones || []);
+  const m = new Map();
+  filas.forEach(x => {
+    const clave = esCond ? (x.conductor || '') : (x.cliente_cod || '');
+    if (!clave) return;
+    let o = m.get(clave);
+    if (!o) {
+      o = { clave, n: 0,
+            nombre: esCond ? clave : (typeof clienteNombreDe === 'function' ? clienteNombreDe(clave) : clave) };
+      m.set(clave, o);
+    }
+    o.n++;
+  });
+  return Array.from(m.values()).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+// El selector CONSERVA lo elegido: lo repinta el re-render de la sincronización
+// en vivo, y reconstruirlo en blanco le sacaría al operador el cliente que está
+// mirando — el mismo criterio que renderConductorSelect() con el conductor.
+function _histPoblarSelector(tipo) {
+  const sel = document.getElementById(_histId(tipo, 'cliente'));
+  if (!sel) return;
+  const lista = _histConLiquidaciones(tipo);
+  const firma = lista.map(x => x.clave + ':' + x.n).join('|');
+  if (sel.dataset.firma === firma) return;
+  const actual = sel.value;
+  sel.dataset.firma = firma;
+  sel.innerHTML = '<option value="">Todos los ' + (_histEsConductor(tipo) ? 'conductores' : 'clientes') + '</option>' +
+    lista.map(x => '<option value="' + _histEsc(x.clave) + '">' + _histEsc(x.nombre) + ' (' + x.n + ')</option>').join('');
+  sel.value = actual;   // si ya no está en la lista, queda en "todos"
+}
+
+function _histVerTodos(tipo) {
+  const sel = document.getElementById(_histId(tipo, 'cliente'));
+  if (sel) sel.value = '';
+  renderHistorial(tipo);
+}
+
+// Los años se pliegan: dos años de semanas son más de cien filas. El más nuevo
+// arranca abierto, que es donde está lo que se consulta casi siempre.
+const _histAnios = {};
+function _histAnioAbierto(tipo, anio, i) {
+  const k = tipo + '|' + anio;
+  return (k in _histAnios) ? _histAnios[k] : (i === 0);
+}
+function _histToggleAnio(tipo, anio, i) {
+  _histAnios[tipo + '|' + anio] = !_histAnioAbierto(tipo, anio, i);
+  renderHistorial(tipo);
+}
+
+// La fecha de armado con AÑO: en el historial se miran liquidaciones viejas y
+// "02/10 09:19" no dice de qué año es.
+function _histFmtCuandoLargo(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' +
+    d.getFullYear() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+// Todo el historial de uno, agrupado por año y de lo más nuevo a lo más viejo.
+function _histVistaDeUno(tipo, clave, filas) {
+  const esCond = _histEsConductor(tipo);
+  const nombre = esCond ? clave : (typeof clienteNombreDe === 'function' ? clienteNombreDe(clave) : clave);
+  const volver = '<button class="btn btn-sm" onclick="_histVerTodos(\'' + tipo + '\')">' +
+    '<i class="ic ic-undo"></i> Ver todos los ' + (esCond ? 'conductores' : 'clientes') + '</button>';
+  if (!filas.length) {
+    return '<div class="card"><div class="empty-state"><div class="empty-icon"><i class="ic ic-file"></i></div>' +
+      '<div class="empty-title">' + _histEsc(nombre) + ' no tiene liquidaciones cerradas</div>' +
+      '<div class="empty-sub">Acá aparecen las que se marcan como listas.</div>' +
+      '<div style="margin-top:12px">' + volver + '</div></div></div>';
+  }
+  const orden = filas.slice().sort((a, b) => String(b.desde).localeCompare(String(a.desde)));
+  const total = orden.reduce((s, x) => s + x.monto, 0);
+  const envios = orden.reduce((s, x) => s + x.envios, 0);
+  const vieja = orden[orden.length - 1], nueva = orden[0];
+
+  let html = '<div class="card" style="margin-bottom:12px"><div class="card-body" ' +
+    'style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+    '<div class="conductor-avatar" style="background:' + avatarColor(nombre) + ';width:42px;height:42px;font-size:14px">' +
+      initials(nombre) + '</div>' +
+    '<div style="min-width:0;flex:1">' +
+      '<div style="font-size:16px;font-weight:700">' + _histEsc(nombre) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-muted)">' + orden.length + ' liquidación(es) · ' +
+        'de ' + _histFmtFecha(vieja.desde) + ' a ' + _histFmtFecha(nueva.hasta) + ' · ' +
+        envios.toLocaleString('es-AR') + ' envíos</div>' +
+    '</div>' +
+    '<div style="text-align:right">' +
+      '<div style="font-size:10.5px;color:var(--text-muted);letter-spacing:.04em">' +
+        (esCond ? 'PAGADO EN TOTAL' : 'FACTURADO EN TOTAL') + '</div>' +
+      '<div class="mono" style="font-size:18px;font-weight:700">' + fmtPeso(total) + '</div>' +
+    '</div>' + volver +
+  '</div></div>';
+
+  // Por año: el período es lo que ubica a la liquidación, así que manda su año.
+  const porAnio = new Map();
+  orden.forEach(x => {
+    const a = String(x.desde || x.hasta || '').slice(0, 4) || '—';
+    if (!porAnio.has(a)) porAnio.set(a, []);
+    porAnio.get(a).push(x);
+  });
+  Array.from(porAnio.keys()).forEach((anio, i) => {
+    const grupo = porAnio.get(anio);
+    const abierto = _histAnioAbierto(tipo, anio, i);
+    const sub = grupo.reduce((s, x) => s + x.monto, 0);
+    html += '<div class="card" style="margin-bottom:10px">' +
+      '<button onclick="_histToggleAnio(\'' + tipo + '\',\'' + anio + '\',' + i + ')" ' +
+        'style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 16px;background:none;' +
+        'border:0;border-radius:var(--radius);cursor:pointer;text-align:left;font:inherit;color:inherit">' +
+        '<i class="ic ic-chevrons-down" style="transition:transform .15s' + (abierto ? '' : ';transform:rotate(-90deg)') + '"></i>' +
+        '<strong style="font-size:14px">' + anio + '</strong>' +
+        '<span style="font-size:12px;color:var(--text-muted)">' + grupo.length + ' liquidación(es)</span>' +
+        '<span class="mono" style="margin-left:auto;font-weight:700">' + fmtPeso(sub) + '</span>' +
+      '</button>' +
+      '<div style="display:' + (abierto ? '' : 'none') + '"><div class="table-wrap"><table>' +
+      '<thead><tr><th>Período</th><th>Armada</th><th style="text-align:right">Envíos</th>' +
+        '<th style="text-align:right">' + (esCond ? 'Neto pagado' : 'Facturado') + '</th>' +
+        '<th style="width:160px"></th></tr></thead><tbody>' +
+      grupo.map(x => {
+        const esc = jsAttr(x.clave);
+        return '<tr>' +
+          '<td style="font-size:12.5px;font-weight:600;white-space:nowrap">' + _histFmtFecha(x.desde) + ' → ' + _histFmtFecha(x.hasta) +
+            (x.tieneDetalle ? '' : '<div style="font-size:10.5px;font-weight:400;color:var(--warning)">sin detalle guardado</div>') + '</td>' +
+          '<td style="font-size:11.5px;color:var(--text-muted)">' + (x.armada_por ? _histEsc(x.armada_por) : '—') +
+            (x.armada_en ? '<div>' + _histFmtCuandoLargo(x.armada_en) + '</div>' : '') + '</td>' +
+          '<td class="mono" style="text-align:right">' + (x.envios ? x.envios.toLocaleString('es-AR') : (x.tieneDetalle ? '0' : '—')) + '</td>' +
+          '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.monto) +
+            (esCond && x.bruto ? '<div style="font-size:10.5px;font-weight:400;color:var(--text-muted)">bruto ' + fmtPeso(x.bruto) + '</div>' : '') + '</td>' +
+          '<td style="text-align:right;white-space:nowrap">' +
+            '<button class="btn btn-sm" onclick="verDetalleLiq(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Ver el detalle congelado de esta liquidación"><i class="ic ic-search"></i> Ver</button> ' +
+            '<button class="btn btn-sm" onclick="pdfDesdeHistorial(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Rearma el PDF con el detalle de esa liquidación"><i class="ic ic-download"></i> PDF</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div></div></div>';
+  });
+  return html;
 }
 
 function _histFmtFecha(iso) {
@@ -96,17 +255,34 @@ function _histFmtCuando(ts) {
 function renderHistorial(tipo) {
   const body = document.getElementById(_histId(tipo, 'rows'));
   if (!body) return;
+  _histPoblarSelector(tipo);
   const esCond = _histEsConductor(tipo);
+  const sel = _histClaveSel(tipo);
   const filas = histLiquidaciones(tipo);
-  const mes = _histVal(tipo, 'mes');
-  const q = String(_histVal(tipo, 'search') || '').trim();
+  const mes = sel ? '' : _histVal(tipo, 'mes');
+  const q = sel ? '' : String(_histVal(tipo, 'search') || '').trim();
+
+  // Con uno elegido, el mes y el buscador no se aplican: se esconden en vez de
+  // quedar a la vista sin hacer nada, que hace creer que el filtro está puesto.
+  const filtros = document.getElementById(_histId(tipo, 'filtros'));
+  if (filtros) filtros.style.display = sel ? 'none' : 'flex';
+  const ayuda = document.getElementById(_histId(tipo, 'ayuda'));
+  if (ayuda) {
+    if (!ayuda.dataset.base) ayuda.dataset.base = ayuda.innerHTML;
+    ayuda.innerHTML = sel
+      ? 'Todo su historial, de lo más nuevo a lo más viejo. El mes y el buscador no se aplican: una liquidación vieja no se busca por mes.'
+      : ayuda.dataset.base;
+  }
 
   const total = filas.reduce((s, x) => s + x.monto, 0);
   const envios = filas.reduce((s, x) => s + x.envios, 0);
   const sinDetalle = filas.filter(x => !x.tieneDetalle).length;
 
+  // Con uno elegido, su propia ficha reemplaza a los KPI: repetir los mismos
+  // tres números arriba y abajo no agrega nada.
   const kpis = document.getElementById(_histId(tipo, 'kpis'));
-  if (kpis) kpis.innerHTML =
+  if (kpis) kpis.style.display = sel ? 'none' : '';
+  if (kpis && !sel) kpis.innerHTML =
     '<div class="metric-card"><div class="metric-label">Liquidaciones</div>' +
       '<div class="metric-value">' + filas.length + '</div>' +
       '<div class="metric-sub">' + (mes ? 'en el mes elegido' : 'todo el historial') + (q ? ' · ' + q : '') + '</div></div>' +
@@ -128,6 +304,16 @@ function renderHistorial(tipo) {
       '<button class="btn btn-sm" style="margin-left:6px" onclick="reconstruirHistorial(\'' + tipo + '\')">' +
       '<i class="ic ic-refresh"></i> Reconstruir las que se puedan</button></div></div>'
     : '';
+
+  // La tabla cruzada y la vista de uno solo son excluyentes.
+  const tabla = document.getElementById(_histId(tipo, 'tabla'));
+  const caja = document.getElementById(_histId(tipo, 'cajacli'));
+  if (tabla) tabla.style.display = sel ? 'none' : '';
+  if (caja) {
+    caja.style.display = sel ? '' : 'none';
+    caja.innerHTML = sel ? _histVistaDeUno(tipo, sel, filas) : '';
+  }
+  if (sel) return;
 
   if (!filas.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-file"></i></div>' +

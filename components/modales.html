@@ -1276,7 +1276,7 @@
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label"><i class="ic ic-dollar"></i> Sueldo actual ($)</label>
-          <input type="number" id="memp-sueldo" class="form-input" placeholder="800000" min="0" step="1000" style="width:100%" />
+          <input type="number" id="memp-sueldo" class="form-input" placeholder="800000" min="0" step="1000" style="width:100%" oninput="_previewSueldoFicha()" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:150px">
           <label class="form-label">Días de trabajo</label>
@@ -1290,6 +1290,25 @@
             <option value="1">1 día por semana</option>
           </select>
         </div>
+      </div>
+      <!-- Cambiar el sueldo acá son DOS cosas distintas y se arreglan distinto:
+           un AUMENTO tiene que quedar en el historial y corre el ciclo de 3
+           meses, y una CORRECCION del dato no. Sin preguntarlo, el sueldo
+           cambiaba sin dejar rastro y el proximo ajuste se seguia contando
+           desde el aumento anterior — o sea que al empleado se le atrasaba el
+           siguiente. Paso de verdad: 5 sueldos editados desde la ficha que
+           hubo que regularizar a mano contra la base. -->
+      <div id="memp-ajuste-wrap" style="display:none;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid #f59e0b;border-radius:8px;background:var(--surface-2)">
+        <div id="memp-ajuste-txt" style="font-size:12.5px"></div>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer;margin:0">
+          <input type="radio" name="memp-ajuste-modo" id="memp-ajuste-si" checked onchange="_previewSueldoFicha()" style="margin-top:3px">
+          <span><strong>Es un aumento</strong><br><span id="memp-ajuste-si-sub" style="color:var(--text-muted);font-size:11.5px"></span></span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer;margin:0">
+          <input type="radio" name="memp-ajuste-modo" id="memp-ajuste-no" onchange="_previewSueldoFicha()" style="margin-top:3px">
+          <span><strong>Es una corrección del dato</strong><br><span style="color:var(--text-muted);font-size:11.5px">El sueldo estaba mal cargado. No deja historial ni mueve el ciclo de ajustes.</span></span>
+        </label>
+        <div id="memp-ajuste-liq" style="display:none;font-size:11.5px"></div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;flex:1;min-width:110px">
