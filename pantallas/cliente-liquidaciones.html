@@ -3,14 +3,24 @@
         <div class="section-head" style="margin-bottom:12px">
           <span class="section-title"><i class="ic ic-file"></i> Liquidación de clientes</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <div class="date-range">
-              <i class="ic ic-calendar"></i>
-              <span class="date-label">Semana Vie→Jue</span>
-              <input type="date" id="cliq-semana" onchange="cliqCambioSemana()" aria-label="Semana de facturación (viernes a jueves)" title="Elegí cualquier día: se toma la semana Viernes→Jueves que lo contiene">
-            </div>
+            <!-- La semana y las descargas son de la solapa SEMANA: en el
+                 Historial no mandan nada —ahí el período lo da cada liquidación—
+                 y "Descargar las 0 listas" sobre la semana en curso se lee como
+                 si el historial estuviera vacío. Se esconden con la solapa.
+                 "Datos de la empresa" queda: alimenta el pie de TODOS los PDF,
+                 también los que se bajan del historial. -->
+            <span id="cliq-acciones-semana" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <div class="date-range">
+                <i class="ic ic-calendar"></i>
+                <span class="date-label">Semana Vie→Jue</span>
+                <input type="date" id="cliq-semana" onchange="cliqCambioSemana()" aria-label="Semana de facturación (viernes a jueves)" title="Elegí cualquier día: se toma la semana Viernes→Jueves que lo contiene">
+              </div>
+            </span>
             <button class="btn btn-sm" onclick="abrirDatosEmpresa()" title="Razón social, CUIT y contacto: es lo que sale en el encabezado y el pie de la liquidación que se le manda al cliente"><i class="ic ic-building"></i> Datos de la empresa</button>
-            <button class="btn btn-sm" id="cliq-btn-unpdf" onclick="descargarLiqClientesCombinado()" title="Todas las elegidas en un solo archivo, una por página"><i class="ic ic-file"></i> En un solo PDF</button>
-            <button class="btn btn-sm btn-primary" id="cliq-btn-descargar" onclick="descargarLiqClientes()"><i class="ic ic-download"></i> Descargar</button>
+            <span id="cliq-acciones-descarga" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-sm" id="cliq-btn-unpdf" onclick="descargarLiqClientesCombinado()" title="Todas las elegidas en un solo archivo, una por página"><i class="ic ic-file"></i> En un solo PDF</button>
+              <button class="btn btn-sm btn-primary" id="cliq-btn-descargar" onclick="descargarLiqClientes()"><i class="ic ic-download"></i> Descargar</button>
+            </span>
           </div>
         </div>
 

@@ -44,6 +44,13 @@ function _histSwitch(tipo, tab) {
     if (panel) panel.style.display = (t === histTab[tipo]) ? '' : 'none';
     if (btn) btn.classList.toggle('active', t === histTab[tipo]);
   });
+  // Los controles que son de la solapa SEMANA se esconden en el Historial: un
+  // botón que dice "Descargar las 0 listas" mientras abajo hay 427 liquidaciones
+  // se lee como que el historial está vacío.
+  ['acciones-semana', 'acciones-descarga'].forEach(k => {
+    const el = document.getElementById(pre + '-' + k);
+    if (el) el.style.display = (histTab[tipo] === 'historial') ? 'none' : 'flex';
+  });
   if (histTab[tipo] === 'historial') {
     const mes = document.getElementById(_histId(tipo, 'mes'));
     if (mes && !mes.value) mes.value = _histMesInicial();
@@ -139,9 +146,11 @@ function _histVerTodos(tipo) {
   renderHistorial(tipo);
 }
 
-// Los años se pliegan: dos años de semanas son más de cien filas. El más nuevo
-// arranca abierto, que es donde está lo que se consulta casi siempre.
+// Los años y los MESES se pliegan: un año de semanas son 52 filas, y la pregunta
+// que se hace acá es "la factura de septiembre", no "las 52 del año". Arrancan
+// abiertos el año más nuevo y, dentro de cada año que se abre, su mes más nuevo.
 const _histAnios = {};
+const _histMesesAbiertos = {};
 function _histAnioAbierto(tipo, anio, i) {
   const k = tipo + '|' + anio;
   return (k in _histAnios) ? _histAnios[k] : (i === 0);
@@ -150,6 +159,17 @@ function _histToggleAnio(tipo, anio, i) {
   _histAnios[tipo + '|' + anio] = !_histAnioAbierto(tipo, anio, i);
   renderHistorial(tipo);
 }
+function _histMesAbierto(tipo, ym, i) {
+  const k = tipo + '|' + ym;
+  return (k in _histMesesAbiertos) ? _histMesesAbiertos[k] : (i === 0);
+}
+function _histToggleMes(tipo, ym, i) {
+  _histMesesAbiertos[tipo + '|' + ym] = !_histMesAbierto(tipo, ym, i);
+  renderHistorial(tipo);
+}
+const _HIST_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function _histMesNombre(mm) { return _HIST_MESES[(+mm) - 1] || mm; }
 
 // La fecha de armado con AÑO: en el historial se miran liquidaciones viejas y
 // "02/10 09:19" no dice de qué año es.
@@ -195,47 +215,77 @@ function _histVistaDeUno(tipo, clave, filas) {
     '</div>' + volver +
   '</div></div>';
 
-  // Por año: el período es lo que ubica a la liquidación, así que manda su año.
+  // Año → mes → liquidaciones. El período es lo que ubica a la liquidación, así
+  // que manda la fecha en que ABRE: una semana que cruza de mes pertenece al mes
+  // en que empezó, igual que la factura.
   const porAnio = new Map();
   orden.forEach(x => {
-    const a = String(x.desde || x.hasta || '').slice(0, 4) || '—';
-    if (!porAnio.has(a)) porAnio.set(a, []);
-    porAnio.get(a).push(x);
+    const ym = String(x.desde || x.hasta || '').slice(0, 7);
+    const a = ym.slice(0, 4) || '—';
+    if (!porAnio.has(a)) porAnio.set(a, new Map());
+    const meses = porAnio.get(a);
+    if (!meses.has(ym)) meses.set(ym, []);
+    meses.get(ym).push(x);
   });
+  const chevron = ab => '<i class="ic ic-chevrons-down" style="transition:transform .15s' +
+    (ab ? '' : ';transform:rotate(-90deg)') + '"></i>';
+
   Array.from(porAnio.keys()).forEach((anio, i) => {
-    const grupo = porAnio.get(anio);
+    const meses = porAnio.get(anio);
+    const delAnio = Array.from(meses.values()).reduce((s, g) => s.concat(g), []);
     const abierto = _histAnioAbierto(tipo, anio, i);
-    const sub = grupo.reduce((s, x) => s + x.monto, 0);
+    const sub = delAnio.reduce((s, x) => s + x.monto, 0);
     html += '<div class="card" style="margin-bottom:10px">' +
       '<button onclick="_histToggleAnio(\'' + tipo + '\',\'' + anio + '\',' + i + ')" ' +
         'style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 16px;background:none;' +
         'border:0;border-radius:var(--radius);cursor:pointer;text-align:left;font:inherit;color:inherit">' +
-        '<i class="ic ic-chevrons-down" style="transition:transform .15s' + (abierto ? '' : ';transform:rotate(-90deg)') + '"></i>' +
+        chevron(abierto) +
         '<strong style="font-size:14px">' + anio + '</strong>' +
-        '<span style="font-size:12px;color:var(--text-muted)">' + grupo.length + ' liquidación(es)</span>' +
+        '<span style="font-size:12px;color:var(--text-muted)">' + delAnio.length + ' liquidación(es) · ' +
+          meses.size + ' mes(es)</span>' +
         '<span class="mono" style="margin-left:auto;font-weight:700">' + fmtPeso(sub) + '</span>' +
       '</button>' +
-      '<div style="display:' + (abierto ? '' : 'none') + '"><div class="table-wrap"><table>' +
-      '<thead><tr><th>Período</th><th>Armada</th><th style="text-align:right">Envíos</th>' +
-        '<th style="text-align:right">' + (esCond ? 'Neto pagado' : 'Facturado') + '</th>' +
-        '<th style="width:160px"></th></tr></thead><tbody>' +
-      grupo.map(x => {
-        const esc = jsAttr(x.clave);
-        return '<tr>' +
-          '<td style="font-size:12.5px;font-weight:600;white-space:nowrap">' + _histFmtFecha(x.desde) + ' → ' + _histFmtFecha(x.hasta) +
-            (x.tieneDetalle ? '' : '<div style="font-size:10.5px;font-weight:400;color:var(--warning)">sin detalle guardado</div>') + '</td>' +
-          '<td style="font-size:11.5px;color:var(--text-muted)">' + (x.armada_por ? _histEsc(x.armada_por) : '—') +
-            (x.armada_en ? '<div>' + _histFmtCuandoLargo(x.armada_en) + '</div>' : '') + '</td>' +
-          '<td class="mono" style="text-align:right">' + (x.envios ? x.envios.toLocaleString('es-AR') : (x.tieneDetalle ? '0' : '—')) + '</td>' +
-          '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.monto) +
-            (esCond && x.bruto ? '<div style="font-size:10.5px;font-weight:400;color:var(--text-muted)">bruto ' + fmtPeso(x.bruto) + '</div>' : '') + '</td>' +
-          '<td style="text-align:right;white-space:nowrap">' +
-            '<button class="btn btn-sm" onclick="verDetalleLiq(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Ver el detalle congelado de esta liquidación"><i class="ic ic-search"></i> Ver</button> ' +
-            '<button class="btn btn-sm" onclick="pdfDesdeHistorial(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Rearma el PDF con el detalle de esa liquidación"><i class="ic ic-download"></i> PDF</button>' +
-          '</td>' +
-        '</tr>';
+      '<div style="display:' + (abierto ? '' : 'none') + '">' +
+      Array.from(meses.keys()).map((ym, j) => {
+        const grupo = meses.get(ym);
+        const abM = _histMesAbierto(tipo, ym, j);
+        const subM = grupo.reduce((s, x) => s + x.monto, 0);
+        return '<div style="border-top:1px solid var(--border)">' +
+          '<button onclick="_histToggleMes(\'' + tipo + '\',\'' + ym + '\',' + j + ')" ' +
+            'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 16px 9px 30px;background:none;' +
+            'border:0;cursor:pointer;text-align:left;font:inherit;color:inherit">' +
+            chevron(abM) +
+            '<span style="font-size:13px;font-weight:600;text-transform:capitalize">' + _histMesNombre(ym.slice(5, 7)) + '</span>' +
+            '<span style="font-size:11.5px;color:var(--text-muted)">' + grupo.length + ' liquidación(es)</span>' +
+            '<span class="mono" style="margin-left:auto;font-size:12.5px;font-weight:600">' + fmtPeso(subM) + '</span>' +
+          '</button>' +
+          '<div style="display:' + (abM ? '' : 'none') + '"><div class="table-wrap"><table>' +
+          '<thead><tr><th>Período</th><th>Armada</th><th style="text-align:right">Envíos</th>' +
+            '<th style="text-align:right">' + (esCond ? 'Neto pagado' : 'Facturado') + '</th>' +
+            '<th style="width:160px"></th></tr></thead><tbody>' +
+          grupo.map(x => {
+            const esc = jsAttr(x.clave);
+            return '<tr>' +
+              '<td style="font-size:12.5px;font-weight:600;white-space:nowrap">' + _histFmtFecha(x.desde) + ' → ' + _histFmtFecha(x.hasta) +
+                (x.tieneDetalle ? '' : '<div style="font-size:10.5px;font-weight:400;color:var(--warning)">solo consta el total</div>') + '</td>' +
+              '<td style="font-size:11.5px;color:var(--text-muted)">' + (x.armada_por ? _histEsc(x.armada_por) : '—') +
+                (x.armada_en ? '<div>' + _histFmtCuandoLargo(x.armada_en) + '</div>' : '') + '</td>' +
+              '<td class="mono" style="text-align:right">' + (x.envios ? x.envios.toLocaleString('es-AR') : (x.tieneDetalle ? '0' : '—')) + '</td>' +
+              '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.monto) +
+                (esCond && x.bruto ? '<div style="font-size:10.5px;font-weight:400;color:var(--text-muted)">bruto ' + fmtPeso(x.bruto) + '</div>' : '') + '</td>' +
+              '<td style="text-align:right;white-space:nowrap">' +
+                '<button class="btn btn-sm" onclick="verDetalleLiq(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Ver lo que consta de esta liquidación"><i class="ic ic-search"></i> Ver</button>' +
+                // Sin snapshot NO se ofrece el PDF: rearmarlo sería recalcular con
+                // los datos de hoy y saldría con el formato del original sin serlo.
+                (x.tieneDetalle
+                  ? ' <button class="btn btn-sm" onclick="pdfDesdeHistorial(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="El mismo PDF que se descargó ese día"><i class="ic ic-download"></i> PDF</button>'
+                  : '') +
+              '</td>' +
+            '</tr>';
+          }).join('') +
+          '</tbody></table></div></div></div>';
       }).join('') +
-      '</tbody></table></div></div></div>';
+      '</div></div>';
   });
   return html;
 }
@@ -296,13 +346,19 @@ function renderHistorial(tipo) {
   // Las cerradas antes de que existiera el historial no tienen detalle: se
   // pueden reconstruir mientras sus envíos sigan en la base viva.
   const aviso = document.getElementById(_histId(tipo, 'aviso'));
+  // De las cerradas antes del 18/09/2026 consta el TOTAL y no el desglose, y
+  // eso es todo lo que se puede decir con honestidad. Rearmarlas recalculando
+  // con los datos de hoy daba un papel con el formato y el número de documento
+  // del original SIN serlo —entre medio se cargaron listas de precios sin fecha,
+  // que pisan el precio hacia atrás, y se corrigieron zonas, anulaciones y
+  // envíos a mano—, y para cotejar contra lo que el cliente tiene en la mano eso
+  // es peor que no tener PDF. Por eso no hay botón para reconstruirlas.
   if (aviso) aviso.innerHTML = sinDetalle
     ? '<div class="alert" style="margin:0 0 14px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
-      '<i class="ic ic-alert"></i><div><strong>' + sinDetalle + ' liquidación(es) sin detalle guardado</strong> — se cerraron antes de que existiera el historial, ' +
-      'así que se puede ver el total pero no rearmar el PDF. Se reconstruye con los envíos de esa semana: si son de hace más de ' +
-      'dos semanas, primero traelos con <strong>Cargar historial completo</strong> (arriba del Dashboard). ' +
-      '<button class="btn btn-sm" style="margin-left:6px" onclick="reconstruirHistorial(\'' + tipo + '\')">' +
-      '<i class="ic ic-refresh"></i> Reconstruir las que se puedan</button></div></div>'
+      '<i class="ic ic-alert"></i><div><strong>De ' + sinDetalle + ' liquidación(es) consta el total, no el desglose</strong> — se cerraron antes de que ' +
+      'el sistema guardara el detalle congelado (18/09/2026). El importe es el que se facturó y no se recalcula; ' +
+      'lo que no se puede reponer es el envío por envío, así que esas no ofrecen PDF: ' +
+      'para cotejarlas hay que usar el que se le mandó al cliente.</div></div>'
     : '';
 
   // La tabla cruzada y la vista de uno solo son excluyentes.
@@ -335,8 +391,10 @@ function renderHistorial(tipo) {
       '<td style="font-size:11px;color:var(--text-muted)">' + (x.armada_por || '—') +
         (x.armada_en ? '<div>' + _histFmtCuando(x.armada_en) + '</div>' : '') + '</td>' +
       '<td style="text-align:right;white-space:nowrap">' +
-        '<button class="btn btn-sm" onclick="verDetalleLiq(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Ver el detalle congelado de esta liquidación"><i class="ic ic-search"></i> Ver</button> ' +
-        '<button class="btn btn-sm" onclick="pdfDesdeHistorial(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Rearma el PDF con el detalle de esa liquidación"><i class="ic ic-download"></i> PDF</button>' +
+        '<button class="btn btn-sm" onclick="verDetalleLiq(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="Ver lo que consta de esta liquidación"><i class="ic ic-search"></i> Ver</button>' +
+        (x.tieneDetalle
+          ? ' <button class="btn btn-sm" onclick="pdfDesdeHistorial(\'' + tipo + '\',\'' + esc + '\',\'' + x.desde + '\')" title="El mismo PDF que se descargó ese día"><i class="ic ic-download"></i> PDF</button>'
+          : '') +
       '</td>' +
     '</tr>';
   }).join('');
@@ -404,10 +462,27 @@ async function verDetalleLiq(tipo, clave, semanaISO) {
     return;
   }
   if (!row || !row.detalle) {
+    // Lo que SÍ consta: el total congelado al cerrarla y quién la armó. Se
+    // muestra eso en vez de ofrecer rearmarla: el desglose de hoy no es el que
+    // se le mandó al cliente y no hay forma de saber cuánto se corrió.
+    const fila = (esCond ? (AppData.conductorLiquidaciones || []) : (AppData.clienteLiquidaciones || []))
+      .find(x => (esCond ? x.conductor : x.cliente_cod) === clave &&
+                 String(x.semana_desde || '').slice(0, 10) === semanaISO);
     document.getElementById('modal-body').innerHTML =
+      '<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">Período <strong>' +
+        _histFmtFecha(semanaISO) + ' → ' + _histFmtFecha(String((fila || {}).semana_hasta || '').slice(0, 10)) + '</strong>' +
+        ((fila || {}).armada_por ? ' · armada por ' + _histEsc(fila.armada_por) : '') +
+        ((fila || {}).armada_en ? ' · ' + _histFmtCuandoLargo(fila.armada_en) : '') + '</div>' +
+      '<div class="metrics-grid" style="grid-template-columns:1fr;margin-bottom:14px">' +
+        '<div class="metric-card accent"><div class="metric-label">' + (esCond ? 'Neto pagado' : 'Facturado') + '</div>' +
+        '<div class="metric-value">' + fmtPeso(_num((fila || {}).monto)) + '</div>' +
+        '<div class="metric-sub">el importe con el que se cerró, congelado</div></div>' +
+      '</div>' +
       '<div class="alert" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74"><i class="ic ic-alert"></i>' +
-      '<div>Esta liquidación <strong>no tiene detalle guardado</strong>: se cerró antes de que existiera el historial. ' +
-      'El total sigue siendo el que se pagó; el detalle se puede reconstruir mientras sus envíos sigan cargados.</div></div>';
+      '<div>De esta liquidación <strong>consta el total, no el desglose</strong>: se cerró antes de que el sistema ' +
+      'guardara el detalle congelado (18/09/2026). Rearmar el envío por envío con los datos de hoy daría un papel ' +
+      'que <strong>no es el que se le mandó al cliente</strong> —entre medio se cargaron listas de precios sin fecha ' +
+      'y se corrigieron envíos a mano—, así que no se ofrece. Para cotejar, el documento válido es el que se envió.</div></div>';
     return;
   }
   const snap = row.detalle;
@@ -459,10 +534,15 @@ async function verDetalleLiq(tipo, clave, semanaISO) {
       (_num(snap.noent && snap.noent.length) ? '<div class="muted" style="font-size:11.5px;margin-top:8px">' +
         snap.noent.length + ' recorrido(s) en otros estados, que no se pagaron.</div>' : '');
   } else {
-    html += '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
-      kpi('Facturado', fmtPeso(snap.total), _num(snap.envios).toLocaleString('es-AR') + ' envíos') +
-      kpi('Envíos', fmtPeso(snap.totalEnvio), 'sin los cargos') +
-      kpi('Cargos', fmtPeso(snap.totalCargos), (snap.cargos || []).length + ' cargo(s)') +
+    const cargos = snap.cargos || [];
+    html += '<div class="metrics-grid" style="grid-template-columns:repeat(' + (cargos.length ? 3 : 1) +
+      ',1fr);margin-bottom:14px">' +
+      kpi('Facturado', fmtPeso(snap.total), _num(snap.envios).toLocaleString('es-AR') + ' envíos' +
+        (cargos.length ? ' + ' + cargos.length + ' cargo(s)' : '')) +
+      (cargos.length
+        ? kpi('Por envíos', fmtPeso(snap.totalEnvio), 'a la tarifa de cada zona') +
+          kpi('Cargos', fmtPeso(snap.totalCargos), 'colecta, viaje particular u otro')
+        : '') +
     '</div>';
     const zonas = (snap.zonas || []).slice().sort((a, b) => _num(b.subtotal) - _num(a.subtotal));
     html += '<div class="table-wrap" style="max-height:38vh;overflow:auto"><table><thead><tr>' +
@@ -473,6 +553,16 @@ async function verDetalleLiq(tipo, clave, semanaISO) {
         '<td class="mono" style="text-align:right">' + fmtPeso(_num(f.subtotal)) + '</td></tr>').join('')
         : '<tr><td colspan="4" class="muted" style="text-align:center;padding:12px">Sin envíos: solo cargos</td></tr>') +
       '</tbody></table></div>' +
+      // Los cargos van discriminados con su concepto y su fecha, igual que en la
+      // factura: diluidos en un total no se puede explicar de qué eran.
+      (cargos.length ? '<div class="table-wrap" style="margin-top:10px"><table><thead><tr>' +
+        '<th>Cargo que no viene de un envío</th><th style="text-align:right">Importe</th></tr></thead><tbody>' +
+        cargos.map(c => '<tr><td>' +
+          _histEsc(typeof cargoLabel === 'function' ? cargoLabel(c.concepto) : (c.concepto || 'Cargo')) +
+          ((typeof cargoDatosTxt === 'function' && cargoDatosTxt(c))
+            ? '<div style="font-size:11px;color:var(--text-muted)">' + _histEsc(cargoDatosTxt(c)) + '</div>' : '') +
+          '</td><td class="mono" style="text-align:right">' + fmtPeso(_num(c.monto)) + '</td></tr>').join('') +
+        '</tbody></table></div>' : '') +
       (_num(snap.anulados) ? '<div class="muted" style="font-size:11.5px;margin-top:8px">' + _num(snap.anulados) +
         ' envío(s) con el cobro anulado · ' + fmtPeso(snap.bonificado) + ' bonificados.</div>' : '');
   }
@@ -483,52 +573,14 @@ async function verDetalleLiq(tipo, clave, semanaISO) {
   document.getElementById('modal-body').innerHTML = html;
 }
 
-// ── Reconstruir las que se cerraron antes del historial ────────────────────
-// Se rehacen con los envíos que sigan cargados. Quedan marcadas como
-// reconstruidas: los precios salen del tarifario de HOY, así que el bruto puede
-// no coincidir con lo que se pagó —y el número que vale sigue siendo el monto
-// congelado de la liquidación, que no se toca.
-async function reconstruirHistorial(tipo) {
-  const esCond = tipo === 'conductor';
-  const pendientes = histLiquidaciones(tipo).filter(x => !x.tieneDetalle);
-  if (!pendientes.length) { showToast('No hay ninguna sin detalle en lo que estás viendo'); return; }
-  const NL = String.fromCharCode(10);
-  if (!confirm('¿Reconstruir el detalle de ' + pendientes.length + ' liquidación(es)?' + NL + NL +
-    'Se rehace con los envíos que sigan cargados y con el tarifario de HOY, así que puede no dar exactamente lo que se pagó: ' +
-    'por eso quedan marcadas como reconstruidas. El monto de cada liquidación no se toca.')) return;
-
-  let ok = 0, sinEnvios = 0;
-  for (const p of pendientes) {
-    try {
-      const rango = {
-        desde: _histFmtFecha(p.desde), hasta: _histFmtFecha(p.hasta),
-        desdeD: parseFechaReg(_histFmtFecha(p.desde)), hastaD: parseFechaReg(_histFmtFecha(p.hasta))
-      };
-      const fila = (esCond ? (AppData.conductorLiquidaciones || []) : (AppData.clienteLiquidaciones || []))
-        .find(x => x.id === p.id);
-      if (!fila) continue;
-      if (esCond) {
-        // Los envíos de ESA semana y de ESE conductor (el panel mira la semana
-        // que está en pantalla, que no es la que se está reconstruyendo).
-        const recs = (AppData.records || []).filter(r => {
-          if (conductorCanonico(r.cadete) !== p.clave) return false;
-          const f = parseFechaReg(r.fecha);
-          return !!f && f >= rango.desdeD && f <= rango.hastaD;
-        });
-        if (!recs.length) { sinEnvios++; continue; }
-        const snap = snapshotConductor(p.clave, rango, calcLiquidacionesFiltradas(recs));
-        await _guardarSnapshotConductor(fila, snap, true);
-      } else {
-        const snap = snapshotCliente(p.clave, rango);
-        if (!snap.envios && !(snap.cargos || []).length) { sinEnvios++; continue; }
-        await _guardarSnapshotCliente(fila, snap, true);
-      }
-      ok++;
-    } catch (e) { console.warn('reconstruirHistorial', p.clave, e); }
-  }
-  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
-  renderHistorial(tipo);
-  alert('Reconstruidas: ' + ok + ' liquidación(es).' + NL +
-    (sinEnvios ? sinEnvios + ' no se pudieron: sus envíos ya no están cargados (archivados o fuera de la ventana de días).' + NL : '') +
-    'Las reconstruidas quedan marcadas como tales.');
-}
+// ── Por qué NO hay "reconstruir" ───────────────────────────────────────────
+// Existió y se sacó. Rehacer el detalle con los envíos y el tarifario de hoy
+// produce un PDF con el formato, el membrete y el número de documento del
+// original sin serlo, y el panel lo ofrecía como la acción destacada. Para el
+// uso real —el cliente llama reclamando una factura— eso es peor que no tener
+// PDF. Dos mecanismos medidos lo garantizan en esta base: hasta el 19/09/2026
+// se cargaron listas de precios con el centinela "desde siempre", que pisan el
+// precio de semanas ya facturadas, y los envíos de esas semanas acumulan 729
+// zonas corregidas, 126 cobros anulados y 224 altas a mano posteriores al
+// cierre. Lo que consta de esas liquidaciones es el MONTO congelado, y con eso
+// alcanza para cotejar contra el papel que se envió.
