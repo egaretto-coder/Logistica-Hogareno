@@ -31,6 +31,18 @@
           </div>
         </div>
 
+        <!-- El mes que se está mirando. Arranca en el corriente, con "Todos"
+             al lado para no esconder lo viejo sin una salida de un clic. -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+          <div class="date-range" id="kmdesvio-mes-nav">
+            <button class="btn btn-sm" onclick="panelMoverMes('kmdesvio',-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+            <input type="month" id="kmdesvio-mes" onchange="panelElegirMes('kmdesvio',this.value)" aria-label="Mes a ver">
+            <button class="btn btn-sm" onclick="panelMoverMes('kmdesvio',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+          </div>
+          <button class="btn btn-sm" id="kmdesvio-mes-todos" onclick="panelTodosLosMeses('kmdesvio')" title="Ver todos los registros, de cualquier mes">Todos</button>
+        </div>
+
         <div id="kmdesvio-kpis"></div>
 
         <!-- FILTROS -->

@@ -62,6 +62,72 @@ async function guardarKmValor(el) {
 }
 
 // Fecha de hoy en formato ISO (YYYY-MM-DD, hora local) para los <input type=date>.
+// ── NAVEGADOR DE MES DE UN PANEL ────────────────────────────────────────
+// El mismo control del Dashboard —‹ octubre de 2026 ›— para los paneles que
+// listan registros fechados. Sin él, el resumen de arriba mide TODO lo que haya
+// cargado y no se puede responder "cuánto de km pagamos en octubre", que es la
+// pregunta con la que se cierra el mes.
+// Arranca en el mes en curso y tiene **Todos** al lado: un filtro puesto por
+// defecto que no se pueda sacar de un clic esconde registros viejos y hace
+// pensar que se perdieron. El contador ("3 de 47") deja ver cuándo está acotado.
+const _panelMes = {};                  // id del panel → 'AAAA-MM' | '' (todos)
+function _panelMesHoy() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function _panelMesActivo(id) {
+  return (id in _panelMes) ? _panelMes[id] : _panelMesHoy();
+}
+// Qué repintar: se resuelve por el ID del panel y no con un registro que cada
+// archivo llena al cargarse. Ese registro ataba el orden de los <script> —
+// descuentos-items.js escribía en un `const` declarado en ESTE archivo, y si
+// cargaba antes tiraba un TDZ que dejaba el archivo entero sin ejecutar. Lo
+// agarró el banco, que los carga en otro orden.
+function _panelMesRepintar(id) {
+  if (id === 'kmdesvio') {
+    if (typeof renderKmDesvio === 'function') renderKmDesvio();
+    return;
+  }
+  if (id.indexOf('descitem-') === 0 && typeof renderDescItems === 'function') {
+    renderDescItems(id.slice('descitem-'.length));
+  }
+}
+function panelMoverMes(id, n) {
+  const m = _panelMesActivo(id) || _panelMesHoy();
+  const d = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1 + _num(n), 1);
+  _panelMes[id] = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  _panelMesRepintar(id);
+}
+function panelElegirMes(id, v) {
+  if (!/^\d{4}-\d{2}$/.test(String(v || ''))) return;   // vaciarlo no cambia nada
+  _panelMes[id] = v;
+  _panelMesRepintar(id);
+}
+function panelTodosLosMeses(id) {
+  _panelMes[id] = '';
+  _panelMesRepintar(id);
+}
+// Deja el control mostrando el mes activo y marca si está acotado. Como en el
+// Dashboard, el marcado sale del ESTADO y no del botón que se tocó.
+function _pintarPanelMes(id) {
+  const mes = _panelMesActivo(id);
+  const inp = document.getElementById(id + '-mes');
+  if (inp && inp.value !== mes) inp.value = mes;
+  const nav = document.getElementById(id + '-mes-nav');
+  if (nav) {
+    nav.style.borderColor = mes ? 'var(--accent)' : '';
+    nav.style.boxShadow = mes ? '0 0 0 3px var(--accent-light)' : '';
+  }
+  const btn = document.getElementById(id + '-mes-todos');
+  if (btn) btn.classList.toggle('active', !mes);
+}
+// Deja solo los registros del mes activo. Sin mes, pasan todos.
+function filtrarPorMesPanel(id, lista) {
+  const mes = _panelMesActivo(id);
+  if (!mes) return lista;
+  return lista.filter(x => String(dmyToISO(x.fecha) || '').slice(0, 7) === mes);
+}
+
 function hoyISO() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -154,13 +220,18 @@ function renderKmDesvio() {
     }
   }
 
+  _pintarPanelMes('kmdesvio');
   const search = (document.getElementById('kmdesvio-search')?.value || '').toLowerCase();
-  const list = AppData.kmDesvio.filter(d => {
+  // El mes acota primero; el buscador, sobre eso. Solo el BUSCADOR rotula las
+  // tarjetas como '(filtrado)': el mes ya se ve en el navegador de arriba, y
+  // marcarlas siempre seria ruido.
+  const delMes = filtrarPorMesPanel('kmdesvio', AppData.kmDesvio);
+  const list = delMes.filter(d => {
     if (!search) return true;
     return String(d.conductor||'').toLowerCase().includes(search);
   });
 
-  _renderKmKPIs(list, !!search && list.length !== AppData.kmDesvio.length);
+  _renderKmKPIs(list, !!search && list.length !== delMes.length);
   const countEl = document.getElementById('kmdesvio-count');
   if (countEl) {
     countEl.textContent = list.length + ' de ' + AppData.kmDesvio.length + ' registros de km de desvío';

@@ -15,6 +15,16 @@
         <div class="alert alert-info" style="margin-bottom:16px">
           <i class="ic ic-box"></i> Registrá cada <strong>envío extraviado o roto</strong>: elegí el conductor y la fecha, y la app te ofrece los <strong>trackings</strong> de sus envíos (o escribilo a mano). El monto es el <strong>valor real</strong> de la mercadería. Si es caro, tildá <strong>"Cuotear"</strong> para pagarlo en cuotas. Cada descuento (o cuota) se imputa a la <strong>liquidación de su semana</strong>.
         </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+          <div class="date-range" id="descitem-extraviados-mes-nav">
+            <button class="btn btn-sm" onclick="panelMoverMes('descitem-extraviados',-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+            <input type="month" id="descitem-extraviados-mes" onchange="panelElegirMes('descitem-extraviados',this.value)" aria-label="Mes a ver">
+            <button class="btn btn-sm" onclick="panelMoverMes('descitem-extraviados',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+          </div>
+          <button class="btn btn-sm" id="descitem-extraviados-mes-todos" onclick="panelTodosLosMeses('descitem-extraviados')" title="Ver todos los registros, de cualquier mes">Todos</button>
+        </div>
+
         <div id="descitem-extraviados-kpis"></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
           <input type="search" id="descitem-extraviados-search" placeholder="🔍 Buscar conductor o tracking..." style="width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderDescItems('extraviados')">

@@ -121,7 +121,13 @@ function renderDescItems(tipo) {
     if (semEl && !semEl.value) semEl.value = hoyISO();
   }
 
-  const todos = AppData.descItems.filter(x => x.tipo === tipo);
+  // El mes manda solo donde está el control (hoy, Extraviados). Donde no existe,
+  // _panelMesActivo no se consulta y la lista es la de siempre.
+  const conMes = !!document.getElementById('descitem-' + tipo + '-mes-nav');
+  if (conMes) _pintarPanelMes('descitem-' + tipo);
+  const todos = conMes
+    ? filtrarPorMesPanel('descitem-' + tipo, AppData.descItems.filter(x => x.tipo === tipo))
+    : AppData.descItems.filter(x => x.tipo === tipo);
   const search = (document.getElementById('descitem-' + tipo + '-search')?.value || '').toLowerCase().trim();
   const lista = todos
     .filter(x => !search
