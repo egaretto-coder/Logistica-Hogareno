@@ -5,10 +5,13 @@
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Período</span>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-sm dash-fecha-btn active" onclick="setDashFechaPreset(this,'todo')">Todo</button>
+              <!-- El marcado tiene que coincidir con dashFechaPreset, que arranca
+                   en 'mes': si el botón activo fuera otro, la pantalla mostraría
+                   el mes y el operador leería que está viendo todo. -->
+              <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'todo')">Todo</button>
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'hoy')">Hoy</button>
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'semana')">Esta semana</button>
-              <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'mes')">Este mes</button>
+              <button class="btn btn-sm dash-fecha-btn active" onclick="setDashFechaPreset(this,'mes')">Este mes</button>
               <button class="btn btn-sm dash-fecha-btn" onclick="setDashFechaPreset(this,'personalizado')">Personalizado</button>
             </div>
             <div id="dash-fecha-custom" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">

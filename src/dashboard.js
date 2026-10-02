@@ -157,7 +157,13 @@ function renderDashConductoresPanel(liqParam) {
 }
 
 // ── Estado filtro de fechas del dashboard ───────────────────────────────────
-let dashFechaPreset = 'todo'; // 'todo' | 'hoy' | 'semana' | 'mes' | 'personalizado'
+// Arranca en EL MES EN CURSO, no en "Todo". El Dashboard es la pantalla del
+// "cómo venimos", y esa pregunta casi siempre es sobre el mes: con "Todo" el
+// primer número que se ve son $130.448.162 de toda la historia cargada, que no
+// se puede comparar con nada y no dice si el mes viene bien o mal. Los demás
+// atajos y el rango a mano siguen igual: el default es un punto de partida, no
+// una restricción.
+let dashFechaPreset = 'mes'; // 'todo' | 'hoy' | 'semana' | 'mes' | 'personalizado'
 
 // Convierte DD/MM/YYYY → objeto Date (mediodia para evitar problemas de TZ)
 function parseFechaReg(fechaStr) {
