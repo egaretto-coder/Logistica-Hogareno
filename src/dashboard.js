@@ -408,19 +408,20 @@ function switchDashTab(tab) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  FACTURACIÓN POR PERÍODO DEL CLIENTE
-//  Lo que se FACTURA en unas fechas no es lo que se ENTREGÓ en ellas: cada
-//  cliente factura por su período (semanal, quincenal o mensual) y el período
-//  se factura ENTERO el jueves que lo cierra. Un quincenal se factura la semana
-//  en que cierra su quincena, con las dos semanas juntas, y la otra semana no
-//  se le factura nada. Contando por fecha de entrega —como hacía el Dashboard—
-//  todo parecía facturarse cada semana y no se podía saber cuánto entra.
-//  Por eso esta solapa cuenta los PERÍODOS QUE CIERRAN en las fechas elegidas,
-//  cada uno completo y con el MISMO rango con que se arma su liquidación en
-//  Detalle de cliente: el número es el de la factura. De paso los cargos y los
-//  envíos traídos de otra semana, que se anclan al viernes que abre el período,
-//  entran siempre: con un rango que no arrancaba en viernes ("Esta semana" va de
-//  lunes a domingo) quedaban afuera sin avisar.
+//  LO QUE SE MOVIÓ CON CADA CLIENTE
+//  Esta solapa cuenta los envíos ENTREGADOS en las fechas elegidas, con lo que
+//  se le factura al cliente y lo que se le paga al conductor. El rango se usa
+//  TAL CUAL: no se corre a ningún cierre, así que el mismo rango da siempre el
+//  mismo número —antes se estiraba sola al jueves cuando hoy caía dentro de esa
+//  semana, y el mismo rango daba $54.506.279 un miércoles y $0 dos días después.
+//  Un día suelto, media semana o un mes se miran igual.
+//
+//  No cuenta "los períodos que CIERRAN en estas fechas", que es otra pregunta
+//  —cuánto entra de plata— y vive en Liquidación de clientes y en su Historial.
+//  Con ese criterio un día suelto daba $0 porque ninguna semana cierra ahí.
+//
+//  El filtro de abajo quedó como lo que es: un corte por CICLO del cliente
+//  (semanal / quincenal / mensual), para mirar un segmento de la cartera.
 // ════════════════════════════════════════════════════════════════════════
 let dashPerFilter = 0;   // 0 = todos · 7 semanales · 14 quincenales · 28 mensuales
 const DASH_PER_PLURAL = { 7: 'Semanales', 14: 'Quincenales', 28: 'Mensuales' };
@@ -586,8 +587,6 @@ function renderDashClientes() {
       '<div class="empty-title">' + (todos.length ? 'Sin coincidencias' : AppData._cargandoRegistros ? 'Cargando los envíos…' : v ? 'Sin envíos en estas fechas' : 'Sin clientes con envíos') + '</div>' +
       '<div class="empty-sub">' + (todos.length ? 'Ajustá el buscador'
         : AppData._cargandoRegistros ? 'La facturación se completa sola cuando terminan de bajar.'
-        // El porqué depende del caso: si las fechas no llegan a ningún jueves no
-        // cerró ni una semana; si llegan, es que el período cierra más adelante.
         : v ? 'Ningún ' + (quienes ? 'cliente ' + quienes.replace(/es$/, '') : 'cliente') +
           ' tuvo envíos entregados en estas fechas. Probá con otras.'
         : 'No hay envíos con cliente en el período elegido') + '</div></div></td></tr>';
