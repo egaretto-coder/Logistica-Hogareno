@@ -46,6 +46,55 @@ let descItemCandidatos = [];    // recorridos sugeridos para autocompletar el tr
 function tFecha(f) { const d = parseFechaReg(f); return d ? d.getTime() : 0; }
 
 // ── Render de una solapa de ítem ────────────────────────────────────────────
+// Mini dashboard del panel, con el mismo criterio que el de Adelantos: mide lo
+// que se está VIENDO y lo dice. Con el buscador puesto los números son los del
+// filtro y las tarjetas lo rotulan "(filtrado)" — un total que se mueve sin
+// decir por qué se lee como si hubieran cambiado los datos.
+// El contenedor existe solo donde se quiso: si una pantalla no lo tiene, esto
+// no hace nada.
+function _renderDescItemsKPIs(tipo, lista, filtrado) {
+  const cont = document.getElementById('descitem-' + tipo + '-kpis');
+  if (!cont) return;
+  const f = filtrado ? ' (filtrado)' : '';
+  const card = (cls, icono, etq, valor, sub) =>
+    '<div class="metric-card' + (cls ? ' ' + cls : '') + '"><div class="metric-ic"><i class="ic ' + icono + '"></i></div>' +
+    '<div class="metric-label">' + etq + '</div><div class="metric-value">' + valor + '</div>' +
+    '<div class="metric-sub">' + sub + '</div></div>';
+  // Un ítem sin estado es de antes del régimen de autorización: cuenta.
+  const vivos = lista.filter(x => esAutorizado(x));
+  const personas = new Set(vivos.map(x => (typeof conductorCanonico === 'function'
+    ? conductorCanonico(x.conductor) : String(x.conductor || '').toUpperCase())).filter(Boolean));
+  const total = vivos.reduce((s, x) => s + _num(x.monto), 0);
+  const sinImputar = vivos.filter(x => x.imputar === false);
+  const montoSinImputar = sinImputar.reduce((s, x) => s + _num(x.monto), 0);
+
+  let primera;
+  if (esTipoCuoteable(tipo)) {
+    // Lo que todavía no se descontó de los cuoteados: es la deuda viva del
+    // panel, igual que el saldo de un adelanto. Los de pago único no tienen
+    // saldo —se descuentan enteros en su semana— así que no entran acá.
+    const enCuotas = vivos.filter(x => _num(x.cuotas_total) > 1 && !descItemSaldado(x));
+    const saldo = enCuotas.reduce((s, x) => s + descItemSaldo(x), 0);
+    primera = card('accent', 'ic-dollar', 'Saldo en cuotas' + f, fmtPeso(saldo),
+      enCuotas.length ? enCuotas.length + ' servicio(s) todavía descontándose' : 'sin cuotas pendientes');
+  } else {
+    // Combustible se descuenta entero en la semana de su fecha: lo que importa
+    // es cuánta plata va a salir del neto.
+    const aDescontar = total - montoSinImputar;
+    primera = card('accent', 'ic-dollar', 'A descontar' + f, fmtPeso(aDescontar),
+      'se imputa en la liquidación de su semana');
+  }
+
+  cont.innerHTML = '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+    primera +
+    card('', 'ic-users', 'Conductores' + f, String(personas.size),
+      personas.size === 1 ? 'con registros' : 'con registros en el panel') +
+    card('', 'ic-receipt', 'Total registrado' + f, fmtPeso(total),
+      vivos.length + ' registro(s)' +
+      (montoSinImputar > 0 ? ' · ' + fmtPeso(montoSinImputar) + ' sin imputar' : '')) +
+  '</div>';
+}
+
 function renderDescItems(tipo) {
   const cfg = DESC_ITEMS[tipo];
   const cont = document.getElementById('descitem-' + tipo + '-rows');
@@ -71,7 +120,13 @@ function renderDescItems(tipo) {
 
   const totalAll = todos.reduce((s, x) => s + _num(x.monto), 0);
   const countEl = document.getElementById('descitem-' + tipo + '-count');
-  if (countEl) countEl.textContent = todos.length + ' registros · Total ' + fmtPeso(totalAll);
+  // Con el buscador puesto el contador dice cuántos de cuántos: si siguiera
+  // mostrando el total de todos, contradiría a las tarjetas de arriba, que
+  // miden lo filtrado.
+  if (countEl) countEl.textContent = (search && lista.length !== todos.length)
+    ? lista.length + ' de ' + todos.length + ' registros · Total ' + fmtPeso(lista.reduce((s, x) => s + _num(x.monto), 0))
+    : todos.length + ' registros · Total ' + fmtPeso(totalAll);
+  _renderDescItemsKPIs(tipo, lista, !!search && lista.length !== todos.length);
 
   if (!lista.length) {
     cont.innerHTML = '<tr><td colspan="' + ncols + '"><div class="empty-state"><div class="empty-icon">' + cfg.emoji + '</div><div class="empty-title">Sin registros</div><div class="empty-sub">' +
