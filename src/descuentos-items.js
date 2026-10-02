@@ -56,10 +56,12 @@ function _renderDescItemsKPIs(tipo, lista, filtrado) {
   const cont = document.getElementById('descitem-' + tipo + '-kpis');
   if (!cont) return;
   const f = filtrado ? ' (filtrado)' : '';
-  const card = (cls, icono, etq, valor, sub) =>
+  const card = (cls, icono, etq, valor, sub, extra) =>
     '<div class="metric-card' + (cls ? ' ' + cls : '') + '"><div class="metric-ic"><i class="ic ' + icono + '"></i></div>' +
     '<div class="metric-label">' + etq + '</div><div class="metric-value">' + valor + '</div>' +
-    '<div class="metric-sub">' + sub + '</div></div>';
+    '<div class="metric-sub">' + sub + '</div>' +
+    (extra ? '<div class="metric-sub" style="color:var(--warning);font-weight:600">' + extra + '</div>' : '') +
+    '</div>';
   // Un ítem sin estado es de antes del régimen de autorización: cuenta.
   const vivos = lista.filter(x => esAutorizado(x));
   const personas = new Set(vivos.map(x => (typeof conductorCanonico === 'function'
@@ -67,6 +69,14 @@ function _renderDescItemsKPIs(tipo, lista, filtrado) {
   const total = vivos.reduce((s, x) => s + _num(x.monto), 0);
   const sinImputar = vivos.filter(x => x.imputar === false);
   const montoSinImputar = sinImputar.reduce((s, x) => s + _num(x.monto), 0);
+  // Lo que espera autorización NO entra en ningún número de arriba —no se va a
+  // descontar hasta que un supervisor lo apruebe— pero tiene que verse: es
+  // plata cargada que el panel estaría escondiendo. Pasa en Extraviados, que es
+  // el único de los tres que nace pendiente.
+  const pend = lista.filter(x => (x.estado || 'autorizado') === 'pendiente');
+  const avisoPend = pend.length
+    ? pend.length + ' sin autorizar · ' + fmtPeso(pend.reduce((s, x) => s + _num(x.monto), 0))
+    : '';
 
   let primera;
   if (esTipoCuoteable(tipo)) {
@@ -91,7 +101,8 @@ function _renderDescItemsKPIs(tipo, lista, filtrado) {
       personas.size === 1 ? 'con registros' : 'con registros en el panel') +
     card('', 'ic-receipt', 'Total registrado' + f, fmtPeso(total),
       vivos.length + ' registro(s)' +
-      (montoSinImputar > 0 ? ' · ' + fmtPeso(montoSinImputar) + ' sin imputar' : '')) +
+      (montoSinImputar > 0 ? ' · ' + fmtPeso(montoSinImputar) + ' sin imputar' : ''),
+      avisoPend) +
   '</div>';
 }
 

@@ -95,6 +95,36 @@ function autoCalcKmMonto() {
   return { valor, monto };
 }
 
+// El resumen del panel, con el mismo criterio que Beneficios y Adelantos: mide
+// lo que se está VIENDO y lo rotula cuando hay buscador.
+// La diferencia con los otros: el km de desvío SUMA al neto en vez de restarlo
+// —es un adicional, no un descuento— así que la primera tarjeta dice "A pagar"
+// y no "A descontar". Y la tercera cuenta KILÓMETROS: es la unidad del panel, y
+// el monto ya está en la primera.
+function _renderKmKPIs(lista, filtrado) {
+  const cont = document.getElementById('kmdesvio-kpis');
+  if (!cont) return;
+  const f = filtrado ? ' (filtrado)' : '';
+  const card = (cls, icono, etq, valor, sub) =>
+    '<div class="metric-card' + (cls ? ' ' + cls : '') + '"><div class="metric-ic"><i class="ic ' + icono + '"></i></div>' +
+    '<div class="metric-label">' + etq + '</div><div class="metric-value">' + valor + '</div>' +
+    '<div class="metric-sub">' + sub + '</div></div>';
+  const imputan = lista.filter(d => d.imputar !== false);
+  const aPagar = imputan.reduce((s, d) => s + _num(d.monto), 0);
+  const montoSinImputar = lista.filter(d => d.imputar === false).reduce((s, d) => s + _num(d.monto), 0);
+  const km = lista.reduce((s, d) => s + _num(d.km), 0);
+  const personas = new Set(lista.map(d => (typeof conductorCanonico === 'function'
+    ? conductorCanonico(d.conductor) : String(d.conductor || '').toUpperCase())).filter(Boolean));
+  cont.innerHTML = '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+    card('accent', 'ic-dollar', 'A pagar' + f, fmtPeso(aPagar), 'se suma al neto de su semana') +
+    card('', 'ic-users', 'Conductores' + f, String(personas.size),
+      personas.size === 1 ? 'con km registrados' : 'con km registrados en el panel') +
+    card('', 'ic-route', 'Km registrados' + f, Math.round(km * 10) / 10 + ' km',
+      lista.length + ' registro(s)' +
+      (montoSinImputar > 0 ? ' · ' + fmtPeso(montoSinImputar) + ' sin imputar' : '')) +
+  '</div>';
+}
+
 function renderKmDesvio() {
   const analista = esAnalista();
   const valorActual = kmValorActual();
@@ -130,6 +160,7 @@ function renderKmDesvio() {
     return String(d.conductor||'').toLowerCase().includes(search);
   });
 
+  _renderKmKPIs(list, !!search && list.length !== AppData.kmDesvio.length);
   const countEl = document.getElementById('kmdesvio-count');
   if (countEl) {
     countEl.textContent = list.length + ' de ' + AppData.kmDesvio.length + ' registros de km de desvío';
