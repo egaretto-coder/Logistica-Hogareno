@@ -453,6 +453,31 @@ function _dashVentanaCierre() {
   return v;
 }
 
+// Un rango que termina a mitad de período NO cierra nada y da $0. Está bien que
+// dé $0 —la semana del 25/09 se factura el jueves 01/10, así que pertenece a
+// octubre y contarla en septiembre inflaría un mes y dejaría corto el otro—,
+// pero el operador que eligió "del 25/09 al 30/09" quiere ver justamente esa
+// semana y se queda con un cero que parece una falla del sistema.
+// En vez de cambiar la cuenta, se le da la fecha: el botón corre el "hasta" al
+// primer cierre que trae clientes y el número queda explicado por las fechas que
+// se ven en pantalla, no por una regla que el operador no puede ver.
+function dashVerHastaCierre(iso) {
+  const hastaEl = document.getElementById('dash-fecha-hasta');
+  const desdeEl = document.getElementById('dash-fecha-desde');
+  if (!hastaEl || !iso) return;
+  // El "desde" del atajo que estaba puesto se conserva: el rango se estira hacia
+  // adelante, no se reemplaza.
+  const r = getDashFechaRango();
+  if (desdeEl && !desdeEl.value && r && r.desde) desdeEl.value = _isoDash(r.desde);
+  hastaEl.value = iso;
+  dashFechaPreset = 'personalizado';
+  document.querySelectorAll('.dash-fecha-btn').forEach(b =>
+    b.classList.toggle('active', /'personalizado'/.test(b.getAttribute('onclick') || '')));
+  const custom = document.getElementById('dash-fecha-custom');
+  if (custom) custom.style.display = 'flex';
+  renderDashboard();
+}
+
 // Para un rango abierto de un lado: desde el envío más viejo, y hasta cuatro
 // semanas adelante (así entra el período en curso de cualquier ciclo).
 function _limitesFechasRegistros() {
@@ -652,8 +677,15 @@ function renderDashClientes() {
   if (kpis) kpis.innerHTML =
     '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
       '<div class="metric-label">Facturación</div><div class="metric-value">' + fmtPeso(factura) + '</div>' +
+      // "0 cliente(s) semanales facturan" se lee como "no hay datos". Lo que
+      // pasa es otra cosa: ninguno CIERRA en estas fechas, y eso se arregla
+      // estirando el rango, así que el aviso de abajo lo dice con su botón.
       '<div class="metric-sub">' + (v
-        ? todos.length + ' cliente(s)' + (quienes ? ' ' + quienes : '') + ' facturan' + (todos.some(x => x.enCurso) ? ' · incluye lo que va de la semana' : '')
+        ? (todos.length
+            ? todos.length + ' cliente(s)' + (quienes ? ' ' + quienes : '') + ' facturan' + (todos.some(x => x.enCurso) ? ' · incluye lo que va de la semana' : '')
+            : (data.noCierran.length
+                ? 'ningún período cierra en estas fechas · el primero cierra el ' + _ddmmIso(data.noCierran[0].cierra)
+                : 'ningún cliente' + (quienes ? ' ' + quienes : '') + ' cierra su período en estas fechas'))
         : todos.length + ' cliente(s)' + (quienes ? ' ' + quienes : '') + ' con envíos') + '</div></div>' +
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-truck"></i></div>' +
       '<div class="metric-label">Costo</div><div class="metric-value">' + fmtPeso(costo) + '</div>' +
@@ -680,10 +712,22 @@ function renderDashClientes() {
   if (nc) {
     const n = data.noCierran.length;
     const lleva = data.noCierran.reduce((s, x) => s + x.lleva, 0);
+    // noCierran viene ordenado por fecha de cierre: el primero es el cierre más
+    // cercano, y es hasta dónde hay que estirar el rango para que entren.
+    const prox = n ? data.noCierran[0].cierra : '';
+    const delProx = data.noCierran.filter(x => x.cierra === prox);
+    const estirable = !!(prox && v && v.hasta && prox > v.hasta);
     nc.innerHTML = n
       ? '<div class="alert alert-info" style="margin:14px 0 0"><i class="ic ic-calendar"></i><div>' +
         '<strong>' + n + ' cliente(s) tuvieron envíos en estas fechas y facturan más adelante</strong> — su período cierra después. ' +
         'Llevan <strong>' + fmtPeso(lleva) + '</strong> acumulado, que entra cuando cierren.' +
+        (estirable
+          ? ' Los primeros <strong>' + delProx.length + '</strong> cierran el <strong>' + _ddmmIso(prox) + '</strong> con ' +
+            fmtPeso(delProx.reduce((a, x) => a + x.lleva, 0)) + '.' +
+            '<div style="margin-top:8px"><button class="btn btn-sm" onclick="dashVerHastaCierre(\'' + prox + '\')" ' +
+            'title="Corre la fecha final al día en que cierran, así su facturación entra en el período que estás mirando">' +
+            '<i class="ic ic-calendar"></i> Ver hasta el ' + _ddmmIso(prox) + '</button></div>'
+          : '') +
         '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' +
         data.noCierran.slice(0, 12).map(x =>
           '<span class="tag" style="background:var(--surface-1);border:1px solid var(--border);color:var(--text-primary);font-size:11px">' +
