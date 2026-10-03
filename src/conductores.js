@@ -1465,6 +1465,10 @@ function showConductorModal(cond) {
 function closeModal(e) {
   if (!e || e.target.id === 'modal-backdrop') {
     document.getElementById('modal-backdrop').classList.remove('open');
+    // El ancho es de la ficha de renta, no de la ventana: si quedara puesto, el
+    // próximo modal —casi siempre un formulario de una columna— abriría a 1100px.
+    const cont = document.getElementById('modal-content');
+    if (cont) cont.classList.remove('modal-ancho');
   }
 }
 

@@ -688,9 +688,10 @@ function renderDashClientes() {
 function _sumarLiqsCliente(liqs) {
   if (liqs.length === 1) return liqs[0];
   const porZona = new Map();
-  const out = { total: 0, pagado: 0, margen: 0, totalEnvios: 0, sinTarifa: 0, filas: [] };
+  const out = { total: 0, pagado: 0, margen: 0, totalEnvios: 0, sinTarifa: 0, totalEnvio: 0, totalCargos: 0, filas: [] };
   liqs.forEach(l => {
-    ['total', 'pagado', 'margen', 'totalEnvios', 'sinTarifa'].forEach(c => { out[c] += _num(l[c]); });
+    ['total', 'pagado', 'margen', 'totalEnvios', 'sinTarifa', 'totalEnvio', 'totalCargos']
+      .forEach(c => { out[c] += _num(l[c]); });
     (l.filas || []).forEach(f => {
       const clave = f.zona + '|' + _num(f.precio) + '|' + (f.dim || '');
       const a = porZona.get(clave);
@@ -731,25 +732,45 @@ function verRentaCliente(cod) {
     '</tr>';
   }).join('') : '<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">Sin envíos en el período</td></tr>';
 
+  // Lo que vale CADA envío, de los dos lados. Es el número con el que se discute
+  // una tarifa: los totales dependen del volumen y no se comparan entre clientes
+  // ni entre meses, y el promedio sí.
+  // El denominador son los envíos, así que arriba va lo facturado POR ENVÍOS
+  // (`totalEnvio`) y no el total: una colecta o un viaje particular no son un
+  // envío, y meterlos subiría un "precio por envío" que nadie cobró.
+  const nEnv = _num(liq.totalEnvios);
+  const ventaProm = nEnv ? _num(liq.totalEnvio) / nEnv : 0;
+  const costoProm = nEnv ? _num(liq.pagado) / nEnv : 0;
+  const hayCargos = _num(liq.totalCargos) > 0;
+
   document.getElementById('modal-title').textContent = 'Renta · ' + clienteNombreDe(k);
   document.getElementById('modal-body').innerHTML =
     '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + subtitulo + '</div>' +
-    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+    '<div class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:14px">' +
       '<div class="metric-card"><div class="metric-label">Facturación</div><div class="metric-value">' + fmtPeso(liq.total) + '</div>' +
-        '<div class="metric-sub">' + liq.totalEnvios + ' envíos</div></div>' +
+        '<div class="metric-sub">' + liq.totalEnvios + ' envíos' +
+        (hayCargos ? ' + ' + fmtPeso(liq.totalCargos) + ' en cargos' : '') + '</div></div>' +
       '<div class="metric-card"><div class="metric-label">Costo</div><div class="metric-value">' + fmtPeso(liq.pagado) + '</div>' +
         '<div class="metric-sub">a los conductores</div></div>' +
       '<div class="metric-card accent"><div class="metric-label">Margen</div>' +
         '<div class="metric-value" style="color:' + (liq.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(liq.margen) + '</div>' +
         '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>' +
+      '<div class="metric-card"><div class="metric-label">Venta promedio</div>' +
+        '<div class="metric-value">' + fmtPeso(ventaProm) + '</div>' +
+        '<div class="metric-sub">por envío' + (hayCargos ? ' · sin los cargos' : '') + '</div></div>' +
+      '<div class="metric-card"><div class="metric-label">Costo promedio</div>' +
+        '<div class="metric-value">' + fmtPeso(costoProm) + '</div>' +
+        '<div class="metric-sub">por envío, al conductor</div></div>' +
     '</div>' +
     (liq.sinTarifa ? '<div class="alert" style="margin:0 0 10px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:12px">' +
       '<i class="ic ic-alert"></i><div><strong>' + liq.sinTarifa + ' envío(s) en zonas sin tarifa de venta.</strong> ' +
       'Se facturan en $0 pero igual se le paga al conductor: hunden el margen sin que se note.</div></div>' : '') +
-    '<div class="table-wrap" style="max-height:44vh;overflow:auto"><table>' +
+    '<div class="table-wrap" style="max-height:52vh;overflow:auto"><table>' +
       '<thead><tr><th>Zona</th><th style="text-align:right">Envíos</th><th style="text-align:right">Tarifa</th>' +
       '<th style="text-align:right">Factura</th><th style="text-align:right">Costo</th><th style="text-align:right">Margen</th></tr></thead>' +
       '<tbody>' + cuerpo + '</tbody></table></div>';
+  const cont = document.getElementById('modal-content');
+  if (cont) cont.classList.add('modal-ancho');
   document.getElementById('modal-backdrop').classList.add('open');
 }
 

@@ -755,6 +755,13 @@
     box-shadow: var(--shadow-md);
   }
 
+  /* La ficha de renta de un cliente es una TABLA de zonas con seis columnas de
+     plata: en 540px cada número entra cortado y hay que scrollear a lo ancho
+     para leer una fila. Es un modificador y no el ancho de .modal porque esa
+     medida la comparten todas las ventanas de la app, y la mayoría son un
+     formulario de una columna que a 1100px queda ridículo. */
+  .modal.modal-ancho { max-width: 1100px; }
+
   .modal-header {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 20px;

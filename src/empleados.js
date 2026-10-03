@@ -1537,8 +1537,14 @@ async function eliminarEmpleado(id) {
 // "Aplicar ajuste" distraído en un aumento a toda la nómina.
 let empAjusteFueraCiclo = false;
 function toggleAjusteFueraCiclo() { empAjusteFueraCiclo = !empAjusteFueraCiclo; renderAjustesPanel(); }
-function _tildarFueraCiclo(v) {
-  document.querySelectorAll('.emp-ajuste-chk[data-fuera="1"]').forEach(c => { c.checked = !!v; });
+// Tildar o destildar un bloque entero. Los DOS lo necesitan: para aumentar solo
+// a alguien que no le toca hay que dejar sin tilde a los 12 que sí —y hacerlo
+// de a uno es donde el operador se cansa y termina aplicando un aumento que no
+// quería—. El selector distingue por data-fuera, que es lo que separa un bloque
+// del otro.
+function _tildarAjustes(v, fuera) {
+  const sel = fuera ? '.emp-ajuste-chk[data-fuera="1"]' : '.emp-ajuste-chk:not([data-fuera="1"])';
+  document.querySelectorAll(sel).forEach(c => { c.checked = !!v; });
   _actualizarPreviewAjuste();
 }
 // Meses entre dos 'AAAA-MM' (b - a).
@@ -1632,7 +1638,20 @@ function renderAjustesPanel() {
         '</button>'
       : '');
 
-  let html = alcanzados.map(e => _filaAjuste(e, false, mesSel)).join('');
+  // La misma cabecera que el bloque de abajo: sin ella, los que les toca venían
+  // todos tildados y la única forma de sacarlos era de a uno.
+  let html = alcanzados.length
+    ? '<tr><td colspan="7" style="background:var(--surface-2);padding:8px 12px">' +
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+      '<strong style="font-size:12px">Les toca en ' + _mesTexto(mesSel) + '</strong>' +
+      '<span style="font-size:11px;color:var(--text-muted)">Van tildados. Destildá a quien no quieras ajustar: ' +
+        'al aplicar, el panel te ofrece <strong>postergarlo</strong> para que no quede vencido sin explicación.</span>' +
+      '<span style="margin-left:auto;white-space:nowrap">' +
+        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarAjustes(true,false)">Tildar todos</button> ' +
+        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarAjustes(false,false)">Ninguno</button>' +
+      '</span></div></td></tr>'
+    : '';
+  html += alcanzados.map(e => _filaAjuste(e, false, mesSel)).join('');
   if (!alcanzados.length && !empAjusteFueraCiclo) {
     html = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">✓</div>' +
       '<div class="empty-title">Nadie ajusta en ' + _mesTexto(mesSel) + '</div>' +
@@ -1646,8 +1665,8 @@ function renderAjustesPanel() {
       '<span style="font-size:11px;color:var(--text-muted)">Van destildados. Tildarlos les da el aumento igual y les ' +
         '<strong>corre el ciclo</strong>: el próximo pasa a ' + _mesTexto(_mesMas(mesSel, RRHH_MESES_AJUSTE)) + '.</span>' +
       '<span style="margin-left:auto;white-space:nowrap">' +
-        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarFueraCiclo(true)">Tildar todos</button> ' +
-        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarFueraCiclo(false)">Ninguno</button>' +
+        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarAjustes(true,true)">Tildar todos</button> ' +
+        '<button class="btn btn-sm" style="padding:2px 8px;font-size:10px" onclick="_tildarAjustes(false,true)">Ninguno</button>' +
       '</span></div></td></tr>';
     html += fueraCiclo.map(e => _filaAjuste(e, true, mesSel)).join('');
   }
