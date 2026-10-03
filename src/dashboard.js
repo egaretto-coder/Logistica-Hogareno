@@ -25,6 +25,37 @@ function setDashCondFilter(btn, cond) {
   renderDashboard(); // re-renderiza respetando el filtro de fechas activo
 }
 
+// Torta (anillo) de la distribución por categorización. SVG a mano: el proyecto
+// no lleva librerías y una de gráficos entera para un donut de 4 porciones no
+// se paga. Cada porción es un arco de un mismo círculo —`stroke-dasharray` le da
+// el largo y `stroke-dashoffset` lo corre hasta donde terminó el anterior—, así
+// que no hay que calcular paths ni ángulos.
+// Las barras de al lado NO se van: la torta muestra la proporción de un vistazo
+// y las barras dan el número exacto de cada una, que es lo que se copia a un
+// informe. Son dos lecturas de lo mismo y ninguna reemplaza a la otra.
+function _dashDonutCat(partes, total) {
+  const R_ = 54, C = 2 * Math.PI * R_;
+  if (!total || !partes.length) {
+    return '<svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Sin conductores">' +
+      '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="var(--surface-0)" stroke-width="22"/></svg>';
+  }
+  let acum = 0;
+  const arcos = partes.map(p => {
+    const largo = C * (p.cnt / total);
+    const el = '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="' + p.color + '" stroke-width="22"' +
+      ' stroke-dasharray="' + largo.toFixed(2) + ' ' + Math.max(0, C - largo).toFixed(2) + '"' +
+      ' stroke-dashoffset="' + (-acum).toFixed(2) + '" transform="rotate(-90 70 70)">' +
+      '<title>' + p.label + ': ' + p.cnt + ' (' + Math.round(p.cnt / total * 100) + '%)</title></circle>';
+    acum += largo;
+    return el;
+  }).join('');
+  return '<svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Distribución por categorización">' +
+    '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="var(--surface-0)" stroke-width="22"/>' + arcos +
+    '<text x="70" y="66" text-anchor="middle" style="font-size:22px;font-weight:700;fill:var(--text-primary)">' + total + '</text>' +
+    '<text x="70" y="84" text-anchor="middle" style="font-size:10px;fill:var(--text-muted)">conductores</text>' +
+    '</svg>';
+}
+
 function renderDashConductoresPanel(liqParam) {
   // liqParam viene de renderDashboard ya filtrado por fecha
   // Si se llama directo (ej: desde setDashCondFilter), recalcula completo
@@ -119,9 +150,13 @@ function renderDashConductoresPanel(liqParam) {
   const maxMonto = liqPorConductor.length ? liqPorConductor[0].monto : 1;
   const top8 = liqPorConductor.slice(0, 8);
 
-  // ── Distribución por categorización (barras) ─────────────────────────────
-  const catRows = Object.entries(catCount)
-    .sort((a, b) => b[1] - a[1])
+  // ── Distribución por categorización (torta + barras) ─────────────────────
+  const catOrden = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
+  const catPartes = catOrden.map(([cat, cnt]) => {
+    const info = CAT_INFO[cat] || { label: cat, color: '#9ca3af' };
+    return { label: info.label, color: info.color, cnt: cnt };
+  });
+  const catRows = catOrden
     .map(([cat, cnt]) => {
       const info = CAT_INFO[cat] || { label: cat, color: '#9ca3af' };
       const catPct = totalParaPct ? Math.round(cnt / totalParaPct * 100) : 0;
@@ -146,7 +181,10 @@ function renderDashConductoresPanel(liqParam) {
     <div class="dash-cond-grid">
       <div>
         <div class="dash-subtitle">Distribución por categorización · <b style="color:var(--text-secondary)">${dashCondFilter ? cantidad : totalConLiq} conductores</b></div>
-        ${catRows || '<div style="color:var(--text-muted);font-size:12px">Sin conductores</div>'}
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <div style="flex-shrink:0">${_dashDonutCat(catPartes, totalParaPct)}</div>
+          <div style="flex:1;min-width:200px">${catRows || '<div style="color:var(--text-muted);font-size:12px">Sin conductores</div>'}</div>
+        </div>
       </div>
       <div>
         <div class="dash-subtitle">Participación en facturación${dashCondFilter ? ' · ' + condLabel : ''} · <b style="color:var(--text-secondary)">${fmtPeso(montoGrupo)}</b></div>

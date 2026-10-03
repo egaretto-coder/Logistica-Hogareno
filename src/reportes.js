@@ -215,6 +215,15 @@ function computeConductorReport() {
   return { liq, conductores };
 }
 
+// El COSTO UNITARIO de cada conductor es su total dividido por LOS ENVÍOS QUE
+// LO FORMAN (`filas`), igual que el KPI de arriba: los no entregados no se le
+// pagan a nadie y meterlos en el denominador daría un unitario más barato que
+// el real. Dividir un número por su propia cantidad es lo que impide que la
+// tarjeta y la tabla se contradigan.
+// La columna PDF se sacó: el papel del conductor se baja desde Liquidación de
+// Conductores —que es donde se decide qué se le imputa y cuándo está lista— y
+// acá invitaba a mandar uno armado sobre el período que el Dashboard tuviera
+// puesto, que no es su semana de pago.
 function renderConductorReport() {
   const { liq, conductores } = computeConductorReport();
 
@@ -242,8 +251,8 @@ function renderConductorReport() {
       <td class="muted" style="font-size:12px">${zonas.slice(0,3).join(', ')}${zonas.length > 3 ? ` +${zonas.length-3}` : ''}</td>
       <td class="mono">${d.filas.length}</td>
       <td class="mono"><strong>${fmtPeso(d.total)}</strong></td>
+      <td class="mono">${d.filas.length ? fmtPeso(d.total / d.filas.length) : '—'}</td>
       <td>${tieneSuper ? '<span class="tag super-sla"><i class="ic ic-star"></i> Sí</span>' : '—'}</td>
-      <td><button class="btn btn-sm btn-primary" onclick="exportPDFConductor('${c}')">PDF</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="7"><div class="empty-state"><div class="empty-sub">${q ? 'Ningún conductor coincide con “' + q + '”' : 'Sin datos en el período'}</div></div></td></tr>`;
 }
