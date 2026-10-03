@@ -88,6 +88,11 @@ function _panelMesRepintar(id) {
     if (typeof renderKmDesvio === 'function') renderKmDesvio();
     return;
   }
+  // El simulador de tarifas usa el mismo navegador para elegir el mes que mide.
+  if (id === 'tarsim') {
+    if (typeof renderSimTarifas === 'function') renderSimTarifas();
+    return;
+  }
   if (id.indexOf('descitem-') === 0 && typeof renderDescItems === 'function') {
     renderDescItems(id.slice('descitem-'.length));
   }

@@ -33,28 +33,39 @@ function setDashCondFilter(btn, cond) {
 // Las barras de al lado NO se van: la torta muestra la proporción de un vistazo
 // y las barras dan el número exacto de cada una, que es lo que se copia a un
 // informe. Son dos lecturas de lo mismo y ninguna reemplaza a la otra.
-function _dashDonutCat(partes, total) {
+// `partes`: [{ label, color, cnt }] — `cnt` puede ser una cantidad (conductores)
+// o plata (facturación): la torta solo reparte proporciones. `centro` es lo que
+// va adentro ya formateado, porque "89" y "$130.448.162" no se escriben igual, y
+// `fmt` cómo se nombra cada porción en su tooltip.
+function _dashDonut(partes, total, centro, fmt) {
   const R_ = 54, C = 2 * Math.PI * R_;
+  const anillo = '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="var(--surface-0)" stroke-width="22"/>';
+  const etq = (centro && centro.etiqueta) || '';
   if (!total || !partes.length) {
-    return '<svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Sin conductores">' +
-      '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="var(--surface-0)" stroke-width="22"/></svg>';
+    return '<svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Sin datos">' + anillo + '</svg>';
   }
+  const nombrar = fmt || (v => String(v));
   let acum = 0;
   const arcos = partes.map(p => {
     const largo = C * (p.cnt / total);
     const el = '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="' + p.color + '" stroke-width="22"' +
       ' stroke-dasharray="' + largo.toFixed(2) + ' ' + Math.max(0, C - largo).toFixed(2) + '"' +
       ' stroke-dashoffset="' + (-acum).toFixed(2) + '" transform="rotate(-90 70 70)">' +
-      '<title>' + p.label + ': ' + p.cnt + ' (' + Math.round(p.cnt / total * 100) + '%)</title></circle>';
+      '<title>' + p.label + ': ' + nombrar(p.cnt) + ' (' + Math.round(p.cnt / total * 100) + '%)</title></circle>';
     acum += largo;
     return el;
   }).join('');
-  return '<svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Distribución por categorización">' +
-    '<circle cx="70" cy="70" r="' + R_ + '" fill="none" stroke="var(--surface-0)" stroke-width="22"/>' + arcos +
-    '<text x="70" y="66" text-anchor="middle" style="font-size:22px;font-weight:700;fill:var(--text-primary)">' + total + '</text>' +
-    '<text x="70" y="84" text-anchor="middle" style="font-size:10px;fill:var(--text-muted)">conductores</text>' +
+  return '<svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="' + (etq || 'Distribución') + '">' +
+    anillo + arcos +
+    '<text x="70" y="66" text-anchor="middle" style="font-size:' + ((centro && centro.chico) ? 13 : 22) +
+      'px;font-weight:700;fill:var(--text-primary)">' + ((centro && centro.valor) || total) + '</text>' +
+    '<text x="70" y="84" text-anchor="middle" style="font-size:10px;fill:var(--text-muted)">' + etq + '</text>' +
     '</svg>';
 }
+
+// Los colores de las porciones de clientes: son identidades sin categoría, así
+// que el color no significa nada y solo tiene que distinguirlas entre sí.
+const _DASH_TORTA_COLORES = ['#8b5cf6', '#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#06b6d4', '#9ca3af'];
 
 function renderDashConductoresPanel(liqParam) {
   // liqParam viene de renderDashboard ya filtrado por fecha
@@ -182,7 +193,7 @@ function renderDashConductoresPanel(liqParam) {
       <div>
         <div class="dash-subtitle">Distribución por categorización · <b style="color:var(--text-secondary)">${dashCondFilter ? cantidad : totalConLiq} conductores</b></div>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          <div style="flex-shrink:0">${_dashDonutCat(catPartes, totalParaPct)}</div>
+          <div style="flex-shrink:0">${_dashDonut(catPartes, totalParaPct, { valor: totalParaPct, etiqueta: 'conductores' })}</div>
           <div style="flex:1;min-width:200px">${catRows || '<div style="color:var(--text-muted);font-size:12px">Sin conductores</div>'}</div>
         </div>
       </div>
@@ -671,6 +682,41 @@ function renderDashClientes() {
       '<div class="metric-label">Margen</div>' +
       '<div class="metric-value" style="color:' + (margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(margen) + '</div>' +
       '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>';
+
+  // ── Quién trae la facturación ────────────────────────────────────────────
+  // Con 110 clientes, una torta de 110 porciones no se lee. La pregunta real es
+  // la CONCENTRACIÓN —cuánto del mes depende de los primeros— así que van los 6
+  // más grandes y el resto junto en "Otros": esconderlos daría porcentajes que
+  // no suman 100 y la torta mentiría.
+  const torta = document.getElementById('dash-cli-torta');
+  if (torta) {
+    const conFactura = todos.filter(x => x.factura > 0).sort((a, b) => b.factura - a.factura);
+    const TOP = 6;
+    const cabeza = conFactura.slice(0, TOP);
+    const resto = conFactura.slice(TOP);
+    const restoMonto = resto.reduce((s, x) => s + x.factura, 0);
+    const partes = cabeza.map((x, i) => ({ label: x.nombre, color: _DASH_TORTA_COLORES[i], cnt: x.factura }));
+    if (restoMonto > 0) partes.push({ label: 'Otros (' + resto.length + ' clientes)', color: _DASH_TORTA_COLORES[6], cnt: restoMonto });
+    const totTorta = partes.reduce((s, p) => s + p.cnt, 0);
+    torta.innerHTML = !totTorta ? '' :
+      '<div class="card" style="margin-top:16px"><div class="card-header"><span class="card-title">' +
+        '<i class="ic ic-bar-chart"></i> Quién trae la facturación</span></div>' +
+      '<div class="card-body" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">' +
+        '<div style="flex-shrink:0">' +
+          _dashDonut(partes, totTorta, { valor: fmtPeso(totTorta), etiqueta: 'facturado', chico: true }, fmtPeso) +
+        '</div>' +
+        '<div style="flex:1;min-width:220px">' +
+          partes.map(p => {
+            const pp = Math.round(p.cnt / totTorta * 100);
+            return '<div class="dash-bar-row">' +
+              '<span class="lbl"><span class="dot" style="background:' + p.color + '"></span>' + p.label + '</span>' +
+              '<span class="dash-bar-track"><span class="dash-bar-fill" style="width:' + pp + '%;background:' + p.color + '"></span></span>' +
+              '<span class="meta"><b style="color:' + p.color + '">' + pp + '%</b><span>' + fmtPeso(p.cnt) + '</span></span>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</div></div>';
+  }
 
   // El filtro por condición es del lado del CONDUCTOR y acá no aplica: lo que se
   // le factura a un cliente no depende de quién se lo llevó, y filtrarlo daría
