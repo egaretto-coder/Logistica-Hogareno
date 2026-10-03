@@ -475,6 +475,8 @@ function _simMesDefecto() {
 function renderSimTarifas() {
   const wrap = document.getElementById('simtar-wrap');
   if (!wrap) return;                       // el modal no está abierto
+  const caja = document.getElementById('modal-content');
+  const scrollPrevio = caja ? caja.scrollTop : 0;
   const st = _simEstado();
   const mes = _panelMesActivo(SIM_MES_ID) || _simMesDefecto();
   const porGrupo = _simZonasPorGrupo();
@@ -505,7 +507,7 @@ function renderSimTarifas() {
     '<div id="simtar-resultado"></div>' +
 
     // 3 · Los controles
-    '<div class="card" style="margin-top:16px">' +
+    '<div class="card" id="simtar-ancla" style="margin-top:16px">' +
       '<div class="card-header"><span class="card-title"><i class="ic ic-sliders"></i> El ajuste</span>' +
         '<span style="font-size:11px;color:var(--text-muted)">' + marcadasTot + ' de ' + totalZonas + ' zonas tildadas</span>' +
       '</div>' +
@@ -548,6 +550,23 @@ function renderSimTarifas() {
   const inp = document.getElementById(SIM_MES_ID + '-mes');
   if (inp && !inp.value) inp.value = mes;
   _simPintarResultado();
+  if (caja && scrollPrevio) caja.scrollTop = scrollPrevio;
+}
+
+function _simFilaZona(st, g, t) {
+  const k = _simKey(t.zona);
+  const on = st.zonas.has(k);
+  const celdas = SIM_CAMPOS_TARIFA.map(c => {
+    const antes = _num(t[c]);
+    const desp = on ? _simPrecioNuevo(antes, g, st) : antes;
+    return '<span style="text-align:right;font-variant-numeric:tabular-nums">' + fmtPeso(antes) +
+      (desp !== antes ? '<br><b style="color:var(--success,#15803d);font-size:11px">' + fmtPeso(desp) + '</b>' : '') +
+      '</span>';
+  }).join('');
+  return '<div style="display:grid;grid-template-columns:24px 1fr 92px 92px 92px;gap:8px;align-items:center;padding:6px 10px;border-top:1px solid var(--border);font-size:12.5px">' +
+    '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="simToggleZona(\'' + jsAttr(k) + '\',this.checked)" aria-label="' + jsAttr(t.zona) + '">' +
+    '<span style="' + (on ? '' : 'opacity:.5') + '">' + t.zona + '</span>' + celdas +
+  '</div>';
 }
 
 function _simBloqueGrupos(st, porGrupo, unidad) {
@@ -558,21 +577,7 @@ function _simBloqueGrupos(st, porGrupo, unidad) {
     const abierto = st.abiertos.has(g);
     const val = _num(st.porGrupo[g]);
     const ga = jsAttr(g);
-    const filas = abierto ? zonas.map(t => {
-      const k = _simKey(t.zona);
-      const on = st.zonas.has(k);
-      const celdas = SIM_CAMPOS_TARIFA.map(c => {
-        const antes = _num(t[c]);
-        const desp = on ? _simPrecioNuevo(antes, g, st) : antes;
-        return '<span style="text-align:right;font-variant-numeric:tabular-nums">' + fmtPeso(antes) +
-          (desp !== antes ? '<br><b style="color:var(--success,#15803d);font-size:11px">' + fmtPeso(desp) + '</b>' : '') +
-          '</span>';
-      }).join('');
-      return '<div style="display:grid;grid-template-columns:24px 1fr 92px 92px 92px;gap:8px;align-items:center;padding:6px 10px;border-top:1px solid var(--border);font-size:12.5px">' +
-        '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="simToggleZona(\'' + jsAttr(k) + '\',this.checked)" aria-label="' + jsAttr(t.zona) + '">' +
-        '<span style="' + (on ? '' : 'opacity:.5') + '">' + t.zona + '</span>' + celdas +
-      '</div>';
-    }).join('') : '';
+    const filas = abierto ? zonas.map(t => _simFilaZona(st, g, t)).join('') : '';
 
     return '<div style="border:1px solid var(--border);border-radius:9px;margin-bottom:8px;overflow:hidden">' +
       '<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:var(--surface-0);flex-wrap:wrap">' +
@@ -588,12 +593,23 @@ function _simBloqueGrupos(st, porGrupo, unidad) {
           '<button class="btn btn-sm" style="padding:2px 7px;font-size:11px" onclick="simTildarGrupo(\'' + ga + '\',false)">Ninguno</button>' +
         '</div>' +
       '</div>' +
-      (abierto ? '<div style="display:grid;grid-template-columns:24px 1fr 92px 92px 92px;gap:8px;padding:5px 10px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-top:1px solid var(--border)">' +
-        '<span></span><span>Zona</span>' + SIM_CAMPOS_TARIFA.map(c => '<span style="text-align:right">' + SIM_CAMPOS_LABEL[c] + '</span>').join('') +
-      '</div>' : '') +
-      filas +
+      '<div id="simtar-filas-' + SIM_GRUPOS.indexOf(g) + '">' +
+        (abierto ? '<div style="display:grid;grid-template-columns:24px 1fr 92px 92px 92px;gap:8px;padding:5px 10px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-top:1px solid var(--border)">' +
+          '<span></span><span>Zona</span>' + SIM_CAMPOS_TARIFA.map(c => '<span style="text-align:right">' + SIM_CAMPOS_LABEL[c] + '</span>').join('') +
+        '</div>' : '') +
+        filas +
+      '</div>' +
     '</div>';
   }).join('');
+}
+
+// Las filas de UNA banda, sin su cabecera. Es lo único que cambia al tipear.
+function _simFilasGrupo(st, g, zonas) {
+  if (!st.abiertos.has(g)) return '';
+  const encabezado = '<div style="display:grid;grid-template-columns:24px 1fr 92px 92px 92px;gap:8px;padding:5px 10px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-top:1px solid var(--border)">' +
+    '<span></span><span>Zona</span>' + SIM_CAMPOS_TARIFA.map(c => '<span style="text-align:right">' + SIM_CAMPOS_LABEL[c] + '</span>').join('') +
+  '</div>';
+  return encabezado + zonas.map(t => _simFilaZona(st, g, t)).join('');
 }
 
 function _simBloqueSuperSLA(st, reglas, puedeSLA) {
@@ -647,9 +663,20 @@ function _simBloqueSuperSLA(st, reglas, puedeSLA) {
 }
 
 // ── El resultado ──────────────────────────────────────────────────────────
-function _simPintarResultado() {
+function _simPintarResultado(anclar) {
   const cont = document.getElementById('simtar-resultado');
   if (!cont) return;
+  const caja = document.getElementById('modal-content');
+  const ancla = document.getElementById('simtar-ancla');
+  const topAntes = (anclar && caja && ancla) ? ancla.getBoundingClientRect().top : null;
+  const pintar = h => {
+    cont.innerHTML = h;
+    _simNotaAplicar();
+    if (topAntes != null) {
+      const d = ancla.getBoundingClientRect().top - topAntes;
+      if (d) caja.scrollTop += d;
+    }
+  };
   const st = _simEstado();
   const mes = _panelMesActivo(SIM_MES_ID) || _simMesDefecto();
   const records = _simRecordsDelMes(mes);
@@ -686,8 +713,7 @@ function _simPintarResultado() {
         (typeof VENTANA_DIAS_REGISTROS !== 'undefined' ? VENTANA_DIAS_REGISTROS : 14) + ' días. ' +
         '<button class="btn btn-sm" style="padding:1px 7px;font-size:10px" onclick="cargarHistorialCompleto(this)">Cargar historial completo</button>') +
       '</div></div>';
-    cont.innerHTML = html;
-    _simNotaAplicar();
+    pintar(html);
     return;
   }
 
@@ -798,8 +824,7 @@ function _simPintarResultado() {
       }).join('') + '</div></div>';
   }
 
-  cont.innerHTML = html;
-  _simNotaAplicar();
+  pintar(html);
 }
 
 const _SIM_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -846,7 +871,7 @@ function simSetGrupo(g, v) {
   const st = _simEstado();
   st.porGrupo[g] = v === '' ? 0 : _num(v);
   clearTimeout(_simDebounce);
-  _simDebounce = setTimeout(() => { _simPintarResultado(); _simRefrescarPrecios(); }, 220);
+  _simDebounce = setTimeout(() => { _simPintarResultado(true); _simRefrescarPrecios(); }, 220);
 }
 function simToggleGrupo(g) {
   const st = _simEstado();
@@ -886,15 +911,12 @@ function simTildarSLA(on) {
 // tienen que seguirlo sin re-dibujar el modal: se reescriben en el lugar.
 function _simRefrescarPrecios() {
   const st = _simEstado();
-  const abiertos = Array.from(st.abiertos);
-  if (!abiertos.length) return;
+  if (!st.abiertos.size) return;
   const porGrupo = _simZonasPorGrupo();
-  const wrap = document.getElementById('simtar-wrap');
-  if (!wrap) return;
-  // Repintar solo el bloque de grupos deja intactos el campo con foco y el
-  // resultado que se acaba de calcular.
-  const cont = wrap.querySelector('[data-simgrupos]');
-  if (cont) cont.innerHTML = _simBloqueGrupos(st, porGrupo, st.modo === 'pct' ? '%' : '$');
+  st.abiertos.forEach(g => {
+    const caja = document.getElementById('simtar-filas-' + SIM_GRUPOS.indexOf(g));
+    if (caja) caja.innerHTML = _simFilasGrupo(st, g, porGrupo.get(g) || []);
+  });
 }
 
 // ── Aplicar ───────────────────────────────────────────────────────────────
