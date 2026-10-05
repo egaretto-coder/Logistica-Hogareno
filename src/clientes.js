@@ -2099,6 +2099,8 @@ async function guardarTarifasCliente() {
     // pasaban a cobrarse con los precios nuevos. Se borra por id para no tocar
     // las otras fechas, e incluye las filas huérfanas que este mismo editor
     // había dejado sin código (si no, quedarían duplicadas).
+    // Antes de tocar nada: una lista fuera de escala no puede entrar sola.
+    if (!confirmarTarifasEnEscala(cod, nombre, nuevas)) return;
     const bajas = (AppData.clienteTarifas || []).filter(t =>
       (clienteKey(t.cliente_cod) === cod || (!t.cliente_cod && normCliente(t.cliente) === normCliente(nombre))) &&
       tarifaVigenteDesde(t) === desde);
@@ -2115,6 +2117,62 @@ async function guardarTarifasCliente() {
       (modo === 'nueva' ? ' · rige desde el ' + _precFmt(desde) : '') + ')');
   } catch (e) { console.warn('guardarTarifasCliente:', e); alert('No se pudo guardar el tarifario: ' + (e.message || e)); }
 }
+// ── Una lista de precios fuera de escala no entra en silencio ───────────
+// Un precio nuevo que es 90 VECES el anterior no es un aumento: es un error
+// de carga. Paso de verdad: el 02/10/2026 entro una lista de CERAMITODO con
+// todas las zonas multiplicadas por 90 —de $10.492 a $944.300 por envio— y el
+// Dashboard lo mostro como el cliente que MAS factura, con $8.154.547 y solo
+// 24 envios en el mes. No lo freno nada: la fecha era valida, las zonas
+// existian y los numeros eran numeros. Lo agarro una persona mirando el
+// Dashboard y diciendo "debe haber un error".
+//
+// Se compara contra la lista que RIGE HOY y se mira la MEDIANA de los
+// factores, no el promedio: una zona suelta mal cargada no tiene que disparar
+// el aviso, y una lista entera multiplicada si. Las zonas NUEVAS no cuentan:
+// no hay contra que compararlas.
+const TARIFA_FACTOR_SOSPECHOSO = 5;
+
+// Mediana de (precio nuevo / precio vigente) por zona. null = no hay con que
+// comparar (cliente nuevo, o menos de 3 zonas que ya tenian precio).
+function _factorTarifaNueva(cod, filas) {
+  const fs_ = [];
+  (filas || []).forEach(f => {
+    const nuevo = _num(f.precio);
+    if (!(nuevo > 0)) return;
+    const previo = _num(clienteTarifaEnZona(cod, f.zona));
+    if (!(previo > 0)) return;
+    fs_.push(nuevo / previo);
+  });
+  if (fs_.length < 3) return null;
+  fs_.sort((a, b) => a - b);
+  return fs_[Math.floor(fs_.length / 2)];
+}
+
+// true = se puede seguir. Se llama ANTES de borrar nada: si el operador
+// cancela cuando las filas viejas ya se borraron, el cliente se queda sin
+// tarifario y factura en $0 — justo lo que esto viene a evitar.
+function confirmarTarifasEnEscala(cod, nombre, filas) {
+  const f = _factorTarifaNueva(cod, filas);
+  if (f === null) return true;
+  if (f < TARIFA_FACTOR_SOSPECHOSO && f > 1 / TARIFA_FACTOR_SOSPECHOSO) return true;
+  const nl = String.fromCharCode(10);
+  const sube = f >= 1;
+  const ejemplos = (filas || []).map(x => {
+    const previo = _num(clienteTarifaEnZona(cod, x.zona));
+    return (previo > 0 && _num(x.precio) > 0)
+      ? '· ' + x.zona + ': ' + fmtPeso(previo) + '  ->  ' + fmtPeso(_num(x.precio))
+      : null;
+  }).filter(Boolean).slice(0, 4).join(nl);
+  const veces = f >= 1 ? Math.round(f * 10) / 10 : Math.round((1 / f) * 10) / 10;
+  return confirm(
+    'La lista nueva de ' + (nombre || cod) + ' ' + (sube ? 'MULTIPLICA' : 'DIVIDE') + ' los precios por ' + veces + '.' + nl + nl +
+    ejemplos + nl + nl +
+    'Un aumento normal es del 10% o el 30%, no ' + veces + ' veces. Casi siempre es una columna ' +
+    'equivocada del Excel (un total en vez del precio por envio).' + nl + nl +
+    'Si se aplica, a este cliente se le va a facturar con esos precios.' + nl +
+    'Aceptar = aplicarla igual · Cancelar = no tocar nada');
+}
+
 // Inserta filas de cliente_tarifas y devuelve las filas con id.
 async function guardarClienteTarifas(rows) {
   // Se canoniza acá también: es el único punto por el que pasan TODAS las
@@ -2468,6 +2526,11 @@ async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde) {
       vigente_desde: vigenteDesde || TARIFA_DESDE_SIEMPRE
     }));
     try {
+      // Igual que en el editor: se decide ANTES de borrar las filas previas.
+      if (!confirmarTarifasEnEscala(cod, cli.nombre, filas)) {
+        res.salteados.push({ nombre: cli.nombre, cod, listas: vigenciasDe(cod).length, escala: true });
+        continue;
+      }
       if (vigenteDesde) {
         // ACTUALIZACIÓN: la lista nueva CONVIVE con la anterior. Solo se pisan las
         // filas de ESTA MISMA fecha, para que reintentar la carga no acumule
@@ -2628,10 +2691,10 @@ function _resumenImportTarifarios(resultados) {
     '</div>' +
     (salteados.length
       ? '<div class="alert" style="margin-bottom:10px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe"><i class="ic ic-alert"></i><div>' +
-        '<strong>' + salteados.length + ' cliente(s) se saltearon para no perderles el historial de precios.</strong> ' +
+        '<strong>' + salteados.length + ' cliente(s) se saltearon.</strong> ' +
         'Ya tienen listas con fecha, así que reemplazarles el tarifario les cambiaría el precio a envíos ya entregados. ' +
         'Cargales la lista nueva con <strong>"Actualizar lista de precios"</strong>, que le pone la fecha desde la que rige: ' +
-        salteados.map(s => s.nombre + ' (' + s.listas + ' listas)').join(' · ') +
+        salteados.map(s => s.nombre + (s.escala ? ' (precios fuera de escala)' : ' (' + s.listas + ' listas)')).join(' · ') +
         '</div></div>'
       : '') +
     (provisionales.length

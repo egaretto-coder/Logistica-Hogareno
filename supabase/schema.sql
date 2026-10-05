@@ -1693,3 +1693,14 @@ alter table public.empleado_cierres
 --   registros_clave_bkp_20261005 (id, clave_anterior)  ← respaldo para revertir
 --   update registros/registros_historico: clave F: recalculada CON el tracking.
 --   Resultado: 153 filas migradas, riesgo de 55 envíos → 0, sin borrar nada.
+
+-- 05/10/2026 — CERAMITODO: lista de precios con factor x90
+-- El 02/10 entró una lista con TODAS las zonas multiplicadas por exactamente
+-- 90 ($10.492 → $944.300 por envío). El Dashboard lo mostraba como el cliente
+-- que más factura ($8.154.547, 20% del total) con solo 24 envíos en el mes.
+-- (migración: quitar_lista_precios_ceramitodo_x90)
+--   cliente_tarifas_bkp_20261005 (id, cliente_cod, cliente, zona, precio,
+--     vigente_desde, quitado_en, motivo)  ← respaldo para revertir
+--   delete de las 45 filas con vigente_desde = '2026-10-02'.
+--   Su lista correcta (vigente_desde 2000-01-01) quedó intacta, y ninguna
+--   liquidación se había cerrado con los precios inflados.
