@@ -108,12 +108,12 @@ const DB = {
   // carga entera se perdía. `onProgress(hechas, total)` permite mostrar avance
   // en las cargas largas — sin eso, "Cargar historial completo" son 90 páginas
   // sin una sola señal de que algo está pasando.
-  async _fetchAllParallel(table, { orderCol = null, filter = null, onProgress = null } = {}) {
+  async _fetchAllParallel(table, { orderCol = null, filter = null, onProgress = null, cols = '*' } = {}) {
     const PAGE = 1000;
     const mk = (withCount) => {
       let q = withCount
-        ? sb.from(table).select('*', { count: 'exact' })
-        : sb.from(table).select('*');
+        ? sb.from(table).select(cols, { count: 'exact' })
+        : sb.from(table).select(cols);
       // Orden estable para paginar consistente. Puede ser más de una columna.
       if (orderCol) [].concat(orderCol).forEach(c => { q = q.order(c); });
       if (filter) q = filter(q);
@@ -202,6 +202,44 @@ const DB = {
       this._fetchAllParallel('registros_historico', { orderCol: ['fecha_date', 'id'], filter: f }),
     ]);
     return { vivos: vivos || [], historico: historico || [] };
+  },
+
+  // Los envios que YA tienen alguna de estas claves, en las dos tablas. El
+  // control de "este envio ya esta cargado" no puede mirar solo la ventana en
+  // memoria: el original suele estar unos dias atras y, si cayo fuera de lo
+  // cargado, el aviso no saltaba y el envio entraba dos veces igual.
+  // Se piden SOLO las claves que se van a dar de alta (un `in`), asi el costo
+  // no depende del tamano de la tabla.
+  async buscarPorClaves(claves) {
+    // Se descartan las que llevan una comilla doble: supabase-js entrecomilla
+    // los valores con coma pero NO escapa la comilla, asi que una sola rompe el
+    // `in.()` entero y la consulta se cae con las demas adentro. Un tracking con
+    // comillas es rarisimo; perder su chequeo contra la nube es mucho mejor que
+    // perder el de todo el lote (igual se sigue comparando contra la memoria).
+    const lista = Array.from(new Set((claves || []).filter(k => k && !String(k).includes('"'))));
+    if (!lista.length) return [];
+    const cols = 'id,clave,tracking,fecha,fecha_date,estado,cadete,cliente,zona,manual,contabiliza_manual';
+    const out = [];
+    // Los lotes se arman por LARGO y no por cantidad: una clave de respaldo
+    // ('F:01 09 2026 vicente lopez vicente lopez 0005 00012535') son ~55
+    // caracteres, asi que 100 de esas arman una URL de 6 KB y PostgREST la
+    // rechaza con 414. Contando caracteres el lote se adapta solo.
+    const lotes = [];
+    let act = [], largo = 0;
+    lista.forEach(k => {
+      const c = String(k).length + 3;   // la clave mas sus comillas y la coma
+      if (act.length && largo + c > 3500) { lotes.push(act); act = []; largo = 0; }
+      act.push(k); largo += c;
+    });
+    if (act.length) lotes.push(act);
+    for (const trozo of lotes) {
+      const [vivos, hist] = await Promise.all([
+        this._fetchAllParallel('registros', { cols, orderCol: 'id', filter: q => q.in('clave', trozo) }),
+        this._fetchAllParallel('registros_historico', { cols, orderCol: 'id', filter: q => q.in('clave', trozo) }),
+      ]);
+      out.push(...(vivos || []), ...(hist || []));
+    }
+    return out;
   },
 
   // Registros archivados dentro de un rango de fechas (server-side, por fecha_date).

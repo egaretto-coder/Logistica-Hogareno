@@ -1255,6 +1255,71 @@ function closeAddEnvioModal(e) {
   }
 }
 
+// Los que ya existen, con la fila que ya esta cargada. Mira primero lo que hay
+// en memoria (instantaneo) y despues pregunta a la nube SOLO por las claves que
+// no aparecieron: la ventana cargada son unos pocos dias y el envio original
+// suele estar mas atras, asi que mirando solo la memoria el aviso no saltaba
+// justo en el caso que lo necesita. Si la consulta falla NO se traba el alta
+// —se avisa con lo que haya— porque frenar una carga por un problema de red es
+// peor que el duplicado que esto previene.
+async function _enviosYaCargados(recs) {
+  const porClave = new Map();
+  (AppData.records || []).forEach(r => {
+    const k = claveRegistro(r);
+    if (k && !porClave.has(k)) porClave.set(k, r);
+  });
+  const nuevos = recs.map(r => ({ nuevo: r, k: claveRegistro(r) })).filter(x => x.k);
+  const faltan = nuevos.filter(x => !porClave.has(x.k)).map(x => x.k);
+  if (faltan.length && typeof DB !== 'undefined' && DB && typeof DB.buscarPorClaves === 'function') {
+    try {
+      const est = document.getElementById('addenvio-estado');
+      if (est) est.textContent = 'Revisando que no estén ya cargados…';
+      const filas = await DB.buscarPorClaves(faltan);
+      (filas || []).forEach(f => {
+        if (f && f.clave && !porClave.has(f.clave)) porClave.set(f.clave, f);
+      });
+      if (est) est.textContent = '';
+    } catch (e) {
+      console.warn('No se pudo verificar contra la nube si ya estaban cargados:', e);
+    }
+  }
+  const out = [];
+  nuevos.forEach(x => {
+    const ya = porClave.get(x.k);
+    if (ya) out.push({ nuevo: x.nuevo, ya });
+  });
+  return out;
+}
+
+// El texto del aviso. Vive aparte porque es LO QUE DECIDE el resultado: si solo
+// dice "ya está", el operador que vino hasta acá justamente porque el envío no
+// aparecía en la liquidación lee "ya está, pero está mal" y acepta igual. Tiene
+// que decir COMO esta cargado y cual es la salida correcta.
+function _textoYaCargados(repetidos, total) {
+  const nl = String.fromCharCode(10);
+  const lista = repetidos.slice(0, 5).map(x => {
+    const e = String(x.ya.estado || '').trim() || 'sin estado';
+    const marca = x.ya.contabiliza_manual ? ' · visita pagada' : '';
+    return '· ' + (x.nuevo.tracking || '(sin tracking)') + ' — ya está cargado el ' +
+      (x.ya.fecha || '?') + ' como "' + e + '"' + marca +
+      (contabilizaRegistro(x.ya) ? '' : '  <-- NO se está pagando ni facturando');
+  }).join(nl);
+  // Los que estan cargados pero NO contabilizan son los que hay que corregir, no
+  // volver a cargar: es el caso mas frecuente (17 de 41 en la auditoria) y el
+  // unico en el que el operador tiene una razon para insistir.
+  const noCuentan = repetidos.filter(x => !contabilizaRegistro(x.ya)).length;
+  let msg = repetidos.length + ' de los ' + total + ' envíos YA ESTÁN cargados:' + nl +
+    lista + (repetidos.length > 5 ? nl + '…y ' + (repetidos.length - 5) + ' más' : '') + nl;
+  if (noCuentan) {
+    msg += nl + (noCuentan === 1 ? 'Uno de ellos ya está' : noCuentan + ' ya están') +
+      ' en el sistema con un estado que NO cobra, que es por lo que no aparece en la liquidación.' + nl +
+      'Eso se arregla CORRIGIÉNDOLE EL ESTADO o con "Pagar visita" en su fila, no cargándolo de nuevo:' + nl +
+      'si lo cargás, quedan los dos y el envío se cobra dos veces.' + nl;
+  }
+  return msg + nl + 'Si los cargás de nuevo se le pagan DOS VECES al conductor y se le facturan DOS VECES al cliente.' + nl +
+    'Aceptar = guardarlos igual · Cancelar = volver y sacarlos';
+}
+
 async function guardarEnviosModal() {
   const desdeCliente = _aeOrigen === 'cliente';
   const conductor = desdeCliente ? '' : document.getElementById('cond-select').value;
@@ -1326,22 +1391,23 @@ async function guardarEnviosModal() {
       'Aceptar = guardarlos igual · Cancelar = volver y elegir el conductor')) return;
   }
 
-  // Y el tercer aviso: ESTE ENVIO YA ESTA CARGADO. El alta manual insertaba
-  // sin mirar nada, asi que volver a cargar la misma planilla —o reintentar
-  // tras un error -- metia el envio dos veces: se le paga dos veces al
-  // conductor y se le factura dos veces al cliente, y no se ve en ningun lado.
-  // Medido en produccion: 53 copias de mas, de 29 clientes y 22 conductores.
-  // Se compara por la CLAVE, que es la misma con la que deduplica el import.
-  const _yaCargadas = new Set((AppData.records || []).map(r => claveRegistro(r)));
-  const repetidos = recs.filter(r => _yaCargadas.has(claveRegistro(r)));
-  if (repetidos.length) {
-    const lista = repetidos.slice(0, 5).map(r => '· ' + (r.tracking || '(sin tracking)') + ' — ' + (r.fecha || '') + ' — ' + (r.zona || 'sin zona')).join(String.fromCharCode(10));
-    if (!confirm(repetidos.length + ' de los ' + recs.length + ' envíos YA ESTÁN cargados:' + String.fromCharCode(10) +
-      lista + (repetidos.length > 5 ? String.fromCharCode(10) + '…y ' + (repetidos.length - 5) + ' más' : '') +
-      String.fromCharCode(10) + String.fromCharCode(10) +
-      'Si los cargás de nuevo se le pagan DOS VECES al conductor y se le facturan DOS VECES al cliente.' + String.fromCharCode(10) +
-      'Aceptar = guardarlos igual · Cancelar = volver y sacarlos')) return;
-  }
+  // Y el tercer aviso: ESTE ENVIO YA ESTA CARGADO.
+  //
+  // Es, de lejos, la forma en que se duplicaron los envios. Auditado sobre los
+  // 52 casos de produccion: 41 son "una fila del import + una cargada a mano", y
+  // los 41 en la MISMA secuencia —primero entro por el import, 2,7 dias despues
+  // alguien lo cargo a mano—. Nunca al reves. O sea que no es "se cargo dos
+  // veces por las dudas": es alguien agregando un envio que YA ESTABA.
+  //
+  // Y el motivo mas frecuente no es que no lo encontraran, sino que lo
+  // encontraron MAL: en 17 de esos 41 el envio ya estaba cargado como "No
+  // entregado", que no se le paga a nadie ni aparece en ninguna liquidacion.
+  // El conductor reclama, el operador lo ve en $0, y en vez de corregirle el
+  // estado o pagarle la visita lo carga de nuevo. Por eso el aviso NO alcanza
+  // con decir "ya esta": tiene que decir COMO esta, o el operador lee "ya esta,
+  // pero esta mal, por eso lo estoy cargando" y acepta igual.
+  const repetidos = await _enviosYaCargados(recs);
+  if (repetidos.length && !confirm(_textoYaCargados(repetidos, recs.length))) return;
 
   const btn = document.getElementById('addenvio-guardar');
   const est = document.getElementById('addenvio-estado');
