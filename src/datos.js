@@ -913,16 +913,28 @@ async function hydrateEnFases() {
 function dbPush(table) {
   if (!window.DB || !DB.ready) return Promise.resolve();
   const builders = {
+    // `creado_por` se CONSERVA, no se inventa. Estas dos tablas se guardan con
+    // replaceAll —se borra todo y se reinserta—, asi que un `|| _operadorActual()`
+    // le estampaba el nombre del que esta guardando a TODA fila que no lo tuviera,
+    // incluida la lista historica que nadie sabe quien cargo. Paso de verdad: al
+    // aplicar el aumento del 02/10 las 46 tarifas y las 76 reglas Super SLA
+    // originales quedaron atribuidas a quien apreto "Aplicar". Una columna que
+    // nombra al ultimo que guardo, en vez de al que creo la lista, es PEOR que una
+    // vacia: contesta con confianza y contesta mal, y esta columna existe
+    // justamente para poder preguntar "quien cargo esta lista". Vacio no es
+    // "nadie", es "no se sabe" — mismo criterio que cliente_tarifas.creado_por.
+    // Al operador se lo estampa donde la lista NACE: simAplicarTarifas e
+    // importTarifas.
     tarifas: () => AppData.tarifas.map(t => ({
       zona: t.zona, categoria: t.categoria || '',
       s_colecta: _num(t.s_colecta), c_colecta: _num(t.c_colecta), sla: _num(t.sla),
       vigente_desde: tarifaCondVigenteDesde(t),
-      creado_por: t.creado_por || _operadorActual()
+      creado_por: t.creado_por || null
     })),
     super_sla: () => AppData.superSLA.map(r => ({
       conductor: r.conductor, zona: r.zona, precio: _num(r.precio != null ? r.precio : r.sla),
       vigente_desde: tarifaCondVigenteDesde(r),
-      creado_por: r.creado_por || _operadorActual()
+      creado_por: r.creado_por || null
     })).filter(r => r.conductor && r.zona),
     panel_conductores: () => dedupePanelConductores(AppData.panelConductores).map(c => ({
       id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
