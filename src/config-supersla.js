@@ -49,7 +49,7 @@ function renderSuperSLA() {
   wrap.innerHTML = conductoresSuperSLA.map(cond => {
     const nombre = cond.nombre;
     const color  = avatarColor(nombre);
-    const reglas = AppData.superSLA.filter(
+    const reglas = superSLAVigentes().filter(
       r => r.conductor.toUpperCase().trim() === nombre.toUpperCase().trim()
     );
 
@@ -186,10 +186,22 @@ function addZonaSuperSLA(conductor) {
 // borrara el Super SLA de otro conductor (bug real: a ARIEL OJEDA se le
 // perdía la regla de MERLO una vez por semana). Es la misma regla que ya
 // siguen los modales de visita, anulación, dimensión y panel de conductores.
+// La regla VIGENTE de ese conductor en esa zona. Editar desde el panel corrige
+// la lista que rige; para cargar un aumento con fecha está el simulador, que
+// crea una vigencia nueva y deja lo anterior en pie.
 function _reglaSuperSLA(cond, zona) {
   const c = normNombre(cond), z = normNombre(zona);
-  return (AppData.superSLA || []).find(r =>
-    normNombre(r.conductor) === c && normNombre(r.zona) === z) || null;
+  const candidatas = (AppData.superSLA || []).filter(r =>
+    normNombre(r.conductor) === c && normNombre(r.zona) === z);
+  if (!candidatas.length) return null;
+  const hoy = (typeof _hoyISOTarifa === 'function') ? _hoyISOTarifa() : '9999-12-31';
+  let mejor = null;
+  candidatas.forEach(r => {
+    const d = tarifaCondVigenteDesde(r);
+    if (d > hoy) return;
+    if (!mejor || d > tarifaCondVigenteDesde(mejor)) mejor = r;
+  });
+  return mejor || candidatas[0];
 }
 function _idxReglaSuperSLA(cond, zona) {
   const r = _reglaSuperSLA(cond, zona);

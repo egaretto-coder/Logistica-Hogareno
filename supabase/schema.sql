@@ -29,24 +29,35 @@ create table if not exists public.perfiles (
 -- deshabilitado. Este bloque queda solo como referencia histórica.
 
 -- ---------- TARIFAS ----------
+-- Una lista de tarifas RIGE DESDE UNA FECHA y convive con las anteriores: cada
+-- envío se paga con el precio del día en que se entregó. Antes la zona era
+-- unique y un aumento REESCRIBÍA el pasado, así que una liquidación ya pagada
+-- pasaba a dar otro total y el papel que firmó el conductor dejaba de coincidir.
+-- '2000-01-01' es el centinela de "desde siempre" (anterior a cualquier envío).
 create table if not exists public.tarifas (
   id bigint generated always as identity primary key,
-  zona text not null unique,
+  zona text not null,
   categoria text default '',
   s_colecta numeric default 0,
   c_colecta numeric default 0,
   sla numeric default 0,
-  updated_at timestamptz not null default now()
+  vigente_desde date not null default '2000-01-01',
+  creado_por text,
+  updated_at timestamptz not null default now(),
+  unique (zona, vigente_desde)
 );
 
 -- ---------- SUPER SLA ----------
+-- Mismo criterio que tarifas: el precio especial rige desde una fecha.
 create table if not exists public.super_sla (
   id bigint generated always as identity primary key,
   conductor text not null,
   zona text not null,
   precio numeric default 0,
+  vigente_desde date not null default '2000-01-01',
+  creado_por text,
   updated_at timestamptz not null default now(),
-  unique (conductor, zona)
+  unique (conductor, zona, vigente_desde)
 );
 
 -- ---------- PANEL DE CONDUCTORES ----------
@@ -1714,3 +1725,24 @@ alter table public.empleado_cierres
 --   Se escribe en guardarClienteTarifas (el embudo por el que pasan todas),
 --   así lo registran por igual el import, el editor por cliente y
 --   "Actualizar lista de precios". NULL = cargada antes del 05/10/2026.
+
+-- 05/10/2026 — El tarifario de CONDUCTOR también rige desde una fecha
+-- Un aumento de tarifas se acuerda con fecha ("desde el 2/10 inclusive"), pero
+-- la tabla tenía la zona unique: cargarlo pisaba el precio y REESCRIBÍA lo ya
+-- liquidado. Los envíos de la semana anterior pasaban a pagarse con la lista
+-- nueva, el total de una liquidación cerrada cambiaba, y el PDF que el
+-- conductor había firmado dejaba de coincidir. Del lado del CLIENTE esto ya
+-- estaba resuelto con cliente_tarifas.vigente_desde; esta es la misma
+-- solución del lado del que PAGA.
+-- (migración: tarifas_conductor_con_vigencia)
+--   alter table tarifas   add column vigente_desde date not null default '2000-01-01'
+--   alter table tarifas   add column creado_por text
+--   alter table super_sla add column vigente_desde date not null default '2000-01-01'
+--   alter table super_sla add column creado_por text
+--   tarifas_zona_key              → unique (zona, vigente_desde)
+--   super_sla_conductor_zona_key  → unique (conductor, zona, vigente_desde)
+--   Las 46 tarifas y 76 reglas Super SLA que ya estaban quedaron en el
+--   centinela, así que todo lo cargado sigue aplicando a todo.
+-- OJO: CLAVES_UNICAS (src/datos.js) incluye vigente_desde en las dos tablas.
+-- Sin eso, _colapsarRepetidas se quedaría con UNA sola lista por zona y
+-- borraría el historial de precios en el próximo guardado.

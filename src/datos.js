@@ -394,13 +394,18 @@ async function _hydrateFromSupabaseReal(opts) {
   if ((data.tarifas || []).length) {
     AppData.tarifas = data.tarifas.map(t => ({
       zona: t.zona, categoria: t.categoria || '',
-      s_colecta: _num(t.s_colecta), c_colecta: _num(t.c_colecta), sla: _num(t.sla)
+      s_colecta: _num(t.s_colecta), c_colecta: _num(t.c_colecta), sla: _num(t.sla),
+      // Desde cuándo rige este precio. Vacío = desde siempre (la lista original).
+      vigente_desde: String(t.vigente_desde || '').slice(0, 10),
+      creado_por: t.creado_por || ''
     }));
   } else { faltaSeed.push('tarifas'); }
 
   if ((data.super_sla || []).length) {
     AppData.superSLA = data.super_sla.map(r => ({
-      conductor: r.conductor, zona: r.zona, precio: _num(r.precio)
+      conductor: r.conductor, zona: r.zona, precio: _num(r.precio),
+      vigente_desde: String(r.vigente_desde || '').slice(0, 10),
+      creado_por: r.creado_por || ''
     }));
   } else { faltaSeed.push('super_sla'); }
 
@@ -910,10 +915,14 @@ function dbPush(table) {
   const builders = {
     tarifas: () => AppData.tarifas.map(t => ({
       zona: t.zona, categoria: t.categoria || '',
-      s_colecta: _num(t.s_colecta), c_colecta: _num(t.c_colecta), sla: _num(t.sla)
+      s_colecta: _num(t.s_colecta), c_colecta: _num(t.c_colecta), sla: _num(t.sla),
+      vigente_desde: tarifaCondVigenteDesde(t),
+      creado_por: t.creado_por || _operadorActual()
     })),
     super_sla: () => AppData.superSLA.map(r => ({
-      conductor: r.conductor, zona: r.zona, precio: _num(r.precio != null ? r.precio : r.sla)
+      conductor: r.conductor, zona: r.zona, precio: _num(r.precio != null ? r.precio : r.sla),
+      vigente_desde: tarifaCondVigenteDesde(r),
+      creado_por: r.creado_por || _operadorActual()
     })).filter(r => r.conductor && r.zona),
     panel_conductores: () => dedupePanelConductores(AppData.panelConductores).map(c => ({
       id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
@@ -995,8 +1004,8 @@ function dbPush(table) {
 // por lotes). Tienen que coincidir con los `unique` de la base: si una fila se
 // repite, el insert falla y la tabla queda a medio escribir.
 const CLAVES_UNICAS = {
-  tarifas:              r => [r.zona],
-  super_sla:            r => [r.conductor, r.zona],
+  tarifas:              r => [r.zona, r.vigente_desde || '2000-01-01'],
+  super_sla:            r => [r.conductor, r.zona, r.vigente_desde || '2000-01-01'],
   cliente_tarifas:      r => [r.cliente, r.zona, r.vigente_desde || '2000-01-01'],
   dimensiones_catalogo: r => [r.cliente, r.nombre, r.zona, r.tipo],
   zona_alias:           r => [r.alias],
@@ -1044,6 +1053,14 @@ async function agregarTarifaKm(valor) {
 }
 
 // Convierte un registro en memoria al formato de fila para la nube.
+// Quién está operando. Una lista de precios decide lo que se paga, así que
+// tiene que poder responderse quién la puso — igual que `armada_por` en las
+// liquidaciones y `creado_por` en el tarifario de venta.
+function _operadorActual() {
+  if (typeof currentUser === 'undefined' || !currentUser) return '';
+  return currentUser.nombre || currentUser.usuario || '';
+}
+
 function filaRegistroNube(r) {
   return {
     cadete: r.cadete || '', tracking: r.tracking || '', fecha: r.fecha || '',

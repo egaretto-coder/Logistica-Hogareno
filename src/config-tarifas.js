@@ -14,18 +14,39 @@ function renderTarifas() {
 
   // Buscador por zona o categoría.
   const q = (document.getElementById('tarifas-search')?.value || '').toLowerCase().trim();
+  // Las VIGENTES: con varias listas conviviendo, recorrer AppData.tarifas
+  // mostraría la misma zona una vez por vigencia y el contador diría el doble.
+  const vigentes = tarifasVigentesCond();
+  // Pero una zona cuya ÚNICA lista todavía no empezó NO está vigente y, sin
+  // esto, desaparecía de la tabla: el que acaba de importarla con fecha futura
+  // la ve esfumarse y concluye que el import falló. Va igual, marcada con el
+  // día en que empieza — que es la respuesta a por qué no tiene precio todavía.
+  const yaListadas = new Set(vigentes.map(t => normNombre(t.zona)));
+  const porVenir = new Map();
+  (AppData.tarifas || []).forEach(t => {
+    const k = normNombre(t.zona);
+    if (yaListadas.has(k)) return;
+    const d = tarifaCondVigenteDesde(t);
+    const previa = porVenir.get(k);
+    // La más TEMPRANA: es el día en que esa zona empieza a tener precio.
+    if (!previa || d < tarifaCondVigenteDesde(previa)) porVenir.set(k, t);
+  });
+  porVenir.forEach(t => vigentes.push(Object.assign({ _desdeTxt: tarifaCondVigenteDesde(t) }, t)));
   const lista = q
-    ? AppData.tarifas.filter(t =>
+    ? vigentes.filter(t =>
         String(t.zona).toLowerCase().includes(q) ||
         String(t.categoria || '').toLowerCase().includes(q))
-    : AppData.tarifas;
+    : vigentes;
 
   const countEl = document.getElementById('tarifas-count');
-  if (countEl) countEl.textContent = lista.length + ' de ' + AppData.tarifas.length + ' zonas';
+  if (countEl) countEl.textContent = lista.length + ' de ' + vigentes.length + ' zonas';
+  _pintarVigenciaTarifas();
 
   const filas = lista.map(t => `
     <div style="display:grid;grid-template-columns:2fr 1fr 110px 110px 110px;gap:0;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;font-size:13px">
-      <span style="font-weight:500">${t.zona}</span>
+      <span style="font-weight:500">${t.zona}${t._desdeTxt
+        ? ' <span style="font-weight:400;font-size:11px;color:#b45309">· empieza el ' + isoToDMY(t._desdeTxt) + '</span>'
+        : ''}</span>
       <span style="font-size:12px;color:var(--text-secondary)">${t.categoria || '—'}</span>
       <span style="text-align:right">${fmtPeso(t.s_colecta)}</span>
       <span style="text-align:right">${fmtPeso(t.c_colecta)}</span>
@@ -37,6 +58,31 @@ function renderTarifas() {
     : '<div style="padding:28px;text-align:center;color:var(--text-muted)">Sin tarifas cargadas. Descargá la plantilla, completala y subila.</div>');
 }
 
+// Desde cuando rige la lista que se esta aplicando, quien la cargo y si hay
+// una esperando su fecha. Es la pregunta del que liquida —¿esta puesto el
+// aumento?— y antes habia que abrir el Excel para saberlo.
+function _pintarVigenciaTarifas() {
+  // El import arranca proponiendo HOY: un aumento rige de hoy en mas salvo que
+  // se acuerde con otra fecha.
+  const d = document.getElementById('tarifas-desde');
+  if (d && !d.value) d.value = _hoyISOTarifa();
+  const el = document.getElementById('tarifas-vigencia');
+  if (!el) return;
+  const u = ultimaListaTarifasCond();
+  if (!u.desde) { el.innerHTML = ''; return; }
+  const quienes = new Set();
+  (AppData.tarifas || []).forEach(t => {
+    if (tarifaCondVigenteDesde(t) !== u.desde) return;
+    const q = String(t.creado_por || '').trim(); if (q) quienes.add(q);
+  });
+  const quien = quienes.size ? ' · la cargó ' + Array.from(quienes).join(', ') : '';
+  el.innerHTML = '<strong>Lista vigente:</strong> ' +
+    (u.original ? 'la original' : 'desde el ' + isoToDMY(u.desde)) + quien +
+    (u.proxima
+      ? ' · <span style="color:#b45309">hay una nueva que rige desde el ' + isoToDMY(u.proxima) + '</span>'
+      : '');
+}
+
 function saveTarifas() {
   localStorage.setItem('liq_tarifas', JSON.stringify(AppData.tarifas));
   dbPush('tarifas');
@@ -45,8 +91,7 @@ function saveTarifas() {
 // Descarga una plantilla Excel prellenada con las zonas y valores actuales,
 // para que el usuario solo actualice los precios.
 function descargarPlantillaTarifas() {
-  const zonas = [...AppData.tarifas].sort((a, b) =>
-    String(a.zona).localeCompare(String(b.zona)));
+  const zonas = tarifasVigentesCond();
   const aoa = [
     ['⚠ NO MODIFIQUES NI REORDENES LOS ENCABEZADOS DE LA FILA 2. Actualizá solo los valores (S/ Colecta, C/ Colecta, SLA) a partir de la fila 3. Podés cambiar la Categoría si corresponde. No borres la columna Zona ni dejes filas vacías entre datos.'],
     PLANTILLA_TARIFAS_HEADERS,
@@ -128,8 +173,14 @@ function importTarifas(event) {
       const validCat = c => TARIFAS_CATEGORIAS.find(
         x => x.toLowerCase() === String(c).toLowerCase().trim()) || null;
 
+      // La lista del archivo rige DESDE UNA FECHA y convive con las anteriores:
+      // antes el import pisaba los precios y reescribia lo ya liquidado.
+      const desdeImp = (document.getElementById('tarifas-desde') || {}).value || _hoyISOTarifa();
+      const quienImp = (typeof _operadorActual === 'function') ? _operadorActual() : '';
       const mapExist = {};
-      AppData.tarifas.forEach((t, i) => { mapExist[String(t.zona).toUpperCase().trim()] = i; });
+      tarifasVigentesCond().forEach(t => { mapExist[String(t.zona).toUpperCase().trim()] = t; });
+      // Reintentar la carga no acumula versiones del mismo aumento.
+      AppData.tarifas = (AppData.tarifas || []).filter(t => tarifaCondVigenteDesde(t) !== desdeImp);
 
       const resumenTarifa = t =>
         (t.categoria || '—') + ' · S/C ' + fmtPeso(t.s_colecta) + ' · C/C ' + fmtPeso(t.c_colecta) + ' · SLA ' + fmtPeso(t.sla);
@@ -146,20 +197,25 @@ function importTarifas(event) {
         const sla = col.sla >= 0 ? parseTarifaMoneda(r[col.sla]) : null;
         const cat = col.categoria >= 0 ? validCat(r[col.categoria]) : null;
 
-        if (mapExist[zona] !== undefined) {
-          const t = AppData.tarifas[mapExist[zona]];
-          const antes = resumenTarifa(t);
-          if (s   != null) t.s_colecta = s;
-          if (c   != null) t.c_colecta = c;
-          if (sla != null) t.sla = sla;
-          if (cat) t.categoria = cat;
-          const despues = resumenTarifa(t);
+        const prev = mapExist[zona];
+        if (prev) {
+          // Los valores en blanco conservan el precio que ya regia.
+          const fila = {
+            zona, categoria: cat || prev.categoria || 'Intermedio',
+            s_colecta: s != null ? s : _num(prev.s_colecta),
+            c_colecta: c != null ? c : _num(prev.c_colecta),
+            sla: sla != null ? sla : _num(prev.sla),
+            vigente_desde: desdeImp, creado_por: quienImp
+          };
+          const antes = resumenTarifa(prev), despues = resumenTarifa(fila);
           if (antes !== despues) sup.push({ clave: zona, antes, despues });
+          AppData.tarifas.push(fila);
           actualizados++;
         } else {
           AppData.tarifas.push({
             zona, categoria: cat || 'Intermedio',
             s_colecta: s || 0, c_colecta: c || 0, sla: sla || 0,
+            vigente_desde: desdeImp, creado_por: quienImp
           });
           agregados++;
         }
@@ -171,7 +227,7 @@ function importTarifas(event) {
       AppData.tarifas.sort((a, b) => String(a.zona).localeCompare(String(b.zona)));
       saveTarifas();
       renderTarifas();
-      showToast('✅ Tarifario actualizado: ' + sup.length + ' zonas cambiaron de valor · ' + agregados + ' nuevas' +
+      showToast('✅ Tarifario actualizado desde el ' + isoToDMY(desdeImp) + ': ' + sup.length + ' zonas cambiaron de valor · ' + agregados + ' nuevas' +
         (sup.length ? ' — revisá el botón ⚠' : ''));
     } catch (err) {
       console.error(err);
@@ -249,7 +305,9 @@ function _simMapaGrupos() {
 function _simZonasPorGrupo() {
   const m = new Map();
   SIM_GRUPOS.forEach(g => m.set(g, []));
-  (AppData.tarifas || []).forEach(t => {
+  // Las VIGENTES: con varias listas conviviendo, recorrer AppData.tarifas
+  // mostraria la misma zona una vez por vigencia.
+  tarifasVigentesCond().forEach(t => {
     const z = String(t.zona || '').trim().toUpperCase();
     if (!z) return;
     if (typeof esZonaValida === 'function' && !esZonaValida(z)) return;
@@ -328,8 +386,11 @@ function _simRedondear(n, paso) {
   return p <= 1 ? Math.round(n) : Math.round(n / p) * p;
 }
 
+// La lista hipotetica para MEDIR: las vigentes con el precio movido. Conserva
+// `vigente_desde`, asi la medicion contesta "si estos precios hubieran regido
+// todo el mes, cuanto costaba" — que es la pregunta del simulador.
 function _simTarifasSimuladas(st) {
-  return (AppData.tarifas || []).map(t => {
+  return tarifasVigentesCond().map(t => {
     if (!st.zonas.has(_simKey(t.zona))) return t;
     const g = _simGrupoDeCat(t.categoria);
     const n = Object.assign({}, t);
@@ -342,7 +403,7 @@ function _simTarifasSimuladas(st) {
 // pero lo gobierna el tilde del CONDUCTOR, no el de la zona: son dos tarifarios
 // distintos y acoplarlos escondería que uno se movió y el otro no.
 function _simSuperSLASimulado(st, mapa) {
-  const base = AppData.superSLA || [];
+  const base = superSLAVigentes();
   if (!st.ajustarSLA) return base;
   return base.map(r => {
     if (!st.slaCond.has(_simKey(r.conductor))) return r;
@@ -542,6 +603,11 @@ function renderSimTarifas() {
     // 5 · Aplicar
     '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:16px;flex-wrap:wrap">' +
       '<span id="simtar-aplicar-nota" style="font-size:12px;color:var(--text-muted);margin-right:auto"></span>' +
+      // DESDE CUANDO rige. Un aumento se acuerda con una fecha y los envios
+      // anteriores conservan su precio: sin esto, aplicar reescribia lo ya
+      // liquidado y el papel que firmo el conductor dejaba de coincidir.
+      '<span style="font-size:12px;color:var(--text-secondary)">Rige desde</span>' +
+      '<input type="date" id="simtar-desde" value="' + _simDesdeDefecto() + '" onchange="_simPintarDesde()" aria-label="Desde qué día rige el ajuste">' +
       '<button class="btn" onclick="closeModal()">Cerrar</button>' +
       '<button class="btn btn-primary" onclick="simAplicarTarifas()"><i class="ic ic-save"></i> Aplicar al tarifario</button>' +
     '</div>';
@@ -835,6 +901,23 @@ function _simMesTexto(yyyymm) {
   return n.charAt(0).toUpperCase() + n.slice(1) + ' ' + String(yyyymm).slice(0, 4);
 }
 
+// Por defecto HOY: un aumento se aplica de hoy en mas, salvo que se acuerde
+// con otra fecha.
+function _simDesdeDefecto() { return _hoyISOTarifa(); }
+
+// Una fecha PASADA recalcula lo que ya se liquido, asi que se avisa antes de
+// apretar, no despues.
+function _simPintarDesde() {
+  const el = document.getElementById('simtar-desde');
+  const nota = document.getElementById('simtar-aplicar-nota');
+  if (!el || !nota) return;
+  _simNotaAplicar();
+  const v = el.value || '';
+  if (v && v < _hoyISOTarifa()) {
+    nota.innerHTML = '<span style="color:#b45309">Rige desde el ' + isoToDMY(v) + ', que ya pasó: los envíos entregados desde ese día se van a recalcular.</span>';
+  }
+}
+
 function _simNotaAplicar() {
   const el = document.getElementById('simtar-aplicar-nota');
   if (!el) return;
@@ -850,14 +933,18 @@ function _simCambios(st) {
   const mapa = _simMapaGrupos();
   const nt = _simTarifasSimuladas(st);
   const ns = _simSuperSLASimulado(st, mapa);
+  // Se compara contra las VIGENTES y por zona, no por posicion en el array:
+  // con varias listas conviviendo, el indice ya no identifica una fila.
   const tarifas = [], sla = [];
-  (AppData.tarifas || []).forEach((t, i) => {
+  const vigT = tarifasVigentesCond();
+  vigT.forEach((t, i) => {
     const n = nt[i];
-    if (SIM_CAMPOS_TARIFA.some(k => _num(t[k]) !== _num(n[k]))) tarifas.push({ i, t, n });
+    if (n && SIM_CAMPOS_TARIFA.some(k => _num(t[k]) !== _num(n[k]))) tarifas.push({ t, n });
   });
-  (AppData.superSLA || []).forEach((r, i) => {
+  const vigS = superSLAVigentes();
+  vigS.forEach((r, i) => {
     const n = ns[i];
-    if (_num(r.precio != null ? r.precio : r.sla) !== _num(n.precio)) sla.push({ i, r, n });
+    if (n && _num(r.precio != null ? r.precio : r.sla) !== _num(n.precio)) sla.push({ r, n });
   });
   return { tarifas, sla };
 }
@@ -923,6 +1010,11 @@ function _simRefrescarPrecios() {
 function simAplicarTarifas() {
   const st = _simEstado();
   const c = _simCambios(st);
+  const desde = (document.getElementById('simtar-desde') || {}).value || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde)) {
+    alert('Elegí desde qué día rige el ajuste.');
+    return;
+  }
   const puedeSLA = typeof puedeEditarSuperSLA === 'function' ? puedeEditarSuperSLA() : true;
   const slaAplicables = puedeSLA ? c.sla : [];
 
@@ -954,15 +1046,39 @@ function simAplicarTarifas() {
     msg += nl + nl + 'OJO: los ' + c.sla.length + ' precios Super SLA NO se van a escribir (tu rol no puede editarlos), ' +
       'así que esos conductores quedan sin el aumento hasta que lo aplique un supervisor.';
   }
-  msg += nl + nl + 'El tarifario nuevo rige desde ya para TODO lo que se liquide, incluidas las semanas abiertas. ¿Aplicar?';
+  msg += nl + nl + 'La lista nueva rige DESDE EL ' + isoToDMY(desde) + '. Lo entregado antes conserva el precio que tenía.';
+  if (desde < _hoyISOTarifa()) {
+    msg += nl + 'OJO: esa fecha ya pasó, así que los envíos entregados desde ese día se recalculan ' +
+      'y las liquidaciones de esas semanas cambian de total.';
+  }
+  msg += nl + nl + '¿Aplicar?';
   if (!confirm(msg)) return;
 
   const resumen = t => (t.categoria || '—') + ' · S/C ' + fmtPeso(t.s_colecta) + ' · C/C ' + fmtPeso(t.c_colecta) + ' · SLA ' + fmtPeso(t.sla);
   const sup = c.tarifas.map(x => ({ clave: x.t.zona, antes: resumen(x.t), despues: resumen(x.n) }));
 
-  c.tarifas.forEach(x => { SIM_CAMPOS_TARIFA.forEach(k => { AppData.tarifas[x.i][k] = _num(x.n[k]); }); });
+  // Las filas nuevas CONVIVEN con las anteriores: lo entregado antes de la
+  // fecha conserva su precio. Solo se pisan las de ESA MISMA fecha, para que
+  // reintentar la carga no acumule versiones del mismo aumento.
+  const quien = (typeof _operadorActual === 'function') ? _operadorActual() : '';
+  const zonasTocadas = new Set(c.tarifas.map(x => _simKey(x.t.zona)));
+  AppData.tarifas = (AppData.tarifas || []).filter(t =>
+    !(tarifaCondVigenteDesde(t) === desde && zonasTocadas.has(_simKey(t.zona))));
+  c.tarifas.forEach(x => {
+    const fila = { zona: x.t.zona, categoria: x.t.categoria || '',
+      vigente_desde: desde, creado_por: quien };
+    SIM_CAMPOS_TARIFA.forEach(k => { fila[k] = _num(x.n[k]); });
+    AppData.tarifas.push(fila);
+  });
+
   if (slaAplicables.length) {
-    slaAplicables.forEach(x => { AppData.superSLA[x.i].precio = _num(x.n.precio); });
+    const slaTocadas = new Set(slaAplicables.map(x => _simKey(x.r.conductor) + '|' + _simKey(x.r.zona)));
+    AppData.superSLA = (AppData.superSLA || []).filter(r =>
+      !(tarifaCondVigenteDesde(r) === desde && slaTocadas.has(_simKey(r.conductor) + '|' + _simKey(r.zona))));
+    slaAplicables.forEach(x => AppData.superSLA.push({
+      conductor: x.r.conductor, zona: x.r.zona, precio: _num(x.n.precio),
+      vigente_desde: desde, creado_por: quien
+    }));
     sup.push(...slaAplicables.map(x => ({
       clave: 'Super SLA · ' + x.r.conductor + ' · ' + x.r.zona,
       antes: fmtPeso(_num(x.r.precio != null ? x.r.precio : x.r.sla)),
@@ -985,7 +1101,7 @@ function simAplicarTarifas() {
   renderSimTarifas();
   showToast('✅ Tarifario actualizado: ' + c.tarifas.length + ' zona(s)' +
     (slaAplicables.length ? ' y ' + slaAplicables.length + ' precio(s) Super SLA' : '') +
-    ' — ' + (delta >= 0 ? '+' : '−') + fmtPeso(Math.abs(delta)) + ' sobre ' + _simMesTexto(mes));
+    ' desde el ' + isoToDMY(desde) + ' — ' + (delta >= 0 ? '+' : '−') + fmtPeso(Math.abs(delta)) + ' sobre ' + _simMesTexto(mes));
 }
 
 // ===== CONFIG SUPER SLA =====

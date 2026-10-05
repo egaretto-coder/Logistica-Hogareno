@@ -86,7 +86,7 @@ function precioAutoDe(r) {
   const zona = (r.zona && r.zona.trim()) ? r.zona.trim() : (r.localidad || '').trim();
   const dim = dimensionAsignada(r);
   if (dim) return { precio: dim.precio, etiqueta: 'Dimensión: ' + dim.nombre + (dim.sinPrecioZona ? ' (sin precio en ' + (zona || 'zona') + ')' : '') };
-  const p = getPrecio((r.cadete || '').trim(), zona);
+  const p = getPrecio((r.cadete || '').trim(), zona, fechaISOde(r.fecha));
   return { precio: p.precio, etiqueta: tipoLabel(p.tipo) + (p.es_super ? ' ⭐' : '') + (p.sin_tarifa ? ' (sin tarifa)' : '') };
 }
 

@@ -302,7 +302,7 @@ function calcLiquidacionesFiltradas(recs) {
         sin_tarifa = dim.sinPrecioZona;
         dim_cliente = dim.cliente||''; dim_condicion = dim.nombre||'';
       } else {
-        const p = getPrecio(cond, zona);
+        const p = getPrecio(cond, zona, fechaISOde(r.fecha));
         precio=p.precio; tipo=p.tipo; es_super=p.es_super; sin_tarifa=p.sin_tarifa;
       }
       // Corrección manual del operador (pantalla Conductores): pisa todo cálculo.
@@ -501,7 +501,7 @@ function renderLiquidaciones() {
     if (contabiliza) {
       // Precio de la dimensión especial asignada, si tiene; si no, tarifa/Super SLA.
       const dim = dimensionAsignada(r);
-      const p = dim ? { precio: dim.precio, tipo: 'dim_especial', es_super: false } : getPrecio(cond, zona);
+      const p = dim ? { precio: dim.precio, tipo: 'dim_especial', es_super: false } : getPrecio(cond, zona, fechaISOde(r.fecha));
       const precio = precioManualDe(r) !== null ? precioManualDe(r) : p.precio;
       liqBase[cond].total += precio;
       liqBase[cond].filas.push({ zona, precio, subtotal: precio, tipo: p.tipo, es_super: p.es_super });

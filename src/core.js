@@ -853,33 +853,129 @@ function dedupePanelConductores(lista) {
 // Índices cacheados para getPrecio (evitan escanear superSLA/tarifas —con
 // normNombre— por CADA envío, que era el gran cuello de botella con ~10k filas).
 // Se reconstruyen cuando cambian tarifas/superSLA (ver invalidarIndiceTarifas).
+//
+// La tarifa de CONDUCTOR rige DESDE UNA FECHA, igual que la de venta. Antes no
+// la tenía: subir un aumento reescribía el precio de TODOS los envíos ya
+// cargados, así que una liquidación de la semana pasada pasaba a dar otro total
+// y el papel que firmó el conductor dejaba de coincidir. Ahora cada envío se
+// paga con el precio que regía el día que se entregó, y las listas conviven:
+// el índice guarda por zona la lista de vigencias ordenada y se queda con la
+// última que ya empezó. `2000-01-01` es el centinela de "desde siempre"
+// —anterior a cualquier envío— así que todo lo que ya estaba cargado sigue
+// aplicando a todo.
+const TARIFA_COND_DESDE_SIEMPRE = '2000-01-01';
+
+function tarifaCondVigenteDesde(t) {
+  const v = String((t && t.vigente_desde) || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : TARIFA_COND_DESDE_SIEMPRE;
+}
+function _hoyISOTarifa() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+// La última vigencia que YA empezó a esa fecha. undefined = ese día no había
+// precio cargado; devolver el más nuevo sería pagar hacia atrás con una lista
+// que todavía no existía, que es justo lo que esto vino a arreglar.
+function _vigenteEnFecha(lista, f) {
+  if (!lista || !lista.length) return undefined;
+  let out;
+  for (let i = 0; i < lista.length; i++) {
+    if (lista[i].desde <= f) out = lista[i]; else break;
+  }
+  return out;
+}
+
 let _superSLAIdxCache = null, _tarifaIdxCache = null;
 function invalidarIndiceTarifas() { _superSLAIdxCache = null; _tarifaIdxCache = null; invalidarLiquidaciones(); }
+
 function _superSLAIndex() {
   if (_superSLAIdxCache) return _superSLAIdxCache;
-  const porCond = new Map();   // normCond -> Map(normZona -> precio)
+  // normCond -> { zonas: Map(normZona -> [{desde, precio}] ordenado), desdeMin }
+  // `desdeMin` contesta en O(1) si ese conductor tiene ALGUNA regla en vigor a
+  // una fecha, que es lo que decide si cae a SLA Cumplido en las demás zonas.
+  const porCond = new Map();
   (AppData.superSLA || []).forEach(r => {
     const c = normNombre(r.conductor); if (!c) return;
-    let zm = porCond.get(c); if (!zm) { zm = new Map(); porCond.set(c, zm); }
-    zm.set(normNombre(r.zona), _num(r.precio != null ? r.precio : r.sla));
+    let e = porCond.get(c);
+    if (!e) { e = { zonas: new Map(), desdeMin: null }; porCond.set(c, e); }
+    const d = tarifaCondVigenteDesde(r);
+    const z = normNombre(r.zona);
+    let l = e.zonas.get(z); if (!l) { l = []; e.zonas.set(z, l); }
+    l.push({ desde: d, precio: _num(r.precio != null ? r.precio : r.sla) });
+    if (!e.desdeMin || d < e.desdeMin) e.desdeMin = d;
   });
+  porCond.forEach(e => e.zonas.forEach(l =>
+    l.sort((a, b) => a.desde < b.desde ? -1 : a.desde > b.desde ? 1 : 0)));
   _superSLAIdxCache = porCond;
   return porCond;
 }
+
 function _tarifaIndex() {
   if (_tarifaIdxCache) return _tarifaIdxCache;
-  const m = new Map();
-  (AppData.tarifas || []).forEach(t => { m.set(normNombre(t.zona), t); });
+  const m = new Map();   // normZona -> [{desde, row}] ordenado por fecha
+  (AppData.tarifas || []).forEach(t => {
+    const z = normNombre(t.zona);
+    let l = m.get(z); if (!l) { l = []; m.set(z, l); }
+    l.push({ desde: tarifaCondVigenteDesde(t), row: t });
+  });
+  m.forEach(l => l.sort((a, b) => a.desde < b.desde ? -1 : a.desde > b.desde ? 1 : 0));
   _tarifaIdxCache = m;
   return m;
 }
 
-function getPrecio(conductor, zona) {
+// Una sola fila por zona: la que RIGE a esa fecha (hoy por defecto). Todo lo
+// que muestra o exporta el tarifario pasa por acá — sin esto el panel diría
+// "92 zonas" donde hay 46, y la plantilla saldría con cada zona repetida.
+function tarifasVigentesCond(fechaISO) {
+  const f = /^\d{4}-\d{2}-\d{2}$/.test(String(fechaISO || '')) ? fechaISO : _hoyISOTarifa();
+  const out = [];
+  _tarifaIndex().forEach(lista => {
+    const v = _vigenteEnFecha(lista, f);
+    if (v) out.push(v.row);
+  });
+  out.sort((a, b) => String(a.zona).localeCompare(String(b.zona)));
+  return out;
+}
+
+// Una sola fila por conductor + zona: la que RIGE a esa fecha. Igual que
+// tarifasVigentesCond, es lo que tiene que ver el panel y lo que se edita.
+function superSLAVigentes(fechaISO) {
+  const f = /^\d{4}-\d{2}-\d{2}$/.test(String(fechaISO || '')) ? fechaISO : _hoyISOTarifa();
+  const vistos = new Map();   // cond|zona -> fila con la vigencia mas nueva que ya empezo
+  (AppData.superSLA || []).forEach(r => {
+    const d = tarifaCondVigenteDesde(r);
+    if (d > f) return;
+    const k = normNombre(r.conductor) + '|' + normNombre(r.zona);
+    const previa = vistos.get(k);
+    if (!previa || d > tarifaCondVigenteDesde(previa)) vistos.set(k, r);
+  });
+  return Array.from(vistos.values());
+}
+
+// Desde cuándo rige la lista de tarifas que se está aplicando, y si hay una
+// cargada esperando su fecha. Es la pregunta del que liquida: ¿está puesto el
+// aumento?
+function ultimaListaTarifasCond() {
+  const hoy = _hoyISOTarifa();
+  let rige = null, proxima = null;
+  (AppData.tarifas || []).forEach(t => {
+    const d = tarifaCondVigenteDesde(t);
+    if (d <= hoy) { if (!rige || d > rige) rige = d; }
+    else if (!proxima || d < proxima) proxima = d;
+  });
+  return { desde: rige, original: rige === TARIFA_COND_DESDE_SIEMPRE, proxima };
+}
+
+function getPrecio(conductor, zona, fechaISO) {
   // La zona del envío pasa por el alias ANTES de buscar la tarifa. Hasta ahora
   // el alias solo se aplicaba al guardar tarifarios, así que un envío en una
   // zona con alias no lo usaba nunca: los dos lados tienen que resolver la zona
   // igual, si no el conductor cobra por una zona y al cliente se le factura $0.
   const zNorm = normNombre(typeof zonaCanonica === 'function' ? zonaCanonica(zona) : zona);
+
+  // El precio es el que regía EL DÍA DEL ENVÍO. Sin fecha se toma el de hoy,
+  // que es lo que corresponde para los catálogos de zona y las vistas previas.
+  const f = /^\d{4}-\d{2}-\d{2}$/.test(String(fechaISO || '')) ? fechaISO : _hoyISOTarifa();
 
   // Categoría y nombre canónico desde el panel (resuelve alias). El super SLA se
   // guarda con el nombre del panel, así que hay que matchearlo por el canónico
@@ -887,14 +983,16 @@ function getPrecio(conductor, zona) {
   const panelCond = panelConductorDe(conductor);
   const cNorm = normNombre(panelCond ? panelCond.nombre : conductor);
 
-  const superZonas = _superSLAIndex().get(cNorm);          // Map(zona -> precio) o undefined
-  const superPrecio = superZonas ? superZonas.get(zNorm) : undefined;
-  const tarifa = _tarifaIndex().get(zNorm);
+  const sup = _superSLAIndex().get(cNorm);
+  const supVig = sup ? _vigenteEnFecha(sup.zonas.get(zNorm), f) : undefined;
+  const tarVig = _vigenteEnFecha(_tarifaIndex().get(zNorm), f);
+  const tarifa = tarVig ? tarVig.row : undefined;
   const tipoFijo = panelCond?.categoria === 'super_sla' ? 'sla' : (panelCond?.categoria || 's_colecta');
-  const tieneSuperSLAEnOtraZona = !!(superZonas && superZonas.size);
+  // Tiene Super SLA en otra zona SOLO si alguna de sus reglas ya regía ese día.
+  const tieneSuperSLAEnOtraZona = !!(sup && sup.desdeMin && sup.desdeMin <= f);
 
-  if (superPrecio !== undefined) {
-    return { precio: superPrecio ?? 0, tipo: 'sla', es_super: true, sin_tarifa: false };
+  if (supVig !== undefined) {
+    return { precio: supVig.precio ?? 0, tipo: 'sla', es_super: true, sin_tarifa: false };
   }
 
   if (!tarifa) {
@@ -976,7 +1074,7 @@ function calcLiquidaciones(records) {
         dim_condicion = dim.nombre || '';
       } else {
         // Cálculo tradicional desde panel de tarifas
-        const p = getPrecio(cond, zona);
+        const p = getPrecio(cond, zona, fechaISOde(r.fecha));
         precio = p.precio;
         tipo = p.tipo;
         es_super = p.es_super;
