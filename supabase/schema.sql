@@ -1704,3 +1704,13 @@ alter table public.empleado_cierres
 --   delete de las 45 filas con vigente_desde = '2026-10-02'.
 --   Su lista correcta (vigente_desde 2000-01-01) quedó intacta, y ninguna
 --   liquidación se había cerrado con los precios inflados.
+
+-- 05/10/2026 — Quién carga una lista de precios
+-- Cuando entró la lista de CERAMITODO con los precios ×90 no se pudo saber
+-- quién la había subido: la tabla no tenía columna de usuario y los logs de
+-- Supabase guardan la IP y el navegador, NO el usuario autenticado.
+-- (migración: cliente_tarifas_creado_por)
+--   alter table cliente_tarifas add column creado_por text
+--   Se escribe en guardarClienteTarifas (el embudo por el que pasan todas),
+--   así lo registran por igual el import, el editor por cliente y
+--   "Actualizar lista de precios". NULL = cargada antes del 05/10/2026.

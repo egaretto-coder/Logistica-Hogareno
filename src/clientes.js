@@ -457,12 +457,31 @@ function ultimaListaPrecios(cod) {
 }
 
 // Texto corto para la card: desde cuándo rige la lista que se está aplicando.
+// Quién cargó la lista que rige hoy. La pregunta aparece cuando un precio
+// sorprende, y hasta ahora no la contestaba nadie.
+function cargadaPorTxt(cod) {
+  const u = ultimaListaPrecios(cod);
+  if (!u.desde) return '';
+  const k = clienteKey(cod);
+  const quienes = new Set();
+  (AppData.clienteTarifas || []).forEach(t => {
+    const mio = clienteKey(t.cliente_cod) === k ||
+      (!t.cliente_cod && normCliente(t.cliente) === normCliente(k));
+    if (!mio || tarifaVigenteDesde(t) !== u.desde) return;
+    const q = String(t.creado_por || '').trim();
+    if (q) quienes.add(q);
+  });
+  return quienes.size ? Array.from(quienes).join(', ') : '';
+}
+
 function ultimaListaPreciosTxt(cod) {
   const u = ultimaListaPrecios(cod);
   if (!u.desde) return { txt: '—', sub: '' };
   const txt = u.original ? 'original' : _precFmt(u.desde);
-  const sub = u.proxima ? 'nueva desde el ' + _precFmt(u.proxima) : '';
-  return { txt, sub, original: u.original };
+  const quien = cargadaPorTxt(cod);
+  const sub = u.proxima ? 'nueva desde el ' + _precFmt(u.proxima)
+    : (quien ? 'la cargó ' + quien : '');
+  return { txt, sub, original: u.original, quien };
 }
 
 // Cantidad de zonas con tarifa cargada de un cliente (las que rigen hoy).
@@ -2179,12 +2198,20 @@ async function guardarClienteTarifas(rows) {
   // tarifas que se guardan, venga del import o de una edición a mano.
   // Se canoniza la zona y se completa la vigencia: una tarifa sin fecha rige
   // "desde siempre", que es como se comportaba todo antes de que existiera.
+  // Y se anota QUIEN la carga. Una lista de precios decide lo que se le
+  // factura a un cliente, y cuando el 02/10/2026 entro la de CERAMITODO con
+  // los precios x90 no se pudo saber quien la habia subido: la tabla no tenia
+  // columna de usuario y los logs de Supabase guardan la IP, no el usuario.
+  // Mismo criterio que `armada_por` en las liquidaciones.
+  const quien = (typeof currentUser !== 'undefined' && currentUser)
+    ? (currentUser.nombre || currentUser.usuario || '') : '';
   rows = rows.map(r => Object.assign({}, r, {
     zona: zonaCanonica(r.zona),
-    vigente_desde: tarifaVigenteDesde(r)
+    vigente_desde: tarifaVigenteDesde(r),
+    creado_por: r.creado_por || quien
   }));
   const ids = await DB.insertRows('cliente_tarifas', rows);
-  return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, vigente_desde: r.vigente_desde, cliente_cod: (r.cliente_cod || '').toUpperCase(), zona: r.zona, precio: _num(r.precio) }));
+  return rows.map((r, i) => ({ id: ids[i], cliente: r.cliente, vigente_desde: r.vigente_desde, creado_por: r.creado_por || '', cliente_cod: (r.cliente_cod || '').toUpperCase(), zona: r.zona, precio: _num(r.precio) }));
 }
 
 // ── Import Excel del tarifario (Cliente · Zona · Precio) ─────────────────────

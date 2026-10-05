@@ -471,7 +471,11 @@ async function _hydrateFromSupabaseReal(opts) {
     id: t.id, cliente: t.cliente, cliente_cod: (t.cliente_cod || '').toUpperCase(),
     zona: t.zona, precio: _num(t.precio),
     // Desde cuándo rige este precio. Vacío = desde siempre (la tarifa original).
-    vigente_desde: String(t.vigente_desde || '').slice(0, 10)
+    vigente_desde: String(t.vigente_desde || '').slice(0, 10),
+    // Quién la cargó. Vacío en las anteriores al 05/10/2026, que es cuando se
+    // empezó a registrar: eso NO es "nadie", es "no se sabe", y la ficha lo
+    // dice así en vez de dejar el renglón en blanco.
+    creado_por: t.creado_por || ''
   }));
 
   // Comisiones: vendedores, escala de categorización, clientes en comisión y pagos.
