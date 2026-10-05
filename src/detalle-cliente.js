@@ -327,7 +327,13 @@ function renderDetalleCliente() {
       '</tr>';
   }).join('');
 
+  // Si el periodo que se esta mirando arranca antes de lo que la app tiene
+  // cargado, esos envios NO estan en memoria: se piden y el panel lo dice
+  // mientras llegan. Sin esto la pantalla mostraba "Sin envios de este
+  // cliente en la semana" con la liquidacion cerrada en $0 al lado, que es
+  // indistinguible de que los datos se hayan borrado.
   wrap.innerHTML =
+    asegurarPeriodoEnPantalla(fechaISOde(rango.desde), renderDetalleCliente) +
     '<div class="card">' +
       '<div class="conductor-header" style="background:linear-gradient(135deg,#0e7490 0%,#0e7490cc 100%)">' +
         '<div class="big-avatar" style="background:rgba(255,255,255,0.25)">' + initials(clienteNombreDe(cod)) + '</div>' +
@@ -381,6 +387,11 @@ function renderDetalleCliente() {
         '<tbody>' + (filas || '<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">' +
           (q ? 'Ningún envío de la semana coincide con "' + q.replace(/</g, '&lt;') + '" — puede estar en otra semana o en otro cliente'
              : dcliSoloSinTarifa ? '✅ No hay envíos sin tarifa en la semana'
+             // Mientras los envíos de un período viejo se están bajando, la tabla
+             // NO puede decir "sin envíos": el aviso de arriba explica que están
+             // viniendo y este renglón lo contradecía, que es justo el cartel que
+             // hizo pensar que la información se había borrado.
+             : periodoFueraDeVentana(fechaISOde(rango.desde)) ? 'Esperando los envíos de este período…'
              : 'Sin envíos de este cliente en la semana') + '</td></tr>') +
           _dcliFilasCargos(cargos, totEnvios, totCargos) + '</tbody>' +
       '</table></div>' +

@@ -156,6 +156,11 @@ function renderConductorDetail() {
   // Cambió el conductor: el plegado de días arranca de cero.
   if (condDiasDe !== cond) { condDiasDe = cond; condDiasAbiertos = new Set(); }
   const wrap = document.getElementById('conductor-detail-wrap');
+  const _avCond = document.getElementById('cond-aviso-ventana');
+  if (_avCond) {
+    const _d = document.getElementById('cond-fecha-desde')?.value || '';
+    _avCond.innerHTML = _d ? asegurarPeriodoEnPantalla(_d, renderConductorDetail) : '';
+  }
   if (!cond) {
     // Sin conductor elegido el buscador no hacía NADA: para encontrar un envío
     // había que saber de antemano quién lo llevó. Como el operador de clientes

@@ -481,6 +481,13 @@ function _liqPintarKPIs(liq, conductores) {
 }
 
 function renderLiquidaciones() {
+  // La semana que se esta liquidando puede ser anterior a la ventana cargada
+  // (se revisa una semana vieja, o se cierra tarde): se piden sus envios.
+  const _avLiq = document.getElementById('liq-aviso-ventana');
+  if (_avLiq) {
+    const _sem = semanaDeCondicion(liqCondicionFiltro(), liqSemanaISO());
+    _avLiq.innerHTML = asegurarPeriodoEnPantalla(_liqISO(_sem.desde), renderLiquidaciones);
+  }
   // Calcular liquidaciones sobre los registros filtrados por fecha
   const recordsFiltrados = filtrarRecordsLiq(AppData.records);
   const liqBase = {};

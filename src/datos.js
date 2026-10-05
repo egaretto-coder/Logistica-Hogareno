@@ -139,6 +139,118 @@ function ventanaDesdeISO() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// ── Mirar un período anterior a la ventana ───────────────────────────────
+// La app arranca con los últimos VENTANA_DIAS_REGISTROS días. Alcanza para la
+// semana que se liquida, pero NO para un cliente QUINCENAL —la quincena del 1 al
+// 15 tiene días más viejos que la ventana— ni para volver a mirar una semana
+// pasada. El panel mostraba entonces "Sin envíos de este cliente en la semana",
+// que es EXACTAMENTE lo que se ve cuando los datos se borraron: se reportó como
+// "la app borra la información de semanas anteriores" (bug real — los 10.134
+// envíos de esa semana estaban enteros en la nube, y la liquidación cerrada
+// seguía con su monto; lo único que faltaba era bajarlos).
+//
+// La cobertura se lleva como UNA fecha (AppData.cargadoDesde) y no como una
+// lista de rangos sueltos: al pedir un período más viejo se trae TODO lo que
+// falta hasta ahí, así lo cargado es siempre continuo y no puede quedar un
+// agujero en el medio que nadie note.
+const REGISTROS_PISO_ISO = '2020-01-01';   // nada del negocio es anterior
+
+// Desde qué día tenemos envíos en memoria. null = está todo.
+function registrosDesdeISO() {
+  if (AppData.historialCompleto) return null;
+  return AppData.cargadoDesde || ventanaDesdeISO();
+}
+
+// Una fecha absurda (un año tipeado mal) se acota al piso: sin eso, pedirla
+// dejaría la cobertura más atrás que el piso y el panel pediría la misma carga
+// una y otra vez, para siempre.
+function _desdePedido(desdeISO) {
+  const d = String(desdeISO || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  return d < REGISTROS_PISO_ISO ? REGISTROS_PISO_ISO : d;
+}
+
+function periodoFueraDeVentana(desdeISO) {
+  const tengo = registrosDesdeISO();
+  const pido = _desdePedido(desdeISO);
+  return !!(tengo && pido && pido < tengo);
+}
+
+let _pTraerRango = null;
+// Trae lo que falte para cubrir desde esa fecha. Devuelve cuántos envíos sumó,
+// o false si ya estaba cargado. Una sola carga en vuelo: el render se dispara
+// varias veces (realtime, el propio repintado) y pedir lo mismo tres veces solo
+// alarga la espera.
+function asegurarRegistrosDesde(desdeISO) {
+  if (!periodoFueraDeVentana(desdeISO)) return Promise.resolve(false);
+  if (_pTraerRango) return _pTraerRango;
+  _pTraerRango = _traerRegistrosDesde(_desdePedido(desdeISO))
+    .finally(() => { _pTraerRango = null; });
+  return _pTraerRango;
+}
+
+async function _traerRegistrosDesde(desdeISO) {
+  if (!window.DB || !DB.ready) throw new Error('offline');
+  const hasta = registrosDesdeISO();          // lo que ya tenemos arranca acá
+  AppData._trayendoDesde = desdeISO;
+  actualizarEstadoCarga();
+  try {
+    const res = await DB.selectRegistrosRango(desdeISO, hasta);
+    const yaEstan = new Set();
+    (AppData.records || []).forEach(r => { if (r && r.id !== null && r.id !== undefined) yaEstan.add(r.id); });
+    const nuevos = [];
+    (res.vivos || []).forEach(r => { if (!yaEstan.has(r.id)) nuevos.push(mapRegistroNube(r)); });
+    // Los archivados entran como SOLO LECTURA, igual que en el historial completo.
+    (res.historico || []).forEach(r => nuevos.push(Object.assign(mapRegistroNube(r), { id: null, _historico: true })));
+    // Array NUEVO: los cachés de precios y de liquidaciones van por IDENTIDAD.
+    AppData.records = nuevos.concat(AppData.records || []);
+    AppData.cargadoDesde = desdeISO;
+    AppData._falloTraer = null;
+    invalidarLiquidaciones();
+    return nuevos.length;
+  } finally {
+    AppData._trayendoDesde = null;
+    actualizarEstadoCarga();
+  }
+}
+
+// Lo que un panel pone arriba de su tabla cuando el período que muestra es más
+// viejo que lo cargado, y de paso dispara la carga. Que lo DIGA importa tanto
+// como traerlo: un cero sin explicación se lee como "se borró".
+function asegurarPeriodoEnPantalla(desdeISO, repintar) {
+  if (!periodoFueraDeVentana(desdeISO)) return '';
+  const pido = _desdePedido(desdeISO);
+  if (AppData._falloTraer === pido) return _bloqueTraerEnvios(pido, false);
+  asegurarRegistrosDesde(pido).then(n => {
+    if (n !== false && typeof repintar === 'function') repintar();
+  }).catch(e => {
+    console.warn('traer envíos del período:', e);
+    AppData._falloTraer = pido;
+    if (typeof repintar === 'function') repintar();
+  });
+  return _bloqueTraerEnvios(pido, true);
+}
+
+function _bloqueTraerEnvios(desdeISO, enCurso) {
+  const dmy = typeof isoToDMY === 'function' ? isoToDMY(desdeISO) : desdeISO;
+  const esc = typeof jsAttr === 'function' ? jsAttr(desdeISO) : desdeISO;
+  return '<div class="alert" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:13px;margin-bottom:12px"><div>' +
+    (enCurso
+      ? '<strong>Trayendo los envíos de este período…</strong> La app arranca con los últimos ' +
+        VENTANA_DIAS_REGISTROS + ' días y este es anterior, así que se están bajando ahora. ' +
+        'Los números de abajo se completan solos: no hace falta recargar.'
+      : '<strong>No se pudieron traer los envíos anteriores al ' + dmy + '.</strong> ' +
+        'Están en la nube —no se borró nada—, falta bajarlos. ' +
+        '<button class="btn btn-sm" style="padding:1px 8px" onclick="reintentarTraerEnvios(&#39;' + esc + '&#39;)">Reintentar</button>') +
+    '</div></div>';
+}
+
+function reintentarTraerEnvios(desdeISO) {
+  AppData._falloTraer = null;
+  if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+}
+
+
 // UNA sola forma de pasar una fila de 'registros' de la nube a AppData. El mismo
 // mapeo estaba copiado en CUATRO lugares —las dos hidrataciones y el historial
 // completo, vivos y archivados— y cada campo nuevo había que sumarlo en todos:
@@ -177,7 +289,11 @@ function mapRegistroNube(r) {
 // diciendo "historial completo", y un reporte o una reconstrucción armados
 // después salían cortos sin ningún aviso (bug real).
 function _archivadosEnMemoria() {
-  return AppData.historialCompleto ? (AppData.records || []).filter(r => r && r._historico) : [];
+  // Antes esto dependia de historialCompleto. Ahora tambien llegan archivados
+  // por la carga a demanda de un periodo viejo, asi que se conserva TODO lo
+  // marcado como historico: filtrando por la bandera, esos envios
+  // desaparecerian en la primera recarga y el panel volveria a mostrar cero.
+  return (AppData.records || []).filter(r => r && r._historico);
 }
 
 // ¿Dicen lo mismo? Compara solo lo que viene de la nube, con la misma
@@ -204,7 +320,7 @@ function _mismoRegistro(a, b) {
 // no hay nada que repintar.
 function aplicarCambiosRegistros(cambios) {
   if (!cambios || !cambios.length) return 0;
-  const desde = AppData.historialCompleto ? null : ventanaDesdeISO();
+  const desde = registrosDesdeISO();
   const recs = (AppData.records || []).slice();   // array NUEVO: los cachés van por identidad
   const pos = new Map();
   recs.forEach((r, i) => { if (r && r.id !== null && r.id !== undefined) pos.set(r.id, i); });
@@ -264,7 +380,7 @@ async function _hydrateFromSupabaseReal(opts) {
   const _t0 = (window.performance && performance.now()) || 0;
   let data;
   try {
-    data = await DB.loadAll(AppData.historialCompleto ? null : ventanaDesdeISO(), { sinRegistros });
+    data = await DB.loadAll(registrosDesdeISO(), { sinRegistros });
   } finally {
     AppData._hidratando = false;
   }
@@ -711,7 +827,7 @@ async function _hydrateRegistrosReal() {
   actualizarEstadoCarga();
   try {
     // Con avance: son ~20 páginas y sin una señal el arranque parece colgado.
-    const filas = await DB.selectRegistrosVentana(AppData.historialCompleto ? null : ventanaDesdeISO(),
+    const filas = await DB.selectRegistrosVentana(registrosDesdeISO(),
       (hechas, total) => { AppData._cargaRegProgreso = { hechas, total }; actualizarEstadoCarga(); });
     AppData.records = _archivadosEnMemoria().concat((filas || []).map(mapRegistroNube));
     invalidarLiquidaciones();   // base nueva en memoria: recalcular totales
@@ -737,9 +853,11 @@ function actualizarEstadoCarga() {
   if (el) {
     el.textContent = cargando
       ? '⏳ Cargando recorridos…' + (partes ? ' ' + partes : '')
+      : AppData._trayendoDesde
+        ? '⏳ Trayendo envíos anteriores…'
       // Mismo texto que escribe el Dashboard al renderizar.
       : AppData.records.length
-        ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
+        ? (AppData.records.length + ' registros · ' + textoVentanaCargada())
         : 'Sin datos cargados';
   }
   // Y en el Dashboard, ARRIBA: mientras bajan los envíos los números dan $0 y
@@ -753,6 +871,18 @@ function actualizarEstadoCarga() {
     if (t && cargando) t.innerHTML = '<strong>Cargando los envíos de los últimos ' + VENTANA_DIAS_REGISTROS + ' días' +
       (partes ? ' (' + partes + ')' : '') + '…</strong> Los números de abajo se completan solos cuando termina: no hace falta recargar la app.';
   }
+}
+
+// Que ventana de dias hay cargada. Decir "ultimos 14 dias" cuando ya se
+// trajeron semanas anteriores seria mentir justo en el cartel que el operador
+// mira para entender por que un periodo aparece vacio.
+function textoVentanaCargada() {
+  if (AppData.historialCompleto) return 'historial completo';
+  const d = AppData.cargadoDesde;
+  if (d && d !== ventanaDesdeISO()) {
+    return 'desde el ' + (typeof isoToDMY === 'function' ? isoToDMY(d) : d);
+  }
+  return 'últimos ' + VENTANA_DIAS_REGISTROS + ' días';
 }
 
 // Orquesta el arranque. Las dos cargas salen EN PARALELO (el tiempo total es el
@@ -1033,6 +1163,7 @@ async function archivarRegistrosAntesDe(antesDeISO) {
     if (movidos > 0) {
       showToast('✅ ' + movidos + ' registros archivados');
       AppData.historialCompleto = false; // la ventana se recarga sin los archivados
+      AppData.cargadoDesde = null;       // y la cobertura extra deja de valer
       await hydrateFromSupabase();
       if (typeof renderDashboard === 'function') renderDashboard();
     } else {

@@ -188,6 +188,22 @@ const DB = {
     return (hist || []).concat(vivos || []);
   },
 
+  // Los recorridos de un RANGO de fechas, de las dos tablas. Es lo que permite
+  // mirar un periodo anterior a la ventana del arranque sin bajar las 99.000
+  // filas: se pide solo el pedazo que falta.
+  async selectRegistrosRango(desdeISO, hastaISO) {
+    const f = q => {
+      if (desdeISO) q = q.gte('fecha_date', desdeISO);
+      if (hastaISO) q = q.lt('fecha_date', hastaISO);   // lo que ya esta cargado arranca en hastaISO
+      return q;
+    };
+    const [vivos, historico] = await Promise.all([
+      this._fetchAllParallel('registros', { orderCol: ['fecha_date', 'id'], filter: f }),
+      this._fetchAllParallel('registros_historico', { orderCol: ['fecha_date', 'id'], filter: f }),
+    ]);
+    return { vivos: vivos || [], historico: historico || [] };
+  },
+
   // Registros archivados dentro de un rango de fechas (server-side, por fecha_date).
   // Permite consultar lo archivado sin traer las decenas de miles de filas enteras.
   async selectHistoricoRango(desdeISO, hastaISO) {

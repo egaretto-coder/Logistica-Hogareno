@@ -177,6 +177,16 @@ function renderClienteLiquidaciones() {
   // la fecha elegida y cada fila muestra el período que le toca.
   if (per) per.textContent = 'Períodos que contienen la semana ' + rango.desde + ' → ' + rango.hasta;
 
+  // El ciclo mas largo de un cliente es el MENSUAL, asi que el periodo de
+  // alguno de los listados puede arrancar el 1 del mes: se cubre desde ahi.
+  const _avWrap = document.getElementById('cliq-aviso-ventana');
+  if (_avWrap) {
+    const _d = fechaISOde(rango.desde) || '';
+    _avWrap.innerHTML = _d
+      ? asegurarPeriodoEnPantalla(_d.slice(0, 8) + '01', renderClienteLiquidaciones)
+      : '';
+  }
+
   _cliqAvisoEmpresa();
 
   const q = (document.getElementById('cliq-search')?.value || '').toLowerCase().trim();
