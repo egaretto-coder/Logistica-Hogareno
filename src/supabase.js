@@ -217,6 +217,17 @@ const DB = {
     });
   },
 
+  // Reemplaza en UNA transaccion las filas con esas claves por las nuevas.
+  // Antes eran dos viajes —un delete y un insert— y un corte de red entre los
+  // dos dejaba los envios borrados y sin reponer: se perdian sin ningun aviso.
+  // Devuelve los ids de las filas insertadas, en el mismo orden.
+  async reemplazarRegistros(claves, filas) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.rpc('reemplazar_registros', { claves: claves || [], filas: filas || [] });
+    if (error) throw error;
+    return data || [];
+  },
+
   // Mueve a histórico los registros con fecha anterior a antesDeISO.
   // Es transaccional en el servidor (función archivar_registros). Solo analista.
   // Devuelve la cantidad de registros archivados.

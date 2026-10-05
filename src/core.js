@@ -1199,7 +1199,12 @@ function claveRegistro(r) {
     if (esEstadoEntregado(r.estado)) return base + '|' + String(r.fecha || '').trim();
     return base;
   }
-  return 'F:' + _normTxt([r.cadete, r.fecha, r.zona, r.localidad, dest].join('|'));
+  // El tracking entra IGUAL aunque no sea "real": "79261" y "79262" no son un
+  // tracking de Mercado Libre, pero son dos envios distintos y alcanzan de
+  // sobra para no confundirlos. Sin el, la clave de seis envios cargados a
+  // mano el mismo dia era identica y el borrado por clave se los llevaba a
+  // todos (bug real: 13 claves compartidas por 55 envios).
+  return 'F:' + _normTxt([r.cadete, r.fecha, r.zona, r.localidad, dest, t].join('|'));
 }
 
 // Clave ABIERTA de un envío sin tracking real: la que tenía mientras no estaba

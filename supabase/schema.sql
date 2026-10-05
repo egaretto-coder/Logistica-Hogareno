@@ -1669,3 +1669,27 @@ alter table public.empleado_sueldos
 -- alguien de area no reescribe los meses ya cerrados.
 alter table public.empleado_cierres
   add column if not exists viaticos numeric not null default 0;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- 05/10/2026 — Auditoría de carga de datos (no se puede perder un envío)
+-- ════════════════════════════════════════════════════════════════════════
+
+-- El import borraba por clave y DESPUÉS insertaba, en dos viajes separados.
+-- Un corte de red entre los dos dejaba los envíos borrados y sin reponer: se
+-- perdían sin ningún aviso. Esto lo hace en UNA transacción.
+-- (migración: reemplazar_registros_transaccional)
+--   create or replace function public.reemplazar_registros(claves text[], filas jsonb)
+--     returns bigint[]  -- ids de las filas insertadas, en orden
+--   1) delete from registros where clave = any(claves)
+--   2) insert ... from jsonb_to_recordset(filas)
+--   Si el insert falla, el delete se deshace con la transacción.
+--   grant execute to authenticated (exige es_usuario_activo()).
+
+-- La clave de respaldo (F:) tiraba el tracking cuando no era "real" (8+
+-- dígitos), así que seis envíos distintos del mismo cliente, día y zona
+-- quedaban con la MISMA clave: el borrado por clave se los llevaba a todos.
+-- Medido: 13 claves compartidas por 55 envíos distintos.
+-- (migración: clave_respaldo_incluye_tracking)
+--   registros_clave_bkp_20261005 (id, clave_anterior)  ← respaldo para revertir
+--   update registros/registros_historico: clave F: recalculada CON el tracking.
+--   Resultado: 153 filas migradas, riesgo de 55 envíos → 0, sin borrar nada.

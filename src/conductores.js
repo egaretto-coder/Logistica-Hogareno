@@ -1326,6 +1326,23 @@ async function guardarEnviosModal() {
       'Aceptar = guardarlos igual · Cancelar = volver y elegir el conductor')) return;
   }
 
+  // Y el tercer aviso: ESTE ENVIO YA ESTA CARGADO. El alta manual insertaba
+  // sin mirar nada, asi que volver a cargar la misma planilla —o reintentar
+  // tras un error -- metia el envio dos veces: se le paga dos veces al
+  // conductor y se le factura dos veces al cliente, y no se ve en ningun lado.
+  // Medido en produccion: 53 copias de mas, de 29 clientes y 22 conductores.
+  // Se compara por la CLAVE, que es la misma con la que deduplica el import.
+  const _yaCargadas = new Set((AppData.records || []).map(r => claveRegistro(r)));
+  const repetidos = recs.filter(r => _yaCargadas.has(claveRegistro(r)));
+  if (repetidos.length) {
+    const lista = repetidos.slice(0, 5).map(r => '· ' + (r.tracking || '(sin tracking)') + ' — ' + (r.fecha || '') + ' — ' + (r.zona || 'sin zona')).join(String.fromCharCode(10));
+    if (!confirm(repetidos.length + ' de los ' + recs.length + ' envíos YA ESTÁN cargados:' + String.fromCharCode(10) +
+      lista + (repetidos.length > 5 ? String.fromCharCode(10) + '…y ' + (repetidos.length - 5) + ' más' : '') +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Si los cargás de nuevo se le pagan DOS VECES al conductor y se le facturan DOS VECES al cliente.' + String.fromCharCode(10) +
+      'Aceptar = guardarlos igual · Cancelar = volver y sacarlos')) return;
+  }
+
   const btn = document.getElementById('addenvio-guardar');
   const est = document.getElementById('addenvio-estado');
   btn.disabled = true;

@@ -374,10 +374,17 @@ function processUpload() {
   };
 
   const sup = [];
+  // Si VARIAS filas comparten una clave, la carga reemplaza UNA sola. Antes se
+  // las llevaba a todas: con seis envios cargados a mano el mismo dia —que
+  // compartian la clave de respaldo— una carga los dejaba en uno. Los demas
+  // se conservan: el listado trajo un envio, no seis.
+  const _clavesUsadas = new Set();
   const restantes = AppData.records.filter(r => {
     const ck = claveRegistro(r);
     const n = nuevoPorClave[ck] || cierraAbierta[ck];   // la entrega cierra su fila abierta
     if (!n) return true;                 // no lo toca esta carga: se conserva
+    if (_clavesUsadas.has(ck)) return true;   // ya se reemplazo una con esta clave
+    _clavesUsadas.add(ck);
     heredarCorrecciones(r, n);           // lo hecho a mano sobrevive al reemplazo
     sup.push({
       clave: (r.tracking || '(sin tracking)') + ' · por ' + tipoClave(ck),

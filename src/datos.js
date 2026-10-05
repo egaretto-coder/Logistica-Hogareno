@@ -930,7 +930,15 @@ function dbPush(table) {
       imputar: d.imputar !== false
     })).filter(d => d.conductor),
   };
-  let rows = builders[table] ? builders[table]() : [];
+  if (!builders[table]) {
+    // Sin builder, `rows` quedaba en [] y replaceAll BORRABA la tabla entera.
+    // Que no se guarde es un bug; que se vacie la tabla es perder los datos.
+    console.error('dbPush: no hay builder para "' + table + '" — no se guarda nada');
+    if (typeof alert === 'function') alert('No se guardó "' + table + '": la app no sabe armar esa tabla.' +
+      String.fromCharCode(10) + 'No se tocó nada en la nube. Avisá para corregirlo.');
+    return Promise.resolve();
+  }
+  let rows = builders[table]();
   // Una fila repetida hace fallar el lote, y como `replaceAll` ya borró la tabla
   // el guardado queda a medio camino: "500 de 6.827 filas en la nube" (pasó de
   // verdad al eliminar una dimensión especial). La base solo puede quedarse con
@@ -1083,12 +1091,26 @@ async function guardarImportacionEnNube(nuevos) {
       }
     });
     const claves = Array.from(new Set(_cl));
-    // 1) Eliminar en el servidor las filas previas con la MISMA CLAVE de las de
-    //    esta carga (por tracking real, o por dirección si el tracking es basura).
-    //    Las claves nuevas no matchean nada -> los envíos distintos se conservan.
-    await DB.deleteIn('registros', 'clave', claves);
-    // 2) Insertar las filas de esta carga y quedarnos con sus ids.
-    const ids = await DB.insertRows('registros', nuevos.map(filaRegistroNube));
+    // Borrar las filas que esta carga reemplaza e insertar las nuevas, en UNA
+    // transaccion. Antes eran dos viajes: el delete corria primero y, si el
+    // insert fallaba —un corte de red, un 500—, los envios quedaban borrados y
+    // sin reponer. Se perdian sin que nadie se enterara, que es exactamente lo
+    // que no puede pasar con los recorridos ya pagados.
+    const filas = nuevos.map(filaRegistroNube);
+    let ids;
+    try {
+      ids = await DB.reemplazarRegistros(claves, filas);
+    } catch (e) {
+      // Solo si la base todavia no tiene la funcion se cae al camino viejo. Un
+      // error de otro tipo NO se reintenta borrando: seria perder lo mismo que
+      // esto viene a evitar.
+      const falta = /reemplazar_registros/i.test(String(e && (e.message || e.hint || ''))) ||
+                    String(e && e.code) === 'PGRST202';
+      if (!falta) throw e;
+      console.warn('reemplazar_registros no disponible, se usa el camino viejo');
+      await DB.deleteIn('registros', 'clave', claves);
+      ids = await DB.insertRows('registros', filas);
+    }
     nuevos.forEach((n, i) => { n.id = ids[i]; });
     importPendiente = null;
     showToast('✅ ' + nuevos.length + ' registros guardados en la nube');
