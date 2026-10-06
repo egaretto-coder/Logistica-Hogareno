@@ -1780,3 +1780,16 @@ alter table public.empleado_cierres
 -- monto fijo nunca se redondea solo (ver config-tarifas.js, simSetModo).
 -- OJO: el tarifario Super SLA NO se tocó — se había editado a mano desde el
 -- panel y no consta con qué montos.
+
+-- 06/10/2026 — Corrección de datos: el Super SLA también iba redondeado
+-- Misma causa que la corrección de tarifas de más arriba: el simulador aplicó
+-- +$190 / +$110 donde se había pactado +$187 / +$112.
+--   respaldo: super_sla_redondeo_bkp_20261006 (las 67 filas del 02/10)
+--   update acotado a las filas cuyo precio actual es EXACTAMENTE lo que
+--   producía el redondeo: round((viejo + 190|110)/10)*10. Las demás se
+--   dejaron como estaban.
+-- Quedaron 40 reglas con +187, 21 con +112 y 6 SIN TOCAR: IVAN RUIZ y
+-- SHIP MENT en BERISSO / ENSENADA / LA PLATA estaban devueltas a su precio
+-- original ($4.000 y $3.800) — o sea que a esos dos no se les dio el aumento
+-- en esas zonas, y eso es una decisión del operador, no un redondeo.
+-- La banda de cada regla sale de la categoría de SU zona en el tarifario.
