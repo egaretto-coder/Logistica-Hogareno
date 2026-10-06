@@ -76,11 +76,12 @@ function _pintarVigenciaTarifas() {
     const q = String(t.creado_por || '').trim(); if (q) quienes.add(q);
   });
   const quien = quienes.size ? ' · la cargó ' + Array.from(quienes).join(', ') : '';
+  const btn = _tarBotonHistorial('tarifas');
   el.innerHTML = '<strong>Lista vigente:</strong> ' +
     (u.original ? 'la original' : 'desde el ' + isoToDMY(u.desde)) + quien +
     (u.proxima
       ? ' · <span style="color:#b45309">hay una nueva que rige desde el ' + isoToDMY(u.proxima) + '</span>'
-      : '');
+      : '') + btn;
 }
 
 function saveTarifas() {
@@ -1105,3 +1106,267 @@ function simAplicarTarifas() {
 }
 
 // ===== CONFIG SUPER SLA =====
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  HISTORIAL DE TARIFARIOS
+//
+//  Las listas conviven desde que el tarifario tiene vigencia, y eso trajo dos
+//  problemas que son el mismo mal entendido: la lista VIEJA no es parte de la
+//  que rige hoy, pero tampoco se tira.
+//
+//  1) La plantilla bajaba las dos juntas (en Super SLA: cada conductor+zona dos
+//     veces, con el precio viejo y el nuevo). Una plantilla es para corregir la
+//     lista que rige y volver a subirla; con el historial adentro, reimportarla
+//     reescribía el tarifario con filas que ya no valen.
+//  2) No había dónde ver cuánto salía antes del aumento. El dato estaba en la
+//     base pero en ninguna pantalla, así que para responder "¿cuánto pagábamos
+//     por CABA en septiembre?" había que abrir la base.
+//
+//  Se resuelve separando los dos usos: la plantilla trae SOLO la vigente
+//  (tarifasVigentesCond / superSLAVigentes) y el historial vive en su propia
+//  ventana, con el antes/después de cada aumento y su descarga aparte.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Las filas crudas de cada tarifario. Las dos tablas se tratan igual salvo por
+// la clave y por cuántas columnas de precio tienen.
+function _tarFilasDe(tipo) {
+  return (tipo === 'supersla' ? AppData.superSLA : AppData.tarifas) || [];
+}
+function _tarClaveFila(tipo, r) {
+  return tipo === 'supersla'
+    ? normNombre(r.conductor) + '|' + normNombre(r.zona)
+    : normNombre(r.zona);
+}
+// Las columnas de plata de una fila, en el orden en que se muestran. El Super
+// SLA tiene una sola; el tarifario de zonas, tres.
+function _tarPreciosFila(tipo, r) {
+  if (tipo === 'supersla') return [{ k: 'precio', t: 'Precio', v: _num(r.precio != null ? r.precio : r.sla) }];
+  return [
+    { k: 's_colecta', t: 'S/ Colecta', v: _num(r.s_colecta) },
+    { k: 'c_colecta', t: 'C/ Colecta', v: _num(r.c_colecta) },
+    { k: 'sla',       t: 'SLA Cumpl.', v: _num(r.sla) },
+  ];
+}
+
+// Las vigencias cargadas, de la MÁS NUEVA a la más vieja, con sus filas y quién
+// las cargó. Es el esqueleto del historial: cada entrada es una lista completa,
+// no un diff — el diff se calcula después comparando dos consecutivas.
+function _tarVigencias(tipo) {
+  const porFecha = new Map();
+  _tarFilasDe(tipo).forEach(r => {
+    const d = tarifaCondVigenteDesde(r);
+    if (!porFecha.has(d)) porFecha.set(d, { desde: d, filas: [], quienes: new Set() });
+    const e = porFecha.get(d);
+    e.filas.push(r);
+    const q = String(r.creado_por || '').trim();
+    if (q) e.quienes.add(q);
+  });
+  return Array.from(porFecha.values())
+    .sort((a, b) => a.desde < b.desde ? 1 : a.desde > b.desde ? -1 : 0)
+    .map(e => ({
+      desde: e.desde,
+      original: e.desde === TARIFA_COND_DESDE_SIEMPRE,
+      // Vacío NO es "nadie", es "no se sabe": las listas anteriores al
+      // 05/10/2026 son de antes de que existiera la columna.
+      quien: e.quienes.size ? Array.from(e.quienes).join(', ') : '',
+      filas: e.filas,
+    }));
+}
+
+// El dia anterior a una fecha ISO.
+function _tarDiaAntes(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() - 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _tarVigentesEn(tipo, fechaISO) {
+  return tipo === 'supersla' ? superSLAVigentes(fechaISO) : tarifasVigentesCond(fechaISO);
+}
+
+// Qué cambió EL DÍA en que esa lista empezó a regir.
+//
+// Se compara lo VIGENTE el día anterior contra lo vigente ese día, y NO una
+// lista contra la anterior. Las vigencias se superponen POR ZONA: `_vigenteEnFecha`
+// elige, para cada zona, la última lista que ya empezó. Así que un aumento que
+// toca 5 zonas deja a las otras 41 con su precio de siempre — no las da de baja.
+// Comparando lista contra lista, esas 41 aparecían como "dejaron de tener
+// precio", que además de falso es alarmante: dice que 41 zonas se quedaron sin
+// tarifa cuando se siguen pagando igual. Lo agarró el banco.
+// Por lo mismo no existe "quitada": una zona no puede perder su precio al
+// cargarse una lista nueva, solo conservarlo.
+function _tarResumenCambio(tipo, desde) {
+  const col = tipo === 'supersla' ? 'precio' : 'sla';
+  const prev = new Map();
+  _tarVigentesEn(tipo, _tarDiaAntes(desde)).forEach(r => prev.set(_tarClaveFila(tipo, r), r));
+  const detalle = [];
+  let suben = 0, bajan = 0, igual = 0, nuevas = 0, sumaPct = 0, nPct = 0;
+  _tarVigentesEn(tipo, desde).forEach(r => {
+    const antes = prev.get(_tarClaveFila(tipo, r));
+    const vD = _num(r[col] != null ? r[col] : r.sla);
+    if (!antes) { nuevas++; detalle.push({ r, antes: null, estado: 'nueva' }); return; }
+    const vA = _num(antes[col] != null ? antes[col] : antes.sla);
+    if (vD === vA) { igual++; return; }
+    if (vD > vA) suben++; else bajan++;
+    if (vA > 0) { sumaPct += (vD / vA * 100 - 100); nPct++; }
+    detalle.push({ r, antes, estado: vD > vA ? 'sube' : 'baja' });
+  });
+  return { suben, bajan, igual, nuevas, quitadas: 0, pctProm: nPct ? (sumaPct / nPct) : 0, detalle };
+}
+
+// El historial completo: cada vigencia con lo que movió respecto de la anterior.
+function historialTarifario(tipo) {
+  const vigs = _tarVigencias(tipo);
+  const hoy = _hoyISOTarifa();
+  return vigs.map((v, i) => Object.assign({}, v, {
+    vigente: v.desde <= hoy && !vigs.slice(0, i).some(x => x.desde <= hoy),
+    futura: v.desde > hoy,
+    cambio: i + 1 < vigs.length ? _tarResumenCambio(tipo, v.desde) : null,
+  }));
+}
+
+function _tarTitulo(tipo) { return tipo === 'supersla' ? 'Super SLA' : 'Tarifario de zonas'; }
+
+// ── La ventana ─────────────────────────────────────────────────────────────
+function abrirHistorialTarifario(tipo) {
+  const hist = historialTarifario(tipo);
+  if (!hist.length) { showToast('Todavía no hay ninguna lista cargada'); return; }
+  const esSLA = tipo === 'supersla';
+  const bloques = hist.map((v, i) => {
+    const id = 'tarhist-' + i;
+    const chip = v.vigente
+      ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600">VIGENTE</span>'
+      : (v.futura
+        ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600">EMPIEZA EL ' + isoToDMY(v.desde) + '</span>'
+        : '<span style="background:var(--bg-alt);color:var(--text-muted);padding:2px 8px;border-radius:999px;font-size:11px">anterior</span>');
+    const c = v.cambio;
+    let resumen;
+    if (!c) {
+      resumen = 'Es la primera lista cargada, así que no hay un antes con qué compararla.';
+    } else {
+      const partes = [];
+      if (c.suben) partes.push('<strong>' + c.suben + '</strong> ' + (esSLA ? 'precio(s)' : 'zona(s)') + ' al alza');
+      if (c.bajan) partes.push('<strong>' + c.bajan + '</strong> a la baja');
+      if (c.igual) partes.push(c.igual + ' sin cambio');
+      if (c.nuevas) partes.push('<strong>' + c.nuevas + '</strong> nueva(s)');
+      if (c.quitadas) partes.push('<strong>' + c.quitadas + '</strong> que dejó(aron) de tener precio');
+      const pct = c.pctProm ? ' · promedio ' + (c.pctProm >= 0 ? '+' : '−') +
+        Math.abs(c.pctProm).toFixed(1).replace('.', ',') + '%' : '';
+      resumen = partes.join(' · ') + pct;
+    }
+    return '<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<strong style="font-size:14px">' + (v.original ? 'La lista original' : 'Desde el ' + isoToDMY(v.desde)) + '</strong>' +
+        chip +
+        '<span style="font-size:12px;color:var(--text-muted)">' + v.filas.length + (esSLA ? ' regla(s)' : ' zona(s)') + '</span>' +
+        (v.quien
+          ? '<span style="font-size:12px;color:var(--text-secondary)">· la cargó ' + v.quien + '</span>'
+          : '<span style="font-size:12px;color:var(--text-muted)">· no se sabe quién la cargó</span>') +
+      '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:8px">' + resumen + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        (c ? '<button class="btn btn-sm" onclick="toggleVigenciaDetalle(\'' + id + '\')">Ver qué cambió</button>' : '') +
+        '<button class="btn btn-sm" onclick="descargarListaTarifario(\'' + tipo + '\',\'' + v.desde + '\')"><i class="ic ic-download"></i> Descargar esta lista</button>' +
+      '</div>' +
+      (c ? '<div id="' + id + '" style="display:none;margin-top:10px">' + _tarTablaCambio(tipo, c) + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  document.getElementById('modal-title').textContent = 'Historial de precios — ' + _tarTitulo(tipo);
+  document.getElementById('modal-body').innerHTML =
+    '<div class="alert alert-info" style="margin-bottom:12px"><div><i class="ic ic-info"></i> ' +
+    'Cada aumento <strong>crea una lista nueva</strong> y la anterior se conserva: ' +
+    'un envío se paga con el precio que regía <strong>el día que se entregó</strong>, ' +
+    'así que las viejas siguen haciendo falta para explicar una liquidación pasada. ' +
+    'La plantilla que se descarga para corregir trae <strong>solo la que rige hoy</strong>.' +
+    '</div></div>' + bloques +
+    '<div style="display:flex;justify-content:flex-end;margin-top:8px">' +
+      '<button class="btn" onclick="closeModal()">Cerrar</button></div>';
+  // Ancha: la tabla del antes/despues tiene hasta siete columnas y en los
+  // 540px de `.modal` cada precio entraba cortado. closeModal se la saca.
+  document.getElementById('modal-content').classList.add('modal-ancho');
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// El antes/después, fila por fila. Es lo que contesta "cuánto salía antes".
+function _tarTablaCambio(tipo, c) {
+  const esSLA = tipo === 'supersla';
+  const cols = esSLA ? ['Conductor', 'Zona'] : ['Zona'];
+  const muestra = esSLA
+    ? [{ k: 'precio', t: 'Precio' }]
+    : [{ k: 's_colecta', t: 'S/ Colecta' }, { k: 'c_colecta', t: 'C/ Colecta' }, { k: 'sla', t: 'SLA Cumpl.' }];
+  const enc = cols.concat(muestra.map(m => m.t)).map(t =>
+    '<th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text-muted);text-transform:uppercase">' + t + '</th>').join('');
+  const filas = c.detalle.map(d => {
+    const base = d.r || d.antes;
+    const ident = (esSLA ? ['<td style="padding:5px 8px">' + (base.conductor || '') + '</td>'] : [])
+      .concat('<td style="padding:5px 8px">' + (base.zona || '') + '</td>').join('');
+    const celdas = muestra.map(m => {
+      const vA = d.antes ? _num(d.antes[m.k] != null ? d.antes[m.k] : d.antes.sla) : null;
+      const vD = d.r ? _num(d.r[m.k] != null ? d.r[m.k] : d.r.sla) : null;
+      if (vA == null) return '<td style="padding:5px 8px;color:#166534">nueva · ' + fmtPeso(vD) + '</td>';
+      if (vD == null) return '<td style="padding:5px 8px;color:#b45309">' + fmtPeso(vA) + ' · sin precio</td>';
+      if (vA === vD) return '<td style="padding:5px 8px;color:var(--text-muted)">' + fmtPeso(vD) + '</td>';
+      const sube = vD > vA;
+      return '<td style="padding:5px 8px"><span style="color:var(--text-muted)">' + fmtPeso(vA) + '</span> → ' +
+        '<strong style="color:' + (sube ? '#b45309' : '#166534') + '">' + fmtPeso(vD) + '</strong>' +
+        '<span style="font-size:11px;color:var(--text-muted)"> (' + (sube ? '+' : '−') + fmtPeso(Math.abs(vD - vA)) + ')</span></td>';
+    }).join('');
+    return '<tr style="border-top:1px solid var(--border)">' + ident + celdas + '</tr>';
+  }).join('');
+  return '<div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:8px">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>' + enc + '</tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div>';
+}
+
+function toggleVigenciaDetalle(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// La descarga de UNA lista puntual. Sale con el mismo formato de la plantilla
+// —así una lista vieja se puede volver a subir si hay que revertir un aumento—
+// pero el encabezado y el nombre del archivo dicen de qué fecha es: bajar una
+// histórica creyendo que es la vigente y reimportarla sería volver a los
+// precios de antes sin que nadie se dé cuenta.
+function descargarListaTarifario(tipo, desde) {
+  const v = _tarVigencias(tipo).find(x => x.desde === desde);
+  if (!v) { showToast('Esa lista ya no está'); return; }
+  const esSLA = tipo === 'supersla';
+  const cuando = v.original ? 'la lista ORIGINAL (rige desde siempre)' : 'la lista que rige DESDE EL ' + isoToDMY(desde);
+  const aviso = 'Esta es ' + cuando + '. Es una copia para consultar: si la volvés a importar, esos precios ' +
+    'pasan a regir desde la fecha que elijas en el panel.';
+  let aoa, nombre, hoja;
+  if (esSLA) {
+    const porId = {};
+    (AppData.panelConductores || []).forEach(c => { porId[normNombre(c.nombre)] = c.id || ''; });
+    aoa = [[aviso], ['Conductor', 'ID', 'Zona', 'Precio']];
+    v.filas.slice().sort((a, b) =>
+      String(a.conductor).localeCompare(String(b.conductor)) || String(a.zona).localeCompare(String(b.zona))
+    ).forEach(r => aoa.push([r.conductor || '', porId[normNombre(r.conductor)] || '', r.zona || '', _num(r.precio != null ? r.precio : r.sla)]));
+    nombre = 'Super_SLA_' + (v.original ? 'original' : 'desde_' + desde) + '.xlsx';
+    hoja = 'Super SLA';
+  } else {
+    aoa = [[aviso], PLANTILLA_TARIFAS_HEADERS];
+    v.filas.slice().sort((a, b) => String(a.zona).localeCompare(String(b.zona)))
+      .forEach(t => aoa.push([t.zona, t.categoria || '', _num(t.s_colecta), _num(t.c_colecta), _num(t.sla)]));
+    nombre = 'Tarifas_' + (v.original ? 'original' : 'desde_' + desde) + '.xlsx';
+    hoja = 'Tarifas';
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = esSLA
+    ? [{ wch: 26 }, { wch: 12 }, { wch: 22 }, { wch: 12 }]
+    : [{ wch: 26 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+  ws['!rows'] = [{ hpx: 34 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: esSLA ? 3 : 4 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, hoja);
+  XLSX.writeFile(wb, nombre);
+  showToast('📥 ' + nombre);
+}
+
+// El boton que lleva al historial. Vive al lado de "Lista vigente" en los dos
+// paneles: es ahi donde el operador se pregunta cuanto salia antes.
+function _tarBotonHistorial(tipo) {
+  return ' <button class="btn btn-sm" style="padding:1px 8px;font-size:11px;margin-left:6px" ' +
+    'onclick="abrirHistorialTarifario(\'' + tipo + '\')">Historial de precios</button>';
+}

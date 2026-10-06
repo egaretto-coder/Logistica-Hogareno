@@ -1,6 +1,23 @@
 // Solo supervisor/analista pueden editar el precio de Super SLA directamente.
 function puedeEditarSuperSLA() { return puedeAutorizar(); }
 
+// Desde cuando rige el tarifario Super SLA, quien lo cargo y si hay uno
+// esperando su fecha. El panel de Tarifas ya lo decia; este no, y es el mismo
+// aumento: el operador no tenia forma de saber si el ajuste estaba puesto.
+function _pintarVigenciaSuperSLA() {
+  const el = document.getElementById('supersla-vigencia');
+  if (!el) return;
+  const hist = (typeof historialTarifario === 'function') ? historialTarifario('supersla') : [];
+  if (!hist.length) { el.innerHTML = ''; return; }
+  const v = hist.find(x => x.vigente) || hist[hist.length - 1];
+  const prox = hist.filter(x => x.futura).map(x => x.desde).sort()[0];
+  el.innerHTML = '<strong>Lista vigente:</strong> ' +
+    (v.original ? 'la original' : 'desde el ' + isoToDMY(v.desde)) +
+    (v.quien ? ' · la cargó ' + v.quien : '') +
+    (prox ? ' · <span style="color:#b45309">hay una nueva que rige desde el ' + isoToDMY(prox) + '</span>' : '') +
+    _tarBotonHistorial('supersla');
+}
+
 function renderSuperSLA() {
   if (typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas(); // pudo cambiar el precio/zonas
   const todos = AppData.panelConductores.filter(c => c.categoria === 'super_sla');
@@ -10,6 +27,7 @@ function renderSuperSLA() {
   const editable = puedeEditarSuperSLA();
   aplicarLockSuperSLA(editable);            // candado: gate de la barra + aviso
   renderSuperSLASolicitudes(editable);      // pendientes de autorización
+  _pintarVigenciaSuperSLA();                // desde cuándo rige el tarifario
 
   if (!todos.length) {
     if (countEl) countEl.textContent = '';
@@ -347,8 +365,14 @@ function exportarSuperSLA() {
     ['⚠ NO MODIFIQUES LOS ENCABEZADOS DE LA FILA 2. Una fila por Conductor+Zona. El ID ayuda a re-vincular. Una fila con Zona vacía deja al conductor en Super SLA sin zonas.'],
     ['Conductor', 'ID', 'Zona', 'Precio'],
   ];
+  // Las VIGENTES. Con las listas conviviendo, filtrar AppData.superSLA bajaba
+  // cada conductor+zona UNA VEZ POR VIGENCIA —el precio viejo y el nuevo, uno
+  // debajo del otro— y reimportar ese archivo reescribia el tarifario con
+  // filas que ya no valen. La plantilla es para corregir lo que rige; lo
+  // anterior se consulta y se baja desde "Historial de precios".
+  const vigentes = superSLAVigentes();
   conductores.forEach(c => {
-    const reglas = AppData.superSLA.filter(r => normNombre(r.conductor) === normNombre(c.nombre));
+    const reglas = vigentes.filter(r => normNombre(r.conductor) === normNombre(c.nombre));
     if (reglas.length) reglas.forEach(r => aoa.push([c.nombre, c.id || '', r.zona || '', _num(r.precio || r.sla || 0)]));
     else aoa.push([c.nombre, c.id || '', '', '']);
   });
