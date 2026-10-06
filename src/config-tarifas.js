@@ -353,7 +353,13 @@ function _simEstado() {
   _simTar = {
     modo: 'pct',
     porGrupo,
-    redondeo: 10,
+    // SIN redondear. Con el redondeo a $10 puesto por defecto, un aumento
+    // acordado en $187 se aplicaba como $190 y uno de $112 como $110: el
+    // operador escribe el monto que se pactó y el sistema paga otro. Pasó de
+    // verdad con el aumento del 02/10 (46 zonas, $9.214 de más en 4 días).
+    // Redondear tiene sentido sobre un PORCENTAJE —nadie acuerda $3.118,50—
+    // pero un monto fijo ya es un número elegido por alguien.
+    redondeo: 1,
     zonas: new Set(vivas),
     conocidas: vivas,
     ajustarSLA: true,
@@ -582,7 +588,8 @@ function renderSimTarifas() {
           '</div>' +
           '<div style="display:flex;gap:6px;align-items:center">' +
             '<span style="font-size:12px;color:var(--text-muted)">Redondear a</span>' +
-            SIM_REDONDEOS.map(p => btn(_num(st.redondeo) === p, '$' + p, 'simSetRedondeo(' + p + ')')).join('') +
+            SIM_REDONDEOS.map(p => btn(_num(st.redondeo) === p, p <= 1 ? 'Exacto' : '$' + p, 'simSetRedondeo(' + p + ')')).join('') +
+            _simAvisoRedondeo(st) +
           '</div>' +
           '<div style="margin-left:auto;display:flex;gap:6px">' +
             '<button class="btn btn-sm" onclick="simTildarTodas(true)">Tildar todas</button>' +
@@ -951,8 +958,34 @@ function _simCambios(st) {
 }
 
 // ── Perillas ──────────────────────────────────────────────────────────────
-function simSetModo(m) { _simEstado().modo = (m === 'monto' ? 'monto' : 'pct'); renderSimTarifas(); }
+// Cambiar de modo mueve el redondeo con él: en monto fijo el número ya está
+// elegido y redondearlo lo cambia; en porcentaje el resultado sale con
+// decimales y conviene llevarlo a algo que se pueda decir en voz alta.
+function simSetModo(m) {
+  const st = _simEstado();
+  const nuevo = (m === 'monto') ? 'monto' : 'pct';
+  if (st.modo !== nuevo) st.redondeo = (nuevo === 'monto') ? 1 : 10;
+  st.modo = nuevo;
+  renderSimTarifas();
+}
 function simSetRedondeo(p) { _simEstado().redondeo = _num(p) || 1; renderSimTarifas(); }
+
+// Con un monto fijo, el redondeo CAMBIA el aumento que se escribió. Decirlo
+// acá —con el número de antes y el de después— es lo que faltaba: el
+// operador escribía 187 y no tenía forma de ver que se iban a aplicar 190.
+function _simAvisoRedondeo(st) {
+  if (st.modo !== 'monto' || _num(st.redondeo) <= 1) return '';
+  const montos = SIM_GRUPOS.map(g => _num(st.porGrupo[g])).filter(v => v > 0);
+  if (!montos.length) return '';
+  // Un monto que no es múltiplo del paso se va a aplicar distinto.
+  const paso = _num(st.redondeo);
+  const torcidos = Array.from(new Set(montos.filter(v => v % paso !== 0)));
+  if (!torcidos.length) return '';
+  return '<span style="font-size:11.5px;color:#b45309;margin-left:4px">' +
+    '⚠ el redondeo cambia el aumento: ' +
+    torcidos.slice(0, 3).map(v => fmtPeso(v) + ' se aplica como ' + fmtPeso(Math.round(v / paso) * paso)).join(' · ') +
+    '</span>';
+}
 // El valor se escribe mientras se tipea, así que solo se repinta el RESULTADO
 // (repintar el modal entero le sacaría el foco al campo a cada tecla).
 function simSetGrupo(g, v) {

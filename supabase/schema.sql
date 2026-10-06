@@ -1762,3 +1762,21 @@ alter table public.empleado_cierres
 -- Las listas del 02/10 CONSERVAN su autor, que es real. El código ya no
 -- inventa: conserva lo que haya y estampa al operador donde la lista nace
 -- (simAplicarTarifas e importTarifas). NULL no es "nadie", es "no se sabe".
+
+-- 06/10/2026 — Corrección de datos: el aumento del 02/10 iba sin redondear
+-- El aumento se pactó en +$187 (Muy cerca / Cerca / Intermedio) y +$112
+-- (Lejos / Muy Lejos), pero el simulador tenía el redondeo a $10 puesto por
+-- defecto y lo aplicó como +$190 y +$110 — y +$115 en S/Colecta de Muy Lejos,
+-- donde 2835+112=2947 redondeaba a 2950. El operador escribe el monto pactado
+-- y el sistema paga otro, sin que se vea en ningún lado.
+--   respaldo: tarifas_redondeo_bkp_20261006 (las 46 filas del 02/10 como
+--             estaban, con su id)
+--   update de las 46 filas de vigente_desde 2026-10-02: cada columna pasa a
+--   ser el valor de la lista original + 187 o + 112 según la banda.
+-- Medido antes de corregir: $9.214 de más netos en 5.263 envíos de 4 días.
+-- Ninguna liquidación de conductor de esa semana estaba cerrada, así que no
+-- había ningún papel firmado con los números viejos.
+-- El código ya no puede repetirlo: el simulador arranca en "Exacto" y un
+-- monto fijo nunca se redondea solo (ver config-tarifas.js, simSetModo).
+-- OJO: el tarifario Super SLA NO se tocó — se había editado a mano desde el
+-- panel y no consta con qué montos.

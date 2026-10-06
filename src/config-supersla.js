@@ -244,6 +244,9 @@ function updateSuperSLA(el) {
     // para que los identificadores del HTML vuelvan a ser los correctos.
     renderSuperSLA();
   } else {
+    // Antes de pisarlo se guarda el valor que tenía: es contra eso que al
+    // guardar se pregunta si es un precio nuevo o una corrección.
+    _slaRecordarOriginal(fila);
     fila[f] = parseFloat(el.value) || 0;
   }
 }
@@ -251,19 +254,34 @@ function updateSuperSLA(el) {
 // Se borra POR IDENTIDAD, y el confirm nombra a quién y qué zona: borrar la
 // regla equivocada le cambia el precio a otro conductor sin que nadie lo note
 // hasta la liquidación.
+//
+// Y se borran TODAS sus vigencias, no la que rige hoy. `_idxReglaSuperSLA`
+// resuelve la VIGENTE, así que sacando esa el conductor no pasaba a la tarifa
+// estándar —que es lo que promete el confirm—: volvía al precio especial
+// VIEJO, el de la lista anterior, en silencio. Con dos listas conviviendo,
+// "sacarle la zona especial" solo puede querer decir las dos.
 function deleteSuperSLA(cond, zona) {
   if (!puedeEditarSuperSLA()) { showToast('🔒 Solo supervisor/analista puede editar Super SLA'); return; }
-  const i = _idxReglaSuperSLA(cond, zona);
-  if (i < 0) {
+  const c = normNombre(cond), z = normNombre(zona);
+  const todas = (AppData.superSLA || []).filter(r =>
+    normNombre(r.conductor) === c && normNombre(r.zona) === z);
+  if (!todas.length) {
     showToast('⚠️ Esa regla ya no existe — se recarga el panel');
     renderSuperSLA();
     return;
   }
-  const r = AppData.superSLA[i];
-  if (!confirm('¿Eliminar la zona especial ' + (r.zona || '(sin zona)') + ' de ' + r.conductor + '?' +
-      String.fromCharCode(10) + String.fromCharCode(10) +
-      'Va a pasar a cobrar la tarifa SLA estándar de esa zona.')) return;
-  AppData.superSLA.splice(i, 1);
+  const r = todas[0];
+  const nl = String.fromCharCode(10);
+  let msg = '¿Eliminar la zona especial ' + (r.zona || '(sin zona)') + ' de ' + r.conductor + '?' + nl + nl +
+    'Va a pasar a cobrar la tarifa SLA estándar de esa zona.';
+  if (todas.length > 1) {
+    msg += nl + nl + 'Tiene ' + todas.length + ' listas de precios cargadas y se borran TODAS, así que el cambio ' +
+      'alcanza también a los envíos ya cargados: los que se le pagaron con el precio especial ' +
+      'pasan a calcularse con la tarifa de la zona.';
+  }
+  if (!confirm(msg)) return;
+  AppData.superSLA = (AppData.superSLA || []).filter(x =>
+    !(normNombre(x.conductor) === c && normNombre(x.zona) === z));
   renderSuperSLA();
 }
 
@@ -280,10 +298,109 @@ function saveSuperSLA() {
                  'Esas filas no le aplican precio especial a ningún envío. ¿Guardar igual?')) return;
   }
 
+  // Un precio tocado a mano rige desde HOY si es un acuerdo nuevo, o desde la
+  // lista que ya rige si es una corrección. Sin preguntarlo, siempre era lo
+  // segundo: el cambio se aplicaba hacia atrás y no quedaba en el historial.
+  const cambios = _slaCambiosDePrecio();
+  if (cambios.length) {
+    _slaPreguntarDesde(cambios).then(desde => {
+      if (desde) _slaAplicarComoVigencia(cambios, desde);
+      _slaOlvidarOriginales();
+      _slaGuardarYa(desde
+        ? 'Precios nuevos desde el ' + isoToDMY(desde) + ' — quedan en el historial'
+        : 'Lista vigente corregida');
+    });
+    return;
+  }
+
+  _slaGuardarYa('Tarifas Super SLA guardadas');
+}
+
+function _slaGuardarYa(msg) {
+  if (typeof invalidarIndiceTarifas === 'function') invalidarIndiceTarifas();
   localStorage.setItem('liq_supersla', JSON.stringify(AppData.superSLA));
   dbPush('super_sla');
-  showToast('Tarifas Super SLA guardadas');
+  renderSuperSLA();
+  showToast(msg);
 }
+
+// ── Un cambio de precio desde el PANEL también es un cambio de precio ──────
+//
+// El panel edita la fila VIGENTE en el acto. Eso tiene dos consecuencias que no
+// se veían: el precio nuevo rige desde que arrancó esa lista —o sea hacia
+// atrás, sobre envíos ya pagados— y no queda nada en el historial, así que
+// "cuánto le pagábamos a este conductor la semana pasada" deja de tener
+// respuesta.
+//
+// Es exactamente la pregunta que el editor de tarifas de clientes ya hace
+// (`_pintarModoTarifas`): corregir la lista que rige, o cargar una nueva desde
+// una fecha. Acá se hace igual, y solo cuando de verdad cambió algún precio.
+
+// El precio que tenía cada regla ANTES de que el operador la tocara. Se captura
+// de a una, la primera vez que se toca esa fila: un snapshot del array entero al
+// renderizar se perdería en el próximo re-render del realtime.
+let _slaPrecioOriginal = {};
+function _slaClaveRegla(r) {
+  return normNombre(r.conductor) + '|' + normNombre(r.zona) + '|' + tarifaCondVigenteDesde(r);
+}
+function _slaRecordarOriginal(r) {
+  const k = _slaClaveRegla(r);
+  if (!(k in _slaPrecioOriginal)) _slaPrecioOriginal[k] = _num(r.precio != null ? r.precio : r.sla);
+}
+function _slaOlvidarOriginales() { _slaPrecioOriginal = {}; }
+
+// Las reglas cuyo precio difiere del que tenían al abrirse el panel.
+function _slaCambiosDePrecio() {
+  const out = [];
+  (AppData.superSLA || []).forEach(r => {
+    const k = _slaClaveRegla(r);
+    if (!(k in _slaPrecioOriginal)) return;
+    const antes = _slaPrecioOriginal[k];
+    const ahora = _num(r.precio != null ? r.precio : r.sla);
+    if (antes !== ahora) out.push({ r, antes, ahora });
+  });
+  return out;
+}
+
+// Pregunta desde cuándo rigen los precios tocados a mano. Devuelve una promesa
+// con la fecha elegida, o null si es una corrección de la lista que rige.
+function _slaPreguntarDesde(cambios) {
+  return new Promise(resolve => {
+    const nl = String.fromCharCode(10);
+    const lista = cambios.slice(0, 6).map(c =>
+      '· ' + c.r.conductor + ' · ' + (c.r.zona || '(sin zona)') + ': ' +
+      fmtPeso(c.antes) + ' → ' + fmtPeso(c.ahora)).join(nl);
+    const hoy = _hoyISOTarifa();
+    const msg = 'Cambiaste ' + cambios.length + ' precio(s):' + nl + lista +
+      (cambios.length > 6 ? nl + '…y ' + (cambios.length - 6) + ' más' : '') + nl + nl +
+      'ACEPTAR = es un precio NUEVO, rige desde hoy (' + isoToDMY(hoy) + ') y queda en el historial.' + nl +
+      'CANCELAR = es una CORRECCIÓN de la lista que ya rige (estaba mal cargado), ' +
+      'así que se aplica también a los envíos que ya se liquidaron con ella.';
+    resolve(confirm(msg) ? hoy : null);
+  });
+}
+
+// Aplica los cambios como una vigencia nueva: devuelve cada regla tocada a su
+// precio anterior y agrega una fila con el precio nuevo desde `desde`. Si ya
+// había una fila de esa misma fecha, se reemplaza — reintentar no acumula.
+function _slaAplicarComoVigencia(cambios, desde) {
+  const quien = (typeof _operadorActual === 'function') ? _operadorActual() : '';
+  const tocadas = new Set();
+  cambios.forEach(c => {
+    c.r.precio = c.antes;                       // la lista vieja vuelve a su valor
+    tocadas.add(normNombre(c.r.conductor) + '|' + normNombre(c.r.zona));
+  });
+  AppData.superSLA = (AppData.superSLA || []).filter(r =>
+    !(tarifaCondVigenteDesde(r) === desde &&
+      tocadas.has(normNombre(r.conductor) + '|' + normNombre(r.zona))));
+  cambios.forEach(c => {
+    AppData.superSLA.push({
+      conductor: c.r.conductor, zona: c.r.zona, precio: c.ahora,
+      vigente_desde: desde, creado_por: quien,
+    });
+  });
+}
+
 
 // Abre el modal para sumar a Super SLA un conductor ya existente del panel.
 function openAgregarConductorSuperSLA() {
