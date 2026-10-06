@@ -233,7 +233,7 @@ function renderConductorDetail() {
   const cntEl = document.getElementById('cond-filtro-count');
   if (cntEl) cntEl.textContent = hayFiltro ? ('Mostrando ' + idxsVista.length + ' de ' + idxs.length + ' recorridos') : '';
 
-  const zonaCat = zonaCatalogoDe(cond); // catálogo de zonas válidas (una vez por render)
+  const zonaCatDe = _zonaCatPorDia(cond); // catálogo de zonas, uno por día del período
 
   // Resumen por día (para los separadores): envíos, cuántos contabilizan y subtotal.
   const resumenDia = new Map();
@@ -289,7 +289,7 @@ function renderConductorDetail() {
         <td><input type="text" value="${r.tracking || ''}" onchange="editarRegistroConductor(${i},'tracking',this.value)"
           class="mono" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:11.5px">${r.destinatario ? '<div class="muted" style="font-size:10px;margin-top:3px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + String(r.destinatario).replace(/"/g,'&quot;') + '"><i class="ic ic-user"></i> ' + r.destinatario + '</div>' : ''}</td>
         <td class="muted mono" style="font-size:12px">${r.fecha || '—'}</td>
-        <td>${zonaSelectHTML(zonaCat, i, r.zona, cond)}</td>
+        <td>${zonaSelectHTML(zonaCatDe(fechaISOde(r.fecha)), i, r.zona, cond, null, fechaISOde(r.fecha))}</td>
         <td>
           <select onchange="editarRegistroConductor(${i},'estado',this.value)"
             style="padding:5px 8px;border:1px solid ${contabiliza ? '#86efac' : '#fca5a5'};border-radius:6px;font-size:12px;background:${contabiliza ? '#f0fdf4' : '#fef2f2'};color:${contabiliza ? '#166534' : '#b91c1c'};font-weight:600">
@@ -1056,7 +1056,15 @@ async function guardarEdicionConductores() {
 // Catálogo de zonas válidas para un conductor = zonas del panel Tarifas + las de
 // su Super SLA. Devuelve [{ val, label }] (label con el precio que le corresponde).
 // Se computa UNA vez por render y se reutiliza (getPrecio solo se llama por zona).
-function zonaCatalogoDe(conductor) {
+// El catalogo de zonas con su precio, A UNA FECHA.
+//
+// La etiqueta decia el precio de HOY aunque el envio fuera de otro dia: con el
+// aumento del 02/10 puesto, un envio del 29/09 mostraba "ESTEBAN ECHEVERRIA ·
+// $3.690" cuando ese dia se pagaban $3.500. La liquidacion estaba bien -esa
+// pasa la fecha del envio- pero el panel donde el administrativo REVISA decia
+// otro numero, que es la peor forma de que alguien "corrija" algo que estaba
+// bien. Sin fecha cae a hoy, que es lo correcto para el alta de un envio nuevo.
+function zonaCatalogoDe(conductor, fechaISO) {
   const key = conductorKey(conductor);
   const zonas = new Set();
   AppData.tarifas.forEach(t => { const z = String(t.zona || '').toUpperCase().trim(); if (z) zonas.add(z); });
@@ -1064,9 +1072,21 @@ function zonaCatalogoDe(conductor) {
     if (conductorKey(s.conductor) === key) { const z = String(s.zona || '').toUpperCase().trim(); if (z) zonas.add(z); }
   });
   return Array.from(zonas).sort().map(z => {
-    const p = getPrecio(conductor, z);
+    const p = getPrecio(conductor, z, fechaISO);
     return { val: z, label: z + ' · ' + (p.precio > 0 ? fmtPeso(p.precio) : 's/tarifa') + (p.es_super ? ' · Super SLA' : '') };
   });
+}
+
+// El detalle de un conductor abarca varios dias y cada uno puede tener su
+// tarifario, pero son pocos: se arma UN catalogo por dia y se reusa. Sin esto
+// serian 73 zonas resueltas por cada una de las 269 filas.
+function _zonaCatPorDia(conductor) {
+  const cache = new Map();
+  return fechaISO => {
+    const k = fechaISO || '';
+    if (!cache.has(k)) cache.set(k, zonaCatalogoDe(conductor, fechaISO));
+    return cache.get(k);
+  };
 }
 
 // Opciones (<option>) para el modal "Agregar envío". Sincronizadas con el tarifario.
@@ -1086,7 +1106,7 @@ function zonaOptionsHTML(conductor) {
 // costo del cadete no va —es el otro lado del mostrador— y encima arrastraba su
 // categoría ("MATANZA SUR · $3.400 · Super SLA"), que no significa nada para el
 // cliente y hacía parecer que el tarifario del cliente estaba mal cargado.
-function zonaSelectHTML(catalogo, idx, current, cond, previewFn) {
+function zonaSelectHTML(catalogo, idx, current, cond, previewFn, fechaEnvioISO) {
   const pend = _zonaPendiente[idx];               // zona elegida pero aún NO confirmada
   const tienePend = pend !== undefined;
   const cur = String(current || '').toUpperCase().trim();
@@ -1109,7 +1129,7 @@ function zonaSelectHTML(catalogo, idx, current, cond, previewFn) {
     } else if (typeof previewFn === 'function') {
       preview = previewFn(pend);
     } else {
-      const p = getPrecio(cond, pend);
+      const p = getPrecio(cond, pend, fechaEnvioISO);
       preview = p.sin_tarifa
         ? '<span style="color:#b91c1c;font-weight:600">' + pend + ' · sin tarifa · ' + fmtPeso(p.precio) + '</span>'
         : '<span style="color:#15803d;font-weight:600">' + pend + ' · ' + fmtPeso(p.precio) + '</span>';

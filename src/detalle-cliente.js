@@ -251,8 +251,12 @@ function renderDetalleCliente() {
   // Catálogo de zonas con el precio DE VENTA de este cliente (una vez por
   // render). Antes se usaba el del conductor, que mostraba lo que se le paga al
   // cadete y su categoría — acá no va ninguna de las dos cosas.
-  const zonaCat = zonaCatalogoCliente(cod);
-  const zonaPreviewCliente = z => _dcliPreviewZona(cod, z);
+  const _catCache = new Map();
+  const zonaCatDe = f => {
+    const k = f || '';
+    if (!_catCache.has(k)) _catCache.set(k, zonaCatalogoCliente(cod, f));
+    return _catCache.get(k);
+  };
 
   // Resumen por día (mismo plegado que Conductores: con cientos de filas,
   // scrollear es inmanejable).
@@ -312,7 +316,8 @@ function renderDetalleCliente() {
             : '') + '</td>' +
         '<td class="muted mono" style="font-size:12px">' + (d.r.fecha || '—') + '</td>' +
         '<td>' + ((typeof zonaSelectHTML === 'function')
-            ? zonaSelectHTML(zonaCat, d.i, d.r.zona, d.r.cadete || '', zonaPreviewCliente)
+            ? zonaSelectHTML(zonaCatDe(fechaISOde(d.r.fecha)), d.i, d.r.zona, d.r.cadete || '',
+                z => _dcliPreviewZona(cod, z, fechaISOde(d.r.fecha)))
             : (d.zona || '—')) + '</td>' +
         '<td style="font-size:11px">' + _dcliEstadoSelect(d) + _dcliBotonAnular(d) + '</td>' +
         '<td class="mono" style="text-align:right">' + (d.anulado
@@ -441,7 +446,15 @@ function abrirTodosLosDiasCliente(abrir) {
 // cliente tiene con precio: la zona de un envío es un lugar real y el operador
 // tiene que poder corregirla aunque todavía no esté tarifada — para eso queda
 // marcada "sin tarifa", que es justo lo que cuenta el aviso de arriba.
-function zonaCatalogoCliente(cod) {
+// El catalogo de zonas del cliente con su precio de venta, A UNA FECHA.
+//
+// Etiquetaba con el precio de HOY aunque el envio fuera de otro dia, igual que
+// pasaba del lado del conductor: con una lista de precios nueva puesta, un
+// envio de la semana anterior mostraba el precio nuevo mientras la liquidacion
+// -que si pasa la fecha- facturaba el viejo. El panel donde se REVISA decia un
+// numero y la factura otro, que es la peor forma de que alguien "corrija" algo
+// que estaba bien. Sin fecha cae a hoy, que es lo correcto para un alta nueva.
+function zonaCatalogoCliente(cod, fechaISO) {
   const k = clienteKey(cod);
   const zonas = new Set(
     ((typeof zonasDelTarifario === 'function') ? zonasDelTarifario() : [])
@@ -452,14 +465,14 @@ function zonaCatalogoCliente(cod) {
     if (z && (typeof esZonaValida !== 'function' || esZonaValida(z))) zonas.add(z);
   });
   return Array.from(zonas).sort().map(z => {
-    const p = clienteTarifaEnZona(k, z);
+    const p = clienteTarifaEnZona(k, z, fechaISO);
     return { val: z, label: z + ' · ' + (p > 0 ? fmtPeso(p) : 'sin tarifa') };
   });
 }
 
 // Vista previa al confirmar una zona: lo que pasaría a facturarse.
-function _dcliPreviewZona(cod, zona) {
-  const p = clienteTarifaEnZona(clienteKey(cod), zona);
+function _dcliPreviewZona(cod, zona, fechaISO) {
+  const p = clienteTarifaEnZona(clienteKey(cod), zona, fechaISO);
   return p > 0
     ? '<span style="color:#15803d;font-weight:600">' + zona + ' · ' + fmtPeso(p) + '</span>'
     : '<span style="color:#b91c1c;font-weight:600">' + zona + ' · sin tarifa · se factura $0</span>';
