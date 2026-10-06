@@ -1793,3 +1793,23 @@ alter table public.empleado_cierres
 -- original ($4.000 y $3.800) — o sea que a esos dos no se les dio el aumento
 -- en esas zonas, y eso es una decisión del operador, no un redondeo.
 -- La banda de cada regla sale de la categoría de SU zona en el tarifario.
+
+-- 06/10/2026 — creado_por de super_sla (segundo intento) + AUGUSTO REYES
+-- La limpieza del 05/10 se DESHIZO dos veces: a los 46 segundos la primera,
+-- porque una pestaña con el código viejo —el del `|| _operadorActual()`—
+-- reescribió super_sla entera con replaceAll y le devolvió el nombre a las
+-- filas históricas. Una corrección de datos no se sostiene mientras siga
+-- abierta una sesión con el código que la causa: se corre DESPUÉS de
+-- desplegar y de que el operador recargue.
+--   update super_sla set creado_por = null where vigente_desde = '2000-01-01'
+-- La lista del 02/10 CONSERVA su autor, que es real.
+--
+-- Y AUGUSTO REYES pasó a categoria super_sla en panel_conductores. Tenía 3
+-- reglas Super SLA activas (ALMIRANTE BROWN, GUERNICA, SAN VICENTE) por las
+-- que COBRABA —getPrecio resuelve la regla sin mirar la categoría del panel—
+-- pero `renderSuperSLA` filtra por categoria, así que no figuraba en esa
+-- pantalla: tenía precios especiales invisibles. El cambio NO mueve plata:
+-- `tipoFijo` es 'sla' con las dos categorías y sus reglas ya se le aplicaban.
+-- Las tres tablas (tarifas, super_sla, panel_conductores) están en RT_TABLAS
+-- y en la publicación supabase_realtime, así que las sesiones abiertas se
+-- re-hidratan solas y no pisan el cambio.
