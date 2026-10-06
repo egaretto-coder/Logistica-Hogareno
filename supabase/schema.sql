@@ -1746,3 +1746,19 @@ alter table public.empleado_cierres
 -- OJO: CLAVES_UNICAS (src/datos.js) incluye vigente_desde en las dos tablas.
 -- Sin eso, _colapsarRepetidas se quedaría con UNA sola lista por zona y
 -- borraría el historial de precios en el próximo guardado.
+
+-- 05/10/2026 — Corrección de datos: creado_por de las listas históricas
+-- Al aplicar el aumento del 02/10, el builder de dbPush tenía
+-- `creado_por: t.creado_por || _operadorActual()`. Como las dos tablas se
+-- guardan con replaceAll (borra todo y reinserta), ese `||` le estampó el
+-- nombre del que estaba guardando a TODA fila sin registro: las 46 tarifas y
+-- las 76 reglas Super SLA de la lista original (vigente_desde 2000-01-01)
+-- quedaron atribuidas a quien apretó "Aplicar". Nadie las había cargado: son
+-- anteriores a que existiera la columna.
+--   respaldo: tarifas_creadopor_bkp_20261005 (tabla, id, zona, conductor,
+--             vigente_desde, creado_por)  ← las 122 filas con su valor previo
+--   update tarifas   set creado_por = null where vigente_desde = '2000-01-01'
+--   update super_sla set creado_por = null where vigente_desde = '2000-01-01'
+-- Las listas del 02/10 CONSERVAN su autor, que es real. El código ya no
+-- inventa: conserva lo que haya y estampa al operador donde la lista nace
+-- (simAplicarTarifas e importTarifas). NULL no es "nadie", es "no se sabe".
