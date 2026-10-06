@@ -396,8 +396,30 @@ function _simRedondear(n, paso) {
 // La lista hipotetica para MEDIR: las vigentes con el precio movido. Conserva
 // `vigente_desde`, asi la medicion contesta "si estos precios hubieran regido
 // todo el mes, cuanto costaba" — que es la pregunta del simulador.
+// Una lista para MEDIR rige para toda la ventana medida.
+//
+// Las vigencias se eligen por fecha, asi que una lista con `vigente_desde` del
+// 02/10 no le pone precio a un envio del 01/10: queda `sin_tarifa` y se valua
+// en $0. Midiendo el simulado contra las listas vigentes y la base contra la
+// tabla ENTERA se comparaban dos cosas distintas, y con TODO EN CERO el
+// simulador mostraba -22,6%: eran los 1.662 envios del 01/10 (de 7.013)
+// cayendo a cero en un lado y no en el otro (bug real, reportado).
+// Aplanar al centinela hace que la pregunta sea la que el panel dice que
+// contesta: "si ESTOS precios hubieran regido todo el mes, cuanto costaba".
+function _simAplanar(filas) {
+  return (filas || []).map(r => Object.assign({}, r, { vigente_desde: TARIFA_COND_DESDE_SIEMPRE }));
+}
+
+// Lo que se paga HOY, medido con el mismo criterio que lo simulado: el
+// tarifario que rige hoy, aplicado a toda la ventana. Si la base se midiera
+// con las vigencias reales y el simulado aplanado, el impacto mezclaria el
+// aumento YA aplicado con el que se esta simulando.
+function _simListasDeHoy() {
+  return { tarifas: _simAplanar(tarifasVigentesCond()), sla: _simAplanar(superSLAVigentes()) };
+}
+
 function _simTarifasSimuladas(st) {
-  return tarifasVigentesCond().map(t => {
+  return _simAplanar(tarifasVigentesCond()).map(t => {
     if (!st.zonas.has(_simKey(t.zona))) return t;
     const g = _simGrupoDeCat(t.categoria);
     const n = Object.assign({}, t);
@@ -410,7 +432,7 @@ function _simTarifasSimuladas(st) {
 // pero lo gobierna el tilde del CONDUCTOR, no el de la zona: son dos tarifarios
 // distintos y acoplarlos escondería que uno se movió y el otro no.
 function _simSuperSLASimulado(st, mapa) {
-  const base = superSLAVigentes();
+  const base = _simAplanar(superSLAVigentes());
   if (!st.ajustarSLA) return base;
   return base.map(r => {
     if (!st.slaCond.has(_simKey(r.conductor))) return r;
@@ -759,7 +781,8 @@ function _simPintarResultado(anclar) {
   // La medición con las tarifas de HOY no cambia mientras se mueven las perillas:
   // se calcula una vez por mes y se reusa, así cada tecleo paga una sola pasada.
   if (!_simBase || _simBase.mes !== mes || _simBase.n !== records.length) {
-    _simBase = { mes, n: records.length, res: _simMedir(records, AppData.tarifas || [], AppData.superSLA || []),
+    const hoy = _simListasDeHoy();
+    _simBase = { mes, n: records.length, res: _simMedir(records, hoy.tarifas, hoy.sla),
                  rango: _simRangoFechas(records) };
   }
   const base = _simBase.res;
@@ -1064,7 +1087,10 @@ function simAplicarTarifas() {
   const mes = _panelMesActivo(SIM_MES_ID) || _simMesDefecto();
   const records = _simRecordsDelMes(mes);
   const mapa = _simMapaGrupos();
-  const base = (_simBase && _simBase.mes === mes) ? _simBase.res : _simMedir(records, AppData.tarifas || [], AppData.superSLA || []);
+  const base = (_simBase && _simBase.mes === mes) ? _simBase.res : (() => {
+    const hoy = _simListasDeHoy();
+    return _simMedir(records, hoy.tarifas, hoy.sla);
+  })();
   const sim = _simMedir(records, _simTarifasSimuladas(st), _simSuperSLASimulado(st, mapa));
   const delta = sim.total - base.total;
   const pct = base.total > 0 ? (delta / base.total * 100) : 0;
