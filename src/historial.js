@@ -90,6 +90,34 @@ function histLiquidaciones(tipo) {
     .filter(x => !sel || x.clave === sel)
     .filter(x => !mes || (x.desde.slice(0, 7) === mes || x.hasta.slice(0, 7) === mes))
     .filter(x => !q || x.nombre.toLowerCase().includes(q) || x.clave.toLowerCase().includes(q));
+  return _histOrdenar(tipo, filas);
+}
+
+// Por qué se ordena el listado. La tabla salía siempre por semana y, dentro de
+// cada una, por lo que se pagó — que contesta "a quién se le pagó más". Pero
+// con un mes puesto las otras dos preguntas son igual de frecuentes: QUIÉN
+// MOVIÓ MÁS ENVÍOS —que no es lo mismo: un conductor de zona lejana cobra más
+// con la mitad de envíos— y QUIÉN FACTURÓ MÁS BRUTO, que es lo que generó
+// antes de los descuentos. Leerlo a ojo en 85 filas no lo hace nadie.
+let histOrden = { conductor: 'recientes', cliente: 'recientes' };
+
+function setHistOrden(tipo, orden) {
+  histOrden[_histEsConductor(tipo) ? 'conductor' : 'cliente'] = orden;
+  renderHistorial(tipo);
+}
+
+function _histOrdenar(tipo, filas) {
+  const o = histOrden[_histEsConductor(tipo) ? 'conductor' : 'cliente'];
+  // El criterio elegido manda sobre TODO el listado, no dentro de cada semana:
+  // "quién hizo más envíos este mes" es una pregunta del mes entero, y ordenar
+  // por semana primero la dejaría sin contestar. La fecha queda de desempate
+  // para que dos iguales no bailen entre renders.
+  if (o === 'envios') return filas.sort((a, b) => b.envios - a.envios || b.desde.localeCompare(a.desde));
+  // Una liquidacion vieja puede no tener `bruto` guardado: ahi vale su neto,
+  // que es el único número que consta. Dejarla en 0 la mandaría al fondo como
+  // si no hubiera facturado nada.
+  if (o === 'bruto')  return filas.sort((a, b) => (b.bruto || b.monto) - (a.bruto || a.monto) || b.desde.localeCompare(a.desde));
+  if (o === 'monto')  return filas.sort((a, b) => b.monto - a.monto || b.desde.localeCompare(a.desde));
   return filas.sort((a, b) => b.desde.localeCompare(a.desde) || b.monto - a.monto);
 }
 
@@ -302,6 +330,32 @@ function _histFmtCuando(ts) {
     String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+// Los botones de orden. Se marcan contra el ESTADO y no contra el que se tocó:
+// marcar solo el clickeado ya dejó una vez un grupo diciendo una cosa mientras
+// el panel mostraba otra (el filtro por condición del Dashboard).
+function _pintarHistOrden(tipo) {
+  const cont = document.getElementById(_histId(tipo, 'orden'));
+  if (!cont) return;
+  const esCond = _histEsConductor(tipo);
+  const act = histOrden[esCond ? 'conductor' : 'cliente'];
+  // "Bruto" solo del lado del conductor: al cliente no se le descuenta nada,
+  // así que su bruto y su neto son el mismo número y el botón sobraría.
+  const ops = [
+    ['recientes', 'Más recientes'],
+    ['monto', esCond ? 'Neto pagado' : 'Facturado'],
+  ]
+    .concat(esCond ? [['bruto', 'Bruto']] : [])
+    .concat([['envios', 'Envíos']]);
+  const btn = o => {
+    const cls = 'btn btn-sm' + (act === o[0] ? ' active' : '');
+    const fn = "setHistOrden('" + tipo + "','" + o[0] + "')";
+    return '<button class="' + cls + '" onclick="' + fn + '">' + o[1] + '</button>';
+  };
+  const rotulo = '<span style="font-size:12.5px;font-weight:600;color:var(--text-secondary)">' +
+    '<i class="ic ic-list"></i> Ordenar por</span>';
+  cont.innerHTML = rotulo + ops.map(btn).join('');
+}
+
 function renderHistorial(tipo) {
   const body = document.getElementById(_histId(tipo, 'rows'));
   if (!body) return;
@@ -316,6 +370,7 @@ function renderHistorial(tipo) {
   // quedar a la vista sin hacer nada, que hace creer que el filtro está puesto.
   const filtros = document.getElementById(_histId(tipo, 'filtros'));
   if (filtros) filtros.style.display = sel ? 'none' : 'flex';
+  _pintarHistOrden(tipo);
   const ayuda = document.getElementById(_histId(tipo, 'ayuda'));
   if (ayuda) {
     if (!ayuda.dataset.base) ayuda.dataset.base = ayuda.innerHTML;

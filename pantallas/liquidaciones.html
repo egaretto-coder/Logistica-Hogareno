@@ -92,6 +92,7 @@
                 <button class="btn btn-sm" onclick="document.getElementById('liq-hist-mes').value='';renderHistorial('conductor')" title="Ver todo el historial, sin filtrar por mes">Todos</button>
                 <input type="search" id="liq-hist-search" placeholder="🔍 Buscar conductor..." oninput="renderHistorial('conductor')"
                   style="width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                <span id="liq-hist-orden" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"></span>
               </span>
               <span id="liq-hist-ayuda" style="font-size:11.5px;color:var(--text-muted);flex:1;min-width:240px">Las liquidaciones ya cerradas, con su <strong>detalle congelado</strong>: el PDF sale igual al que se descargó ese día, aunque los envíos ya estén archivados.</span>
             </div>

@@ -490,6 +490,11 @@ function renderDashboard() {
   // Dashboard tardaba 23 s y cambiar de solapa 18 s, con la pantalla congelada.
   // Las otras dos se recalculan al mostrarlas (switchDashTab), que es cuando
   // hacen falta — y siguen leyendo el MISMO período, así que no se desfasan.
+  // El día a día, con los mismos envíos que acaban de dar los KPI de arriba:
+  // si tuviera su propia pasada podrían discrepar, que es el bug que este
+  // panel ya tuvo con el "Total a pagar".
+  renderDashGraficoDiario(recordsFiltrados, labelPeriodo);
+
   if (dashTab === 'conductores') {
     renderDashConductoresPanel(liqFecha);
     if (typeof renderConductorReport === 'function') renderConductorReport();
@@ -1012,4 +1017,358 @@ function _mesLargo(yyyymm) {
   const p = String(yyyymm || '').split('-');
   if (p.length < 2) return yyyymm || '—';
   return _MESES_LARGO[(+p[1]) - 1] + ' ' + p[0];
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+//  EL DÍA A DÍA DEL PERÍODO
+//
+//  Los KPI de arriba contestan "cuánto" y la tabla "quién", pero ninguno
+//  contesta CUÁNDO: un mes que cierra bien puede tener una semana muerta y
+//  otra desbordada, y en el total eso no se ve. Este gráfico es esa lectura.
+//
+//  Sigue a la SOLAPA, porque cada una ya pregunta otra cosa y el día a día
+//  tiene que preguntar lo mismo:
+//    · Clientes    — barra: margen + costo (que suman la facturación del día),
+//                    línea: el margen %. Es la única solapa donde vive el margen.
+//    · Conductores — barra: lo que se paga ese día, línea: el costo por envío.
+//                    Mismo par que las dos tarjetas de arriba, día por día.
+//    · Zonas       — barra: lo que se paga, partido en DENTRO y FUERA del
+//                    tarifario, línea: el costo promedio por envío. Es el corte
+//                    del reporte de zonas, que separa lo analizable del ruido.
+//
+//  Sale de `recordsDelDashboard()` —período Y condición— y de las MISMAS
+//  funciones que pagan y facturan (`calcLiquidaciones` por conductor no sirve
+//  acá porque agrupa por persona, así que se usa `precioPagadoConductor`, que
+//  es lo que esa cuenta usa por envío). Si el gráfico tuviera su propia cuenta
+//  terminaría contradiciendo a las tarjetas de arriba, que es exactamente el
+//  bug que ya tuvo este panel.
+// ════════════════════════════════════════════════════════════════════════
+
+// Una pasada por los envíos del período, agrupando por DÍA. Devuelve los días
+// en orden con todo lo que las tres solapas necesitan, para no recorrer tres
+// veces los 47.684 envíos.
+function _dashSerieDiaria(records) {
+  const porDia = new Map();
+  let sinFecha = 0;
+  const dom = { n: 0, envios: 0, factura: 0, costo: 0, dias: new Set() };
+  (records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;          // lo no entregado no se paga ni se cobra
+    const iso = fechaISOde(r.fecha);
+    // Un envío sin fecha no se puede ubicar en ningún día, pero los KPI de
+    // arriba SÍ lo cuentan: si el gráfico lo salteara en silencio, su total
+    // no coincidiría con la tarjeta y no habría dónde ver por qué. Se cuenta
+    // y se avisa — es el mismo criterio que "cuántos envíos el tarifario no
+    // alcanza" en el simulador.
+    if (!iso) { sinFecha++; return; }
+    const cod = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
+    const venta = cod ? _num(precioVentaEnvio(cod, r)) : 0;
+    const pago  = _num(precioPagadoConductor(r));
+    // EL DOMINGO NO ES UN DÍA OPERADO. Se reparte los otros seis, y lo poco que
+    // cae en domingo deforma el gráfico entero: medido en producción son el
+    // 0,01% al 0,11% del volumen, y el domingo 04/10/2026 tuvo UN envío que
+    // hundió la línea de margen de ~50% a -2,9% y se quedó con el rótulo "peor
+    // margen" del mes. Una lectura del mes construida sobre un envío.
+    // Pero la liquidación del cliente SÍ los cobra —la semana Vie→Jue son los 7
+    // días de calendario—, así que no se descartan en silencio: se acumulan y
+    // el gráfico dice cuánto dejó afuera.
+    if (_dashEsDomingo(iso)) {
+      dom.n++; dom.envios++; dom.factura += venta; dom.costo += pago;
+      dom.dias.add(iso);
+      return;
+    }
+    let d = porDia.get(iso);
+    if (!d) { d = { iso, envios: 0, factura: 0, costo: 0, enviosPagos: 0, zonas: new Map() }; porDia.set(iso, d); }
+    d.envios++;
+    d.factura += venta;
+    d.costo += pago;
+    if (pago > 0) d.enviosPagos++;
+    // El corte de la solapa de Zonas: cuánto se pagó en cada una ese día. La
+    // zona se resuelve por ALIAS, igual que getPrecio — si no, un envío en
+    // PRESIDENTE PERON abriría una zona propia en vez de contar en GUERNICA.
+    // Un envío SIN zona no se esconde: se agrupa como tal, porque es plata que
+    // se pagó y en algún lugar tiene que verse.
+    const z = normNombre(zonaCanonica((r.zona || '').trim() || (r.localidad || '').trim())) || '(sin zona)';
+    d.zonas.set(z, _num(d.zonas.get(z)) + pago);
+  });
+  const dias = Array.from(porDia.values()).sort((a, b) => a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
+  dias.sinFecha = sinFecha;
+  dias.domingos = dom;
+  return dias;
+}
+
+function _dashEsDomingo(iso) { return new Date(iso + 'T12:00:00').getDay() === 0; }
+
+const _DIA_INICIAL = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+function _dashDiaInfo(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return { num: d.getDate(), inicial: _DIA_INICIAL[d.getDay()], domingo: d.getDay() === 0 };
+}
+
+// Las zonas que se apilan. Con 73 zonas una barra de 73 pedazos no se lee, así
+// que van las más grandes del período y el resto junto — el mismo criterio que
+// la torta de clientes, y por eso la misma paleta: un color significa lo mismo
+// en todo el panel. Esconder la cola daría barras que no suman el total.
+const _DASH_ZONAS_TOP = 5;
+function _dashSeriesZonas(dias) {
+  const tot = new Map();
+  (dias || []).forEach(d => d.zonas.forEach((v, z) => tot.set(z, _num(tot.get(z)) + _num(v))));
+  const orden = Array.from(tot.entries()).sort((a, b) => b[1] - a[1]);
+  const top = orden.slice(0, _DASH_ZONAS_TOP).filter(x => x[1] > 0).map(x => x[0]);
+  const resto = orden.slice(top.length).filter(x => x[1] > 0).map(x => x[0]);
+  const series = top.map((z, i) => ({
+    nombre: z, color: _DASH_TORTA_COLORES[i % _DASH_TORTA_COLORES.length],
+    v: d => _num(d.zonas.get(z))
+  }));
+  if (resto.length) {
+    // El resto se suma acá. Así la barra sigue siendo el total pagado del día y
+    // no una parte sin rótulo.
+    const set = new Set(resto);
+    series.push({
+      nombre: 'Otras (' + resto.length + ' zona' + (resto.length === 1 ? '' : 's') + ')',
+      color: _DASH_TORTA_COLORES[_DASH_TORTA_COLORES.length - 1],
+      v: d => { let a = 0; d.zonas.forEach((v2, z2) => { if (set.has(z2)) a += _num(v2); }); return a; }
+    });
+  }
+  return series.length ? series : [{ nombre: 'Se paga', color: '#3b82f6', v: d => d.costo }];
+}
+
+// Qué grafica cada solapa. Devuelve las series apiladas (plata) y la línea.
+function _dashGraficoDef(tab, dias) {
+  if (tab === 'conductores') {
+    return {
+      titulo: 'Lo que se paga por día',
+      series: [{ nombre: 'Se paga', color: '#3b82f6', v: d => d.costo }],
+      linea: {
+        nombre: 'Costo por envío', color: '#f59e0b',
+        v: d => d.enviosPagos ? d.costo / d.enviosPagos : 0,
+        fmt: v => fmtPeso(v),
+        peor: 'max', peorRotulo: 'Envío más caro',
+      },
+      total: d => d.costo, totalRotulo: 'Se paga',
+      nota: 'La barra es lo que se le paga a los conductores ese día. La línea es cuánto cuesta cada envío pagado — es la misma cuenta que la tarjeta de arriba, día por día.',
+    };
+  }
+  if (tab === 'zonas') {
+    return {
+      titulo: 'Lo que se paga por día, por zona',
+      series: _dashSeriesZonas(dias),
+      linea: {
+        nombre: 'Costo promedio por envío', color: '#f59e0b',
+        v: d => d.enviosPagos ? d.costo / d.enviosPagos : 0,
+        fmt: v => fmtPeso(v),
+        peor: 'max', peorRotulo: 'Envío más caro',
+      },
+      total: d => d.costo, totalRotulo: 'Se paga',
+      // Lo que cae en una zona que no está en el tarifario se paga $0, así que
+      // acá no se vería: eso se mira en el reporte de abajo, que lo cuenta por
+      // envíos en su fila "Fuera del tarifario". Una serie en $0 haría creer
+      // que no hay nada que corregir.
+      nota: 'La barra entera es lo que se paga ese día, repartido por zona. Para ver qué cayó en zonas que no están en el tarifario, el reporte de abajo lo cuenta aparte.',
+    };
+  }
+  return {
+    titulo: 'Facturación por día',
+    series: [
+      { nombre: 'Costo',  color: '#3b82f6', v: d => d.costo },
+      { nombre: 'Margen', color: '#10b981', v: d => Math.max(0, d.factura - d.costo) },
+    ],
+    linea: {
+      nombre: 'Margen %', color: '#f59e0b',
+      v: d => d.factura > 0 ? (d.factura - d.costo) / d.factura * 100 : 0,
+      fmt: v => v.toFixed(1).replace('.', ',') + '%',
+      peor: 'min', peorRotulo: 'Peor margen',
+    },
+    total: d => d.factura, totalRotulo: 'Facturado',
+    nota: 'La barra entera es lo que se le factura a los clientes ese día: abajo lo que costó y arriba lo que quedó. La línea es el margen del día — un día puede facturar mucho y dejar poco.',
+  };
+}
+
+// El gráfico. SVG a mano, igual que el donut: el proyecto no lleva librerías y
+// una de gráficos entera por un combinado de barras y línea no se paga.
+function _dashGraficoDiario(datos, def, periodoTxt) {
+  const n = datos.length;
+  if (!n) {
+    return '<div class="card" style="padding:28px;text-align:center;color:var(--text-muted)">' +
+      (datos.sinFecha
+        ? datos.sinFecha + ' envío(s) del período no tienen fecha, así que no se pueden ubicar en ningún día.'
+        : (datos.domingos && datos.domingos.envios)
+          ? 'En el período solo hubo envíos en domingo, que no es un día operado y no se grafica.'
+          : 'Sin envíos en el período para graficar.') + '</div>';
+  }
+  // Geometría. El ancho es fijo y el SVG escala solo (viewBox): así una barra
+  // no cambia de grosor según el tamaño de la ventana.
+  const W = 1000, H = 300, mT = 28, mB = 34, mL = 72, mR = 64;
+  const ancho = W - mL - mR, alto = H - mT - mB;
+  const paso = ancho / n;
+  const wBarra = Math.max(3, Math.min(34, paso * 0.62));
+
+  // La PILA es lo que se dibuja; el TOTAL es lo que ese día vale de verdad.
+  // Coinciden siempre salvo un día a pérdida en la solapa de Clientes.
+  const pilaDe  = d => def.series.reduce((s, x) => s + _num(x.v(d)), 0);
+  const totalDe = d => def.total ? _num(def.total(d)) : pilaDe(d);
+  const maxBarra = Math.max(1, ...datos.map(pilaDe));
+  const valLinea = datos.map(d => _num(def.linea.v(d)));
+  const maxLinea = Math.max(1, ...valLinea);
+
+  // Escalas "lindas": el tope sube al siguiente número redondo para que las
+  // guías caigan en valores que se puedan leer.
+  const techo = v => { const e = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / (e / 2)) * (e / 2); };
+  const topB = techo(maxBarra), topL = techo(maxLinea * 1.12);
+  const yB = v => mT + alto - (v / topB) * alto;
+  const yL = v => mT + alto - (v / topL) * alto;
+  const xC = i => mL + paso * i + paso / 2;
+
+  // Guías horizontales con su valor a los dos lados.
+  const LINEAS = 4;
+  let guias = '';
+  for (let g = 0; g <= LINEAS; g++) {
+    const y = mT + alto - (alto * g / LINEAS);
+    guias += '<line x1="' + mL + '" y1="' + y.toFixed(1) + '" x2="' + (W - mR) + '" y2="' + y.toFixed(1) +
+      '" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 4"/>' +
+      '<text x="' + (mL - 8) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end" style="font-size:10px;fill:var(--text-muted)">' +
+        _dashMiles(topB * g / LINEAS) + '</text>' +
+      '<text x="' + (W - mR + 8) + '" y="' + (y + 3.5).toFixed(1) + '" style="font-size:10px;fill:' + def.linea.color + '">' +
+        def.linea.fmt(topL * g / LINEAS) + '</text>';
+  }
+
+  // Barras apiladas. Cada una lleva su <title>: el detalle del día sin salir
+  // del gráfico, que es lo que se consulta cuando una barra llama la atención.
+  // El total va ARRIBA de la barra: el apilado dice de qué está hecho el día,
+  // pero la pregunta es cuánto facturó, y leerlo contra el eje es aproximar.
+  // Se escribe completo si entra, abreviado si no, y con muchos días no se
+  // escribe: el tooltip lo sigue teniendo y 30 números pisados no se leen.
+  const rotTotal = paso >= 86 ? (v => fmtPeso(v)) : paso >= 40 ? (v => _dashMiles(v)) : null;
+  let barras = '', etqTotal = '';
+  datos.forEach((d, i) => {
+    const x = xC(i) - wBarra / 2;
+    let acum = 0;
+    const pila = pilaDe(d), tot = totalDe(d);
+    // Si lo facturado no llega a cubrir lo que costó, el día fue a pérdida: la
+    // barra es el costo y decirlo es la única forma de que el número de arriba
+    // y el dibujo no se contradigan.
+    const perdida = Math.round(tot) < Math.round(pila);
+    const det = def.series.map(s => s.nombre + ': ' + fmtPeso(_num(s.v(d)))).join(' · ');
+    def.series.forEach(s => {
+      const val = _num(s.v(d));
+      if (val <= 0) return;
+      const h = (val / topB) * alto;
+      acum += h;
+      barras += '<rect x="' + x.toFixed(1) + '" y="' + (mT + alto - acum).toFixed(1) + '" width="' + wBarra.toFixed(1) +
+        '" height="' + h.toFixed(1) + '" fill="' + s.color + '" rx="1">' +
+        '<title>' + _dashFechaLarga(d.iso) + ' — ' + (def.totalRotulo || 'Total') + ': ' + fmtPeso(tot) +
+          ' · ' + det + ' · ' + d.envios + ' envíos · ' +
+          def.linea.nombre + ': ' + def.linea.fmt(_num(def.linea.v(d))) +
+          (perdida ? ' · a pérdida: se facturó menos de lo que costó' : '') + '</title></rect>';
+    });
+    if (rotTotal && tot > 0) {
+      etqTotal += '<text x="' + xC(i).toFixed(1) + '" y="' + (mT + alto - acum - 6).toFixed(1) +
+        '" text-anchor="middle" style="font-size:9.5px;font-weight:600;fill:' +
+        (perdida ? 'var(--warning)' : 'var(--text-secondary)') + '">' +
+        (perdida ? '⚠ ' : '') + rotTotal(tot) + '</text>';
+    }
+  });
+
+  // La línea del eje derecho, con su punto por día.
+  const pts = datos.map((d, D) => xC(D).toFixed(1) + ',' + yL(valLinea[D]).toFixed(1)).join(' ');
+  const linea = '<polyline points="' + pts + '" fill="none" stroke="' + def.linea.color + '" stroke-width="1.8"/>' +
+    datos.map((d, i) => '<circle cx="' + xC(i).toFixed(1) + '" cy="' + yL(valLinea[i]).toFixed(1) +
+      '" r="2.8" fill="' + def.linea.color + '"><title>' + _dashFechaLarga(d.iso) + ' — ' +
+      def.linea.nombre + ': ' + def.linea.fmt(valLinea[i]) + '</title></circle>').join('');
+
+  // Las etiquetas de abajo llevan la INICIAL del día: con 26 barras, "7" no
+  // dice si fue lunes o sábado, y el pico de los lunes es media lectura del
+  // gráfico. Con muchos días se saltean para que no se pisen.
+  const cadaN = Math.ceil(n / 32);
+  const etiquetas = datos.map((d, i) => {
+    if (i % cadaN !== 0) return '';
+    const inf = _dashDiaInfo(d.iso);
+    return '<text x="' + xC(i).toFixed(1) + '" y="' + (H - mB + 20) + '" text-anchor="middle" ' +
+      'style="font-size:10px;fill:var(--text-muted)">' + inf.inicial + ' ' + inf.num + '</text>';
+  }).join('');
+
+  const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" ' +
+    'aria-label="' + def.titulo + '" style="display:block">' +
+    guias + barras + etqTotal + linea + etiquetas +
+    '<line x1="' + mL + '" y1="' + (mT + alto) + '" x2="' + (W - mR) + '" y2="' + (mT + alto) +
+      '" stroke="var(--border)" stroke-width="1"/></svg>';
+
+  // El pie: el día que más movió y el que peor salió. Son las dos preguntas que
+  // se le hacen a un gráfico así, y leerlas de las barras a ojo no se puede.
+  // Qué es "peor" depende de la línea y lo dice la solapa: el margen más bajo,
+  // pero el costo por envío más ALTO. Con el mínimo para las dos, la solapa de
+  // conductores rotulaba como peor día el más barato.
+  const peorAlto = def.linea.peor === 'max';
+  let mejorI = 0, peorI = 0;
+  datos.forEach((d, i) => {
+    if (totalDe(d) > totalDe(datos[mejorI])) mejorI = i;
+    if (peorAlto ? valLinea[i] > valLinea[peorI] : valLinea[i] < valLinea[peorI]) peorI = i;
+  });
+  const pico = datos[mejorI];
+  const leyenda = def.series.map(s =>
+    '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">' +
+      '<span style="width:10px;height:10px;border-radius:2px;background:' + s.color + ';display:inline-block"></span>' +
+      s.nombre + '</span>').join('') +
+    '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">' +
+      '<span style="width:10px;height:10px;border-radius:50%;background:' + def.linea.color + ';display:inline-block"></span>' +
+      def.linea.nombre + ' (eje derecho)</span>';
+
+  // Lo que el gráfico no pudo ubicar en ningún día. Va arriba, al lado del
+  // período: es lo que explica que la suma de las barras no dé exactamente el
+  // número de la tarjeta.
+  const avisoSF = datos.sinFecha
+    ? '<span style="font-size:11.5px;color:var(--warning)"><i class="ic ic-alert"></i> ' +
+        datos.sinFecha + (datos.sinFecha === 1 ? ' envío sin fecha no se grafica' : ' envíos sin fecha no se grafican') +
+        ' (sí cuentan en las tarjetas de arriba)</span>'
+    : '';
+
+  // Los domingos quedaron afuera por no ser días operados, pero se facturan y
+  // se pagan igual: se dice cuánto fue, con el mismo criterio que los envíos
+  // sin fecha. Si no hubo ninguno, no se dice nada — un aviso que aparece
+  // siempre deja de leerse.
+  const dom = datos.domingos;
+  const avisoDom = (dom && dom.envios)
+    ? '<span style="font-size:11.5px;color:var(--text-muted)" title="El domingo no es un día operado: se excluye para que lo poco que cae ahí no deforme el gráfico. La liquidación del cliente sí los cobra.">' +
+        'No se grafican los domingos (' + dom.dias.size + (dom.dias.size === 1 ? ' domingo · ' : ' domingos · ') +
+        dom.envios + (dom.envios === 1 ? ' envío · ' : ' envíos · ') +
+        (def.total && def.totalRotulo === 'Facturado' ? fmtPeso(dom.factura) : fmtPeso(dom.costo)) + ')</span>'
+    : '';
+
+  return '<div class="card" style="margin-bottom:14px;padding:14px 16px">' +
+    '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<strong style="font-size:14px"><i class="ic ic-trend"></i> ' + def.titulo + '</strong>' +
+      '<span style="font-size:12px;color:var(--text-muted)">' + periodoTxt + ' · ' + n +
+        (n === 1 ? ' día' : ' días') + ' · pico ' + fmtPeso(totalDe(pico)) + '</span>' +
+      avisoSF + avisoDom +
+    '</div>' +
+    svg +
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-top:8px">' + leyenda +
+      '<span style="color:var(--text-muted)">' + def.nota + '</span></div>' +
+    '<div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">' +
+      'Día más movido: <strong>' + _dashFechaLarga(pico.iso) + '</strong> (' + fmtPeso(totalDe(pico)) + ')' +
+      (n > 1 ? ' · ' + (def.linea.peorRotulo || 'Peor ' + def.linea.nombre.toLowerCase()) + ': <strong>' + _dashFechaLarga(datos[peorI].iso) +
+        '</strong> (' + def.linea.fmt(valLinea[peorI]) + ')' : '') +
+    '</div></div>';
+}
+
+// $1.234.567 → "1,2 M" para el eje, que con el número entero no entra.
+function _dashMiles(v) {
+  const n = _num(v);
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.', ',') + ' M';
+  if (n >= 1000) return Math.round(n / 1000) + ' k';
+  return String(Math.round(n));
+}
+const _DASH_MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function _dashFechaLarga(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return d.getDate() + ' de ' + _DASH_MESES_L[d.getMonth()];
+}
+
+// Lo pinta en el contenedor que vive arriba de las solapas. Se llama desde
+// renderDashboard con los MISMOS envíos que alimentan los KPI.
+function renderDashGraficoDiario(records, periodoTxt) {
+  const cont = document.getElementById('dash-grafico-dia');
+  if (!cont) return;
+  const datos = _dashSerieDiaria(records);
+  cont.innerHTML = _dashGraficoDiario(datos, _dashGraficoDef(dashTab, datos), periodoTxt || '');
 }
