@@ -401,6 +401,47 @@ function _pintarPresetFecha() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  EL RECORRIDO ESPECIAL ES COSTO DE CONDUCTOR; EL KM DE DESVÍO NO.
+//  Un recorrido especial es el PRECIO PACTADO por hacer ese reparto —5 a 10
+//  direcciones dispersas a un monto fijo—, así que es lo que cuesta mover esos
+//  envíos y tiene que estar en el costo. El km de desvío, en cambio, es el
+//  reintegro de un gasto, no el precio del trabajo, y queda afuera.
+//  Tampoco entran los descuentos: el adelanto es un préstamo (plata ya
+//  entregada, no un costo menor del mes) y el combustible, los proveedores y
+//  los extravíos son RECUPEROS de algo que la empresa pagó por fuera y que
+//  tampoco está en este panel — contar una sola punta inventaría un ahorro.
+//  No se mete en la solapa de Clientes: un recorrido especial no es de ningún
+//  cliente, y repartirlo a prorrata sería inventar una atribución que no
+//  existe en ningún registro. Tampoco en la de Zonas: no tiene zona.
+// ════════════════════════════════════════════════════════════════════════
+function _dashEspecialesPorDia(rango, conductores) {
+  const porDia = new Map();
+  let total = 0, n = 0;
+  const desde = rango && rango.desde ? new Date(rango.desde) : null;
+  const hasta = rango && rango.hasta ? new Date(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  (AppData.recorridosEspeciales || []).forEach(d => {
+    // Lo mismo que exige la liquidación: pendiente de aprobación no se paga.
+    if (d.imputar === false || !esAutorizado(d)) return;
+    // Y el MISMO universo de conductores que los KPI, así el filtro por
+    // condición mueve las dos cosas: con "Suplentes" puesto, un especial de un
+    // titular no puede sumar a un total que dice ser solo de suplentes.
+    if (conductores && !conductores.has(conductorKey(d.conductor))) return;
+    const f = parseFechaReg(d.fecha);
+    if (!f) return;
+    if (desde && f < desde) return;
+    if (hasta && f > hasta) return;
+    const iso = fechaISOde(d.fecha);
+    if (!iso || _dashEsDomingo(iso)) return;   // el domingo no se grafica
+    const m = _num(d.monto);
+    porDia.set(iso, _num(porDia.get(iso)) + m);
+    total += m; n++;
+  });
+  return { porDia, total, n };
+}
+
 function renderDashboard() {
   const rango = getDashFechaRango();
   const recordsFiltrados = recordsDelDashboard();
@@ -424,7 +465,13 @@ function renderDashboard() {
   // real. Dividir un número por su propia cantidad es lo que hace que esta
   // tarjeta no pueda contradecir a la de al lado.
   const enviosPagos = Object.values(liqFecha).reduce((s, v) => s + v.filas.length, 0);
-  const costoUnitario = enviosPagos ? totalMonto / enviosPagos : 0;
+  // El recorrido especial se paga además de la tarifa, así que forma parte del
+  // costo de conductores. Va en las tres tarjetas y en el gráfico, no en una
+  // sola: un "Total liquidado" que lo incluya con un unitario que no lo
+  // incluya son dos tarjetas contradiciéndose.
+  const esp = _dashEspecialesPorDia(rango, new Set(conductores.map(c => conductorKey(c))));
+  const totalConEspecial = totalMonto + esp.total;
+  const costoUnitario = enviosPagos ? totalConEspecial / enviosPagos : 0;
   const totalRecs = recordsFiltrados.length;
   const totalEntregados = recordsFiltrados.filter(r => esEstadoEntregado(r.estado)).length;
   const totalExcluidos = totalRecs - totalEntregados;
@@ -457,10 +504,15 @@ function renderDashboard() {
   const labelEl = document.getElementById('dash-fecha-label');
   if (labelEl) labelEl.textContent = labelPeriodo;
 
-  const promedioPorConductor = conductores.length ? Math.round(totalMonto / conductores.length) : 0;
+  const promedioPorConductor = conductores.length ? Math.round(totalConEspecial / conductores.length) : 0;
 
-  document.getElementById('metric-total').textContent = fmtPeso(totalMonto);
-  document.getElementById('metric-sub-total').textContent = totalEntregados + ' entregados · ' + totalExcluidos + ' en otros estados';
+  document.getElementById('metric-total').textContent = fmtPeso(totalConEspecial);
+  // Si el número incluye algo que no son envíos, hay que decirlo: si no, no
+  // cierra contra la cuenta de "envíos x tarifa" que alguien pueda rehacer.
+  document.getElementById('metric-sub-total').textContent =
+    totalEntregados + ' entregados · ' + totalExcluidos + ' en otros estados' +
+    (esp.total > 0 ? ' · incluye ' + fmtPeso(esp.total) + ' de ' + esp.n +
+      (esp.n === 1 ? ' recorrido especial' : ' recorridos especiales') : '');
   document.getElementById('metric-cvu').textContent = fmtPeso(costoUnitario);
   const cvuSub = document.getElementById('metric-cvu-sub');
   if (cvuSub) cvuSub.textContent = enviosPagos
@@ -493,7 +545,7 @@ function renderDashboard() {
   // El día a día, con los mismos envíos que acaban de dar los KPI de arriba:
   // si tuviera su propia pasada podrían discrepar, que es el bug que este
   // panel ya tuvo con el "Total a pagar".
-  renderDashGraficoDiario(recordsFiltrados, labelPeriodo);
+  renderDashGraficoDiario(recordsFiltrados, labelPeriodo, esp.porDia);
 
   if (dashTab === 'conductores') {
     renderDashConductoresPanel(liqFecha);
@@ -1078,11 +1130,19 @@ function _dashSerieDiaria(records) {
       return;
     }
     let d = porDia.get(iso);
-    if (!d) { d = { iso, envios: 0, factura: 0, costo: 0, enviosPagos: 0, zonas: new Map() }; porDia.set(iso, d); }
+    if (!d) { d = { iso, envios: 0, factura: 0, costo: 0, especial: 0, enviosLiq: 0, zonas: new Map() }; porDia.set(iso, d); }
     d.envios++;
     d.factura += venta;
     d.costo += pago;
-    if (pago > 0) d.enviosPagos++;
+    // EL DENOMINADOR DEL COSTO UNITARIO es el MISMO que el de la tarjeta de
+    // arriba: los envíos que FORMAN la liquidación, o sea los que contabilizan
+    // y tienen conductor (calcLiquidaciones saltea los que no). Contando solo
+    // los que pagaron más de $0, un envío en una zona sin tarifa entraba en la
+    // tarjeta y no en la línea, y las dos daban unitarios distintos para el
+    // mismo día.
+    const cond = (typeof conductorCanonico === 'function')
+      ? conductorCanonico(r.cadete) : String((r && r.cadete) || '').trim();
+    if (cond) d.enviosLiq++;
     // El corte de la solapa de Zonas: cuánto se pagó en cada una ese día. La
     // zona se resuelve por ALIAS, igual que getPrecio — si no, un envío en
     // PRESIDENTE PERON abriría una zona propia en vez de contar en GUERNICA.
@@ -1136,17 +1196,26 @@ function _dashSeriesZonas(dias) {
 // Qué grafica cada solapa. Devuelve las series apiladas (plata) y la línea.
 function _dashGraficoDef(tab, dias) {
   if (tab === 'conductores') {
+    // El recorrido especial va en SU PROPIA porción y no sumado adentro: es un
+    // monto pactado a mano, se aprueba de a uno, y diluirlo en la barra haría
+    // imposible ver un día en que pesó.
+    const hayEsp = (dias || []).some(d => _num(d.especial) > 0);
+    const series = [{ nombre: 'Por envío', color: '#3b82f6', v: d => d.costo }];
+    if (hayEsp) series.push({ nombre: 'Recorridos especiales', color: '#8b5cf6', v: d => _num(d.especial) });
     return {
       titulo: 'Lo que se paga por día',
-      series: [{ nombre: 'Se paga', color: '#3b82f6', v: d => d.costo }],
+      series: hayEsp ? series : [{ nombre: 'Se paga', color: '#3b82f6', v: d => d.costo }],
       linea: {
         nombre: 'Costo por envío', color: '#f59e0b',
-        v: d => d.enviosPagos ? d.costo / d.enviosPagos : 0,
+        // Con el especial adentro, igual que el "costo variable unitario" de
+        // arriba: si uno lo incluyera y el otro no, la tarjeta y la línea
+        // dirían dos números distintos para la misma cosa.
+        v: d => d.enviosLiq ? (d.costo + _num(d.especial)) / d.enviosLiq : 0,
         fmt: v => fmtPeso(v),
         peor: 'max', peorRotulo: 'Envío más caro',
       },
-      total: d => d.costo, totalRotulo: 'Se paga',
-      nota: 'La barra es lo que se le paga a los conductores ese día. La línea es cuánto cuesta cada envío pagado — es la misma cuenta que la tarjeta de arriba, día por día.',
+      total: d => d.costo + _num(d.especial), totalRotulo: 'Se paga',
+      nota: 'La barra es lo que se le paga a los conductores ese día: la tarifa de cada envío y, aparte, los recorridos especiales (el monto pactado por una ruta). El km de desvío NO entra, porque es el reintegro de un gasto y no el precio del trabajo. La línea es cuánto cuesta cada envío pagado — la misma cuenta que la tarjeta de arriba, día por día.',
     };
   }
   if (tab === 'zonas') {
@@ -1155,7 +1224,7 @@ function _dashGraficoDef(tab, dias) {
       series: _dashSeriesZonas(dias),
       linea: {
         nombre: 'Costo promedio por envío', color: '#f59e0b',
-        v: d => d.enviosPagos ? d.costo / d.enviosPagos : 0,
+        v: d => d.enviosLiq ? d.costo / d.enviosLiq : 0,
         fmt: v => fmtPeso(v),
         peor: 'max', peorRotulo: 'Envío más caro',
       },
@@ -1164,7 +1233,7 @@ function _dashGraficoDef(tab, dias) {
       // acá no se vería: eso se mira en el reporte de abajo, que lo cuenta por
       // envíos en su fila "Fuera del tarifario". Una serie en $0 haría creer
       // que no hay nada que corregir.
-      nota: 'La barra entera es lo que se paga ese día, repartido por zona. Para ver qué cayó en zonas que no están en el tarifario, el reporte de abajo lo cuenta aparte.',
+      nota: 'La barra entera es lo que se paga ese día, repartido por zona. Los recorridos especiales no aparecen acá: son una ruta pactada a monto fijo y no tienen una zona a la que atribuirlos — se ven en la solapa Conductores. Para ver qué cayó en zonas que no están en el tarifario, el reporte de abajo lo cuenta aparte.',
     };
   }
   return {
@@ -1180,7 +1249,7 @@ function _dashGraficoDef(tab, dias) {
       peor: 'min', peorRotulo: 'Peor margen',
     },
     total: d => d.factura, totalRotulo: 'Facturado',
-    nota: 'La barra entera es lo que se le factura a los clientes ese día: abajo lo que costó y arriba lo que quedó. La línea es el margen del día — un día puede facturar mucho y dejar poco.',
+    nota: 'La barra entera es lo que se le factura a los clientes ese día: abajo lo que costó y arriba lo que quedó. El costo es la tarifa de los envíos de ese cliente; los recorridos especiales no son de ningún cliente y se miran en la solapa Conductores. La línea es el margen del día — un día puede facturar mucho y dejar poco.',
   };
 }
 
@@ -1289,7 +1358,10 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
 
   const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" ' +
     'aria-label="' + def.titulo + '" style="display:block">' +
-    guias + barras + etqTotal + linea + etiquetas +
+    // El rótulo va DESPUÉS de la línea: dibujado antes, el punto naranja le
+    // pasa por encima y el número del día queda tapado justo en los días que
+    // más llaman la atención.
+    guias + barras + linea + etqTotal + etiquetas +
     '<line x1="' + mL + '" y1="' + (mT + alto) + '" x2="' + (W - mR) + '" y2="' + (mT + alto) +
       '" stroke="var(--border)" stroke-width="1"/></svg>';
 
@@ -1366,9 +1438,16 @@ function _dashFechaLarga(iso) {
 
 // Lo pinta en el contenedor que vive arriba de las solapas. Se llama desde
 // renderDashboard con los MISMOS envíos que alimentan los KPI.
-function renderDashGraficoDiario(records, periodoTxt) {
+function renderDashGraficoDiario(records, periodoTxt, especialesPorDia) {
   const cont = document.getElementById('dash-grafico-dia');
   if (!cont) return;
   const datos = _dashSerieDiaria(records);
+  // Los recorridos especiales se cargan por conductor y día, no por envío, así
+  // que no salen de la pasada por los recorridos: se pegan acá, al día que les
+  // corresponde. Un especial en un día sin envíos no abre un día nuevo —no
+  // habría contra qué leerlo— y queda contado igual en el KPI de arriba.
+  if (especialesPorDia && especialesPorDia.size) {
+    datos.forEach(d => { d.especial = _num(especialesPorDia.get(d.iso)); });
+  }
   cont.innerHTML = _dashGraficoDiario(datos, _dashGraficoDef(dashTab, datos), periodoTxt || '');
 }
