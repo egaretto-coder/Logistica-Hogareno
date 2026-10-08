@@ -3,6 +3,8 @@
           <span class="section-title">Control y edición de conductor</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span id="cond-edit-estado" style="font-size:11px;color:var(--text-muted)"></span>
+            <!-- El archivo de control: se baja SIN marcar la semana como lista. -->
+            <button class="btn btn-sm" onclick="condDescargarExcel()" title="Baja los recorridos del conductor en Excel para revisarlos: una fila por envío, con el tracking en su propia columna. NO hace falta marcar la liquidación como lista. Con un período elegido trae además las imputaciones y el neto."><i class="ic ic-list"></i> Excel de control</button>
             <button class="btn btn-sm" onclick="openAddEnvioModal('conductor')" title="Agregar uno o varios envíos a mano a la liquidación de este conductor"><i class="ic ic-plus"></i> Agregar envío</button>
             <button class="btn btn-sm btn-primary" id="cond-guardar-btn" onclick="guardarEdicionConductores()" style="display:none"><i class="ic ic-save"></i> Guardar en la nube</button>
           </div>

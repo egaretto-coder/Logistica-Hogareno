@@ -216,8 +216,17 @@ function renderClienteLiquidaciones() {
   if (btn) {
     btn.disabled = !armadas.length;
     btn.innerHTML = '<i class="ic ic-download"></i> ' + (nSel
-      ? 'Descargar ' + nSel + ' seleccionada' + (nSel > 1 ? 's' : '')
-      : 'Descargar las ' + armadas.length + ' listas');
+      ? 'Descargar ' + nSel + ' seleccionada' + (nSel > 1 ? 's' : '') + ' (PDF)'
+      : 'Descargar las ' + armadas.length + ' listas (PDF)');
+  }
+  // El Excel baja exactamente lo mismo: si no hay nada armado, tampoco tiene
+  // qué bajar. Decirlo en el botón evita que el operador lo apriete y reciba
+  // un alert por toda respuesta.
+  const bExcel = document.getElementById('cliq-btn-excel');
+  if (bExcel) {
+    bExcel.disabled = !armadas.length;
+    bExcel.innerHTML = '<i class="ic ic-list"></i> Excel' +
+      (armadas.length ? ' (' + (nSel || armadas.length) + ')' : '');
   }
   const unico = document.getElementById('cliq-btn-unpdf');
   if (unico) unico.style.display = (nSel || armadas.length) > 1 ? '' : 'none';

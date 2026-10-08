@@ -310,12 +310,17 @@ function calcLiquidacionesFiltradas(recs) {
       liqBase[cond].total += precio;
       liqBase[cond].filas.push({
         tracking: r.tracking, zona, zona_precio: r.zona_precio||'', fecha: r.fecha, estado: r.estado,
+        // Cliente y destinatario no entran en ninguna cuenta: son para el Excel
+        // de control, donde la fila tiene que poder identificar al envío sin
+        // tener que ir a buscarlo a otro panel.
+        cliente: r.cliente || r.cliente_cod || '', destinatario: r.destinatario || '',
         tipo, precio, subtotal: precio, es_super, sin_tarifa, es_dim_especial, dim_cliente, dim_condicion,
         manual: !!r.manual, zona_manual: !!r.zona_manual,
         precio_corregido: precioManualDe(r) !== null, corregido: esCorregidoRegistro(r)
       });
     } else {
-      liqBase[cond].filas_excluidas.push({ tracking: r.tracking, zona, fecha: r.fecha, estado: r.estado });
+      liqBase[cond].filas_excluidas.push({ tracking: r.tracking, zona, fecha: r.fecha, estado: r.estado,
+        cliente: r.cliente || r.cliente_cod || '', destinatario: r.destinatario || '' });
     }
   });
   return liqBase;
@@ -421,6 +426,12 @@ function actualizarBotonDescargaLiq(conductores) {
   if (av) av.innerHTML = sinArmar
     ? '<span style="font-size:11px;color:#b45309">' + sinArmar + ' sin armar no se descargan</span>'
     : '';
+  const bExcel = document.getElementById('liq-btn-excel');
+  if (bExcel) {
+    bExcel.disabled = !(nSel || listas.length);
+    bExcel.innerHTML = '<i class="ic ic-list"></i> Excel' +
+      (listas.length ? ' (' + (nSel || listas.length) + ')' : '');
+  }
   const unico = document.getElementById('liq-btn-unpdf');
   if (unico) unico.style.display = (nSel || listas.length) > 1 ? '' : 'none';
   // El "todas" de la cabecera refleja lo que hay tildado dentro del filtro.

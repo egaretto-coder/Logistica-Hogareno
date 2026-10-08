@@ -19,6 +19,10 @@
             <button class="btn btn-sm" onclick="abrirDatosEmpresa()" title="Razón social, CUIT y contacto: es lo que sale en el encabezado y el pie de la liquidación que se le manda al cliente"><i class="ic ic-building"></i> Datos de la empresa</button>
             <span id="cliq-acciones-descarga" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <button class="btn btn-sm" id="cliq-btn-unpdf" onclick="descargarLiqClientesCombinado()" title="Todas las elegidas en un solo archivo, una por página"><i class="ic ic-file"></i> En un solo PDF</button>
+              <!-- El Excel va en UN archivo con todas: el PDF va suelto porque se
+                   le manda a cada cliente, pero el Excel se abre para cruzar y
+                   cuarenta archivos sueltos hay que pegarlos a mano. -->
+              <button class="btn btn-sm" id="cliq-btn-excel" onclick="descargarLiqClientesExcel()" title="Las mismas liquidaciones en un Excel de control: una fila por envío, con el tracking en su propia columna y los importes como número. No es el comprobante — ese es el PDF."><i class="ic ic-list"></i> Excel</button>
               <button class="btn btn-sm btn-primary" id="cliq-btn-descargar" onclick="descargarLiqClientes()"><i class="ic ic-download"></i> Descargar</button>
             </span>
           </div>
@@ -34,7 +38,8 @@
         <div class="alert alert-info" style="margin-bottom:16px">
           <i class="ic ic-file"></i><div>Acá se <strong>descargan</strong> las liquidaciones que el administrativo ya revisó y marcó como listas desde <strong>Detalle de cliente</strong>.
           Las que todavía no armó aparecen en gris: no se pueden bajar, para que no salga un PDF con datos a medio corregir.
-          Los montos se calculan en vivo, así que si después se corrige una zona, el PDF sale con el número nuevo.</div>
+          Los montos se calculan en vivo, así que si después se corrige una zona, el PDF sale con el número nuevo.
+          <br><strong>¿Querés revisarla antes de cerrarla?</strong> El <strong>Excel de control</strong> se baja desde <strong>Detalle de cliente</strong> sin marcar nada: no hace falta darla por lista para poder mirarla.</div>
         </div>
 
         <div id="cliq-aviso-empresa"></div>
