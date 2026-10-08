@@ -492,17 +492,28 @@ function renderComisionClientes() {
   const bLimpiar = document.getElementById('com-cli-limpiar');
   if (bLimpiar) bLimpiar.style.display = filtrando ? '' : 'none';
 
-  // Un cliente en comisión que no está en el maestro no se puede evaluar —sus
-  // liquidaciones cuelgan del maestro— ni sincronizar su baja con Panel
-  // Clientes. Se avisa arriba porque es la causa de que la evaluación no avance
-  // y de que una baja no aparezca del otro lado.
-  const huerfanos = AppData.comisionClientes.filter(c => !clienteMaestroDe(c.cliente));
+  // Un cliente en comisión que no está en el maestro no se puede evaluar: sus
+  // liquidaciones cuelgan del maestro, así que la evaluación de las 4 primeras
+  // facturas nunca completa y la fila se queda "En evaluación" para siempre.
+  //
+  // Pero eso SOLO le pasa a las que todavía están en evaluación. Una fila
+  // CONFIRMADA ya tiene su categoría declarada a mano, su monto congelado y su
+  // mes de inicio puesto: no necesita el maestro para nada, y avisar sobre ella
+  // es pedir que se arregle algo que no está roto. Son los clientes que venían
+  // de antes de que existiera la base de clientes —medido: los 8 que no
+  // matchean el maestro están los 8 confirmados— y el aviso los señalaba a
+  // todos, todos los días, sin que hubiera nada que hacer.
+  //
+  // La baja tampoco justifica el aviso acá: cuando de verdad importa, el modal
+  // de baja ya dice que esa comisión no va a sincronizar con Panel Clientes.
+  const huerfanos = AppData.comisionClientes.filter(c => !c.bloqueado && !clienteMaestroDe(c.cliente));
   const avisoEl = document.getElementById('com-cli-huerfanos');
   if (avisoEl) avisoEl.innerHTML = !huerfanos.length ? '' :
     '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:12px">' +
       '<i class="ic ic-alert"></i><div><strong>' + huerfanos.length + ' cliente(s) en comisión no están en el maestro de clientes.</strong> ' +
-      'La app no puede contarles las facturas —cuelgan del maestro— ni sincronizar su baja con Panel Clientes. ' +
-      'Suelen ser diferencias de nombre: si el cliente existe con otra redacción, corregile el nombre acá o sumale esa cuenta desde su ficha.' +
+      'Están EN EVALUACIÓN y no van a poder completarla: sus liquidaciones cuelgan del maestro, así que la app no puede contarles las 4 primeras facturas. ' +
+      'Suelen ser diferencias de nombre: si el cliente existe con otra redacción, corregile el nombre acá o sumale esa cuenta desde su ficha. ' +
+      'Si viene comisionando de antes, declarale la categoría a mano al confirmarlo.' +
       '<div style="margin-top:5px;font-family:monospace;font-size:10.5px">' +
       huerfanos.slice(0, 12).map(c => c.cliente).join(' · ') +
       (huerfanos.length > 12 ? ' …y ' + (huerfanos.length - 12) + ' más' : '') + '</div></div></div>';
