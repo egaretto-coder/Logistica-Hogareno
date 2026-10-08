@@ -119,6 +119,15 @@
     var el = document.getElementById('app-splash');
     if (el) el.parentNode.removeChild(el);
   }, 30000);
+  // Red más fina que el plazo de 30 s, para el caso que de verdad pasa: el
+  // service worker sirve un index.html nuevo junto a un app/main.js viejo
+  // mientras se actualiza. Ahí splashCerrar() no existe y NADIE va a cerrar
+  // esto. Si a los 6 s la función no está, es que nunca va a estar.
+  setTimeout(function () {
+    if (typeof window.splashCerrar === 'function') return;
+    var el = document.getElementById('app-splash');
+    if (el) el.parentNode.removeChild(el);
+  }, 6000);
   // Y el botón para no esperar aparece solo a los 4 s: ofrecerlo de entrada
   // haría parecer un obstáculo lo que es un aviso de que está trabajando.
   setTimeout(function () {
