@@ -430,6 +430,10 @@ async function _hydrateFromSupabaseReal(opts) {
     monto: _num(x.monto), referencia: x.referencia || '', detalle: x.detalle || '',
     cuotas_total: _num(x.cuotas_total) || 1, monto_cuota: _num(x.monto_cuota),
     imputar: x.imputar !== false,   // false = excluido de las liquidaciones a propósito
+    // Qué pasó, quién lo paga y a quién se le acredita: las tres independientes.
+    dano: x.dano || '', beneficiario_tipo: x.beneficiario_tipo || 'conductor',
+    empleado_id: x.empleado_id || null, cliente_cod: (x.cliente_cod || '').toUpperCase(),
+    acredita_cliente: !!x.acredita_cliente,
     estado: x.estado || 'autorizado', autorizado_por: x.autorizado_por || '', autorizado_en: x.autorizado_en || ''
   }));
   // Cuotas de extravíos cuoteados (descuento_cuotas)
@@ -601,6 +605,8 @@ async function _hydrateFromSupabaseReal(opts) {
     monto_adelanto: _num(s.monto_adelanto), total: _num(s.total),
     // Viáticos: los cobra quien trabaja en la calle, con el sueldo del mes.
     monto_viaticos: _num(s.monto_viaticos), viaticos_detalle: s.viaticos_detalle || '',
+    // Extravíos del mes: su propio renglón, no mezclado con el adelanto.
+    monto_extravios: _num(s.monto_extravios), extravios_detalle: s.extravios_detalle || '',
     vac_dias: _num(s.vac_dias), monto_vacaciones: _num(s.monto_vacaciones), vac_descuento: _num(s.vac_descuento),
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
@@ -630,7 +636,10 @@ async function _hydrateFromSupabaseReal(opts) {
     concepto: c.concepto || 'otro',
     fecha: String(c.fecha || '').slice(0, 10), direccion: c.direccion || '', zona: c.zona || '',
     cantidad: _num(c.cantidad), precio_unitario: _num(c.precio_unitario), monto: _num(c.monto),
-    creado_por: c.creado_por || ''
+    creado_por: c.creado_por || '',
+    // El extravío que generó este crédito, si vino de ahí. Sin esto los dos se
+    // desincronizan: se corrige el monto del extravío y el cargo queda viejo.
+    origen_item_id: c.origen_item_id || null
   }));
 
   // Vacaciones del personal (el plantel sale de AppData.empleados).

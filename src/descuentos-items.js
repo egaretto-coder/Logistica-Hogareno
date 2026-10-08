@@ -212,7 +212,7 @@ function renderDescItems(tipo) {
 
     const rowStyle = pendiente ? 'background:#fff7ed;' : (rechazado ? 'opacity:0.55;' : (cuoteado && descItemSaldado(x) ? 'opacity:0.6;' : ''));
     return '<tr' + (rowStyle ? ' style="' + rowStyle + '"' : '') + '>' +
-      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.conductor) + ';width:28px;height:28px;font-size:10px">' + initials(x.conductor) + '</div><div style="min-width:0"><strong>' + x.conductor + '</strong>' + (estadoBadge ? '<div style="margin-top:3px">' + estadoBadge + '</div>' : '') + '</div></div></td>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.conductor || 'LH') + ';width:28px;height:28px;font-size:10px">' + initials(x.conductor || 'LH') + '</div><div style="min-width:0"><strong>' + (x.conductor || 'La empresa') + '</strong>' + (estadoBadge ? '<div style="margin-top:3px">' + estadoBadge + '</div>' : '') + (esExtravioTipo ? _chipsExtravio(x) : '') + '</div></div></td>' +
       '<td class="mono muted">' + (x.fecha || '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:600;color:' + (_num(x.monto) > 0 ? '#b91c1c' : '#9ca3af') + '">' + fmtPeso(_num(x.monto)) + (cuoteado ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400">en ' + x.cuotas_total + ' cuotas</div>' : '') + '</td>' +
       cuotasCell +
@@ -221,6 +221,29 @@ function renderDescItems(tipo) {
       '<td><div style="display:flex;gap:4px">' + acciones + '</div></td>' +
     '</tr>';
   }).join('');
+}
+
+// Cómo quedó cargado: qué pasó, quién lo paga y si el cliente tiene su crédito.
+// Van en la fila porque son las preguntas que se le hacen a esta tabla, y
+// abrirlas de a una con el lápiz es donde el operador deja de mirarlas.
+function _chipsExtravio(x) {
+  const chip = (txt, bg, col, bd) => '<span class="badge" style="background:' + bg + ';color:' + col +
+    ';border:1px solid ' + bd + ';font-size:9.5px;padding:1px 6px">' + txt + '</span>';
+  const p = [];
+  const d = danoLabel(x.dano);
+  if (d) p.push(chip(d, x.dano === 'roto' ? '#fef2f2' : '#fff7ed', x.dano === 'roto' ? '#991b1b' : '#9a3412',
+                     x.dano === 'roto' ? '#fecaca' : '#fdba74'));
+  const resp = descItemResponsable(x);
+  if (resp === 'empleado') p.push(chip('empleado', '#eef2ff', '#3730a3', '#c7d2fe'));
+  if (resp === 'ninguno')  p.push(chip('lo absorbe la empresa', '#f1f5f9', '#475569', '#cbd5e1'));
+  if (x.acredita_cliente && x.cliente_cod) {
+    const c = _cargoCreditoDe(x.id);
+    // Si el tilde está puesto pero el cargo no está, el cliente NO tiene su
+    // crédito: decirlo es la única forma de que alguien lo note.
+    p.push(c ? chip('acreditado a ' + clienteNombreDe(x.cliente_cod), '#ecfdf5', '#065f46', '#a7f3d0')
+             : chip('⚠ falta acreditarle al cliente', '#fff7ed', '#9a3412', '#fdba74'));
+  }
+  return p.length ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">' + p.join('') + '</div>' : '';
 }
 
 // Autoriza / rechaza un extravío pendiente (solo supervisor/analista).
@@ -287,36 +310,61 @@ function poblarConductoresDescItemDatalist() {
 function configDescItemModal(tipo) {
   const cfg = DESC_ITEMS[tipo];
   document.getElementById('mditem-tipo-emoji').textContent = cfg.emoji;
+  const esExtravio = (tipo === 'extraviados');
+  const esProv = (tipo === 'proveedores');
+
+  // En extravíos la referencia es el TRACKING y sale de su propio bloque, así
+  // que el campo "Referencia" de siempre se esconde: dos lugares para el mismo
+  // dato terminan con uno de los dos en blanco.
   const refWrap = document.getElementById('mditem-ref-wrap');
-  if (cfg.refLabel) {
+  if (cfg.refLabel && !esExtravio) {
     refWrap.style.display = '';
     document.getElementById('mditem-ref-label').textContent = cfg.refLabel;
     document.getElementById('mditem-ref').placeholder = cfg.refLabel;
   } else {
     refWrap.style.display = 'none';
   }
-  // En proveedores la referencia se ELIGE de la lista cargada; en extravíos
-  // sigue siendo texto libre (es el tracking del envío).
-  const esProv = (tipo === 'proveedores');
+  // En proveedores la referencia se ELIGE de la lista cargada.
   const inp = document.getElementById('mditem-ref');
   const sel = document.getElementById('mditem-ref-select');
   const ayuda = document.getElementById('mditem-ref-ayuda');
   if (inp) inp.style.display = esProv ? 'none' : '';
   if (sel) { sel.style.display = esProv ? '' : 'none'; if (esProv) poblarProveedoresSelect(inp ? inp.value : ''); }
   if (ayuda) ayuda.style.display = esProv ? '' : 'none';
-  // Secciones extra solo para extravíos (cliente + buscar tracking arriba, cuotear abajo)
-  const esExtravio = (tipo === 'extraviados');
-  const extra = document.getElementById('mditem-extravio-extra');
-  if (extra) extra.style.display = esExtravio ? 'flex' : 'none';
+
+  // El conductor significa otra cosa en extravíos: es QUIEN LO LLEVÓ, con el
+  // que se buscan sus trackings, y no necesariamente quien lo paga.
+  const cLbl = document.getElementById('mditem-conductor-label');
+  if (cLbl) cLbl.textContent = esExtravio ? 'Conductor que llevó el envío' : 'Conductor';
+  const cAyuda = document.getElementById('mditem-conductor-ayuda');
+  if (cAyuda) cAyuda.style.display = esExtravio ? '' : 'none';
+  const mLbl = document.getElementById('mditem-monto-label');
+  if (mLbl) mLbl.textContent = esExtravio ? 'Valor de la mercadería ($)' : 'Monto ($)';
+  const dLbl = document.getElementById('mditem-detalle-label');
+  if (dLbl) dLbl.textContent = esExtravio ? 'Observación (opcional)' : 'Detalle / Observación (opcional)';
+
+  // Los bloques propios del extravío.
+  const bloque = (id, mostrar, display) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = mostrar ? (display || '') : 'none';
+  };
+  bloque('mditem-extravio-extra', esExtravio, 'flex');
+  bloque('mditem-dano-wrap', esExtravio, 'flex');
+  bloque('mditem-resp-wrap', esExtravio, 'flex');
+  bloque('mditem-acredita-wrap', esExtravio, 'flex');
+  if (esExtravio) { poblarClientesDescItem(); poblarEmpleadosDescItem(); _cambiarResponsableExtravio(); }
+
   const cuoteBlock = document.getElementById('mditem-cuotear-block');
   if (cuoteBlock) cuoteBlock.style.display = esTipoCuoteable(tipo) ? '' : 'none';
   // El texto nombra lo que se está cargando: "este extravío" en un servicio de
   // proveedor no dice nada.
   const cuoteLbl = document.getElementById('mditem-cuotear-label');
   const cuoteAyuda = document.getElementById('mditem-cuotear-ayuda');
-  const comoSeLlama = (tipo === 'proveedores') ? 'este servicio' : (tipo === 'extraviados' ? 'este extravío' : 'este descuento');
+  const comoSeLlama = esProv ? 'este servicio' : (esExtravio ? 'este extravío' : 'este descuento');
   if (cuoteLbl) cuoteLbl.textContent = 'Cuotear ' + comoSeLlama + ' (pagarlo en cuotas)';
-  if (cuoteAyuda) cuoteAyuda.textContent = 'Las cuotas se descuentan de a una en las liquidaciones siguientes: se tildan en el modal de Liquidaciones, o con el botón "− Cuota" de esta misma solapa.';
+  if (cuoteAyuda) cuoteAyuda.textContent = esExtravio
+    ? 'Las cuotas se descuentan de a una: de su liquidación semanal si lo paga un conductor, o del sueldo del mes si lo paga un empleado.'
+    : 'Las cuotas se descuentan de a una en las liquidaciones siguientes: se tildan en el modal de Liquidaciones, o con el botón "− Cuota" de esta misma solapa.';
 }
 
 // Llena el desplegable de proveedores. Si el registro trae uno que ya no está
@@ -338,14 +386,77 @@ function poblarProveedoresSelect(actual) {
   }
 }
 
-// El valor de la referencia: del select en proveedores, del input en el resto.
+// El cliente sale del LISTADO, no de un campo libre. Escrito a mano no matchea
+// ningún código y entonces no se puede ni filtrar sus trackings ni acreditarle
+// nada: el crédito quedaría colgado de un cliente que no existe.
+// Se ofrecen los del maestro MÁS los que aparecen en los envíos, porque un
+// cliente recién importado todavía puede no estar de alta y su paquete se
+// pierde igual.
+function poblarClientesDescItem(actual) {
+  const sel = document.getElementById('mditem-cliente-sel');
+  if (!sel) return;
+  const m = new Map();
+  (AppData.clientes || []).forEach(c => {
+    const k = clienteKey(c.codigo);
+    if (k && esClienteValido(k)) m.set(k, c.nombre || k);
+  });
+  (AppData.records || []).forEach(r => {
+    const k = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
+    if (k && esClienteValido(k) && !m.has(k)) m.set(k, String(r.cliente || '').trim() || k);
+  });
+  const lista = Array.from(m.entries()).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  const act = clienteKey(actual || '');
+  sel.innerHTML = '<option value="">— Todos los clientes —</option>' +
+    lista.map(([k, nom]) => '<option value="' + jsAttr(k) + '">' + _dEsc(nom) + '</option>').join('') +
+    (act && !m.has(act) ? '<option value="' + jsAttr(act) + '">' + _dEsc(act) + ' (no está en el maestro)</option>' : '');
+  sel.value = act || '';
+}
+
+// Los empleados del legajo, para cuando la pérdida es de alguien de adentro.
+function poblarEmpleadosDescItem(actualId) {
+  const sel = document.getElementById('mditem-empleado');
+  if (!sel) return;
+  const activos = (AppData.empleados || []).filter(e => e.activo !== false)
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  const act = actualId || null;
+  const estaEnLista = activos.some(e => e.id === act);
+  const viejo = act && !estaEnLista ? (AppData.empleados || []).find(e => e.id === act) : null;
+  sel.innerHTML = '<option value="">— Elegí el empleado —</option>' +
+    activos.map(e => '<option value="' + e.id + '">' + _dEsc(e.nombre) + (e.puesto ? ' · ' + _dEsc(e.puesto) : '') + '</option>').join('') +
+    (viejo ? '<option value="' + viejo.id + '">' + _dEsc(viejo.nombre) + ' (dado de baja)</option>' : '');
+  sel.value = act ? String(act) : '';
+  if (!activos.length && !viejo) sel.innerHTML = '<option value="">No hay empleados cargados</option>';
+}
+function _dEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+// El valor de la referencia: el tracking elegido en extravíos, el proveedor de
+// la lista en proveedores, el input en el resto.
 function _valorReferenciaModal(tipo) {
+  if (tipo === 'extraviados') {
+    const wrap = document.getElementById('mditem-track-manual-wrap');
+    const man = document.getElementById('mditem-track-manual');
+    if (wrap && wrap.style.display !== 'none' && man && man.value.trim()) return man.value.trim();
+    const sel = document.getElementById('mditem-track-sel');
+    const r = _candidatoElegido();
+    return r ? String(r.tracking || '').trim() : (sel ? String(sel.value || '').trim() && '' : '');
+  }
   if (tipo === 'proveedores') {
     const sel = document.getElementById('mditem-ref-select');
     return sel ? String(sel.value || '').trim() : '';
   }
   const inp = document.getElementById('mditem-ref');
   return inp ? String(inp.value || '').trim() : '';
+}
+// El envío elegido en el desplegable. El valor es la POSICIÓN dentro de
+// `descItemCandidatos`, que es una foto local tomada al buscar y de la que solo
+// se LEE: no es AppData.records, así que la re-hidratación no la mueve.
+function _candidatoElegido() {
+  const sel = document.getElementById('mditem-track-sel');
+  if (!sel || sel.value === '') return null;
+  const i = parseInt(sel.value);
+  return (i >= 0 && i < descItemCandidatos.length) ? descItemCandidatos[i] : null;
 }
 
 function openAddDescItemModal(tipo) {
@@ -365,15 +476,80 @@ function openAddDescItemModal(tipo) {
   document.getElementById('modal-descitem-backdrop').style.display = 'flex';
 }
 
-// Resetea los campos extra de extravíos (cliente, sugerencias, cuotear).
+// Resetea los campos propios del extravío.
 function resetExtravioModalExtra() {
   descItemCandidatos = [];
-  const cli = document.getElementById('mditem-cliente'); if (cli) cli.value = '';
-  const sug = document.getElementById('mditem-sugerencias'); if (sug) sug.innerHTML = '';
+  const cli = document.getElementById('mditem-cliente-sel'); if (cli) cli.value = '';
+  const filtro = document.getElementById('mditem-track-filtro'); if (filtro) filtro.value = '';
+  const tsel = document.getElementById('mditem-track-sel'); if (tsel) tsel.innerHTML = '';
+  const tman = document.getElementById('mditem-track-manual'); if (tman) tman.value = '';
+  const tmw = document.getElementById('mditem-track-manual-wrap'); if (tmw) tmw.style.display = 'none';
+  document.querySelectorAll('input[name="mditem-dano"]').forEach(r => { r.checked = false; });
+  // El responsable vuelve a "el conductor" en CADA alta: los radios conservan
+  // lo último elegido, así que sin esto quien cargó uno de un empleado se lo
+  // llevaba puesto al siguiente y el descuento caía en el legajo equivocado.
+  document.querySelectorAll('input[name="mditem-resp"]').forEach(r => { r.checked = (r.value === 'conductor'); });
+  const emp = document.getElementById('mditem-empleado'); if (emp) emp.value = '';
+  const acr = document.getElementById('mditem-acredita'); if (acr) acr.checked = false;
   const chk = document.getElementById('mditem-cuotear'); if (chk) { chk.checked = false; chk.disabled = false; }
   const cuotasInput = document.getElementById('mditem-cuotas'); if (cuotasInput) { cuotasInput.value = ''; cuotasInput.disabled = false; }
   const wrap = document.getElementById('mditem-cuotas-wrap'); if (wrap) wrap.style.display = 'none';
   const prev = document.getElementById('mditem-cuota-preview'); if (prev) prev.textContent = '';
+  _pintarAvisoAcredita();
+}
+
+function _danoElegido() {
+  const r = document.querySelector('input[name="mditem-dano"]:checked');
+  return r ? r.value : '';
+}
+function _respElegido() {
+  const r = document.querySelector('input[name="mditem-resp"]:checked');
+  return r ? r.value : 'conductor';
+}
+function _cambiarResponsableExtravio() {
+  const resp = _respElegido();
+  const w = document.getElementById('mditem-empleado-wrap');
+  if (w) w.style.display = (resp === 'empleado') ? '' : 'none';
+  const ay = document.getElementById('mditem-resp-ayuda');
+  if (ay) ay.textContent = resp === 'empleado'
+    ? 'Se le descuenta del SUELDO del mes, en su propio renglón del recibo.'
+    : resp === 'ninguno'
+      ? 'No se le descuenta a nadie: queda registrado como pérdida que absorbe la empresa. El crédito al cliente, si corresponde, se marca igual abajo.'
+      : 'Se le descuenta de su liquidación semanal.';
+  // Cuotear no tiene sentido si no hay a quién cobrarle.
+  const cuote = document.getElementById('mditem-cuotear-block');
+  if (cuote) cuote.style.display = (resp === 'ninguno') ? 'none' : '';
+  if (resp === 'ninguno') {
+    const chk = document.getElementById('mditem-cuotear');
+    if (chk) chk.checked = false;
+    const wr = document.getElementById('mditem-cuotas-wrap');
+    if (wr) wr.style.display = 'none';
+  }
+}
+
+// Qué se le acredita al cliente y en qué factura cae. Se dice ANTES de guardar:
+// un crédito que aparece solo en la liquidación, semanas después, no se puede
+// cotejar contra nada.
+function _pintarAvisoAcredita() {
+  const info = document.getElementById('mditem-acredita-info');
+  if (!info) return;
+  const chk = document.getElementById('mditem-acredita');
+  const cod = (document.getElementById('mditem-cliente-sel') || {}).value || '';
+  const monto = parseFloat((document.getElementById('mditem-monto') || {}).value) || 0;
+  if (!chk || !chk.checked) {
+    info.innerHTML = 'Sin tildar, al cliente no se le descuenta nada: la pérdida la absorbe quien figure arriba.';
+    return;
+  }
+  if (!cod) { info.innerHTML = '<span style="color:var(--warning)">Elegí el cliente arriba: sin él no hay a quién acreditarle.</span>'; return; }
+  if (monto <= 0) { info.innerHTML = '<span style="color:var(--warning)">Cargá el valor de la mercadería.</span>'; return; }
+  const iso = (document.getElementById('mditem-fecha') || {}).value || '';
+  let donde = '';
+  try {
+    const rango = (typeof periodoClienteRango === 'function') ? periodoClienteRango(cod, iso) : null;
+    if (rango) donde = ' · entra en su liquidación del ' + rango.desde + ' al ' + rango.hasta;
+  } catch (e) {}
+  info.innerHTML = 'Se le acredita <strong>' + fmtPeso(monto) + '</strong> a ' + _dEsc(clienteNombreDe(cod)) +
+    donde + '. Sale como una línea propia en su factura, en negativo.';
 }
 
 function editDescItem(tipo, id) {
@@ -383,15 +559,47 @@ function editDescItem(tipo, id) {
   descItemEditId = id;
   const cfg = DESC_ITEMS[tipo];
   document.getElementById('modal-descitem-title').textContent = 'Editar ' + cfg.label.toLowerCase() + ' — ' + x.conductor;
-  document.getElementById('mditem-conductor').value = x.conductor || '';
   document.getElementById('mditem-fecha').value = dmyToISO(x.fecha) || hoyISO();
   document.getElementById('mditem-monto').value = x.monto || '';
   document.getElementById('mditem-ref').value = x.referencia || '';
   if (x.tipo === 'proveedores') poblarProveedoresSelect(x.referencia || '');
   document.getElementById('mditem-detalle').value = x.detalle || '';
   resetExtravioModalExtra(); // los cuoteados no se editan por acá (pago único)
+
+  if (tipo === 'extraviados') {
+    // El conductor que LLEVÓ el envío sale del propio envío, no del
+    // beneficiario: si lo paga un empleado, `conductor` guarda su nombre.
+    const resp = descItemResponsable(x);
+    const env = (AppData.records || []).find(r => String(r.tracking || '').trim() &&
+      String(r.tracking).trim() === String(x.referencia || '').trim());
+    document.getElementById('mditem-conductor').value =
+      (env && String(env.cadete || '').toUpperCase().trim()) || (resp === 'conductor' ? (x.conductor || '') : '');
+    poblarClientesDescItem(x.cliente_cod || '');
+    poblarEmpleadosDescItem(x.empleado_id || null);
+    document.querySelectorAll('input[name="mditem-resp"]').forEach(r => { r.checked = (r.value === resp); });
+    document.querySelectorAll('input[name="mditem-dano"]').forEach(r => { r.checked = (r.value === x.dano); });
+    const acr = document.getElementById('mditem-acredita'); if (acr) acr.checked = !!x.acredita_cliente;
+  } else {
+    document.getElementById('mditem-conductor').value = x.conductor || '';
+  }
+
   configDescItemModal(tipo);
   poblarConductoresDescItemDatalist();
+  if (tipo === 'extraviados') {
+    buscarTrackingsExtravio();
+    // Si el envío ya no está entre los cargados (la ventana de días no llega
+    // tan atrás), el tracking guardado se muestra a mano en vez de perderse.
+    const sel = document.getElementById('mditem-track-sel');
+    const i = descItemCandidatos.findIndex(r => String(r.tracking || '').trim() === String(x.referencia || '').trim());
+    if (i >= 0 && sel) { sel.value = String(i); }
+    else if (x.referencia) {
+      const tmw = document.getElementById('mditem-track-manual-wrap');
+      const tman = document.getElementById('mditem-track-manual');
+      if (tmw) tmw.style.display = '';
+      if (tman) tman.value = x.referencia;
+    }
+    _pintarAvisoAcredita();
+  }
   document.getElementById('modal-descitem-backdrop').style.display = 'flex';
 }
 
@@ -405,21 +613,50 @@ async function guardarDescItemModal() {
   const tipo = descItemModalTipo;
   const cfg = DESC_ITEMS[tipo];
   if (!cfg) return;
-  const conductor = document.getElementById('mditem-conductor').value.trim().toUpperCase();
+  const esExtravio = (tipo === 'extraviados');
+  const quienLoLlevo = document.getElementById('mditem-conductor').value.trim().toUpperCase();
   const iso = document.getElementById('mditem-fecha').value;
   const monto = parseFloat(document.getElementById('mditem-monto').value) || 0;
-  const referencia = cfg.refLabel ? _valorReferenciaModal(tipo) : '';
+  const referencia = (cfg.refLabel || esExtravio) ? _valorReferenciaModal(tipo) : '';
   const detalle = document.getElementById('mditem-detalle').value.trim();
 
-  if (!conductor) { alert('El conductor es obligatorio.'); return; }
   if (!iso) { alert('La fecha es obligatoria (define a qué liquidación se imputa).'); return; }
   if (monto <= 0) { alert('Ingresá un monto mayor a 0.'); return; }
   // El proveedor sale de la lista: sin elegirlo no se sabe a quién se le pagó.
   if (tipo === 'proveedores' && !referencia) { alert('Elegí el proveedor de la lista.'); return; }
 
-  // Cuotear: solo extravíos y solo en el alta (los cuoteados no se editan por acá).
+  // ── Quién lo paga ──────────────────────────────────────────────────────
+  // `conductor` guarda el NOMBRE del responsable en los tres casos, igual que
+  // los adelantos, así el buscador y el historial siguen sirviendo.
+  let beneficiario_tipo = 'conductor', empleado_id = null, conductor = quienLoLlevo;
+  let dano = '', cliente_cod = '', acredita_cliente = false;
+  if (esExtravio) {
+    beneficiario_tipo = _respElegido();
+    dano = _danoElegido();
+    cliente_cod = clienteKey((document.getElementById('mditem-cliente-sel') || {}).value || '');
+    acredita_cliente = !!(document.getElementById('mditem-acredita') || {}).checked;
+
+    if (!quienLoLlevo) { alert('Poné el conductor que llevó el envío: con él se buscan sus trackings.'); return; }
+    if (!referencia) { alert('Elegí el envío de la lista (o escribí el tracking a mano si no aparece).'); return; }
+    // Obligatorio: el panel se llama "Extraviados / Rotos" y sin esto no se
+    // puede saber de cuál de los dos se está hablando.
+    if (!dano) { alert('Marcá qué pasó con el envío: extraviado o roto.'); return; }
+    if (beneficiario_tipo === 'empleado') {
+      empleado_id = parseInt((document.getElementById('mditem-empleado') || {}).value) || null;
+      const emp = (AppData.empleados || []).find(e => e.id === empleado_id);
+      if (!emp) { alert('Elegí el empleado al que se le cobra.'); return; }
+      conductor = emp.nombre;
+    } else if (beneficiario_tipo === 'ninguno') {
+      conductor = '';
+    }
+    if (acredita_cliente && !cliente_cod) { alert('Para acreditarle al cliente hay que elegirlo arriba.'); return; }
+  } else if (!quienLoLlevo) {
+    alert('El conductor es obligatorio.'); return;
+  }
+
+  // Cuotear: solo si hay a quién cobrarle, y solo en el alta.
   let cuotas_total = 1, monto_cuota = 0;
-  if (esTipoCuoteable(tipo) && descItemEditId == null) {
+  if (esTipoCuoteable(tipo) && descItemEditId == null && beneficiario_tipo !== 'ninguno') {
     const chk = document.getElementById('mditem-cuotear');
     if (chk && chk.checked) {
       cuotas_total = parseInt(document.getElementById('mditem-cuotas').value) || 0;
@@ -429,9 +666,11 @@ async function guardarDescItemModal() {
   }
 
   const fecha = isoToDMY(iso);
-  const fila = { tipo, conductor, fecha, fecha_date: fechaISOde(fecha), monto, referencia, detalle, cuotas_total, monto_cuota };
+  const fila = { tipo, conductor, fecha, fecha_date: fechaISOde(fecha), monto, referencia, detalle, cuotas_total, monto_cuota,
+                 dano: dano || null, beneficiario_tipo, empleado_id, cliente_cod, acredita_cliente };
 
   try {
+    let itemId = descItemEditId;
     if (descItemEditId != null) {
       // Edición: preservar el estado de autorización (no re-autorizar por editar).
       const prev = AppData.descItems.find(r => r.id === descItemEditId);
@@ -443,66 +682,184 @@ async function guardarDescItemModal() {
       if (i >= 0) AppData.descItems[i] = { id: descItemEditId, ...fila };
     } else {
       // Solo los EXTRAVÍOS pasan por autorización; beneficios (combustible/proveedores) directo.
-      fila.estado = (tipo === 'extraviados') ? estadoNuevaOperacion() : 'autorizado';
+      fila.estado = esExtravio ? estadoNuevaOperacion() : 'autorizado';
       const row = await DB.insertRow('descuentos_items', fila);
+      itemId = row.id;
       AppData.descItems.push({ id: row.id, ...fila });
     }
+    // El crédito al cliente se sincroniza DESPUÉS de tener el id: es un cargo
+    // atado a este extravío, y si quedara suelto nadie podría explicarlo.
+    let credito = null;
+    if (esExtravio) credito = await _sincronizarCreditoExtravio(itemId);
+
     descItemEditId = null;
     document.getElementById('modal-descitem-backdrop').style.display = 'none';
     renderDescItems(tipo);
-    showToast(fila.estado === 'pendiente'
-      ? '📋 Extravío de ' + conductor + ' cargado como PENDIENTE — falta que un supervisor lo autorice'
+    const quien = beneficiario_tipo === 'ninguno' ? 'lo absorbe la empresa' : conductor;
+    showToast((fila.estado === 'pendiente'
+      ? '📋 ' + (danoLabel(dano) || 'Extravío') + ' cargado como PENDIENTE — falta que un supervisor lo autorice'
       : cuotas_total > 1
-        ? '✅ Extravío cuoteado: ' + fmtPeso(monto) + ' en ' + cuotas_total + ' cuotas de ' + fmtPeso(monto_cuota) + ' (' + conductor + ')'
-        : '✅ ' + cfg.label + ' guardado: ' + fmtPeso(monto) + ' (' + conductor + ', ' + fecha + ')');
+        ? '✅ ' + (danoLabel(dano) || cfg.label) + ' cuoteado: ' + fmtPeso(monto) + ' en ' + cuotas_total + ' cuotas de ' + fmtPeso(monto_cuota) + ' (' + quien + ')'
+        : '✅ ' + (danoLabel(dano) || cfg.label) + ' guardado: ' + fmtPeso(monto) + ' (' + quien + ', ' + fecha + ')')
+      + (credito ? ' · se le acreditaron ' + fmtPeso(monto) + ' a ' + clienteNombreDe(cliente_cod) : ''));
   } catch (e) {
     console.warn('guardarDescItemModal:', e);
     alert('No se pudo guardar: ' + (e.message || e));
   }
 }
 
-// ── Extravíos: autocompletado de tracking desde recorridos ──────────────────
-// Al elegir conductor (+ fecha + cliente), busca en AppData.records los envíos
-// de ese conductor y ofrece los trackings; el operador selecciona el correcto.
-function buscarTrackingsExtravio() {
-  const cont = document.getElementById('mditem-sugerencias');
-  if (!cont) return;
-  const conductor = document.getElementById('mditem-conductor').value.trim().toUpperCase();
-  const cliente = document.getElementById('mditem-cliente').value.trim().toLowerCase();
-  const iso = document.getElementById('mditem-fecha').value;
-  const fechaDMY = iso ? isoToDMY(iso) : '';
-  if (!conductor) {
-    descItemCandidatos = [];
-    cont.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:6px">Ingresá el conductor para ver sus envíos.</div>';
-    return;
+// ── El crédito al cliente ───────────────────────────────────────────────────
+// Viaja como un cargo NEGATIVO y no como un número calculado al vuelo: así se
+// imputa a un período concreto, el cliente lo VE discriminado en el PDF y el
+// operador lo puede mover de factura cuando el reclamo llega tarde. Queda
+// atado al extravío por `origen_item_id` para que los dos no se desincronicen:
+// si cambia el monto o se saca el tilde, el cargo sigue.
+function _cargoCreditoDe(itemId) {
+  return (AppData.clienteCargos || []).find(c => c.origen_item_id === itemId) || null;
+}
+async function _sincronizarCreditoExtravio(itemId) {
+  const x = (AppData.descItems || []).find(r => r.id === itemId);
+  if (!x) return null;
+  const ya = _cargoCreditoDe(itemId);
+  const quiere = !!x.acredita_cliente && !!x.cliente_cod && _num(x.monto) > 0;
+
+  if (!quiere) {
+    if (ya) {
+      try {
+        await DB.deleteWhere('cliente_cargos', 'id', ya.id);
+        AppData.clienteCargos = AppData.clienteCargos.filter(c => c.id !== ya.id);
+        await _reabrirSiHaceFalta(ya.cliente_cod, ya.semana, 'se quitó el crédito por un envío ' + (danoLabel(x.dano) || '').toLowerCase());
+      } catch (e) { console.warn('quitar crédito extravío:', e); }
+    }
+    return null;
   }
-  const cands = AppData.records.filter(r => {
-    if (String(r.cadete || '').toUpperCase().trim() !== conductor) return false;
-    if (fechaDMY && String(r.fecha || '').trim() !== fechaDMY) return false;
-    if (cliente && !String(r.destinatario || '').toLowerCase().includes(cliente)) return false;
-    return !!(r.tracking || r.direccion);
-  }).slice(0, 20);
-  descItemCandidatos = cands;
-  if (!cands.length) {
-    cont.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:6px">Sin envíos que coincidan' +
-      (fechaDMY ? ' para esa fecha (probá sin fecha, o revisá que los recorridos estén cargados)' : '') +
-      '. Podés escribir el tracking a mano abajo.</div>';
-    return;
+
+  const cod = clienteKey(x.cliente_cod);
+  const isoEnvio = fechaISOde(x.fecha);
+  const rango = (typeof periodoClienteRango === 'function') ? periodoClienteRango(cod, isoEnvio) : null;
+  const semana = rango ? fechaISOde(rango.desde) : isoEnvio;
+  const concepto = 'credito';
+  const monto = -Math.abs(_num(x.monto));
+  const detalleTxt = (danoLabel(x.dano) || 'Extravío') + (x.referencia ? ' · ' + x.referencia : '');
+  const rec = { cliente_cod: cod, semana, concepto, fecha: isoEnvio, direccion: detalleTxt, zona: '',
+                cantidad: 1, precio_unitario: monto, monto, origen_item_id: itemId,
+                creado_por: (typeof _operadorActual === 'function' ? _operadorActual() : '') || '' };
+  try {
+    if (ya) {
+      await DB.updateWhere('cliente_cargos', 'id', ya.id, rec);
+      const i = AppData.clienteCargos.findIndex(c => c.id === ya.id);
+      if (i >= 0) AppData.clienteCargos[i] = Object.assign({ id: ya.id }, rec);
+    } else {
+      const row = await DB.insertRow('cliente_cargos', rec);
+      AppData.clienteCargos.push(Object.assign({ id: row && row.id }, rec));
+    }
+    await _reabrirSiHaceFalta(cod, semana, 'se le acreditó un envío ' + (danoLabel(x.dano) || '').toLowerCase());
+    return rec;
+  } catch (e) {
+    console.warn('acreditar extravío al cliente:', e);
+    // El extravío ya se guardó: avisar con alert y no con un toast, porque lo
+    // que falta es plata que el cliente espera ver en su factura.
+    alert('El extravío se guardó, pero NO se pudo acreditar al cliente: ' + (e.message || e));
+    return null;
   }
-  cont.innerHTML = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">' + cands.length + ' envío(s) — tocá el correcto:</div>' +
-    cands.map((r, i) =>
-    '<div onclick="seleccionarTrackingExtravio(' + i + ')" style="cursor:pointer;padding:6px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;font-size:11px" onmouseover="this.style.background=\'var(--surface-0)\'" onmouseout="this.style.background=\'transparent\'">' +
-      '<div style="font-family:monospace;font-weight:600">' + (r.tracking || '(sin tracking)') + '</div>' +
-      '<div style="color:var(--text-muted)">' + (r.destinatario || '—') + (r.direccion ? ' · ' + r.direccion : '') + (r.estado ? ' · ' + r.estado : '') + '</div>' +
-    '</div>').join('');
+}
+// Una liquidación ya cerrada que ahora tiene un crédito más no está lista por
+// definición: el tesorero bajaría un PDF que ya no coincide.
+async function _reabrirSiHaceFalta(cod, semanaISO, queCambio) {
+  if (typeof _reabrirPorCambio !== 'function' || typeof periodoClienteRango !== 'function') return;
+  try { await _reabrirPorCambio(cod, periodoClienteRango(cod, semanaISO), queCambio); }
+  catch (e) { console.warn('_reabrirSiHaceFalta', e); }
 }
 
-function seleccionarTrackingExtravio(i) {
-  const r = descItemCandidatos[i];
+// ── Extravíos: el tracking sale de los envíos del conductor ─────────────────
+// No se escribe: con el conductor, la fecha y el cliente se arma la lista de lo
+// que llevó ese día y el operador elige. Tipeado a mano entra con un dígito de
+// menos, no matchea ningún envío, y después no hay forma de saber qué se perdió.
+function buscarTrackingsExtravio() {
+  const cont = document.getElementById('mditem-track-aviso');
+  const sel = document.getElementById('mditem-track-sel');
+  if (!sel) return;
+  const conductor = document.getElementById('mditem-conductor').value.trim();
+  const cod = clienteKey((document.getElementById('mditem-cliente-sel') || {}).value || '');
+  const iso = document.getElementById('mditem-fecha').value;
+  const fechaDMY = iso ? isoToDMY(iso) : '';
+  const manualWrap = document.getElementById('mditem-track-manual-wrap');
+
+  if (!conductor) {
+    descItemCandidatos = [];
+    sel.innerHTML = '<option value="">— Poné el conductor para ver sus envíos —</option>';
+    if (cont) cont.textContent = '';
+    if (manualWrap) manualWrap.style.display = 'none';
+    return;
+  }
+  // Por conductorKey y no por el texto crudo: el recorrido puede venir con un
+  // alias o con otra grafía, y comparando el texto el conductor "no tendría"
+  // ningún envío.
+  const key = conductorKey(conductor);
+  descItemCandidatos = (AppData.records || []).filter(r => {
+    if (conductorKey(r.cadete) !== key) return false;
+    if (fechaDMY && String(r.fecha || '').trim() !== fechaDMY) return false;
+    if (cod && ((typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '') !== cod) return false;
+    return !!(r.tracking || r.direccion);
+  }).slice(0, 400);
+
+  _pintarTrackingsSelect();
+}
+
+// Lo que se ve en el desplegable: los candidatos filtrados por lo que el
+// operador va tipeando (tracking o destinatario).
+function _pintarTrackingsSelect() {
+  const sel = document.getElementById('mditem-track-sel');
+  const cont = document.getElementById('mditem-track-aviso');
+  const manualWrap = document.getElementById('mditem-track-manual-wrap');
+  if (!sel) return;
+  const q = String((document.getElementById('mditem-track-filtro') || {}).value || '').trim().toLowerCase();
+  const vistos = descItemCandidatos
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !q ||
+      String(r.tracking || '').toLowerCase().includes(q) ||
+      String(r.destinatario || '').toLowerCase().includes(q));
+
+  if (!descItemCandidatos.length) {
+    sel.innerHTML = '<option value="">— Sin envíos de ese conductor —</option>';
+    // La causa más común no es que no existan: es que ese día quedó fuera de la
+    // ventana de días que la app tiene cargada. Decirlo evita que el operador
+    // concluya que el envío se borró.
+    if (cont) cont.innerHTML = '<span style="color:var(--warning)">No hay envíos cargados de ese conductor con esa fecha y ese cliente. ' +
+      'Puede estar fuera de los días que la app tiene cargados (' +
+      (typeof textoVentanaCargada === 'function' ? textoVentanaCargada() : 'ventana limitada') + ').</span>';
+    if (manualWrap) manualWrap.style.display = '';
+    return;
+  }
+  if (manualWrap && manualWrap.style.display !== 'none') {
+    const tman = document.getElementById('mditem-track-manual');
+    if (!tman || !tman.value.trim()) manualWrap.style.display = 'none';
+  }
+  if (!vistos.length) {
+    sel.innerHTML = '<option value="">— Ninguno coincide con "' + _dEsc(q) + '" —</option>';
+    if (cont) cont.textContent = descItemCandidatos.length + ' envío(s) ese día; ninguno coincide con lo tipeado.';
+    return;
+  }
+  sel.innerHTML = '<option value="">— Elegí el envío (' + vistos.length + ') —</option>' +
+    vistos.map(({ r, i }) => {
+      const t = String(r.tracking || '').trim() || '(sin tracking)';
+      const extra = [r.destinatario, r.zona || r.localidad, r.estado].filter(Boolean).join(' · ');
+      return '<option value="' + i + '">' + _dEsc(t) + (extra ? ' — ' + _dEsc(extra) : '') + '</option>';
+    }).join('');
+  if (cont) cont.textContent = vistos.length + ' de ' + descItemCandidatos.length + ' envío(s) de ese conductor' +
+    (q ? ' coinciden con lo tipeado' : '') + '.';
+}
+
+function seleccionarTrackingExtravio() {
+  const r = _candidatoElegido();
   if (!r) return;
-  document.getElementById('mditem-ref').value = r.tracking || '';
+  // El envío dice de qué cliente es: si estaba en "todos", se completa solo.
+  const cliSel = document.getElementById('mditem-cliente-sel');
+  const cod = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
+  if (cliSel && !cliSel.value && cod) { poblarClientesDescItem(cod); }
   const det = document.getElementById('mditem-detalle');
   if (det && !det.value.trim()) det.value = [r.destinatario, r.direccion].filter(Boolean).join(' · ');
+  _pintarAvisoAcredita();
   // El monto queda en blanco a propósito: lo escribe el operador con el valor real del paquete.
   const mEl = document.getElementById('mditem-monto');
   if (mEl) mEl.focus();
@@ -614,12 +971,23 @@ function verHistorialExtravio(itemId) {
 async function eliminarDescItem(tipo, id) {
   const x = AppData.descItems.find(r => r.id === id && r.tipo === tipo);
   if (!x) return;
-  if (!confirm('¿Eliminar este descuento de ' + x.conductor + ' (' + fmtPeso(_num(x.monto)) + ', ' + x.fecha + ')?')) return;
+  const credito = _cargoCreditoDe(id);
+  const quien = x.conductor || 'la empresa';
+  if (!confirm('¿Eliminar este descuento de ' + quien + ' (' + fmtPeso(_num(x.monto)) + ', ' + x.fecha + ')?' +
+      (credito ? String.fromCharCode(10,10) + 'También se le quita el crédito de ' + fmtPeso(Math.abs(_num(credito.monto))) +
+        ' que tiene ' + clienteNombreDe(credito.cliente_cod) + ' en su liquidación.' : ''))) return;
   try {
+    // El crédito primero: si se borra el extravío y después falla esto, al
+    // cliente le queda una nota de crédito sin nada que la explique.
+    if (credito) {
+      await DB.deleteWhere('cliente_cargos', 'id', credito.id);
+      AppData.clienteCargos = AppData.clienteCargos.filter(c => c.id !== credito.id);
+      await _reabrirSiHaceFalta(credito.cliente_cod, credito.semana, 'se borró el crédito por un envío ' + (danoLabel(x.dano) || '').toLowerCase());
+    }
     await DB.deleteWhere('descuentos_items', 'id', id);
     AppData.descItems = AppData.descItems.filter(r => r.id !== id);
     renderDescItems(tipo);
-    showToast('🗑 Registro eliminado');
+    showToast('🗑 Registro eliminado' + (credito ? ' · y su crédito al cliente' : ''));
   } catch (e) { console.warn('eliminarDescItem:', e); showToast('⛔ No se pudo eliminar'); }
 }
 

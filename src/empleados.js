@@ -2069,7 +2069,7 @@ function vacArt155(base, dias) {
 function totalLiquidacionSueldo(s) {
   return Math.round(_num(s.sueldo_base) - _num(s.vac_descuento) + _num(s.monto_vacaciones) +
     _num(s.monto_horas_extra) + _num(s.bono_eficiencia) + _num(s.monto_viaticos) -
-    (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0));
+    (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0) - _num(s.monto_extravios));
 }
 // Si cambia el sueldo base de una liquidación, sus vacaciones cambian con él:
 // se pagan sobre el sueldo que percibe.
@@ -2146,6 +2146,7 @@ function renderSueldosPanel() {
     const bono = s ? _num(s.bono_eficiencia) : bonosDelMes(e.id, periodo);
     const viat = s ? _num(s.monto_viaticos) : 0;
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
+    const extravios = s ? _num(s.monto_extravios) : 0;
     const total = s ? _num(s.total) : base;
     // Vacaciones: liquidadas, o registradas en Vacaciones y todavía no.
     const vacDias = s ? _num(s.vac_dias) : 0;
@@ -2490,6 +2491,137 @@ async function aplicarCuotasSueldo(periodo) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+//  EXTRAVÍOS Y ROTURAS A CARGO DE UN EMPLEADO
+//
+//  Un paquete lo lleva un conductor, pero la pérdida puede ser de alguien de
+//  adentro (se rompió en el depósito). Esa plata no entra en ninguna
+//  liquidación de conductor: se descuenta del SUELDO del mes, igual que un
+//  adelanto, y en su propio renglón — un adelanto es plata prestada y esto es
+//  una pérdida que se le cobra, y el recibo que firma tiene que distinguirlas.
+//
+//  Dos naturalezas, como del lado del conductor: los CUOTEADOS se tildan de a
+//  una cuota por mes, y los de pago ÚNICO se descuentan enteros en el mes de su
+//  fecha, sin tildar nada (igual que el combustible en la semana de su fecha).
+// ════════════════════════════════════════════════════════════════════════
+let sueldoExtraviosPend = {};
+
+function renderExtraviosSueldoModal(empId, periodo) {
+  const wrap = document.getElementById('msld-extravios-wrap');
+  const cont = document.getElementById('msld-extravios-lista');
+  if (!wrap || !cont) return;
+  sueldoExtraviosPend = {};
+
+  // Cuoteados con saldo + los que ya tienen una cuota imputada a este mes: si
+  // estos últimos no se mostraran, al reabrir la liquidación de uno ya saldado
+  // desaparecería la línea que explica el descuento.
+  const vigentes = descItemsCuoteablesEmpleado(empId);
+  const conCuotaDelMes = descItemsDeEmpleado(empId).filter(x =>
+    _num(x.cuotas_total) > 1 && !vigentes.some(v => v.id === x.id) && descItemCuotaDelPeriodo(x.id, periodo));
+  const cuoteados = vigentes.concat(conCuotaDelMes);
+  const enteros = descItemEnterosEmpleadoMes(empId, periodo);
+
+  if (!cuoteados.length && !enteros.length) { wrap.style.display = 'none'; cont.innerHTML = ''; return; }
+  wrap.style.display = '';
+
+  const nombre = x => (danoLabel(x.dano) || 'Extravío') + (x.referencia ? ' · ' + x.referencia : '') +
+    (x.cliente_cod ? ' · ' + clienteNombreDe(x.cliente_cod) : '');
+
+  const filasCuota = cuoteados.map(x => {
+    const ya = descItemCuotaDelPeriodo(x.id, periodo);
+    const pagadas = descItemCuotasPagadas(x.id);
+    const nro = Math.min(pagadas + (ya ? 0 : 1), _num(x.cuotas_total));
+    const cuota = ya ? _num(ya.monto) : _num(x.monto_cuota);
+    sueldoExtraviosPend[x.id] = !!ya;
+    return '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;cursor:pointer">' +
+      '<input type="checkbox" ' + (ya ? 'checked' : '') +
+        ' onchange="marcarCuotaExtravioSueldo(' + x.id + ',this.checked)">' +
+      '<span style="flex:1"><strong>Cuota ' + nro + '/' + _num(x.cuotas_total) + '</strong>' +
+        '<div style="font-size:10px;color:var(--text-muted)">' + _eEsc(nombre(x)) + ' — ' +
+          fmtPeso(_num(x.monto)) + ' en ' + _num(x.cuotas_total) + ' cuotas</div></span>' +
+      '<strong style="white-space:nowrap">-' + fmtPeso(cuota) + '</strong>' +
+    '</label>';
+  }).join('');
+
+  // Los de pago único NO se tildan: su fecha ya decidió que se descuentan en
+  // este mes. Se muestran igual para que el total se pueda explicar.
+  const filasEnteras = enteros.map(x =>
+    '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px">' +
+      '<i class="ic ic-box" style="opacity:.6"></i>' +
+      '<span style="flex:1">' + _eEsc(nombre(x)) +
+        '<div style="font-size:10px;color:var(--text-muted)">pago único · se descuenta entero en ' + (x.fecha || 'este mes') + '</div></span>' +
+      '<strong style="white-space:nowrap">-' + fmtPeso(_num(x.monto)) + '</strong>' +
+    '</div>').join('');
+
+  cont.innerHTML = filasCuota + filasEnteras;
+}
+function _eEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+function marcarCuotaExtravioSueldo(itemId, marcado) {
+  sueldoExtraviosPend[itemId] = !!marcado;
+  recalcSueldoModal();
+}
+
+// Lo que se le descuenta por extravíos este mes: las cuotas tildadas más los de
+// pago único que caen en el mes.
+function _totalExtraviosSueldo(empId, periodo) {
+  let tot = 0;
+  Object.keys(sueldoExtraviosPend).forEach(idTxt => {
+    if (!sueldoExtraviosPend[idTxt]) return;
+    const x = (AppData.descItems || []).find(r => r.id === parseInt(idTxt));
+    if (!x) return;
+    const ya = descItemCuotaDelPeriodo(x.id, periodo);
+    tot += _num(ya ? ya.monto : x.monto_cuota);
+  });
+  if (empId != null) descItemEnterosEmpleadoMes(empId, periodo).forEach(x => { tot += _num(x.monto); });
+  return Math.round(tot);
+}
+// El texto que va al recibo: un total sin decir de qué es no se puede firmar.
+function _detalleExtraviosSueldo(empId, periodo) {
+  const p = [];
+  Object.keys(sueldoExtraviosPend).forEach(idTxt => {
+    if (!sueldoExtraviosPend[idTxt]) return;
+    const x = (AppData.descItems || []).find(r => r.id === parseInt(idTxt));
+    if (!x) return;
+    const pagadas = descItemCuotasPagadas(x.id);
+    const ya = descItemCuotaDelPeriodo(x.id, periodo);
+    const nro = Math.min(pagadas + (ya ? 0 : 1), _num(x.cuotas_total));
+    p.push((danoLabel(x.dano) || 'Extravío') + (x.referencia ? ' ' + x.referencia : '') +
+      ' (cuota ' + nro + '/' + _num(x.cuotas_total) + ')');
+  });
+  if (empId != null) descItemEnterosEmpleadoMes(empId, periodo).forEach(x => {
+    p.push((danoLabel(x.dano) || 'Extravío') + (x.referencia ? ' ' + x.referencia : ''));
+  });
+  return p.join(' · ');
+}
+
+// Crea o borra las cuotas según lo tildado. Se llama al guardar el sueldo,
+// igual que aplicarCuotasSueldo con los adelantos.
+async function aplicarCuotasExtravioSueldo(periodo) {
+  const fecha = _finDeMesDMY(periodo);
+  for (const idTxt of Object.keys(sueldoExtraviosPend)) {
+    const id = parseInt(idTxt);
+    const x = (AppData.descItems || []).find(r => r.id === id);
+    if (!x) continue;
+    const quiere = !!sueldoExtraviosPend[idTxt];
+    const ya = descItemCuotaDelPeriodo(id, periodo);
+    if (quiere && !ya) {
+      const nro = descItemCuotasPagadas(id) + 1;
+      const rec = { item_id: id, nro, monto: _num(x.monto_cuota), fecha, fecha_date: fechaISOde(fecha) };
+      try {
+        const row = await DB.insertRow('descuento_cuotas', rec);
+        AppData.descItemCuotas.push(Object.assign({ id: row && row.id }, rec));
+      } catch (e) { console.warn('imputar cuota extravío empleado:', e); }
+    } else if (!quiere && ya) {
+      try {
+        await DB.deleteWhere('descuento_cuotas', 'id', ya.id);
+        AppData.descItemCuotas = AppData.descItemCuotas.filter(c => c.id !== ya.id);
+      } catch (e) { console.warn('deshacer cuota extravío empleado:', e); }
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
 //  REABRIR UNA LIQUIDACIÓN PAGADA (maker-checker)
 //
 //  Una liquidación marcada como pagada es plata que ya salió y un recibo que
@@ -2676,6 +2808,7 @@ function openSueldoModal(empId) {
   _pintarVacacionesSueldo(empId, periodo, s);
   _pintarViaticos(e, s);
   renderAdelantosSueldoModal(empId, periodo);
+  renderExtraviosSueldoModal(empId, periodo);
   recalcSueldoModal();
   document.getElementById('modal-sueldo-backdrop').style.display = 'flex';
 }
@@ -2839,7 +2972,9 @@ function recalcSueldoModal() {
   const vac = vacArt155(base, parseFloat(elVacD && elVacD.value) || 0);
   const elVia = document.getElementById('msld-viaticos');
   const viaticos = Math.max(0, Math.round(parseFloat(elVia && elVia.value) || 0));
-  const total = Math.round(base - vac.descuento + vac.monto + extras + bono + viaticos - adel);
+  // Los extravíos a su cargo: las cuotas tildadas más los de pago único del mes.
+  const extravios = _totalExtraviosSueldo(sueldoModalEmpId, periodoMod);
+  const total = Math.round(base - vac.descuento + vac.monto + extras + bono + viaticos - adel - extravios);
   // La cuenta a la vista, debajo del campo: son dos renglones que se van a
   // firmar y hay que poder explicar de dónde sale cada uno.
   const elVacC = document.getElementById('msld-vac-calc');
@@ -2873,7 +3008,7 @@ function recalcSueldoModal() {
   document.getElementById('msld-split').innerHTML =
     '<span><i class="ic ic-card"></i> Transferencia: <strong>' + fmtPeso(mT) + '</strong></span>' +
     '<span style="margin-left:14px;color:' + (mE < 0 ? '#b91c1c' : 'inherit') + '"><i class="ic ic-dollar"></i> Efectivo: <strong>' + fmtPeso(mE) + '</strong></span>';
-  return { base, horas, vh, extras, bono, viaticos, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
+  return { base, horas, vh, extras, bono, viaticos, extravios, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
            vacDias: vac.dias, vacMonto: vac.monto, vacDesc: vac.descuento };
 }
 async function guardarSueldo(marcarPagado, conRecibo) {
@@ -2892,6 +3027,7 @@ async function guardarSueldo(marcarPagado, conRecibo) {
   // Primero se imputan/deshacen las cuotas, así el registro del sueldo se
   // guarda con el mismo descuento que muestra la pantalla.
   await aplicarCuotasSueldo(periodo);
+  await aplicarCuotasExtravioSueldo(periodo);
   const c = recalcSueldoModal();
   // La pantalla ya avisa en rojo que no se puede transferir más de lo que se le
   // paga, pero antes se guardaba igual: quedaba monto_efectivo NEGATIVO y un
@@ -2918,6 +3054,8 @@ async function guardarSueldo(marcarPagado, conRecibo) {
     bono_eficiencia: c.bono, descuenta_adelanto: c.descAd, monto_adelanto: c.adel,
     monto_viaticos: c.viaticos,
     viaticos_detalle: ((document.getElementById('msld-viaticos-detalle') || {}).value || '').trim(),
+    monto_extravios: c.extravios,
+    extravios_detalle: _detalleExtraviosSueldo(sueldoModalEmpId, periodo),
     vac_dias: c.vacDias, monto_vacaciones: c.vacMonto, vac_descuento: c.vacDesc,
     total: c.total, pct_transferencia: c.pct, monto_transferencia: c.mT, monto_efectivo: c.mE,
     pagado: !!marcarPagado, obs: (document.getElementById('msld-obs').value || '').trim()
@@ -2981,6 +3119,8 @@ function _datosRecibo(e, periodo) {
   const viaticos = s ? _num(s.monto_viaticos) : 0;
   const viaticosDet = (s && s.viaticos_detalle) || '';
   const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
+  const extravios = s ? _num(s.monto_extravios) : 0;
+  const extraviosDet = (s && s.extravios_detalle) || '';
   const total = s ? _num(s.total) : base;
   const vacDias = s ? _num(s.vac_dias) : 0;
   const vacMonto = s ? _num(s.monto_vacaciones) : 0;
@@ -2988,7 +3128,8 @@ function _datosRecibo(e, periodo) {
   const pct = s ? _num(s.pct_transferencia) : ultimoPctTransferencia(e.id);
   const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
   const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pct / 100);
-  return { s, base, horas, vh, extras, bono, viaticos, viaticosDet, adel, total, pct, mT, mE, vacDias, vacMonto, vacDesc,
+  return { s, base, horas, vh, extras, bono, viaticos, viaticosDet, adel, extravios, extraviosDet,
+           total, pct, mT, mE, vacDias, vacMonto, vacDesc,
            obs: (s && s.obs) || '', pagado: !!(s && s.pagado) };
 }
 
@@ -3089,6 +3230,7 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
   if (d.bono) body.push(['Bono de eficiencia', '', fmtPeso(d.bono), '']);
   if (d.viaticos) body.push(['Viáticos', d.viaticosDet || 'gastos de traslado del mes', fmtPeso(d.viaticos), '']);
   if (d.adel) body.push(['Adelanto descontado', 'a cuenta de haberes', '', fmtPeso(d.adel)]);
+  if (d.extravios) body.push(['Extraviados / rotos', d.extraviosDet || 'envíos a su cargo', '', fmtPeso(d.extravios)]);
 
   doc.autoTable({
     startY: 66,

@@ -472,6 +472,26 @@ function adelantoActivoDe(conductor) {
     .sort((x, y) => x.id - y.id)[0] || null;
 }
 
+// ── Un extravío: QUÉ pasó, QUIÉN lo paga y a QUIÉN se le acredita ───────────
+// Las tres son independientes. Un paquete puede acreditársele al cliente sin
+// cobrárselo a nadie (la empresa lo absorbe), y puede cobrársele a alguien sin
+// acreditarle nada al cliente si el cliente no reclamó.
+const DANO_TIPOS = { extraviado: 'Extraviado', roto: 'Roto' };
+function danoLabel(d) { return DANO_TIPOS[String(d || '').toLowerCase()] || ''; }
+
+// Quién paga. Mismo modelo que los adelantos: `conductor` guarda el NOMBRE en
+// los tres casos y `beneficiario_tipo` distingue el grupo.
+function descItemResponsable(x) {
+  const t = String((x && x.beneficiario_tipo) || 'conductor');
+  return (t === 'empleado' || t === 'ninguno') ? t : 'conductor';
+}
+function descItemEsDeConductor(x) { return descItemResponsable(x) === 'conductor'; }
+function descItemEsDeEmpleado(x)  { return descItemResponsable(x) === 'empleado'; }
+// 'ninguno': se registró la pérdida pero no se le cobra a nadie. No es lo mismo
+// que no cargarla — el cliente igual puede tener su crédito, y la empresa
+// necesita saber cuánto absorbió.
+function descItemLoAbsorbeLaEmpresa(x) { return descItemResponsable(x) === 'ninguno'; }
+
 // ── Régimen de superposiciones (maker-checker) ──────────────────────────────
 // Adelantos y extravíos que carga un OPERADOR quedan 'pendiente' y NO impactan la
 // liquidación hasta que un SUPERVISOR (o analista) los autorice. Km y beneficios
@@ -548,6 +568,11 @@ function descItemDescuentoConductor(tipo, conductor, rango, incluirExcluidos) {
     if (x.tipo !== tipo) return;
     if (!esAutorizado(x)) return;         // extravío pendiente de autorización: no impacta
     if (_num(x.cuotas_total) > 1) return; // cuoteado: no se imputa el total de una, va por cuotas
+    // Solo lo que paga un CONDUCTOR. Sin este filtro, un empleado que se llame
+    // igual que un cadete le descontaría la plata al cadete — el mismo bug que
+    // adelantoDescuentoConductor ya tenía resuelto. Y lo que absorbe la empresa
+    // no se le descuenta a nadie.
+    if (!descItemEsDeConductor(x)) return;
     if (conductorKey(x.conductor) !== key) return;
     const imputable = x.imputar !== false; // excluido a mano: no descuenta
     if (!imputable && !incluirExcluidos) return;
@@ -574,6 +599,33 @@ function descItemSaldo(item) {
 }
 function descItemSaldado(item) { return descItemCuotasPagadas(item.id) >= _num(item.cuotas_total); }
 
+// ── Lo que se le cobra a un EMPLEADO, de su sueldo ──────────────────────────
+// Un extravío de un empleado no entra en ninguna liquidación de conductor: se
+// descuenta del sueldo del mes, igual que un adelanto. Y va en su propio
+// renglón, porque un adelanto es plata prestada y esto es una pérdida.
+function descItemsDeEmpleado(empId) {
+  return (AppData.descItems || [])
+    .filter(x => descItemEsDeEmpleado(x) && x.empleado_id === empId && esAutorizado(x))
+    .sort((a, b) => a.id - b.id);
+}
+// Los cuoteados con saldo: son los que el modal de sueldo ofrece tildar.
+function descItemsCuoteablesEmpleado(empId) {
+  return descItemsDeEmpleado(empId).filter(x => _num(x.cuotas_total) > 1 && !descItemSaldado(x));
+}
+// La cuota de ESE mes, si ya se imputó. El mes se compara contra la fecha
+// DD/MM/YYYY de la cuota, igual que `_cuotaDelPeriodo` con los adelantos.
+function descItemCuotaDelPeriodo(itemId, periodo) {
+  const pref = '/' + String(periodo || '').slice(5, 7) + '/' + String(periodo || '').slice(0, 4);
+  return (AppData.descItemCuotas || []).find(c => c.item_id === itemId && String(c.fecha || '').endsWith(pref));
+}
+// Los de pago ÚNICO que caen en el mes: se descuentan enteros, sin tildar nada,
+// igual que el combustible en la semana de su fecha.
+function descItemEnterosEmpleadoMes(empId, periodo) {
+  const pref = '/' + String(periodo || '').slice(5, 7) + '/' + String(periodo || '').slice(0, 4);
+  return descItemsDeEmpleado(empId).filter(x =>
+    _num(x.cuotas_total) <= 1 && x.imputar !== false && String(x.fecha || '').endsWith(pref));
+}
+
 // Cuota(s) de extravío imputadas a un conductor dentro de un período.
 // Suma las descuento_cuotas (de items tipo 'extraviados' cuoteados) cuya fecha
 // cae en el rango. Espeja adelantoDescuentoConductor.
@@ -585,6 +637,7 @@ function extravioCuotaDescuento(conductor, rango) {
   // Se cuotean extravíos y servicios de proveedores; combustible y km van enteros.
   AppData.descItems.forEach(x => {
     if ((x.tipo === 'extraviados' || x.tipo === 'proveedores') && _num(x.cuotas_total) > 1 &&
+        descItemEsDeConductor(x) &&
         conductorKey(x.conductor) === key && esAutorizado(x)) {
       itemsTotal[x.id] = _num(x.cuotas_total);
       itemsRef[x.id] = String(x.referencia || x.detalle || '').trim();

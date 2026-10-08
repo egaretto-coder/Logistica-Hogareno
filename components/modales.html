@@ -250,18 +250,12 @@
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow:auto">
       <div class="form-group" style="margin:0">
-        <label class="form-label">Conductor</label>
+        <label class="form-label" id="mditem-conductor-label">Conductor</label>
         <input type="text" id="mditem-conductor" class="form-input" placeholder="Nombre del conductor" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase(); if(descItemModalTipo==='extraviados') buscarTrackingsExtravio();" list="mditem-conductores-list" />
         <datalist id="mditem-conductores-list"></datalist>
-      </div>
-
-      <!-- EXTRAVÍOS: cliente + autocompletado de tracking (solo extraviados) -->
-      <div id="mditem-extravio-extra" style="display:none;flex-direction:column;gap:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;background:var(--surface-0)">
-        <div class="form-group" style="margin:0">
-          <label class="form-label"><i class="ic ic-user"></i> Cliente (destinatario) — opcional, para filtrar</label>
-          <input type="text" id="mditem-cliente" class="form-input" placeholder="Nombre del destinatario" style="width:100%" oninput="buscarTrackingsExtravio()" />
+        <div id="mditem-conductor-ayuda" style="font-size:10px;color:var(--text-muted);margin-top:3px;display:none">
+          Es quien LLEVÓ el envío: con él se buscan sus trackings. A quién se le cobra se elige más abajo.
         </div>
-        <div id="mditem-sugerencias" style="max-height:150px;overflow:auto"></div>
       </div>
 
       <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -270,10 +264,51 @@
           <input type="date" id="mditem-fecha" class="form-input" style="width:100%" onchange="if(descItemModalTipo==='extraviados') buscarTrackingsExtravio();" />
         </div>
         <div class="form-group" style="margin:0;flex:1;min-width:120px">
-          <label class="form-label"><i class="ic ic-dollar"></i> Monto ($)</label>
-          <input type="number" id="mditem-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" oninput="if(descItemModalTipo==='extraviados') actualizarPreviewCuotaExtravio();" />
+          <label class="form-label"><i class="ic ic-dollar"></i> <span id="mditem-monto-label">Monto ($)</span></label>
+          <input type="number" id="mditem-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" oninput="if(descItemModalTipo==='extraviados'){actualizarPreviewCuotaExtravio();_pintarAvisoAcredita();}" />
         </div>
       </div>
+
+      <!-- EXTRAVÍOS · QUÉ ENVÍO FUE. El tracking NO se escribe: sale de los
+           envíos que ese conductor llevó esa fecha para ese cliente. Tipeado a
+           mano entra con un dígito de menos y no matchea ningún envío, así que
+           después no se puede saber qué se perdió ni a quién facturárselo. -->
+      <div id="mditem-extravio-extra" style="display:none;flex-direction:column;gap:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;background:var(--surface-0)">
+        <div style="font-size:11px;font-weight:700;color:var(--text-secondary)"><i class="ic ic-box"></i> ¿Qué envío fue?</div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label"><i class="ic ic-building"></i> Cliente</label>
+          <select id="mditem-cliente-sel" class="form-input" style="width:100%" onchange="buscarTrackingsExtravio();_pintarAvisoAcredita()"></select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label"><i class="ic ic-box"></i> Tracking / Envío <span style="color:var(--accent)">*</span></label>
+          <input type="search" id="mditem-track-filtro" class="form-input" placeholder="Escribí parte del tracking o del destinatario para filtrar..." style="width:100%;margin-bottom:6px" oninput="_pintarTrackingsSelect()" />
+          <select id="mditem-track-sel" class="form-input" style="width:100%" onchange="seleccionarTrackingExtravio()"></select>
+          <div id="mditem-track-aviso" style="font-size:10px;color:var(--text-muted);margin-top:4px"></div>
+          <!-- Salida de emergencia: si el envío quedó fuera de los días cargados
+               no se puede elegir de la lista, y trabar la carga por eso sería
+               peor que el tracking mal tipeado que esto viene a evitar. Queda
+               marcado para que se vea que no salió de ningún envío. -->
+          <div id="mditem-track-manual-wrap" style="display:none;margin-top:6px">
+            <input type="text" id="mditem-track-manual" class="form-input" placeholder="Tracking escrito a mano" style="width:100%" />
+          </div>
+        </div>
+      </div>
+
+      <!-- EXTRAVÍOS · QUÉ PASÓ. El panel se llama "Extraviados / Rotos" y hasta
+           ahora no había con qué distinguir uno de otro: se resuelven distinto
+           (uno se busca, el otro ya no aparece) y se reclaman distinto. -->
+      <div id="mditem-dano-wrap" style="display:none;flex-direction:column;gap:6px">
+        <label class="form-label" style="margin:0">¿Qué pasó con el envío? <span style="color:var(--accent)">*</span></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label class="btn btn-sm" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+            <input type="radio" name="mditem-dano" value="extraviado" onchange="_pintarAvisoAcredita()"> Extraviado
+          </label>
+          <label class="btn btn-sm" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+            <input type="radio" name="mditem-dano" value="roto" onchange="_pintarAvisoAcredita()"> Roto
+          </label>
+        </div>
+      </div>
+
       <div class="form-group" id="mditem-ref-wrap" style="margin:0">
         <label class="form-label" id="mditem-ref-label">Referencia</label>
         <input type="text" id="mditem-ref" class="form-input" placeholder="" style="width:100%" />
@@ -285,8 +320,32 @@
         </div>
       </div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">Detalle / Observación (opcional)</label>
+        <label class="form-label" id="mditem-detalle-label">Detalle / Observación (opcional)</label>
         <textarea id="mditem-detalle" class="form-input" rows="2" placeholder="Notas o comentarios..." style="width:100%;resize:vertical"></textarea>
+      </div>
+
+      <!-- EXTRAVÍOS · QUIÉN LO PAGA. Un envío lo lleva un conductor, pero la
+           pérdida puede ser de un empleado (se rompió en el depósito) o de
+           nadie: la empresa la absorbe. Son tres cosas distintas y la de
+           "nadie" también se registra, porque hay que saber cuánto se absorbió. -->
+      <div id="mditem-resp-wrap" style="display:none;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-secondary)"><i class="ic ic-users"></i> ¿Quién lo paga?</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+            <input type="radio" name="mditem-resp" value="conductor" checked onchange="_cambiarResponsableExtravio()"> El conductor
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+            <input type="radio" name="mditem-resp" value="empleado" onchange="_cambiarResponsableExtravio()"> Un empleado
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+            <input type="radio" name="mditem-resp" value="ninguno" onchange="_cambiarResponsableExtravio()"> Nadie — lo absorbe la empresa
+          </label>
+        </div>
+        <div class="form-group" id="mditem-empleado-wrap" style="margin:0;display:none">
+          <label class="form-label">Empleado</label>
+          <select id="mditem-empleado" class="form-input" style="width:100%"></select>
+        </div>
+        <div id="mditem-resp-ayuda" style="font-size:10.5px;color:var(--text-muted)"></div>
       </div>
 
       <!-- Cuotear: extravíos y servicios de proveedores (TIPOS_CUOTEABLES) -->
@@ -300,6 +359,18 @@
           <span id="mditem-cuota-preview" style="font-size:12px;color:var(--text-secondary);font-weight:600"></span>
         </div>
         <div id="mditem-cuotear-ayuda" style="font-size:10px;color:var(--text-muted);margin-top:6px"></div>
+      </div>
+
+      <!-- EXTRAVÍOS · EL CLIENTE. La mercadería era suya: se le acredita en su
+           liquidación como una línea que él VE en el PDF. Es independiente de
+           quién paga — un paquete puede acreditársele al cliente sin
+           cobrárselo a nadie, y cobrársele a un cadete sin que el cliente haya
+           reclamado nada. -->
+      <div id="mditem-acredita-wrap" style="display:none;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:8px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="mditem-acredita" onchange="_pintarAvisoAcredita()" style="width:16px;height:16px"> <i class="ic ic-building"></i> Descontar de la liquidación del cliente
+        </label>
+        <div id="mditem-acredita-info" style="font-size:10.5px;color:var(--text-muted)"></div>
       </div>
 
       <div style="font-size:11px;color:var(--text-muted)"><i class="ic ic-clip"></i> La <strong>fecha</strong> define a qué liquidación se imputa (o, si cuoteás, la de cada cuota que descuentes).</div>
@@ -1433,6 +1504,15 @@
       <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:none" id="msld-adelantos-wrap">
         <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:2px"><i class="ic ic-card"></i> Adelantos vigentes</div>
         <div id="msld-adelantos-lista"></div>
+      </div>
+
+      <!-- Extravíos y roturas que se le adjudicaron a ESTE empleado. Van en su
+           propio bloque y en su propio renglón del recibo: un adelanto es plata
+           que se le prestó y esto es una pérdida que se le cobra, y el papel que
+           firma tiene que decir cuál es cuál. -->
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:none" id="msld-extravios-wrap">
+        <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:2px"><i class="ic ic-box"></i> Extraviados / rotos a su cargo</div>
+        <div id="msld-extravios-lista"></div>
       </div>
 
       <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 14px">

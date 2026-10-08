@@ -3297,6 +3297,10 @@ const CARGO_CONCEPTOS = {
   colecta: { label: 'Colecta',           detalle: 'Lo que se le cobra al cliente por pasar a retirar los envíos.' },
   viaje:   { label: 'Viaje particular',  detalle: 'Viaje hecho por fuera de la plataforma, lo haya hecho o no un conductor de la empresa.' },
   otro:    { label: 'Otro cargo',        detalle: 'Cualquier otro concepto que se le factura al cliente.' },
+  // Va en NEGATIVO: es lo que se le devuelve por una mercadería extraviada o
+  // rota. Nace desde el panel de Extraviados y por eso no se ofrece en el alta
+  // manual de cargos — cargarlo a mano por duplicado le acreditaría dos veces.
+  credito: { label: 'Crédito por mercadería', detalle: 'Lo que se le acredita por un envío extraviado o roto. Se carga desde Extraviados / Rotos.' },
 };
 function cargoLabel(c) { return (CARGO_CONCEPTOS[c] || {}).label || c || 'Cargo'; }
 
@@ -3318,6 +3322,13 @@ function cargoDatosTxt(c) {
     const z = String(c.zona || '').trim();
     if (dir && z) p.push(dir + ' (' + z + ')');
     else if (dir || z) p.push(dir || z);
+  }
+  // En el crédito, `direccion` lleva de qué envío es ("Extraviado · 47919578191"):
+  // el cliente tiene que poder identificar QUÉ paquete le están devolviendo, si
+  // no la línea es una rebaja sin explicación.
+  if (c.concepto === 'credito') {
+    const d = String(c.direccion || '').trim();
+    if (d) p.push(d);
   }
   return p.join(' · ');
 }

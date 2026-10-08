@@ -146,6 +146,18 @@ create table if not exists public.descuentos_items (
   imputar boolean not null default true, -- false = excluido a mano de las liquidaciones
                                          -- (se decide desde el panel del registro
                                          --  o desde el modal de Liquidaciones)
+  -- QUÉ pasó con el envío. Obligatorio en tipo='extraviados': el panel se llama
+  -- "Extraviados / Rotos" y sin esto no se puede saber cuál de los dos fue.
+  dano text,                             -- extraviado | roto
+  -- QUIÉN lo paga. Mismo modelo que adelantos: `conductor` guarda el NOMBRE en
+  -- los tres casos (así el buscador y el historial siguen sirviendo) y estas dos
+  -- columnas distinguen el grupo. 'ninguno' = lo absorbe la empresa.
+  beneficiario_tipo text not null default 'conductor',  -- conductor | empleado | ninguno
+  empleado_id bigint references public.empleados(id) on delete set null,
+  -- A QUIÉN era el envío: filtra los trackings del conductor en el alta y es el
+  -- cliente al que se le acredita la mercadería.
+  cliente_cod text default '',
+  acredita_cliente boolean not null default false,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_desc_items_tipo_cond on public.descuentos_items (tipo, conductor);
@@ -659,6 +671,11 @@ create table if not exists public.empleado_sueldos (
   pagado boolean not null default false,
   pagado_en timestamptz,
   obs text default '',
+  -- Extravíos imputados al sueldo del mes. Va en SU PROPIO renglón y no dentro
+  -- del adelanto: un adelanto es plata prestada y un extravío es una pérdida que
+  -- se le cobra, y el recibo que se firma tiene que decir cuál es cuál.
+  monto_extravios numeric not null default 0,
+  extravios_detalle text not null default '',
   created_at timestamptz not null default now(),
   unique (empleado_id, periodo)
 );
@@ -759,8 +776,15 @@ create table if not exists public.cliente_cargos (
   precio_unitario numeric not null default 0,
   monto numeric not null default 0,
   creado_por text default '',
+  -- El crédito por una mercadería extraviada o rota viaja como un cargo
+  -- NEGATIVO: se imputa a un período, el cliente lo VE discriminado en el PDF y
+  -- se puede mover de factura, que es justo lo que hace falta cuando el reclamo
+  -- llega después de que la factura salió. Esta columna lo ata a su extravío
+  -- para que los dos no cuenten historias distintas.
+  origen_item_id bigint,
   created_at timestamptz not null default now()
 );
+create index if not exists cliente_cargos_origen_item_idx on public.cliente_cargos(origen_item_id) where origen_item_id is not null;
 create index if not exists idx_cliente_cargos_cod    on public.cliente_cargos (cliente_cod);
 create index if not exists idx_cliente_cargos_semana on public.cliente_cargos (semana);
 alter table public.cliente_cargos enable row level security;
