@@ -867,6 +867,16 @@ function actualizarEstadoCarga() {
   const cargando = !!AppData._cargandoRegistros;
   const p = AppData._cargaRegProgreso;
   const partes = (cargando && p && p.total > 1) ? p.hechas + ' de ' + p.total : '';
+  // La pantalla de carga sigue el MISMO progreso que el resto: una sola
+  // fuente, así no puede decir "listo" mientras el menú dice que falta.
+  if (typeof splashEstado === 'function') {
+    if (cargando) {
+      const pct = (p && p.total > 1) ? 70 + Math.round(p.hechas / p.total * 29) : null;
+      splashEstado('Trayendo los envíos' + (partes ? ' · ' + partes : '') + '…', pct);
+    } else if (typeof splashCerrar === 'function') {
+      splashCerrar();
+    }
+  }
   const el = document.getElementById('sidebar-record-count');
   if (el) {
     el.textContent = cargando

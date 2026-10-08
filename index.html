@@ -30,6 +30,103 @@
 
 <body>
 
+<!-- ════════════════════════════════════════════════════════════════════
+     PANTALLA DE CARGA
+
+     La app tarda en arrancar: baja los parciales, hidrata las tablas y se
+     trae los envíos (unas 20 páginas). Hasta ahora eso se veía como una
+     pantalla en blanco y después un Dashboard con todo en $0, que es
+     exactamente lo que se ve si la app se colgó — y de verdad se la
+     reiniciaba esperando que se destrabara, con cada reinicio empezando la
+     carga de nuevo.
+
+     Va INLINE y antes que cualquier script o CSS: tiene que pintarse en el
+     primer frame, que es justo el momento que viene a cubrir. Por eso
+     también lleva su propio estilo acá adentro en vez de en styles.css.
+
+     Y NUNCA puede convertirse en una pared: se cierra sola cuando la app
+     está lista, tiene "Entrar igual" para el que no quiere esperar los
+     envíos, y un plazo máximo que la saca pase lo que pase.
+     ════════════════════════════════════════════════════════════════════ -->
+<div id="app-splash" role="status" aria-live="polite">
+  <div class="splash-box">
+    <div class="splash-marca">
+      <img id="splash-logo" src="assets/brand/logo-dark.png" alt="Logística Hogareño" width="560" height="160">
+      <!-- El barrido de luz: es lo que hace que el logo se sienta vivo
+           mientras se espera. Va sobre la marca y recortado a su caja. -->
+      <span class="splash-sheen" aria-hidden="true"></span>
+    </div>
+    <div class="splash-barra" aria-hidden="true"><span id="splash-barra-fill"></span></div>
+    <div class="splash-txt" id="splash-txt">Abriendo el sistema…</div>
+    <button type="button" class="splash-entrar" id="splash-entrar" onclick="splashCerrar(true)">Entrar igual</button>
+  </div>
+</div>
+<style>
+  /* El navy de la marca (#000B23), con un degradé apenas para que no sea un
+     plano muerto. */
+  #app-splash{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 90% at 50% 35%, #0b1a3d 0%, #000b23 60%, #00060f 100%);
+    opacity:1;transition:opacity .45s ease}
+  #app-splash.splash-fuera{opacity:0;pointer-events:none}
+  .splash-box{display:flex;flex-direction:column;align-items:center;gap:22px;padding:24px;max-width:min(560px,86vw)}
+
+  .splash-marca{position:relative;width:min(420px,78vw);overflow:hidden;border-radius:10px;
+    animation:splash-entra .8s cubic-bezier(.2,.8,.25,1) both, splash-flota 4.5s ease-in-out .8s infinite}
+  /* El logotipo de la marca es navy sobre BLANCO —así va a los PDF, que se
+     imprimen— y sobre el fondo oscuro ese blanco se ve como una caja. Por eso
+     hay una variante propia con el fondo transparente (assets/brand/logo-dark.png,
+     generada con scratchpad/gen-logo-dark.js). Se intentó resolverlo con CSS
+     —invert + hue-rotate + mix-blend-mode: screen— y NO alcanza: la animación
+     del contenedor crea su propio contexto de apilado, el blend deja de llegar
+     al fondo y el recuadro negro queda igual. */
+  .splash-marca img{display:block;width:100%;height:auto}
+  .splash-sheen{position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);
+    transform:translateX(-120%);animation:splash-barrido 2.6s ease-in-out 1s infinite}
+
+  @keyframes splash-entra{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+  @keyframes splash-flota{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  @keyframes splash-barrido{0%{transform:translateX(-120%)}55%,100%{transform:translateX(120%)}}
+
+  .splash-barra{width:min(300px,70vw);height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+  .splash-barra span{display:block;height:100%;width:12%;border-radius:99px;background:linear-gradient(90deg,#3B63A8,#7ea6f0);
+    transition:width .35s ease}
+  /* Sin progreso todavía: la barra se pasea, que dice "está trabajando" sin
+     mentir un porcentaje que nadie midió. */
+  .splash-barra span.indeterminada{width:34%;animation:splash-vaiven 1.5s ease-in-out infinite}
+  @keyframes splash-vaiven{0%{margin-left:-34%}100%{margin-left:100%}}
+
+  .splash-txt{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:#9fb4dc;text-align:center;min-height:16px}
+  .splash-entrar{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;
+    background:transparent;border:1px solid rgba(255,255,255,.22);color:#c9d8f5;border-radius:99px;
+    padding:7px 18px;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s ease,background .2s ease}
+  .splash-entrar:hover{background:rgba(255,255,255,.08)}
+  .splash-entrar.visible{opacity:1;pointer-events:auto}
+
+  /* Quien pidió menos movimiento no lo recibe: la pantalla igual informa. */
+  @media (prefers-reduced-motion:reduce){
+    .splash-marca,.splash-sheen,.splash-barra span.indeterminada{animation:none}
+    .splash-sheen{display:none}
+  }
+</style>
+<script>
+  // SALVAVIDAS, acá y no en app/main.js: si un script del bundle no ejecuta
+  // —un error en el tope deja el archivo ENTERO sin correr— nadie llamaría a
+  // splashCerrar() y la pantalla de carga taparía la app para siempre. Este
+  // plazo vive inline, sin depender de ningún módulo, y la saca igual.
+  window.__splashPlazo = setTimeout(function () {
+    var el = document.getElementById('app-splash');
+    if (el) el.parentNode.removeChild(el);
+  }, 30000);
+  // Y el botón para no esperar aparece solo a los 4 s: ofrecerlo de entrada
+  // haría parecer un obstáculo lo que es un aviso de que está trabajando.
+  setTimeout(function () {
+    var b = document.getElementById('splash-entrar');
+    if (b) b.classList.add('visible');
+  }, 4000);
+</script>
+
 <!-- Puntos de montaje: los parciales se inyectan desde app/main.js -->
 <div id="login-overlay"></div>
 <div class="layout" id="app-layout" style="display:none"></div>

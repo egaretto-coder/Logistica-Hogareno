@@ -112,7 +112,40 @@ async function fetchText(url) {
   return r.text();
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  PANTALLA DE CARGA
+//  El marcado y el estilo viven inline en index.html, porque tienen que
+//  pintarse en el PRIMER frame — que es justo el rato que vienen a cubrir.
+//  Acá solo está lo que la mueve: qué dice y cuándo se va.
+// ════════════════════════════════════════════════════════════════════════
+let _splashIda = false;
+
+function splashEstado(txt, pct) {
+  const t = document.getElementById('splash-txt');
+  if (t && txt) t.textContent = txt;
+  const f = document.getElementById('splash-barra-fill');
+  if (!f) return;
+  // Sin un porcentaje medido, la barra se pasea: decir "40%" sin haberlo
+  // medido es peor que no decir nada, porque después se queda clavada.
+  if (pct == null) { f.classList.add('indeterminada'); f.style.width = ''; }
+  else { f.classList.remove('indeterminada'); f.style.width = Math.max(4, Math.min(100, pct)) + '%'; }
+}
+
+// Se va. Es idempotente y no se puede quedar a medias: si la transición no
+// dispara (pestaña en segundo plano), el nodo igual se saca por tiempo.
+function splashCerrar(porElUsuario) {
+  if (_splashIda) return;
+  _splashIda = true;
+  try { clearTimeout(window.__splashPlazo); } catch (e) {}
+  const el = document.getElementById('app-splash');
+  if (!el) return;
+  if (porElUsuario) splashEstado('Entrando…');
+  el.classList.add('splash-fuera');
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 600);
+}
+
 async function bootstrap() {
+  splashEstado('Abriendo el sistema…');
   try {
     const [login, sidebar, header, modales] = await Promise.all([
       fetchText('pantallas/login.html'),
@@ -129,8 +162,12 @@ async function bootstrap() {
         '<div class="content">' + pages.join('\n') + '</div>' +
       '</div>';
     document.getElementById('modales').innerHTML = modales;
+    splashEstado('Preparando la pantalla…', 35);
   } catch (e) {
     console.error('Error cargando la interfaz:', e);
+    // Si la interfaz no cargó, lo último que tiene que hacer la pantalla de
+    // carga es tapar el mensaje que explica por qué.
+    splashCerrar();
     document.body.insertAdjacentHTML('afterbegin',
       '<div style="padding:20px;font-family:sans-serif;color:#b00">' +
       'No se pudo cargar la interfaz (' + e.message + '). ' +
@@ -148,10 +185,21 @@ async function bootstrap() {
   // 2) ¿Volvemos del mail de "olvidé mi contraseña"? Entonces no se restaura la
   //    sesión: primero tiene que elegir la contraseña nueva.
   detectarRecoveryEnURL().then(async (esRecovery) => {
-    if (esRecovery) return;
+    // Volviendo del mail hay que elegir la contraseña nueva: esa pantalla es
+    // la que tiene que verse, no la de carga.
+    if (esRecovery) { splashCerrar(); return; }
+    splashEstado('Buscando tu sesión…', 55);
     const ok = await restoreSession();
-    if (!ok) setTimeout(() => document.getElementById('login-user')?.focus(), 100);
-  });
+    if (!ok) {
+      // Sin sesión no hay nada más que esperar: el login es el siguiente paso.
+      splashCerrar();
+      setTimeout(() => document.getElementById('login-user')?.focus(), 100);
+      return;
+    }
+    // Con sesión, la pantalla se queda hasta que los envíos terminen de bajar
+    // —que es el rato largo— y la cierra actualizarEstadoCarga().
+    splashEstado('Trayendo los datos…', 70);
+  }).catch(() => splashCerrar());
 }
 
 document.addEventListener('DOMContentLoaded', bootstrap);

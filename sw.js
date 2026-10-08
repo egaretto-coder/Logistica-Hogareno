@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v267';
+const CACHE = 'liq-cache-v268';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -13,6 +13,9 @@ const APP_SHELL = [
   './css/styles.css',
   './css/icons.css',
   './manifest.webmanifest',
+  // El logotipo de la pantalla de carga: si no está cacheado, el primer frame
+  // del arranque offline sale sin marca, que es justo lo que viene a cubrir.
+  './assets/brand/logo-dark.png',
   // Backend / núcleo
   './src/supabase.js',
   './src/core.js',
