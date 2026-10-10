@@ -800,6 +800,32 @@ alter table public.empleado_cierres enable row level security;
 create policy empleado_cierres_all on public.empleado_cierres for all to authenticated
   using (public.es_usuario_activo()) with check (public.es_usuario_activo());
 alter publication supabase_realtime add table public.empleado_cierres;
+-- ---------- AGUINALDO (SAC — Sueldo Anual Complementario) ----------
+-- Se paga en DOS cuotas: 30 de junio y 18 de diciembre (art. 122 LCT, texto
+-- de la ley 27.073). Cada una es el 50% de la MAYOR remuneración mensual
+-- devengada dentro de ese semestre (ley 23.041 art. 1) — no del último sueldo
+-- ni del promedio: del MEJOR mes. Si el empleado no trabajó el semestre
+-- entero, se paga proporcional al tiempo trabajado (art. 123 LCT).
+--
+-- Va CONGELADO con la liquidación, como el resto de los conceptos: el
+-- aguinaldo que se pagó en diciembre no puede cambiar porque en enero alguien
+-- reciba un aumento.
+--   · monto_aguinaldo    lo que efectivamente se paga
+--   · aguinaldo_base     la mejor remuneración del semestre (el factor)
+--   · aguinaldo_detalle  de dónde salió: qué mes fue el mejor y qué proporción
+--                        se aplicó. Un importe sin la cuenta no se puede
+--                        auditar ni deja ver un dato mal cargado.
+alter table public.empleado_sueldos
+  add column if not exists monto_aguinaldo   numeric not null default 0,
+  add column if not exists aguinaldo_base    numeric not null default 0,
+  add column if not exists aguinaldo_detalle text default '';
+
+-- El costo del mes tiene que incluirlo: diciembre cuesta una vez y media y un
+-- historial que no lo diga no sirve para anticipar nada. Va como columna
+-- propia —igual que viaticos— para poder explicar de qué está hecho el salto.
+alter table public.empleado_cierres
+  add column if not exists aguinaldo numeric not null default 0;
+
 
 -- Licencias que NO son vacaciones: matrimonio, nacimiento, fallecimiento,
 -- examen (art. 158 LCT), enfermedad (art. 208), accidente de trabajo,

@@ -2066,9 +2066,357 @@ function vacArt155(base, dias) {
 // usan el ajuste individual, la corrección de un ajuste que era bono y el
 // modal. Antes cada uno sumaba a mano y una vez que aparece un concepto nuevo,
 // el que no lo suma deja la liquidación con un total que no cierra.
+// ════════════════════════════════════════════════════════════════════════
+//  AGUINALDO — SAC (Sueldo Anual Complementario)
+//
+//  Se paga en DOS cuotas: 30 de junio y 18 de diciembre (art. 122 LCT, texto
+//  de la ley 27.073). Cada una es el **50% de la MAYOR remuneración mensual
+//  devengada dentro de ese semestre** (ley 23.041 art. 1) — no del último
+//  sueldo, ni del promedio: del MEJOR mes. Y si el empleado no trabajó el
+//  semestre entero, se paga **proporcional al tiempo trabajado** (art. 123).
+//
+//  POR QUÉ IMPORTA PROYECTARLO. Es el único mes del año en que la nómina
+//  cuesta una vez y media, y llega siempre igual: un sueldo y medio en
+//  diciembre, con el aguinaldo calculado sobre el sueldo MÁS ALTO del
+//  semestre —que, con ajustes cada 3 meses, es el de noviembre o diciembre—.
+//  Verlo recién al liquidar es enterarse el día que hay que pagarlo.
+//
+//  LA PROYECCIÓN ES UN PISO, Y SE DICE. Para los meses que todavía no se
+//  liquidaron la remuneración sale de la nómina (el sueldo que rige + lo
+//  registrado), así que si alguien recibe un aumento antes del cierre del
+//  semestre su mejor mes sube y el aguinaldo también. Un número proyectado
+//  que no aclara de qué lado puede moverse se lee como una promesa.
+//
+//  QUÉ CUENTA COMO REMUNERACIÓN: el sueldo del mes, las horas extras, los
+//  bonos y el plus de vacaciones (art. 155) — todo lo que se devengó por el
+//  trabajo. Los VIÁTICOS no: son el reintegro de un gasto de traslado, no el
+//  precio del trabajo, mismo criterio por el que el km de desvío no entra en
+//  el costo del conductor. Los descuentos (adelantos, extravíos) tampoco:
+//  son descuentos, no remuneración. Y el aguinaldo no se cuenta a sí mismo.
+// ════════════════════════════════════════════════════════════════════════
+
+// Qué cuota toca y cuándo vence. El mes de pago es el que manda: en junio y en
+// diciembre el bloque deja de ser una proyección y pasa a ser trabajo.
+const SAC_CUOTAS = {
+  1: { mesPago: 6,  label: '1ª cuota', vence: '30 de junio' },
+  2: { mesPago: 12, label: '2ª cuota', vence: '18 de diciembre' }
+};
+
+// El semestre que CONTIENE un mes ('2026-10' → el 2º de 2026).
+function sacSemestreDe(periodo) {
+  const y = parseInt(String(periodo || '').slice(0, 4), 10);
+  const m = parseInt(String(periodo || '').slice(5, 7), 10);
+  if (!y || !m) return null;
+  const nro = m <= 6 ? 1 : 2;
+  const cuota = SAC_CUOTAS[nro];
+  return {
+    anio: y, nro, label: cuota.label, vence: cuota.vence,
+    mesPago: y + '-' + String(cuota.mesPago).padStart(2, '0'),
+    meses: Array.from({ length: 6 }, (_, i) =>
+      y + '-' + String((nro === 1 ? 1 : 7) + i).padStart(2, '0'))
+  };
+}
+function sacEsMesDePago(periodo) {
+  const s = sacSemestreDe(periodo);
+  return !!s && s.mesPago === periodo;
+}
+function sacSemestreTxt(sem) {
+  return sem ? sem.label + ' ' + sem.anio + ' (' + (sem.nro === 1 ? 'enero a junio' : 'julio a diciembre') + ')' : '';
+}
+
+// La remuneración DEVENGADA en un mes. Si la liquidación está cargada manda
+// ella —es lo que se pagó—; si no, se reconstruye de la nómina igual que
+// calcMesEmpleados, para que el mes que todavía no se liquidó también cuente.
+function remuneracionMesEmpleado(e, periodo) {
+  const s = sueldoDe(e.id, periodo);
+  if (s) {
+    return {
+      monto: Math.round(_num(s.sueldo_base) - _num(s.vac_descuento) + _num(s.monto_vacaciones) +
+        _num(s.monto_horas_extra) + _num(s.bono_eficiencia)),
+      fuente: 'liquidado', estimado: false
+    };
+  }
+  const v = sueldoVigenteEn(e, periodo);
+  const hh = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
+  const hc = hh ? Math.round(hh * valorHoraDe(e, v.sueldo)) : 0;
+  const bo = bonosDelMes(e.id, periodo);
+  const vd = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0;
+  const vp = vacArt155(v.sueldo, vd).plus;
+  return { monto: Math.round(_num(v.sueldo) + hc + bo + vp), fuente: 'nomina', estimado: !!v.estimado };
+}
+
+function _sacFecha(iso) {
+  const s = String(iso || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : null;
+}
+
+// Días trabajados dentro del semestre, para la parte proporcional del art. 123.
+// El denominador son los días REALES del semestre (181/182 el primero, 184 el
+// segundo) y no un 180 redondo: el divisor tiene que poder explicarse.
+function _sacDiasTrabajados(e, sem) {
+  const ini = new Date(sem.anio, sem.nro === 1 ? 0 : 6, 1, 12, 0, 0);
+  const fin = new Date(sem.anio, sem.nro === 1 ? 6 : 12, 0, 12, 0, 0);
+  const dia = 86400000;
+  const diasSemestre = Math.round((fin - ini) / dia) + 1;
+  let d1 = ini, d2 = fin;
+  const ing = _sacFecha(e.fecha_ingreso);
+  if (ing && ing > d1) d1 = ing;
+  // Una baja SIN fecha no se puede ubicar en ningún día: se cuenta el semestre
+  // entero, igual que en el historial mensual, en vez de inventar un corte.
+  const baja = (e.activo === false) ? _sacFecha(e.fecha_baja) : null;
+  if (baja && baja < d2) d2 = baja;
+  const dias = d2 < d1 ? 0 : Math.min(diasSemestre, Math.round((d2 - d1) / dia) + 1);
+  return { dias, diasSemestre, completo: dias >= diasSemestre };
+}
+
+// El aguinaldo de UN empleado en UN semestre, con la cuenta entera: cuál fue el
+// mejor mes, cuántos días trabajó y qué proporción le toca. Un importe sin la
+// cuenta no se puede auditar ni deja ver un dato mal cargado.
+function sacDeEmpleado(e, sem) {
+  const d = _sacDiasTrabajados(e, sem);
+  const meses = [];
+  let mejor = 0, mejorMes = '', hayEstimado = false, hayProyectado = false;
+  sem.meses.forEach(m => {
+    if (!empleadoActivoEnMes(e, m)) return;     // antes de entrar o después de irse no devengó nada
+    const r = remuneracionMesEmpleado(e, m);
+    meses.push({ periodo: m, monto: r.monto, fuente: r.fuente, estimado: r.estimado });
+    if (r.estimado) hayEstimado = true;
+    if (r.fuente !== 'liquidado') hayProyectado = true;
+    if (r.monto > mejor) { mejor = r.monto; mejorMes = m; }
+  });
+  const medio = Math.round(mejor / 2);
+  const monto = d.completo ? medio : Math.round(medio * d.dias / d.diasSemestre);
+  const detalle = mejor > 0
+    ? 'SAC ' + sacSemestreTxt(sem) + ' · 50% de ' + fmtPeso(mejor) +
+      (mejorMes ? ' (' + _mesTexto(mejorMes) + ')' : '') +
+      (d.completo ? '' : ' · ' + d.dias + ' de ' + d.diasSemestre + ' días trabajados')
+    : '';
+  return {
+    empleado: e, sem, meses, mejor, mejorMes, medio, monto, detalle,
+    dias: d.dias, diasSemestre: d.diasSemestre, completo: d.completo,
+    // Lo que hace que el número sea un PISO y no una promesa.
+    proyectado: hayProyectado, estimado: hayEstimado,
+    liquidado: _num((sueldoDe(e.id, sem.mesPago) || {}).monto_aguinaldo)
+  };
+}
+
+// El aguinaldo de toda la nómina en un semestre. Cuenta a quien trabajó algún
+// mes del semestre: el que entró en noviembre cobra su parte proporcional y el
+// que se fue en agosto también.
+function sacDeLaNomina(sem) {
+  const todos = (AppData.empleados || [])
+    .filter(e => sem.meses.some(m => empleadoActivoEnMes(e, m)))
+    .map(e => sacDeEmpleado(e, sem))
+    .filter(x => x.monto > 0 || x.liquidado > 0)
+    .sort((a, b) => b.monto - a.monto);
+  // Quien se fue DURANTE el semestre no cobra el aguinaldo en el mes de pago:
+  // su parte proporcional va con la liquidacion final, el dia que se fue. Si
+  // entrara en el total, el panel diria que en diciembre hay que pagarle a
+  // alguien que ya no esta — y el costo del mes, que cuenta solo a los activos,
+  // no cerraria contra el. Pero tampoco se esconde: es plata que se le debe.
+  const filas = todos.filter(x => empleadoActivoEnMes(x.empleado, sem.mesPago));
+  const salieron = todos.filter(x => !empleadoActivoEnMes(x.empleado, sem.mesPago));
+  return {
+    sem, filas, salieron,
+    salieronTotal: salieron.reduce((s, x) => s + x.monto, 0),
+    total: filas.reduce((s, x) => s + x.monto, 0),
+    liquidado: filas.reduce((s, x) => s + x.liquidado, 0),
+    proyectados: filas.filter(x => x.proyectado).length,
+    proporcionales: filas.filter(x => !x.completo).length,
+    // A quién le falta el aguinaldo en su liquidación del mes de pago. Es el
+    // mismo criterio que los avisos de horas extras y bonos: plata que se le
+    // debe a alguien y que se pasa de largo sola.
+    faltan: filas.filter(x => x.monto > 0 && Math.abs(x.liquidado - x.monto) > 0.5)
+  };
+}
+
+
+// ── El bloque del panel: lo que se va a pagar y cuándo ───────────────────
+// El detalle por empleado arranca plegado: con 29 personas, la tabla empuja la
+// liquidación del mes fuera de la pantalla. Lo que no se pliega es el número,
+// que es la razón de ser del bloque.
+let _sacDetalleAbierto = false;
+function toggleSacDetalle() { _sacDetalleAbierto = !_sacDetalleAbierto; renderSueldosPanel(); }
+
+function _renderSacPanel(periodo) {
+  const box = document.getElementById('emp-sac-panel');
+  if (!box) return;
+  const sem = sacSemestreDe(periodo);
+  if (!sem) { box.innerHTML = ''; return; }
+  const d = sacDeLaNomina(sem);
+  if (!d.filas.length) { box.innerHTML = ''; return; }
+
+  const esMesDePago = sacEsMesDePago(periodo);
+  const prom = d.filas.length ? Math.round(d.total / d.filas.length) : 0;
+  const hoy = (typeof mesActualYYYYMM === 'function') ? mesActualYYYYMM() : new Date().toISOString().slice(0, 7);
+  const yaPaso = sem.mesPago < hoy;
+
+  // Cuánto representa sobre la nómina del mes: "$12 M" no dice nada; "el 48%
+  // de lo que cuesta un mes" sí, y es la decisión de tesorería.
+  const mes = (typeof calcMesEmpleados === 'function') ? calcMesEmpleados(sem.mesPago) : null;
+  const pesoTxt = (mes && mes.costo_total > 0)
+    ? Math.round(d.total * 100 / mes.costo_total) + '% de lo que cuesta ' + _mesTexto(sem.mesPago)
+    : 'se paga con el sueldo de ' + _mesTexto(sem.mesPago);
+
+  const filasHTML = d.filas.map(x => {
+    const falta = x.monto > 0 && Math.abs(x.liquidado - x.monto) > 0.5;
+    return '<tr>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.empleado.nombre) +
+        ';width:24px;height:24px;font-size:9px">' + initials(x.empleado.nombre) + '</div>' +
+        '<div><strong>' + x.empleado.nombre + '</strong>' +
+        '<div class="muted" style="font-size:10px">' + (x.empleado.puesto || '') + '</div></div></div></td>' +
+      '<td class="mono" style="text-align:right">' + fmtPeso(x.mejor) +
+        '<div class="muted" style="font-size:9.5px;font-family:inherit">' +
+          (x.mejorMes ? _mesTexto(x.mejorMes) : '—') +
+          (x.proyectado ? ' · proyectado' : '') + '</div></td>' +
+      '<td class="mono" style="text-align:right;font-size:11px">' +
+        (x.completo ? '<span class="muted">semestre completo</span>'
+          : x.dias + ' de ' + x.diasSemestre + '<div class="muted" style="font-size:9.5px;font-family:inherit">proporcional</div>') + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.monto) + '</td>' +
+      '<td style="font-size:11px">' + (x.liquidado > 0
+        ? (falta ? '<span class="badge" style="background:#fffbeb;color:#92400e;border:1px solid #fcd34d">liquidado ' + fmtPeso(x.liquidado) + '</span>'
+                 : '<span class="badge badge-green">✓ liquidado</span>')
+        : (esMesDePago || yaPaso
+            ? '<span class="badge" style="background:#fffbeb;color:#92400e;border:1px solid #fcd34d">falta</span>'
+            : '<span class="muted">se liquida en ' + _mesTexto(sem.mesPago) + '</span>')) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  box.innerHTML =
+    '<div class="card" style="margin-bottom:16px;border-color:' + (esMesDePago ? '#fcd34d' : 'var(--border)') + '">' +
+      '<div class="card-header" style="flex-wrap:wrap;gap:8px">' +
+        '<span class="card-title"><i class="ic ic-dollar"></i> Aguinaldo · ' + sacSemestreTxt(sem) + '</span>' +
+        '<span style="font-size:11.5px;color:var(--text-muted)">vence el <strong>' + sem.vence + '</strong> · se liquida con el sueldo de ' +
+          _mesTexto(sem.mesPago) + '</span>' +
+        '<button class="btn btn-sm" style="margin-left:auto" onclick="toggleSacDetalle()">' +
+          (_sacDetalleAbierto ? 'Ocultar el detalle' : 'Ver el detalle por empleado') + '</button>' +
+      '</div>' +
+      '<div class="card-body">' +
+        '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">' +
+          '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
+            '<div class="metric-label">' + (esMesDePago || yaPaso ? 'A pagar de aguinaldo' : 'Va a costar') + '</div>' +
+            '<div class="metric-value">' + fmtPeso(d.total) + '</div>' +
+            '<div class="metric-sub">' + pesoTxt + '</div></div>' +
+          '<div class="metric-card"><div class="metric-ic"><i class="ic ic-users"></i></div>' +
+            '<div class="metric-label">Empleados</div><div class="metric-value">' + d.filas.length + '</div>' +
+            '<div class="metric-sub">' + (d.proporcionales
+              ? d.proporcionales + ' cobra(n) la parte proporcional' : 'todos con el semestre completo') + '</div></div>' +
+          '<div class="metric-card"><div class="metric-ic"><i class="ic ic-trend"></i></div>' +
+            '<div class="metric-label">Promedio</div><div class="metric-value">' + fmtPeso(prom) + '</div>' +
+            '<div class="metric-sub">' + (d.liquidado > 0 ? fmtPeso(d.liquidado) + ' ya liquidados' : 'nada liquidado todavía') + '</div></div>' +
+        '</div>' +
+        // La cuenta, siempre a la vista: un importe que aparece solo no se puede
+        // auditar ni deja ver que un sueldo está mal cargado.
+        '<div style="font-size:11.5px;color:var(--text-secondary);line-height:1.65">' +
+          'Es el <strong>50% de la mayor remuneración mensual</strong> del semestre (ley 23.041), y proporcional al tiempo trabajado si no se ' +
+          'trabajó entero (art. 123 LCT). Cuentan el sueldo, las horas extras, los bonos y el plus de vacaciones; <strong>los viáticos no</strong>, ' +
+          'porque son el reintegro de un gasto y no el precio del trabajo.' +
+          (d.proyectados
+            ? '<div style="margin-top:6px;color:#b45309"><strong>Es un piso.</strong> Para ' + d.proyectados +
+              ' empleado(s) hay meses del semestre que todavía no se liquidaron, así que su mejor mes sale de la nómina: ' +
+              'si reciben un aumento antes de ' + _mesTexto(sem.mesPago) + ', el aguinaldo sube con él.</div>'
+            : '') +
+          // Quien se fue a mitad del semestre cobra su parte con la liquidación
+          // final, no en diciembre: no entra en el total, pero es plata que se
+          // le debe y por eso se nombra.
+          (d.salieron.length
+            ? '<div style="margin-top:6px"><strong>' + d.salieron.length + ' persona(s) que se fueron durante el semestre</strong> tienen ' +
+              'aguinaldo proporcional por <strong>' + fmtPeso(d.salieronTotal) + '</strong>, que va con su liquidación final y no con el ' +
+              'sueldo de ' + _mesTexto(sem.mesPago) + ': ' + d.salieron.map(x => x.empleado.nombre).join(' · ') +
+              '. No está en el total de arriba.</div>'
+            : '') +
+          (esMesDePago && d.faltan.length
+            ? '<div style="margin-top:6px;color:#92400e"><strong>' + d.faltan.length + ' empleado(s) todavía no tienen el aguinaldo en su liquidación de ' +
+              _mesTexto(periodo) + '.</strong> Al abrirla viene ya calculado: ' +
+              d.faltan.slice(0, 6).map(x => x.empleado.nombre).join(' · ') +
+              (d.faltan.length > 6 ? ' …y ' + (d.faltan.length - 6) + ' más' : '') + '</div>'
+            : '') +
+        '</div>' +
+        (_sacDetalleAbierto
+          ? '<div class="table-wrap" style="margin-top:12px"><table><thead><tr>' +
+            '<th>Empleado</th><th style="text-align:right">Mejor remuneración</th>' +
+            '<th style="text-align:right">Días trabajados</th><th style="text-align:right">Aguinaldo</th><th>Estado</th>' +
+            '</tr></thead><tbody>' + filasHTML + '</tbody>' +
+            '<tfoot><tr><td><strong>TOTAL</strong></td><td></td><td></td>' +
+            '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(d.total) + '</td><td></td></tr></tfoot>' +
+            '</table></div>'
+          : '') +
+      '</div>' +
+    '</div>';
+}
+
+// ── El bloque del modal de liquidación ──────────────────────────────────
+// Se muestra en el mes de pago (junio y diciembre) y, aunque no sea, si la
+// liquidación YA lo tiene cargado: esconder el campo haría desaparecer del
+// total una plata que está puesta — mismo criterio que los viáticos.
+function _pintarAguinaldo(e, periodo, s) {
+  const wrap = document.getElementById('msld-aguinaldo-wrap');
+  if (!wrap) return;
+  const cargado = _num(s && s.monto_aguinaldo) > 0;
+  const toca = sacEsMesDePago(periodo);
+  wrap.style.display = (toca || cargado) ? '' : 'none';
+  if (!(toca || cargado)) return;
+  const sem = sacSemestreDe(periodo);
+  const calc = sacDeEmpleado(e, sem);
+  const inp = document.getElementById('msld-aguinaldo');
+  // Si la liquidación ya está guardada manda lo que quedó registrado —puede
+  // haberse ajustado a mano— y el detalle de abajo señala la diferencia en vez
+  // de pisarla en silencio. Es el mismo trato que las horas extras y los bonos.
+  if (inp) inp.value = s ? (_num(s.monto_aguinaldo) || '') : (calc.monto || '');
+  const info = document.getElementById('msld-aguinaldo-info');
+  if (!info) return;
+  const actual = _num(inp && inp.value);
+  const difiere = calc.monto > 0 && Math.abs(actual - calc.monto) > 0.5;
+  info.innerHTML =
+    (calc.mejor > 0
+      ? '<strong>' + sacSemestreTxt(sem) + '</strong> · 50% de ' + fmtPeso(calc.mejor) +
+        ' (' + (calc.mejorMes ? _mesTexto(calc.mejorMes) : 'el mejor mes') + ') = <strong>' + fmtPeso(calc.medio) + '</strong>' +
+        (calc.completo ? ''
+          : '<div class="muted">proporcional: ' + calc.dias + ' de ' + calc.diasSemestre + ' días trabajados = <strong>' +
+            fmtPeso(calc.monto) + '</strong></div>')
+      : '<span style="color:#b45309">No hay remuneración registrada en el semestre: no se puede calcular solo.</span>') +
+    (calc.proyectado
+      ? '<div style="color:#b45309;margin-top:4px">Hay meses del semestre sin liquidar: el mejor mes sale de la nómina y puede subir.</div>'
+      : '') +
+    (difiere
+      ? '<div style="margin-top:5px;color:#b45309">El calculado es <strong>' + fmtPeso(calc.monto) + '</strong>. ' +
+        '<button type="button" class="btn btn-sm" style="margin-left:4px" onclick="traerAguinaldoCalculado()">Traer el calculado</button></div>'
+      : '');
+}
+
+// El factor y la cuenta que explican el importe guardado. Se congelan con la
+// liquidación: el aguinaldo que se pagó en diciembre no puede cambiar porque
+// en enero alguien reciba un aumento.
+function _aguinaldoBaseModal(periodo) {
+  const e = (AppData.empleados || []).find(x => x.id === sueldoModalEmpId);
+  const sem = sacSemestreDe(periodo);
+  if (!e || !sem) return 0;
+  return _num(sacDeEmpleado(e, sem).mejor);
+}
+function _aguinaldoDetalleModal(periodo) {
+  const el = document.getElementById('msld-aguinaldo');
+  if (!(_num(el && el.value) > 0)) return '';
+  const e = (AppData.empleados || []).find(x => x.id === sueldoModalEmpId);
+  const sem = sacSemestreDe(periodo);
+  if (!e || !sem) return '';
+  return sacDeEmpleado(e, sem).detalle;
+}
+
+function traerAguinaldoCalculado() {
+  const e = (AppData.empleados || []).find(x => x.id === sueldoModalEmpId);
+  const periodo = document.getElementById('emp-sueldo-periodo').value;
+  if (!e) return;
+  const calc = sacDeEmpleado(e, sacSemestreDe(periodo));
+  const inp = document.getElementById('msld-aguinaldo');
+  if (inp) inp.value = calc.monto || '';
+  _pintarAguinaldo(e, periodo, sueldoDe(e.id, periodo));
+  recalcSueldoModal();
+}
+
 function totalLiquidacionSueldo(s) {
   return Math.round(_num(s.sueldo_base) - _num(s.vac_descuento) + _num(s.monto_vacaciones) +
-    _num(s.monto_horas_extra) + _num(s.bono_eficiencia) + _num(s.monto_viaticos) -
+    _num(s.monto_horas_extra) + _num(s.bono_eficiencia) + _num(s.monto_viaticos) +
+    _num(s.monto_aguinaldo) -
     (s.descuenta_adelanto ? _num(s.monto_adelanto) : 0) - _num(s.monto_extravios));
 }
 // Si cambia el sueldo base de una liquidación, sus vacaciones cambian con él:
@@ -2124,7 +2472,7 @@ function renderSueldosPanel() {
         ? todos.length + ' empleado(s)'
         : 'Mostrando ' + lista.length + ' de ' + todos.length);
   if (!lista.length) {
-    cont.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-title">' +
+    cont.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-title">' +
       (todos.length ? 'Sin coincidencias' : 'Sin empleados') + '</div>' +
       (todos.length ? '<div class="empty-sub">Ningún empleado activo coincide con la búsqueda.</div>' : '') +
       '</div></td></tr>';
@@ -2147,6 +2495,11 @@ function renderSueldosPanel() {
     const viat = s ? _num(s.monto_viaticos) : 0;
     const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
     const extravios = s ? _num(s.monto_extravios) : 0;
+    // Aguinaldo: lo liquidado, y en el mes de pago lo que le corresponde si
+    // todavía no está — es plata que se le debe y se pasa de largo sola.
+    const agui = s ? _num(s.monto_aguinaldo) : 0;
+    const aguiCalc = sacEsMesDePago(periodo) ? sacDeEmpleado(e, sacSemestreDe(periodo)).monto : 0;
+    const aguiFalta = aguiCalc > 0 && Math.abs(agui - aguiCalc) > 0.5;
     const total = s ? _num(s.total) : base;
     // Vacaciones: liquidadas, o registradas en Vacaciones y todavía no.
     const vacDias = s ? _num(s.vac_dias) : 0;
@@ -2191,6 +2544,9 @@ function renderSueldosPanel() {
           '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">' + vacDias + (vacDias === 1 ? ' día' : ' días') + '</div>' : '—') +
         (vacFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Cargadas en Vacaciones y todavía no liquidadas">' +
           vacReg + (vacReg === 1 ? ' día cargado' : ' días cargados') + '</div>' : '') + '</td>' +
+      '<td class="mono" style="text-align:right">' + (agui ? '+' + fmtPeso(agui) : '—') +
+        (aguiFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Le corresponde el aguinaldo de este semestre y la liquidación todavía no lo tiene">' +
+          fmtPeso(aguiCalc) + ' a pagar</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right;color:#b91c1c">' + (adel ? '-' + fmtPeso(adel) : '—') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(total) + '</td>' +
       '<td style="font-size:11px">' + (s
@@ -2287,6 +2643,10 @@ function renderSueldosPanel() {
   // Transferencia y efectivo suman SOLO lo liquidado: de lo que falta liquidar
   // todavía no se sabe con qué corte se paga, y meterlo con un reparto supuesto
   // daría un número que nadie puede usar para preparar la plata.
+  // El aguinaldo: en junio y diciembre es trabajo del mes, y el resto del año
+  // es la proyección de lo que va a costar esa cuota.
+  _renderSacPanel(periodo);
+
   const sinLiq = todos.filter(e => !sueldoDe(e.id, periodo)).length;
   const tot = document.getElementById('emp-sueldos-total');
   if (tot) tot.innerHTML =
@@ -2807,6 +3167,7 @@ function openSueldoModal(empId) {
   _pintarBonos(empId, periodo, s);
   _pintarVacacionesSueldo(empId, periodo, s);
   _pintarViaticos(e, s);
+  _pintarAguinaldo(e, periodo, s);
   renderAdelantosSueldoModal(empId, periodo);
   renderExtraviosSueldoModal(empId, periodo);
   recalcSueldoModal();
@@ -2974,7 +3335,9 @@ function recalcSueldoModal() {
   const viaticos = Math.max(0, Math.round(parseFloat(elVia && elVia.value) || 0));
   // Los extravíos a su cargo: las cuotas tildadas más los de pago único del mes.
   const extravios = _totalExtraviosSueldo(sueldoModalEmpId, periodoMod);
-  const total = Math.round(base - vac.descuento + vac.monto + extras + bono + viaticos - adel - extravios);
+  const elAgu = document.getElementById('msld-aguinaldo');
+  const aguinaldo = Math.max(0, Math.round(parseFloat(elAgu && elAgu.value) || 0));
+  const total = Math.round(base - vac.descuento + vac.monto + extras + bono + viaticos + aguinaldo - adel - extravios);
   // La cuenta a la vista, debajo del campo: son dos renglones que se van a
   // firmar y hay que poder explicar de dónde sale cada uno.
   const elVacC = document.getElementById('msld-vac-calc');
@@ -3008,7 +3371,7 @@ function recalcSueldoModal() {
   document.getElementById('msld-split').innerHTML =
     '<span><i class="ic ic-card"></i> Transferencia: <strong>' + fmtPeso(mT) + '</strong></span>' +
     '<span style="margin-left:14px;color:' + (mE < 0 ? '#b91c1c' : 'inherit') + '"><i class="ic ic-dollar"></i> Efectivo: <strong>' + fmtPeso(mE) + '</strong></span>';
-  return { base, horas, vh, extras, bono, viaticos, extravios, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
+  return { base, horas, vh, extras, bono, viaticos, aguinaldo, extravios, descAd: adel > 0, adel, adelManual, adelCuotas, pct, total, mT, mE,
            vacDias: vac.dias, vacMonto: vac.monto, vacDesc: vac.descuento };
 }
 async function guardarSueldo(marcarPagado, conRecibo) {
@@ -3056,6 +3419,8 @@ async function guardarSueldo(marcarPagado, conRecibo) {
     viaticos_detalle: ((document.getElementById('msld-viaticos-detalle') || {}).value || '').trim(),
     monto_extravios: c.extravios,
     extravios_detalle: _detalleExtraviosSueldo(sueldoModalEmpId, periodo),
+    monto_aguinaldo: c.aguinaldo, aguinaldo_base: _aguinaldoBaseModal(periodo),
+    aguinaldo_detalle: _aguinaldoDetalleModal(periodo),
     vac_dias: c.vacDias, monto_vacaciones: c.vacMonto, vac_descuento: c.vacDesc,
     total: c.total, pct_transferencia: c.pct, monto_transferencia: c.mT, monto_efectivo: c.mE,
     pagado: !!marcarPagado, obs: (document.getElementById('msld-obs').value || '').trim()
@@ -3121,6 +3486,8 @@ function _datosRecibo(e, periodo) {
   const adel = s && s.descuenta_adelanto ? _num(s.monto_adelanto) : 0;
   const extravios = s ? _num(s.monto_extravios) : 0;
   const extraviosDet = (s && s.extravios_detalle) || '';
+  const aguinaldo = s ? _num(s.monto_aguinaldo) : 0;
+  const aguinaldoDet = (s && s.aguinaldo_detalle) || '';
   const total = s ? _num(s.total) : base;
   const vacDias = s ? _num(s.vac_dias) : 0;
   const vacMonto = s ? _num(s.monto_vacaciones) : 0;
@@ -3129,6 +3496,7 @@ function _datosRecibo(e, periodo) {
   const mT = s ? _num(s.monto_transferencia) : Math.round(total * pct / 100);
   const mE = s ? _num(s.monto_efectivo) : total - Math.round(total * pct / 100);
   return { s, base, horas, vh, extras, bono, viaticos, viaticosDet, adel, extravios, extraviosDet,
+           aguinaldo, aguinaldoDet,
            total, pct, mT, mE, vacDias, vacMonto, vacDesc,
            obs: (s && s.obs) || '', pagado: !!(s && s.pagado) };
 }
@@ -3229,6 +3597,9 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
   if (d.extras) body.push(['Horas extras', d.horas + ' h x ' + fmtPeso(d.vh) + ' por hora', fmtPeso(d.extras), '']);
   if (d.bono) body.push(['Bono de eficiencia', '', fmtPeso(d.bono), '']);
   if (d.viaticos) body.push(['Viáticos', d.viaticosDet || 'gastos de traslado del mes', fmtPeso(d.viaticos), '']);
+  // El aguinaldo va en su propio renglón y NOMBRA la cuenta: el empleado tiene
+  // derecho a saber sobre qué sueldo se calculó, igual que con las vacaciones.
+  if (d.aguinaldo) body.push(['Aguinaldo (SAC, art. 121 LCT)', d.aguinaldoDet || 'cuota del semestre', fmtPeso(d.aguinaldo), '']);
   if (d.adel) body.push(['Adelanto descontado', 'a cuenta de haberes', '', fmtPeso(d.adel)]);
   if (d.extravios) body.push(['Extraviados / rotos', d.extraviosDet || 'envíos a su cargo', '', fmtPeso(d.extravios)]);
 
@@ -3520,16 +3891,17 @@ function sueldoVigenteEn(e, periodo) {
 // a su valor hora.
 function calcMesEmpleados(periodo) {
   const detalle = [];
-  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, vacPlus = 0, viaticos = 0, liquidados = 0, estimados = 0;
+  let reg = 0, noReg = 0, base = 0, heHoras = 0, heCosto = 0, bonos = 0, vacPlus = 0, viaticos = 0, aguinaldos = 0, liquidados = 0, estimados = 0;
   (AppData.empleados || []).forEach(e => {
     if (!empleadoActivoEnMes(e, periodo)) return;
     const s = sueldoDe(e.id, periodo);
-    let b, hh, hc, bo, vp, vi, fuente, est = false;
+    let b, hh, hc, bo, vp, vi, ag, fuente, est = false;
     if (s) {
       b = _num(s.sueldo_base); hh = _num(s.horas_extra); hc = _num(s.monto_horas_extra);
       bo = _num(s.bono_eficiencia); fuente = 'liquidado'; liquidados++;
       vp = _num(s.monto_vacaciones) - _num(s.vac_descuento);
       vi = _num(s.monto_viaticos);
+      ag = _num(s.monto_aguinaldo);
     } else {
       const v = sueldoVigenteEn(e, periodo);
       b = v.sueldo; est = v.estimado; if (est) estimados++;
@@ -3544,19 +3916,23 @@ function calcMesEmpleados(periodo) {
       // liquidación no hay un número que estimar, y poner uno inventado sería
       // peor que mostrar el mes un poco corto.
       vi = 0;
+      // El aguinaldo del mes de pago SÍ se estima: es el salto más grande del
+      // año y un diciembre proyectado sin él es un número que no sirve para
+      // preparar la plata. Los otros meses no lo tienen.
+      ag = sacEsMesDePago(periodo) ? sacDeEmpleado(e, sacSemestreDe(periodo)).monto : 0;
     }
     if (e.registrado === false) noReg++; else reg++;
-    base += b; heHoras += hh; heCosto += hc; bonos += bo; vacPlus += vp; viaticos += vi;
+    base += b; heHoras += hh; heCosto += hc; bonos += bo; vacPlus += vp; viaticos += vi; aguinaldos += ag;
     detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false, area: _areaDe(e),
-      base: b, he_horas: hh, he_costo: hc, bono: bo, vac: vp, viaticos: vi, fuente, estimado: est });
+      base: b, he_horas: hh, he_costo: hc, bono: bo, vac: vp, viaticos: vi, aguinaldo: ag, fuente, estimado: est });
   });
   const total = reg + noReg;
   return {
     periodo, emp_registrados: reg, emp_no_registrados: noReg, total,
     sueldos_base: base, promedio_sueldo: total ? Math.round(base / total) : 0,
     horas_extra_horas: Math.round(heHoras * 100) / 100, horas_extra_costo: heCosto,
-    bonos, vacaciones_plus: vacPlus, viaticos,
-    costo_total: base + heCosto + bonos + vacPlus + viaticos, liquidados, estimados, detalle
+    bonos, vacaciones_plus: vacPlus, viaticos, aguinaldo: aguinaldos,
+    costo_total: base + heCosto + bonos + vacPlus + viaticos + aguinaldos, liquidados, estimados, detalle
   };
 }
 
@@ -3570,11 +3946,11 @@ function costoPorArea(detalle) {
     // que es lo único que queda. Si esa persona ya no está, cae en (sin área).
     const area = r.area ? _areaDe(r) : _areaDe((AppData.empleados || []).find(e => e.id === r.id));
     let a = m.get(area);
-    if (!a) { a = { area, empleados: 0, base: 0, he_costo: 0, bonos: 0, vac: 0, viaticos: 0, costo: 0 }; m.set(area, a); }
+    if (!a) { a = { area, empleados: 0, base: 0, he_costo: 0, bonos: 0, vac: 0, viaticos: 0, aguinaldo: 0, costo: 0 }; m.set(area, a); }
     a.empleados++;
     a.base += _num(r.base); a.he_costo += _num(r.he_costo); a.bonos += _num(r.bono);
-    a.vac += _num(r.vac); a.viaticos += _num(r.viaticos);
-    a.costo += _num(r.base) + _num(r.he_costo) + _num(r.bono) + _num(r.vac) + _num(r.viaticos);
+    a.vac += _num(r.vac); a.viaticos += _num(r.viaticos); a.aguinaldo += _num(r.aguinaldo);
+    a.costo += _num(r.base) + _num(r.he_costo) + _num(r.bono) + _num(r.vac) + _num(r.viaticos) + _num(r.aguinaldo);
   });
   return Array.from(m.values()).sort((x, y) => y.costo - x.costo);
 }
@@ -3599,7 +3975,8 @@ function _histDatosMes(periodo) {
     total: _num(c.emp_registrados) + _num(c.emp_no_registrados),
     sueldos_base: _num(c.sueldos_base), promedio_sueldo: _num(c.promedio_sueldo),
     horas_extra_horas: _num(c.horas_extra_horas), horas_extra_costo: _num(c.horas_extra_costo),
-    bonos: _num(c.bonos), viaticos: _num(c.viaticos), costo_total: _num(c.costo_total),
+    bonos: _num(c.bonos), viaticos: _num(c.viaticos), aguinaldo: _num(c.aguinaldo),
+    costo_total: _num(c.costo_total),
     liquidados: _num(c.liquidados), estimados: _num(c.estimados)
   };
   return { periodo, datos, vivo, cierre: c };
@@ -3760,7 +4137,8 @@ function _renderCostoPorArea(datos) {
     return '<td class="mono" style="text-align:right">' + fmtPeso(Math.round(a.costo)) +
       '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">' + a.empleados + ' pers.' +
       (tot ? ' · ' + (a.costo * 100 / tot).toFixed(0) + '%' : '') +
-      (a.viaticos ? ' · viáticos ' + fmtPeso(Math.round(a.viaticos)) : '') + '</div></td>';
+      (a.viaticos ? ' · viáticos ' + fmtPeso(Math.round(a.viaticos)) : '') +
+      (a.aguinaldo ? ' · aguinaldo ' + fmtPeso(Math.round(a.aguinaldo)) : '') + '</div></td>';
   };
   cont.innerHTML =
     '<div class="card"><div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
@@ -3833,6 +4211,7 @@ async function cerrarMesEmpleados(periodo) {
     '· Promedio de sueldo: ' + fmtPeso(d.promedio_sueldo) + NL +
     '· Horas extras: ' + fmtPeso(d.horas_extra_costo) + NL +
     (d.viaticos ? '· Viáticos: ' + fmtPeso(d.viaticos) + NL : '') +
+    (d.aguinaldo ? '· Aguinaldo: ' + fmtPeso(d.aguinaldo) + NL : '') +
     '· Costo total: ' + fmtPeso(d.costo_total) +
     (d.total - d.liquidados > 0
       ? NL + NL + (d.total - d.liquidados) + ' de ' + d.total + ' salen de la nómina, no de una liquidación cargada.'
@@ -3845,7 +4224,7 @@ async function cerrarMesEmpleados(periodo) {
     emp_registrados: d.emp_registrados, emp_no_registrados: d.emp_no_registrados,
     sueldos_base: d.sueldos_base, promedio_sueldo: d.promedio_sueldo,
     horas_extra_horas: d.horas_extra_horas, horas_extra_costo: d.horas_extra_costo,
-    bonos: d.bonos, viaticos: d.viaticos, costo_total: d.costo_total,
+    bonos: d.bonos, viaticos: d.viaticos, aguinaldo: _num(d.aguinaldo), costo_total: d.costo_total,
     liquidados: d.liquidados, estimados: d.estimados, detalle: d.detalle,
     cerrado_por: quien, cerrado_en: new Date().toISOString()
   };

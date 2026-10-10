@@ -1509,6 +1509,17 @@
         <div id="msld-viaticos-info" style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)"></div>
       </div>
 
+      <!-- AGUINALDO (SAC). Se muestra en el mes de pago -junio y diciembre- y,
+           aunque no sea, si la liquidacion ya lo tiene cargado: esconder el
+           campo haria desaparecer del total una plata que esta puesta. El
+           importe viene calculado pero queda editable, y la cuenta esta
+           siempre a la vista: un numero que aparece solo no se puede auditar. -->
+      <div class="form-group" style="margin:0;display:none" id="msld-aguinaldo-wrap">
+        <label class="form-label"><i class="ic ic-dollar"></i> Aguinaldo (SAC)</label>
+        <input type="number" id="msld-aguinaldo" class="form-input" placeholder="0" min="0" step="1000" style="width:100%" oninput="recalcSueldoModal()" />
+        <div id="msld-aguinaldo-info" style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)"></div>
+      </div>
+
       <!-- Adelantos registrados del empleado: tildar una cuota la imputa a este
            mes y la descuenta del neto (igual que en la liquidación del conductor).
            El campo manual de abajo queda para descuentos que no vienen de un

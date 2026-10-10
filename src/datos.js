@@ -628,6 +628,10 @@ async function _hydrateFromSupabaseReal(opts) {
     monto_viaticos: _num(s.monto_viaticos), viaticos_detalle: s.viaticos_detalle || '',
     // Extravíos del mes: su propio renglón, no mezclado con el adelanto.
     monto_extravios: _num(s.monto_extravios), extravios_detalle: s.extravios_detalle || '',
+    // Aguinaldo (SAC): congelado con la liquidación, con el factor y la cuenta
+    // que lo explican — un importe sin su cuenta no se puede auditar.
+    monto_aguinaldo: _num(s.monto_aguinaldo), aguinaldo_base: _num(s.aguinaldo_base),
+    aguinaldo_detalle: s.aguinaldo_detalle || '',
     vac_dias: _num(s.vac_dias), monto_vacaciones: _num(s.monto_vacaciones), vac_descuento: _num(s.vac_descuento),
     pct_transferencia: _num(s.pct_transferencia), monto_transferencia: _num(s.monto_transferencia),
     monto_efectivo: _num(s.monto_efectivo), pagado: !!s.pagado, pagado_en: s.pagado_en || '', obs: s.obs || ''
@@ -638,7 +642,8 @@ async function _hydrateFromSupabaseReal(opts) {
     emp_registrados: _num(c.emp_registrados), emp_no_registrados: _num(c.emp_no_registrados),
     sueldos_base: _num(c.sueldos_base), promedio_sueldo: _num(c.promedio_sueldo),
     horas_extra_horas: _num(c.horas_extra_horas), horas_extra_costo: _num(c.horas_extra_costo),
-    bonos: _num(c.bonos), viaticos: _num(c.viaticos), costo_total: _num(c.costo_total),
+    bonos: _num(c.bonos), viaticos: _num(c.viaticos), aguinaldo: _num(c.aguinaldo),
+    costo_total: _num(c.costo_total),
     liquidados: _num(c.liquidados), estimados: _num(c.estimados),
     detalle: Array.isArray(c.detalle) ? c.detalle : [],
     cerrado_por: c.cerrado_por || '', cerrado_en: c.cerrado_en || ''
