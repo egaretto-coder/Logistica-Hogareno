@@ -31,6 +31,7 @@ const RT_TABLAS = [
   // tesorero —que descarga solo lo listo— no se enteraba hasta recargar la app.
   // Es la mitad del circuito de dos manos, y no llegaba.
   'cliente_liquidaciones', 'proveedores',
+  'viajes_particulares', 'viaje_tarifas',
 ];
 
 let _rtCanal = null;
@@ -57,7 +58,7 @@ const RT_PANTALLA_TABLAS = {
   'upload':                 ['registros', 'importaciones', 'archivo_solicitudes', 'conductor_liquidaciones', 'cliente_liquidaciones'],
   'beneficios':             ['descuentos_items', 'proveedores'],
   'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
-                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas', 'conductor_liquidaciones'],
+                             'descuentos_items', 'descuento_cuotas', 'adelantos', 'adelanto_cuotas', 'km_desvio', 'recorrido_especial', 'km_tarifas', 'conductor_liquidaciones', 'viajes_particulares'],
   'conductores':            ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'zona_alias'],
   'panel-conductores':      ['panel_conductores'],
   'config-tarifas':         ['tarifas'],
@@ -66,13 +67,14 @@ const RT_PANTALLA_TABLAS = {
   'extraviados':            ['descuentos_items', 'descuento_cuotas'],
   'km-desvio':              ['km_desvio', 'km_tarifas'],
   'adelantos':              ['adelantos', 'adelanto_cuotas'],
-  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'tarifas', 'super_sla', 'panel_conductores', 'cliente_cargos', 'cliente_liquidaciones'],
+  'detalle-cliente':        ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'tarifas', 'super_sla', 'panel_conductores', 'cliente_cargos', 'cliente_liquidaciones', 'viajes_particulares'],
   'clientes':               ['clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'registros', 'cliente_liquidaciones', 'comision_clientes'],
-  'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos', 'cliente_liquidaciones'],
+  'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos', 'cliente_liquidaciones', 'viajes_particulares'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
                              'clientes', 'cliente_tarifas', 'registros', 'config', 'cliente_liquidaciones'],
   'vacaciones':             ['vacaciones', 'empleados', 'empleado_licencias'],
   'gestion-permisos':       ['rol_permisos', 'roles'],
+  'viajes-particulares':    ['viajes_particulares', 'viaje_tarifas', 'clientes', 'panel_conductores', 'cliente_cargos'],
 };
 
 // Marca que la app acaba de escribir en la nube: evita que el "eco" de Realtime

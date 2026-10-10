@@ -19,6 +19,7 @@ const ROL_PERMISOS = {
       'panel-conductores', 'conductores', 'liquidaciones', 'monotributos',
       'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
       'clientes', 'detalle-cliente', 'cliente-liquidaciones',
+      'viajes-particulares',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales',
       'empleados', 'vacaciones', 'comisiones',
       'gestion-permisos'
@@ -32,7 +33,8 @@ const ROL_PERMISOS = {
       'panel-conductores', 'config-tarifas', 'config-supersla',
       'dimensiones-especiales',
       'extraviados', 'beneficios', 'km-desvio', 'adelantos',
-      'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones'
+      'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones',
+      'viajes-particulares'
     ]
   },
 
@@ -47,13 +49,14 @@ const ROL_PERMISOS = {
       'upload',
       'panel-conductores', 'conductores', 'liquidaciones',
       // Todo lo que se le descuenta o se le suma al conductor.
-      'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones'
+      'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
+      'viajes-particulares'
     ]
   },
   administrativo_clientes: {
     label: 'Administrativo Clientes',
     color: '#8b5cf6',
-    paginas: ['clientes', 'detalle-cliente', 'cliente-liquidaciones']
+    paginas: ['clientes', 'detalle-cliente', 'cliente-liquidaciones', 'viajes-particulares']
   },
 
   // ── Los dos roles de plata ───────────────────────────────────────────────
@@ -71,7 +74,7 @@ const ROL_PERMISOS = {
       'dashboard', 'upload',
       'panel-conductores', 'conductores', 'liquidaciones',
       'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
-      'clientes', 'detalle-cliente',
+      'clientes', 'detalle-cliente', 'viajes-particulares',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales',
       'empleados', 'vacaciones', 'comisiones'
     ]
@@ -86,7 +89,7 @@ const ROL_PERMISOS = {
       'upload',
       'panel-conductores', 'conductores', 'liquidaciones', 'monotributos',
       'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
-      'cliente-liquidaciones',
+      'cliente-liquidaciones', 'viajes-particulares',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales'
     ]
   }

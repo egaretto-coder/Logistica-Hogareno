@@ -928,6 +928,15 @@ function exportPDF(conductor, opts) {
   const respMonto = respAd.monto;
   const respOffset = respMonto > 0 ? 6 : 0;
 
+  // Viajes particulares del período: rutas cotizadas a valor fijo. SUMAN al
+  // total, como el km de desvío y el recorrido especial. Desde el historial
+  // llegan congelados en el snapshot, así que un viaje cargado después no
+  // puede cambiar un papel ya emitido.
+  const vjAd = (impSnap && impSnap.viajes) ? impSnap.viajes
+    : ((typeof viajesDeConductor === 'function') ? viajesDeConductor(conductor, rangoImput) : { monto: 0, n: 0, detalle: [] });
+  const vjMonto = vjAd.monto;
+  const vjOffset = vjMonto > 0 ? 6 : 0;
+
   // Cuota(s) de adelanto imputadas al período liquidado: préstamo que el conductor
   // devuelve en cuotas. RESTA al total. Cada cuota fue registrada explícitamente en
   // el panel Adelantos con su fecha de imputación (misma lógica que el modal en pantalla).
@@ -941,11 +950,11 @@ function exportPDF(conductor, opts) {
   const extMonto = extAd.monto;
   const extOffset = extMonto > 0 ? 6 : 0;
 
-  const totalNeto = d.total + kmMonto + respMonto - totalDescuentos - advMonto - extMonto;
+  const totalNeto = d.total + kmMonto + respMonto + vjMonto - totalDescuentos - advMonto - extMonto;
 
   let descY = doc.lastAutoTable.finalY + 8;
   // Si no cabe el bloque en la página actual, saltar de página
-  if (descY > 220 - kmOffset - advOffset - extOffset) { doc.addPage(); descY = 30; }
+  if (descY > 220 - kmOffset - respOffset - vjOffset - advOffset - extOffset) { doc.addPage(); descY = 30; }
 
   // Título del bloque
   doc.setFontSize(8.5);
@@ -959,7 +968,7 @@ function exportPDF(conductor, opts) {
 
   // Caja con fondo claro (altura dinámica según cantidad de ítems de descuento)
   const descItemsCount = 3;
-  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + respOffset + advOffset + extOffset;
+  const boxH = 22 + descItemsCount * 6 + 10 + kmOffset + respOffset + vjOffset + advOffset + extOffset;
   doc.setFillColor(248, 249, 252);
   doc.roundedRect(MARGIN, descY, W - MARGIN*2, boxH, 2, 2, 'F');
   doc.setDrawColor(220, 226, 240);
@@ -1003,36 +1012,55 @@ function exportPDF(conductor, opts) {
     doc.text('+' + fmtPeso(respMonto), W - MARGIN - 6, descY + 14 + kmOffset, { align: 'right' });
   }
 
+  // Renglón: Viajes particulares (suma al total). Se nombran las rutas: el
+  // conductor tiene que poder reconocer qué viaje le están pagando.
+  if (vjMonto > 0) {
+    drawDescIcon('V', MARGIN + 6, descY + 15.6 + kmOffset + respOffset, 4.4, LH_GREEN);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...LH_GRAY);
+    const rutas = (vjAd.detalle || []).map(x => {
+      const r = [x.origen, x.destino].filter(Boolean).join('-');
+      return (x.fecha || '') + (r ? ' ' + r : '');
+    }).filter(Boolean);
+    const rutasTxt = rutas.length > 2 ? rutas.slice(0, 2).join(', ') + ' y ' + (rutas.length - 2) + ' mas' : rutas.join(', ');
+    doc.text('Viaje' + (vjAd.n > 1 ? 's' : '') + ' particular' + (vjAd.n > 1 ? 'es' : '') +
+      (rutasTxt ? ' (' + rutasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + respOffset);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...LH_GREEN);
+    doc.text('+' + fmtPeso(vjMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset, { align: 'right' });
+  }
+
   // Renglón: Cuota(s) de adelanto (resta al total) — misma lógica que el modal
   if (advMonto > 0) {
-    drawDescIcon('A', MARGIN + 6, descY + 15.6 + kmOffset + respOffset, 4.4, LH_BLUE);
+    drawDescIcon('A', MARGIN + 6, descY + 15.6 + kmOffset + respOffset + vjOffset, 4.4, LH_BLUE);
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxt = _txtCuotasAdelanto(advAd.detalle);
-    doc.text('Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + respOffset);
+    doc.text('Cuota de adelanto' + (cuotasTxt ? ' (' + cuotasTxt + ')' : ''), MARGIN + 13, descY + 14 + kmOffset + respOffset + vjOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
-    doc.text('-' + fmtPeso(advMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset, { align: 'right' });
+    doc.text('-' + fmtPeso(advMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset + vjOffset, { align: 'right' });
   }
 
   // Renglón: Cuota(s) de extravío cuoteado (resta al total)
   if (extMonto > 0) {
-    drawDescIcon('E', MARGIN + 6, descY + 15.6 + kmOffset + respOffset + advOffset, 4.4, LH_RED);
+    drawDescIcon('E', MARGIN + 6, descY + 15.6 + kmOffset + respOffset + vjOffset + advOffset, 4.4, LH_RED);
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...LH_GRAY);
     const cuotasTxtE = extAd.detalle.map(x => x.nro + '/' + x.total).join(', ');
-    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoImput), MARGIN + 13, descY + 14 + kmOffset + respOffset + advOffset);
+    doc.text('Cuota de saldo' + (cuotasTxtE ? ' (' + cuotasTxtE + ')' : '') + _refsDeCuotas(conductor, rangoImput), MARGIN + 13, descY + 14 + kmOffset + respOffset + vjOffset + advOffset);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...LH_RED);
-    doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset + advOffset, { align: 'right' });
+    doc.text('-' + fmtPeso(extMonto), W - MARGIN - 6, descY + 14 + kmOffset + respOffset + vjOffset + advOffset, { align: 'right' });
   }
 
   // Separador
   doc.setDrawColor(220, 226, 240);
   doc.setLineWidth(0.2);
-  doc.line(MARGIN + 6, descY + 11 + kmOffset + respOffset + advOffset + extOffset, W - MARGIN - 6, descY + 11 + kmOffset + respOffset + advOffset + extOffset);
+  doc.line(MARGIN + 6, descY + 11 + kmOffset + respOffset + vjOffset + advOffset + extOffset, W - MARGIN - 6, descY + 11 + kmOffset + respOffset + vjOffset + advOffset + extOffset);
 
   // Descuentos individuales (mismos conceptos que en el detalle previo a descargar)
   const descItems = [
@@ -1040,7 +1068,7 @@ function exportPDF(conductor, opts) {
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores' + _refsDeItems('proveedores', conductor, rangoImput), val: descuentos.proveedores || 0 },
   ];
-  let dY = descY + 17 + kmOffset + respOffset + advOffset + extOffset;
+  let dY = descY + 17 + kmOffset + respOffset + vjOffset + advOffset + extOffset;
   descItems.forEach(item => {
     drawDescIcon(item.letter, MARGIN + 6, dY + 1.6, 4.4, item.color);
     doc.setFontSize(8);

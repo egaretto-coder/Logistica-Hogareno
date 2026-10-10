@@ -9,6 +9,10 @@ const ESTADOS_CONOCIDOS = [
 
 // ===== DATA STORE =====
 let AppData = {
+  // Viajes particulares: rutas cotizadas a valor fijo. No son envíos y por eso
+  // no viven en `records` — ver src/viajes-particulares.js.
+  viajesParticulares: [],
+  viajeTarifas: [],
   records: [],       // raw uploaded rows after mapping (BD: tracking, fecha, localidad, estado, zona, cadete)
   mappings: {},      // col mappings { tracking, fecha, localidad, estado, zona, cadete }
   rawHeaders: [],
@@ -724,16 +728,23 @@ function imputacionesConductor(conductor, rango, descuentosOverride) {
   const items = _num(d.combustible) + _num(d.extraviados) + _num(d.proveedores);
   const km  = kmAdicionalConductor(conductor, rango).monto;
   const especial = recorridoEspecialConductor(conductor, rango).monto;
+  // Viajes particulares del período: rutas cotizadas a valor fijo. SUMAN al
+  // neto igual que el km de desvío y el recorrido especial — es el precio del
+  // trabajo, no un reintegro. El `typeof` es porque este archivo carga antes
+  // que viajes-particulares.js y core.js no puede depender de él.
+  const viajes = (typeof viajesDeConductor === 'function') ? viajesDeConductor(conductor, rango).monto : 0;
   const adelanto = adelantoDescuentoConductor(conductor, rango).monto;
   const extravioCuota = extravioCuotaDescuento(conductor, rango).monto;
   const descuentos = items + adelanto + extravioCuota;
-  return { km, especial, items, adelanto, extravioCuota, descuentos, hay: km > 0 || especial > 0 || descuentos > 0 };
+  return { km, especial, viajes, items, adelanto, extravioCuota, descuentos,
+    hay: km > 0 || especial > 0 || viajes > 0 || descuentos > 0 };
 }
 // bruto + adicionales − descuentos. Nunca baja de 0: un neto negativo en el
 // papel sería plata que el conductor le debe a la empresa, y eso se arrastra
 // como saldo, no se paga en negativo.
 function netoLiquidacion(bruto, imp) {
-  return Math.max(0, _num(bruto) + _num(imp && imp.km) + _num(imp && imp.especial) - _num(imp && imp.descuentos));
+  return Math.max(0, _num(bruto) + _num(imp && imp.km) + _num(imp && imp.especial) +
+    _num(imp && imp.viajes) - _num(imp && imp.descuentos));
 }
 
 // Tarifa de km VIGENTE HOY (la más reciente del historial). 0 si no hay ninguna.

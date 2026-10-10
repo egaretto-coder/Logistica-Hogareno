@@ -1,0 +1,76 @@
+      <div id="page-viajes-particulares" class="page">
+
+        <div class="section-head" style="margin-bottom:12px">
+          <span class="section-title"><i class="ic ic-route"></i> Viajes particulares</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="abrirVpTarifaModal()" title="Cargar una lista de precios nueva, con la fecha desde la que rige. Las anteriores se conservan."><i class="ic ic-tag"></i> Actualizar tarifario</button>
+            <button class="btn btn-sm btn-primary" onclick="abrirViajeModal()"><i class="ic ic-plus"></i> Agregar viaje</button>
+          </div>
+        </div>
+
+        <div class="tabs" style="margin-bottom:14px">
+          <button class="tab active" id="vp-btn-viajes" onclick="switchViajesTab('viajes')"><i class="ic ic-route"></i> Viajes</button>
+          <button class="tab" id="vp-btn-tarifario" onclick="switchViajesTab('tarifario')"><i class="ic ic-tag"></i> Tarifario</button>
+        </div>
+
+        <!-- ══════════ SOLAPA: VIAJES ══════════ -->
+        <div id="vp-tab-viajes">
+
+          <div class="alert alert-info" style="margin-bottom:16px">
+            <i class="ic ic-route"></i><div>Rutas que pide un cliente, cotizadas a un <strong>valor fijo de tabla</strong> por vehículo y tramo.
+            <strong>No son envíos</strong>: no tienen zona ni tracking y no entran en el conteo de envíos ni en el costo por envío.
+            Cada viaje mueve <strong>las dos puntas</strong> — se le <strong>paga al conductor</strong> (suma a su liquidación semanal) y se le
+            <strong>factura al cliente</strong> (entra en la liquidación de su período, en su propia línea).
+            <br>El conductor puede ser de <strong>viajes</strong> o de <strong>reparto (Flex)</strong>: se marca en el Panel de conductores y acá se ofrecen primero los de viajes.</div>
+          </div>
+
+          <!-- El mes que se está mirando, con "Todos" al lado: un filtro puesto
+               por defecto que no se pueda sacar de un clic esconde lo viejo. -->
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+            <div class="date-range" id="vp-mes-nav">
+              <button class="btn btn-sm" onclick="panelMoverMes('vp',-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+              <input type="month" id="vp-mes" onchange="panelElegirMes('vp',this.value)" aria-label="Mes a ver">
+              <button class="btn btn-sm" onclick="panelMoverMes('vp',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+            </div>
+            <button class="btn btn-sm" id="vp-mes-todos" onclick="panelTodosLosMeses('vp')" title="Ver todos los viajes, de cualquier mes">Todos</button>
+          </div>
+
+          <div id="vp-kpis"></div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="vp-search" placeholder="🔍 Cliente, conductor, origen o destino..." oninput="renderViajesParticulares()"
+              style="width:300px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+            <span id="vp-count" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Conductor</th>
+                    <th>Vehículo</th>
+                    <th>Recorrido</th>
+                    <th style="text-align:right" title="Lo que se le paga al conductor">Costo</th>
+                    <th style="text-align:right" title="Lo que se le factura al cliente">Venta</th>
+                    <th style="text-align:right">Margen</th>
+                    <th style="width:170px"></th>
+                  </tr>
+                </thead>
+                <tbody id="vp-rows">
+                  <tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ic ic-route"></i></div><div class="empty-title">Sin viajes cargados</div><div class="empty-sub">Agregá el primero con "+ Agregar viaje"</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /vp-tab-viajes -->
+
+        <!-- ══════════ SOLAPA: TARIFARIO ══════════ -->
+        <div id="vp-tab-tarifario" style="display:none">
+          <div id="vp-tarifario"></div>
+        </div>
+
+      </div>

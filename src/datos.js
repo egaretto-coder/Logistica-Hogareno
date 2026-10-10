@@ -17,6 +17,10 @@ function loadSavedConfig() {
   }
   const rge = localStorage.getItem('liq_recorridos_especiales');
   if (rge) { try { AppData.recorridosEspeciales = JSON.parse(rge) || []; } catch(e) {} }
+  const vpj = localStorage.getItem('liq_viajes_particulares');
+  if (vpj) { try { AppData.viajesParticulares = JSON.parse(vpj) || []; } catch(e) {} }
+  const vpt = localStorage.getItem('liq_viaje_tarifas');
+  if (vpt) { try { AppData.viajeTarifas = JSON.parse(vpt) || []; } catch(e) {} }
   const kmd = localStorage.getItem('liq_km_desvio');
   if (kmd) {
     try { AppData.kmDesvio = JSON.parse(kmd); } catch(e) {}
@@ -412,6 +416,7 @@ async function _hydrateFromSupabaseReal(opts) {
   if ((data.panel_conductores || []).length) {
     AppData.panelConductores = data.panel_conductores.map(c => ({
       id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
+      servicio: c.servicio || 'flex',   // flex | particular | ambos
       alias: c.alias || ''
     }));
   } else { faltaSeed.push('panel_conductores'); }
@@ -445,6 +450,22 @@ async function _hydrateFromSupabaseReal(opts) {
     valor_ruta: _num(d.valor_ruta), base: _num(d.base), monto: _num(d.monto),
     detalle: d.detalle || '', imputar: d.imputar !== false, creado_por: d.creado_por || '',
     estado: d.estado || 'autorizado', autorizado_por: d.autorizado_por || '', autorizado_en: d.autorizado_en || ''
+  }));
+  // Viajes particulares: el servicio cotizado a valor fijo. `costo` y `venta`
+  // vienen CONGELADOS de cuando se cargó el viaje, igual que cliente_cargos.monto.
+  AppData.viajesParticulares = (data.viajes_particulares || []).map(v => ({
+    id: v.id, fecha: v.fecha || '', cliente_cod: (v.cliente_cod || '').toUpperCase(),
+    cliente: v.cliente || '', conductor: v.conductor || '',
+    vehiculo: v.vehiculo || 'moto', modalidad: v.modalidad || 'km', tramo: _num(v.tramo),
+    km: v.km == null ? null : _num(v.km), paradas: v.paradas == null ? null : _num(v.paradas),
+    origen: v.origen || '', destino: v.destino || '', detalle: v.detalle || '',
+    costo: _num(v.costo), venta: _num(v.venta), estado: v.estado || 'realizado',
+    semana: v.semana || null, creado_por: v.creado_por || '', created_at: v.created_at || ''
+  }));
+  AppData.viajeTarifas = (data.viaje_tarifas || []).map(t => ({
+    id: t.id, vehiculo: t.vehiculo, modalidad: t.modalidad || 'km', tramo: _num(t.tramo),
+    costo: _num(t.costo), venta: _num(t.venta),
+    vigente_desde: String(t.vigente_desde || '').slice(0, 10), creado_por: t.creado_por || ''
   }));
   AppData.kmDesvio = (data.km_desvio || []).map(d => ({
     id: d.id, conductor: d.conductor, km: _num(d.km), fecha: d.fecha || '',
@@ -775,6 +796,8 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_desc_cuotas', JSON.stringify(AppData.descItemCuotas));
     localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
     localStorage.setItem('liq_recorridos_especiales', JSON.stringify(AppData.recorridosEspeciales || []));
+    localStorage.setItem('liq_viajes_particulares', JSON.stringify(AppData.viajesParticulares || []));
+    localStorage.setItem('liq_viaje_tarifas', JSON.stringify(AppData.viajeTarifas || []));
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
     localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));
@@ -957,6 +980,10 @@ function dbPush(table) {
     })).filter(r => r.conductor && r.zona),
     panel_conductores: () => dedupePanelConductores(AppData.panelConductores).map(c => ({
       id: c.id, nombre: c.nombre, condicion: c.condicion || '', categoria: c.categoria || 'super_sla',
+      // Va en el builder SÍ O SÍ: esta tabla se guarda con replaceAll, así que
+      // una columna que no se mapee no es un campo que no se guarda — es un
+      // campo que se BORRA en el primer guardado del panel.
+      servicio: c.servicio || 'flex',
       alias: c.alias || ''
     })).filter(c => c.id),
     dimensiones_especiales: () => AppData.dimensionesEspeciales.map(d => ({

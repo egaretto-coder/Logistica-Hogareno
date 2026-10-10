@@ -247,6 +247,7 @@ function openAddConductorModal() {
   document.getElementById('mc-nombre').value = '';
   document.getElementById('mc-condicion').value = '';
   document.getElementById('mc-categoria').value = '';
+  document.getElementById('mc-servicio').value = 'flex';
   document.getElementById('mc-alias').value = '';
   document.getElementById('mc-info-condicion').textContent = '';
   document.getElementById('modal-conductor-backdrop').style.display = 'flex';
@@ -262,6 +263,7 @@ function editarConductorPanel(id) {
   document.getElementById('mc-nombre').value = c.nombre;
   document.getElementById('mc-condicion').value = c.condicion;
   document.getElementById('mc-categoria').value = c.categoria;
+  document.getElementById('mc-servicio').value = c.servicio || 'flex';
   document.getElementById('mc-alias').value = (c.alias || '').split(';').filter(Boolean).join('\n');
   updateMcInfoCondicion();
   document.getElementById('modal-conductor-backdrop').style.display = 'flex';
@@ -291,6 +293,7 @@ function guardarConductorModal() {
     const nombre = document.getElementById('mc-nombre').value.trim().toUpperCase();
     const condicion = document.getElementById('mc-condicion').value;
     const categoria = document.getElementById('mc-categoria').value;
+    const servicio = document.getElementById('mc-servicio')?.value || 'flex';
     // Alias: nombres tal como figuran en los recorridos (uno por línea o ";").
     const alias = (document.getElementById('mc-alias')?.value || '')
       .split(/[;\n]/).map(a => a.trim()).filter(Boolean).join(';');
@@ -324,7 +327,7 @@ function guardarConductorModal() {
       return;
     }
 
-    const entrada = { id, nombre, condicion, categoria, alias };
+    const entrada = { id, nombre, condicion, categoria, servicio, alias };
 
     if (esEdicion) {
       // Se muta la fila que se estaba editando —no se pisa una posición— para

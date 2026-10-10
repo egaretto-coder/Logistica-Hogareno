@@ -207,6 +207,94 @@ alter table public.recorrido_especial enable row level security;
 create policy recorrido_especial_all on public.recorrido_especial
   for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
 
+-- ---------- VIAJES PARTICULARES ----------
+-- Un servicio distinto del reparto: el cliente pide una ruta y se la cotiza a
+-- un valor FIJO de tabla, por vehículo y tramo. NO son envíos (no tienen zona
+-- ni tracking y su parametrización es otra), así que no van en `registros`:
+-- contarlos como envíos ensuciaría el conteo, el costo por envío, el reporte
+-- por zona, la deduplicación del import y el archivo por cierre.
+--
+-- Mueven las DOS puntas, igual que un envío: `costo` entra en
+-- imputacionesConductor() y suma al neto del conductor; `venta` entra en
+-- calcLiquidacionCliente() y suma al total del cliente, en su propia línea.
+--
+-- OJO: ya existía otro camino para esto, el cargo cliente_cargos.concepto =
+-- 'viaje', que es para el viaje que NO tiene a quién pagarle. Los dos juntos
+-- se lo cobran al cliente DOS veces; el alta del panel lo mira y avisa.
+
+-- El tarifario, con vigencia desde el día uno: es la lección que ya costó dos
+-- correcciones (cliente_tarifas y tarifas de conductor). Sin fecha, cargar un
+-- aumento reescribe el precio de lo que ya se facturó y se pagó, y el papel
+-- que el cliente tiene en la mano deja de coincidir.
+-- `2000-01-01` es el centinela "desde siempre", anterior a cualquier viaje.
+create table if not exists public.viaje_tarifas (
+  id            bigint generated always as identity primary key,
+  vehiculo      text not null,                       -- moto | utilitario | furgon
+  modalidad     text not null default 'km',          -- km | paradas (Especial Transportes)
+  tramo         numeric not null,                    -- el TOPE: hasta 50 km, hasta 3 paradas…
+  costo         numeric not null default 0,          -- lo que se le paga al conductor
+  venta         numeric not null default 0,          -- lo que se le cobra al cliente
+  vigente_desde date    not null default '2000-01-01',
+  creado_por    text default '',
+  created_at    timestamptz not null default now(),
+  -- La vigencia entra en la clave: sin ella, cargar un aumento chocaría con la
+  -- lista anterior en vez de convivir con ella.
+  unique (vehiculo, modalidad, tramo, vigente_desde)
+);
+alter table public.viaje_tarifas enable row level security;
+create policy viaje_tarifas_all on public.viaje_tarifas
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+create table if not exists public.viajes_particulares (
+  id          bigint generated always as identity primary key,
+  fecha       text not null default '',              -- DD/MM/YYYY, igual que recorrido_especial
+  cliente_cod text not null,
+  cliente     text default '',
+  -- Puede venir VACÍO: el viaje lo hizo alguien de afuera. Se le factura al
+  -- cliente igual y no se le paga a nadie — mismo criterio que un envío
+  -- entregado sin chofer.
+  conductor   text default '',
+  vehiculo    text not null default 'moto',
+  modalidad   text not null default 'km',
+  tramo       numeric not null default 0,
+  km          numeric,                               -- lo recorrido de verdad (informativo)
+  paradas     numeric,
+  origen      text default '',
+  destino     text default '',
+  detalle     text default '',
+  -- CONGELADOS al guardar, igual que cliente_cargos.monto: el viaje se cotiza
+  -- de antemano y un aumento posterior del tarifario no puede moverlo.
+  costo       numeric not null default 0,
+  venta       numeric not null default 0,
+  -- Solo 'realizado' se paga y se factura: un programado todavía no se hizo y
+  -- un cancelado no se hizo nunca.
+  estado      text not null default 'realizado',     -- pendiente | realizado | cancelado
+  -- Ancla de facturación, igual que registros.factura_semana: NULL = se cobra
+  -- en el período que contiene su fecha.
+  semana      date,
+  creado_por  text default '',
+  created_at  timestamptz not null default now()
+);
+create index if not exists viajes_particulares_cliente_idx   on public.viajes_particulares (cliente_cod);
+create index if not exists viajes_particulares_conductor_idx on public.viajes_particulares (conductor);
+alter table public.viajes_particulares enable row level security;
+create policy viajes_particulares_all on public.viajes_particulares
+  for all to authenticated using (public.es_usuario_activo()) with check (public.es_usuario_activo());
+
+-- El conductor puede ser de reparto (Flex), de viajes particulares, o de las
+-- dos cosas. No cambia cómo se le liquida el reparto: decide a quién se le
+-- ofrece un viaje en el alta.
+-- OJO: panel_conductores se guarda con replaceAll, así que esta columna TIENE
+-- que estar en el builder de dbPush. Una columna que el builder no mapea no es
+-- un campo que no se guarda: es un campo que se BORRA en el primer guardado.
+alter table public.panel_conductores
+  add column if not exists servicio text not null default 'flex';   -- flex | particular | ambos
+
+-- Las dos tablas van en la publicación de Realtime Y en RT_TABLAS: las dos
+-- cosas, si no la suscripción no existe o llega y nadie la escucha.
+-- alter publication supabase_realtime add table public.viaje_tarifas;
+-- alter publication supabase_realtime add table public.viajes_particulares;
+
 -- ---------- KM DESVÍO ----------
 -- fecha: día del desvío (DD/MM/YYYY). valor_km: tarifa aplicada (snapshot, no se
 -- recalcula si la tarifa cambia después). monto = km × valor_km.

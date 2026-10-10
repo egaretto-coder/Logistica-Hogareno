@@ -509,10 +509,19 @@ function renderDashboard() {
   document.getElementById('metric-total').textContent = fmtPeso(totalConEspecial);
   // Si el número incluye algo que no son envíos, hay que decirlo: si no, no
   // cierra contra la cuenta de "envíos x tarifa" que alguien pueda rehacer.
+  // Los viajes particulares NO entran en esta tarjeta ni en el costo por envío:
+  // no tienen envíos, y sumarlos al numerador sin nada en el denominador daría
+  // un unitario que nadie paga. Se dice cuánto quedó afuera, que es lo que
+  // impide leer el total como "todo lo que se le paga a los conductores".
+  const vjDash = (typeof vpTotalDeConductores === 'function')
+    ? vpTotalDeConductores(rango, new Set(conductores.map(c => conductorKey(c))))
+    : { total: 0, n: 0 };
   document.getElementById('metric-sub-total').textContent =
     totalEntregados + ' entregados · ' + totalExcluidos + ' en otros estados' +
     (esp.total > 0 ? ' · incluye ' + fmtPeso(esp.total) + ' de ' + esp.n +
-      (esp.n === 1 ? ' recorrido especial' : ' recorridos especiales') : '');
+      (esp.n === 1 ? ' recorrido especial' : ' recorridos especiales') : '') +
+    (vjDash.total > 0 ? ' · NO incluye ' + fmtPeso(vjDash.total) + ' de ' + vjDash.n +
+      (vjDash.n === 1 ? ' viaje particular' : ' viajes particulares') + ' (se miran en su panel)' : '');
   document.getElementById('metric-cvu').textContent = fmtPeso(costoUnitario);
   const cvuSub = document.getElementById('metric-cvu-sub');
   if (cvuSub) cvuSub.textContent = enviosPagos
@@ -666,7 +675,13 @@ function dashFacturacionClientes() {
     a.push(r);
   });
   const vacio = [];
-  const clientes = (typeof clientesDeRegistros === 'function') ? clientesDeRegistros(null) : [];
+  const clientes = (typeof clientesDeRegistros === 'function') ? clientesDeRegistros(null).slice() : [];
+  // Un cliente que SOLO contrata viajes particulares no tiene un envío, así que
+  // no salía de clientesDeRegistros y su facturación no estaba en ningún total.
+  if (typeof vpClientesEnRango === 'function') {
+    const ya = new Set(clientes.map(c => c.cod));
+    vpClientesEnRango(null).forEach(c => { if (!ya.has(c.cod)) clientes.push({ cod: c.cod, nombre: c.nombre, envios: 0 }); });
+  }
   const deEseCiclo = cod => !dashPerFilter || periodoDiasDe(cod) === dashPerFilter;
   const filas = clientes.filter(c => deEseCiclo(c.cod)).map(c => {
     const k = clienteKey(c.cod);

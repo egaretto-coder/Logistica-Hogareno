@@ -73,7 +73,14 @@ function renderDetalleClienteSelect() {
   const sel = document.getElementById('dcli-select');
   if (!sel) return;
   const elegido = sel.value;
-  const lista = clientesDeRegistros(null);
+  // Los que solo tienen viajes particulares también se pueden elegir: su
+  // liquidación existe aunque no hayan recibido un envío.
+  const lista = clientesDeRegistros(null).slice();
+  if (typeof vpClientesEnRango === 'function') {
+    const ya = new Set(lista.map(c => c.cod));
+    vpClientesEnRango(null).forEach(c => { if (!ya.has(c.cod)) lista.push({ cod: c.cod, nombre: c.nombre, envios: 0 }); });
+    lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  }
   sel.innerHTML = '<option value="">Seleccionar cliente...</option>' +
     lista.map(c => '<option value="' + c.cod + '">' + c.nombre + ' (' + c.cod + ') · ' + c.envios + ' envíos</option>').join('');
   if (elegido) {

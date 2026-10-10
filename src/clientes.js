@@ -396,14 +396,25 @@ function calcLiquidacionCliente(cliente, rango, opts) {
   // Van aparte de las zonas porque en la factura son otro concepto.
   const cargos = porFecha ? cargosEntreFechas(cKey, desde, hasta) : cargosDeSemana(cKey, semana);
   const totalCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
+  // VIAJES PARTICULARES: el servicio cotizado a valor fijo. Va en su propio
+  // bloque y NO dentro de `totalEnvio`, por lo mismo que los cargos: un viaje
+  // no es un envío, y meterlo ahí subiría un "precio por envío" que nadie
+  // cobró. Su costo SÍ entra en `pagado`, porque es lo que costó servir a ese
+  // cliente y sin él el margen diría de más.
+  const viajes = (typeof vpViajesDeSemana === 'function')
+    ? (porFecha ? vpViajesEntreFechas(cKey, desde, hasta) : vpViajesDeSemana(cKey, semana))
+    : [];
+  const totalViajes = viajes.reduce((s, v) => s + _num(v.venta), 0);
+  const pagadoViajes = viajes.reduce((s, v) => s + _num(v.costo), 0);
   // Margen = lo que se le cobra al cliente menos lo que se le paga al conductor
   // por esos mismos envíos. Es el número que conecta las dos liquidaciones.
   const anulados = filas.filter(f => f.anulado);
   return {
-    filas, envios, totalEnvios, total: total + totalCargos, totalEnvio: total,
-    sinTarifa, pagado, margen: (total + totalCargos) - pagado,
+    filas, envios, totalEnvios, total: total + totalCargos + totalViajes, totalEnvio: total,
+    sinTarifa, pagado: pagado + pagadoViajes,
+    margen: (total + totalCargos + totalViajes) - (pagado + pagadoViajes),
     dimSinVenta, dimSinVentaMonto, dimSinVentaPagado,
-    arrastrados, cargos, totalCargos, semana,
+    arrastrados, cargos, totalCargos, viajes, totalViajes, pagadoViajes, semana,
     // Gestos comerciales de la semana: cuántos y cuánto se bonificó.
     anulados: anulados.reduce((s, f) => s + f.count, 0),
     bonificado: anulados.reduce((s, f) => s + _num(f.bonificado), 0)
@@ -2889,8 +2900,8 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
   const liq = opts.liq || calcLiquidacionCliente(codK, rango, { detalle: true });
   // Puede no haber envíos y sí cargos (un período en el que solo se le cobró
   // una colecta o un viaje particular): esa liquidación también se emite.
-  if (!liq.filas.length && !(liq.cargos || []).length) {
-    if (!opts.doc) alert('Sin envíos entregados ni cargos de este cliente en el período ' + rango.desde + ' al ' + rango.hasta + '.');
+  if (!liq.filas.length && !(liq.cargos || []).length && !(liq.viajes || []).length) {
+    if (!opts.doc) alert('Sin envíos entregados, cargos ni viajes de este cliente en el período ' + rango.desde + ' al ' + rango.hasta + '.');
     return;
   }
   const cli = (AppData.clientes || []).find(c => clienteKey(c.codigo) === codK);
@@ -2925,7 +2936,8 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
     datosPeriodo: [
       (typeof periodoLabel === 'function' ? periodoLabel(dias) : 'Semanal') + '  ·  ' +
         (dias === 7 ? 'viernes a jueves' : (dias / 7) + ' semanas, viernes a jueves'),
-      liq.totalEnvios + ' servicio(s)' + ((liq.cargos || []).length ? '  ·  ' + liq.cargos.length + ' cargo(s)' : ''),
+      liq.totalEnvios + ' servicio(s)' + ((liq.cargos || []).length ? '  ·  ' + liq.cargos.length + ' cargo(s)' : '') +
+        ((liq.viajes || []).length ? '  ·  ' + liq.viajes.length + ' viaje(s)' : ''),
       armada && armada.armada_en ? 'Preparada el ' + _fechaCorta(armada.armada_en) : ''
     ]
   };
@@ -2983,6 +2995,20 @@ function exportLiquidacionClientePDF(cod, rango, opts) {
         String(cant),
         fmtPeso(cant !== 1 ? _num(c.precio_unitario) : _num(c.monto)),
         fmtPeso(_num(c.monto))
+      ]);
+    });
+  }
+
+  // Viajes particulares: su propio bloque, con el vehículo, el tramo y el
+  // recorrido. Son un servicio distinto del reparto y en la factura se leen así.
+  if ((liq.viajes || []).length) {
+    meta.push('dia');
+    body.push(['VIAJES PARTICULARES', String(liq.viajes.length), '', fmtPeso(_num(liq.totalViajes))]);
+    liq.viajes.forEach(v => {
+      meta.push('cargo');
+      body.push([
+        '   ' + (v.fecha ? v.fecha + '  ·  ' : '') + (typeof vpDetalleTxt === 'function' ? vpDetalleTxt(v) : ''),
+        '1', fmtPeso(_num(v.venta)), fmtPeso(_num(v.venta))
       ]);
     });
   }

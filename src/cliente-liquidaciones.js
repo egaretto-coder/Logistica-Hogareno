@@ -42,6 +42,7 @@ function snapshotCliente(cod, rango, liqPre) {
     arrastrados: _num(liq.arrastrados), anulados: _num(liq.anulados), bonificado: _num(liq.bonificado),
     semana: liq.semana || '', rango: { desde: rango.desde, hasta: rango.hasta },
     zonas: liq.filas || [], cargos: liq.cargos || [],
+    viajes: liq.viajes || [], totalViajes: _num(liq.totalViajes),
     // [fecha, tracking, destinatario, zona, condición especial, precio, bonificado, marcas]
     env: (liq.envios || []).map(e => [e.fecha || '', e.tracking || '', e.destinatario || '', e.zona || '',
       e.dim || '', _num(e.precio), _num(e.bonificado),
@@ -52,6 +53,7 @@ function snapshotCliente(cod, rango, liqPre) {
 function liqClienteDesdeSnapshot(snap) {
   return {
     filas: snap.zonas || [], cargos: snap.cargos || [],
+    viajes: snap.viajes || [], totalViajes: _num(snap.totalViajes),
     total: _num(snap.total), totalEnvio: _num(snap.totalEnvio), totalCargos: _num(snap.totalCargos),
     totalEnvios: _num(snap.envios), pagado: _num(snap.pagado), sinTarifa: _num(snap.sinTarifa),
     margen: _num(snap.total) - _num(snap.pagado), arrastrados: _num(snap.arrastrados),
@@ -124,7 +126,12 @@ function cliqListado(rango) {
   // saber a quién mirar, pero cada cliente se liquida por SU período (7, 14
   // o 28 días). Un quincenal que no cierra esta semana no tiene nada que
   // descargar todavía, y mostrarle media quincena seria un numero falso.
-  const conEnvios = clientesDeRegistros(rango);
+  // Los clientes con envíos MÁS los que solo tienen viajes particulares.
+  const conEnvios = clientesDeRegistros(rango).slice();
+  if (typeof vpClientesEnRango === 'function') {
+    const ya = new Set(conEnvios.map(c => c.cod));
+    vpClientesEnRango(rango).forEach(c => { if (!ya.has(c.cod)) conEnvios.push({ cod: c.cod, nombre: c.nombre, envios: 0 }); });
+  }
   const iso = (rango && rango.desdeD)
     ? rango.desdeD.getFullYear() + '-' + String(rango.desdeD.getMonth() + 1).padStart(2, '0') + '-' + String(rango.desdeD.getDate()).padStart(2, '0')
     : undefined;
@@ -138,7 +145,7 @@ function cliqListado(rango) {
       envios: liq.totalEnvios, total: liq.total,
       sinTarifa: liq.sinTarifa, dimSinVenta: liq.dimSinVenta, armada
     };
-  }).filter(x => x.envios > 0)
+  }).filter(x => x.envios > 0 || x.total > 0)
     .sort((a, b) => (b.armada ? 1 : 0) - (a.armada ? 1 : 0) || b.total - a.total);
 }
 

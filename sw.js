@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v270';
+const CACHE = 'liq-cache-v271';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -43,6 +43,7 @@ const APP_SHELL = [
   './src/clientes.js',
   './src/detalle-cliente.js',
   './src/cliente-liquidaciones.js',
+  './src/viajes-particulares.js',
   './src/comisiones.js',
   './src/empleados.js',
   './src/rendiciones.js',

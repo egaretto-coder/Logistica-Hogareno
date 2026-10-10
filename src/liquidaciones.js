@@ -144,6 +144,8 @@ function snapshotConductor(cond, rango, liqPre) {
   const imp = {
     km: kmAdicionalConductor(cond, rango),
     especial: recorridoEspecialConductor(cond, rango),
+    viajes: (typeof viajesDeConductor === 'function')
+      ? viajesDeConductor(cond, rango) : { monto: 0, n: 0, detalle: [] },
     adelanto: adelantoDescuentoConductor(cond, rango),
     extravio: extravioCuotaDescuento(cond, rango),
     items: {
@@ -323,6 +325,16 @@ function calcLiquidacionesFiltradas(recs) {
         cliente: r.cliente || r.cliente_cod || '', destinatario: r.destinatario || '' });
     }
   });
+  // Conductores que esta semana SOLO hicieron viajes particulares: entran con
+  // la liquidación de envíos en cero y el viaje se les suma en el neto. Sin
+  // esto no aparecían en la tabla y no se les pagaba nunca.
+  // Solo para la semana del panel: con `recs` explícitos (el historial
+  // reconstruye una semana vieja) no se agrega a nadie.
+  if (!recs && typeof vpConductoresDeLaSemana === 'function') {
+    vpConductoresDeLaSemana().forEach((n, cond) => {
+      if (!liqBase[cond]) liqBase[cond] = { total: 0, filas: [], filas_excluidas: [], conductor: cond, soloViajes: n };
+    });
+  }
   return liqBase;
 }
 
@@ -395,7 +407,8 @@ function toggleLiqSelTodos(marcado) {
 // Si el operador tildó conductores a mano, igual se cruzan con el filtro y con
 // el estado: tildar no puede saltear el control.
 function seleccionParaDescargar(liq) {
-  const filtrados = conductoresFiltradosLiq(liq).filter(c => !liq || (liq[c] && liq[c].filas.length));
+  const filtrados = conductoresFiltradosLiq(liq)
+    .filter(c => !liq || (liq[c] && (liq[c].filas.length || liq[c].soloViajes)));
   const listas = filtrados.filter(c => liqConductorArmada(c));
   const elegidos = listas.filter(c => liqSeleccion.has(c));
   return {

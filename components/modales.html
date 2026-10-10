@@ -35,6 +35,18 @@
           <option value="super_sla">Super SLA</option>
         </select>
       </div>
+      <!-- Qué hace este conductor. El reparto y los viajes particulares son dos
+           servicios distintos, y hay quien hace los dos: marcarlo acá es lo que
+           hace que el alta de un viaje ofrezca primero a los que corresponde. -->
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Servicio que hace</label>
+        <select id="mc-servicio" class="form-input" style="width:100%">
+          <option value="flex">Flex — reparto de envíos</option>
+          <option value="particular">Viajes particulares</option>
+          <option value="ambos">Las dos cosas</option>
+        </select>
+        <span style="font-size:11px;color:var(--text-muted)">No cambia cómo se le liquida el reparto: sirve para saber a quién ofrecerle un viaje.</span>
+      </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Nombres en los recorridos <span style="font-weight:400;color:var(--text-muted)">(alias — opcional)</span></label>
         <textarea id="mc-alias" class="form-input" rows="2" placeholder="Si en los recorridos figura con otro nombre (apodo, typo, 2° nombre), ponelo acá. Uno por línea." style="width:100%;resize:vertical;font-size:13px"></textarea>
@@ -2138,6 +2150,169 @@
       <button class="btn btn-primary" id="mprec-guardar" onclick="guardarActualizacionPrecios()">
         <i class="ic ic-check"></i> Aplicar desde esa fecha
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     VIAJE PARTICULAR — alta y edición
+     Las tres cosas que decide esta ventana son cuánto se le paga al
+     conductor, cuánto se le cobra al cliente y cuánto queda: por eso el
+     resumen de abajo las muestra juntas ANTES de guardar, y marca el
+     viaje que sale a pérdida.
+     ════════════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-viaje-backdrop" onclick="cerrarViajeModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:720px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-viaje-title">Agregar viaje particular</span>
+      <button class="modal-close" onclick="cerrarViajeModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha del viaje</label>
+          <input type="date" id="mvp-fecha" class="form-input" style="width:100%" onchange="vpCambioVehiculo()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Estado</label>
+          <select id="mvp-estado" class="form-input" style="width:100%">
+            <option value="realizado">Realizado — se paga y se factura</option>
+            <option value="pendiente">Programado — todavía no se hizo</option>
+            <option value="cancelado">Cancelado — no se paga ni se factura</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- CLIENTE. Puede ser uno existente o uno nuevo: el negocio va a hacer
+           viajes para los dos. El nuevo se da de alta en el maestro, así que
+           después tiene ficha, período y liquidación como cualquier otro. -->
+      <div class="form-group" style="margin:0">
+        <label class="form-label"><i class="ic ic-building"></i> Cliente
+          <button type="button" class="btn btn-sm" style="margin-left:8px" onclick="vpToggleClienteNuevo()">+ Cliente nuevo</button>
+        </label>
+        <select id="mvp-cliente" class="form-input" style="width:100%"></select>
+        <div id="mvp-nuevo-wrap" style="display:none;margin-top:8px;padding:10px;border:1px dashed var(--border);border-radius:8px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div class="form-group" style="margin:0;flex:2;min-width:180px">
+              <label class="form-label">Nombre del cliente nuevo</label>
+              <input type="text" id="mvp-nuevo-nombre" class="form-input" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" placeholder="RAZÓN SOCIAL O NOMBRE DE FANTASÍA">
+            </div>
+            <div class="form-group" style="margin:0;flex:1;min-width:130px">
+              <label class="form-label">Código (opcional)</label>
+              <input type="text" id="mvp-nuevo-cod" class="form-input" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" placeholder="= al nombre">
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Se da de alta en el maestro de clientes con ciclo semanal. Si además va a tener envíos, revisá que el código coincida con el del listado.</div>
+        </div>
+      </div>
+
+      <!-- CONDUCTOR. "Sin asignar" es un caso real: el viaje lo hizo alguien de
+           afuera, se le factura al cliente y no se le paga a nadie. -->
+      <div class="form-group" style="margin:0">
+        <label class="form-label"><i class="ic ic-truck"></i> Conductor</label>
+        <select id="mvp-conductor" class="form-input" style="width:100%"></select>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label">Vehículo</label>
+          <select id="mvp-vehiculo" class="form-input" style="width:100%" onchange="vpCambioVehiculo()">
+            <option value="moto">Moto</option>
+            <option value="utilitario">Utilitario</option>
+            <option value="furgon">Furgón</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Cómo se cotiza</label>
+          <select id="mvp-modalidad" class="form-input" style="width:100%" onchange="vpCambioVehiculo()">
+            <option value="km">Por kilómetros</option>
+            <option value="paradas">Especial Transportes (paradas)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px">
+          <label class="form-label" id="mvp-medida-label">Kilómetros</label>
+          <input type="number" id="mvp-medida" class="form-input" style="width:100%" min="0" step="1" placeholder="0" oninput="vpDesdeMedida()">
+        </div>
+      </div>
+      <div id="mvp-aviso-combo" style="font-size:11.5px"></div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Tramo del tarifario</label>
+        <select id="mvp-tramo" class="form-input" style="width:100%" onchange="vpAutoTarifa(true)"></select>
+        <div id="mvp-aviso-tramo" style="font-size:11.5px;margin-top:4px"></div>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:160px">
+          <label class="form-label">Origen</label>
+          <input type="text" id="mvp-origen" class="form-input" style="width:100%" placeholder="Desde dónde sale">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:160px">
+          <label class="form-label">Destino</label>
+          <input type="text" id="mvp-destino" class="form-input" style="width:100%" placeholder="Hasta dónde va">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Detalle (opcional)</label>
+        <input type="text" id="mvp-detalle" class="form-input" style="width:100%" placeholder="Qué se llevó, condiciones acordadas…">
+      </div>
+
+      <!-- El precio viene del tarifario pero queda EDITABLE: el viaje se cotiza
+           de antemano y a veces se cierra en otro número. Lo que no puede pasar
+           es que se mueva sin que se note, por eso el resumen lo dice. -->
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Costo — se le paga al conductor</label>
+          <input type="number" id="mvp-costo" class="form-input" style="width:100%;text-align:right;font-family:monospace" min="0" step="1" placeholder="0" oninput="vpPintarResumen()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Venta — se le factura al cliente</label>
+          <input type="number" id="mvp-venta" class="form-input" style="width:100%;text-align:right;font-family:monospace" min="0" step="1" placeholder="0" oninput="vpPintarResumen()">
+        </div>
+      </div>
+
+      <div id="mvp-resumen" style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:12px 14px"></div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="cerrarViajeModal()">Cancelar</button>
+        <button class="btn btn-primary" id="mvp-guardar" onclick="guardarViajeModal()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     TARIFARIO DE VIAJES — carga una lista NUEVA con su fecha
+     No pisa la que está: lo ya facturado conserva su precio, igual que
+     "Actualizar lista de precios" del tarifario de clientes.
+     ════════════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-vptarifa-backdrop" onclick="cerrarVpTarifaModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:760px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Actualizar el tarifario de viajes</span>
+      <button class="modal-close" onclick="cerrarVpTarifaModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0"><i class="ic ic-calendar"></i><div>
+        Se carga una <strong>lista nueva</strong> que rige desde la fecha que elijas. Las anteriores se conservan, así que
+        <strong>un viaje ya facturado no cambia de precio</strong>.
+      </div></div>
+      <div class="form-group" style="margin:0;max-width:220px">
+        <label class="form-label">Rige desde</label>
+        <input type="date" id="mvpt-desde" class="form-input" style="width:100%">
+      </div>
+      <div class="table-wrap" style="max-height:52vh;overflow:auto">
+        <table>
+          <thead><tr><th>Tramo</th><th style="text-align:right">Costo</th><th style="text-align:right">Venta</th><th style="text-align:right">Margen</th></tr></thead>
+          <tbody id="mvpt-rows"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarVpTarifaModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarVpTarifa()"><i class="ic ic-check"></i> Aplicar desde esa fecha</button>
+      </div>
     </div>
   </div>
 </div>
