@@ -494,6 +494,27 @@
   .badge-gray { background: #f0f0f0; color: #555; }
   .dash-cond-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
   .dash-cond-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+  /* Semáforo de renta: mismo chip que el filtro por condición. El punto
+     conserva su color aunque el botón esté activo —es lo que identifica la
+     banda— así que no se tiñe con el fondo. */
+  .dash-sem-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
+  .dash-sem-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .dash-sem-btn .muted { color:var(--text-muted); font-weight:400; }
+  .dash-sem-btn.active .muted { color:rgba(255,255,255,.78); }
+  .dash-sem-btn:disabled { opacity:.45; cursor:default; }
+  .dash-sem-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+    margin-right:5px; vertical-align:baseline; flex-shrink:0; }
+  /* Los colores de la renta van como CLASE y no inline: estos verdes y rojos
+     oscuros quedan ilegibles sobre el fondo oscuro, y un color hardcodeado no
+     se puede tematizar. El IMPORTE usa verde/rojo por su signo —queda plata o
+     se pierde— y el % usa el color de su banda, que es otra cosa. */
+  .rent-verde { color:#166534; }
+  .rent-ambar { color:#b45309; }
+  .rent-rojo  { color:#b91c1c; }
+  :root[data-theme="dark"] .rent-verde { color:#4ade80; }
+  :root[data-theme="dark"] .rent-ambar { color:#fbbf24; }
+  :root[data-theme="dark"] .rent-rojo  { color:#f87171; }
+  .dash-sem-txt { font-size:10px; font-weight:600; }
   .dash-fecha-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
   .dash-fecha-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   .dash-per-btn { font-size:11px; padding:4px 10px; border-radius:20px; }

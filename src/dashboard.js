@@ -646,6 +646,150 @@ function _filaRenta(cod, liqs) {
   };
 }
 
+
+// ════════════════════════════════════════════════════════════════════════
+//  SEMÁFORO DE RENTA — con qué margen trabaja cada cliente
+//
+//  La tabla ya muestra el margen de cada uno, pero con 108 clientes leer 108
+//  porcentajes a ojo no lo hace nadie: el que trabaja a pérdida queda enterrado
+//  entre los que están bien. El semáforo lo convierte en una pregunta que se
+//  contesta de un vistazo —*¿cuánta facturación está en rojo?*— y en un filtro
+//  para ir derecho a esos clientes.
+//
+//  EL CORTE NO SE INVENTA, Y NO ES UN 33/66. Medido en producción el margen de
+//  la empresa ronda el 51% y los clientes van de 39% a 68%: con los tercios de
+//  un semáforo genérico quedarían TODOS en verde y el panel no diría nada. Los
+//  cortes por defecto salen de ese piso real —verde desde 50%, rojo por debajo
+//  de 40%— y por eso **se guardan en `config` y se pueden cambiar**: cuál es un
+//  margen aceptable lo decide el negocio, no la app, y un número hardcodeado
+//  envejece sin que nadie lo note.
+//
+//  Y los cortes **se muestran siempre**, debajo de los botones: un color sin su
+//  umbral es una opinión sin fundamento — el operador no puede saber si "rojo"
+//  quiere decir 39% o 5%.
+//
+//  El filtro mueve LA TABLA y no los KPI de arriba, que son los del período
+//  completo y contestan *cómo venimos*. Lo que podría faltar —cuánta plata hay
+//  en cada banda— lo dice el propio botón, así que no hay nada escondido.
+// ════════════════════════════════════════════════════════════════════════
+
+const DASH_RENTA_BANDAS = [
+  { k: 'verde', label: 'Buena',      corto: 'renta buena',      punto: '#22c55e' },
+  { k: 'ambar', label: 'Para mirar', corto: 'renta para mirar', punto: '#f59e0b' },
+  { k: 'rojo',  label: 'Baja',       corto: 'renta baja',       punto: '#ef4444' }
+];
+const DASH_RENTA_CORTES = { verde: 50, ambar: 40 };   // % de margen, por defecto
+
+function dashCorteRenta(cual) {
+  const n = parseFloat(AppData.config && AppData.config['renta_corte_' + cual]);
+  return isNaN(n) ? DASH_RENTA_CORTES[cual] : n;
+}
+
+// En qué banda cae una fila de la tabla. Un cliente que **no factura** —todos
+// sus envíos en zonas sin tarifa— no tiene un porcentaje que medir, pero
+// tampoco es un caso neutro: se le paga al conductor y no se le cobra nada, así
+// que es lo más rojo que hay.
+function dashBandaRenta(x) {
+  if (!(x.factura > 0)) return 'rojo';
+  const p = x.margen * 100 / x.factura;
+  if (p >= dashCorteRenta('verde')) return 'verde';
+  if (p >= dashCorteRenta('ambar')) return 'ambar';
+  return 'rojo';
+}
+function _dashBandaDef(k) {
+  return DASH_RENTA_BANDAS.find(b => b.k === k) ||
+    { k: '', label: 'Todos', corto: '', punto: '' };
+}
+
+// El filtro se recuerda en una variable y no en el DOM: lo repinta la
+// sincronización en vivo, y perderlo a mitad de una revisión es el mismo bug
+// que ya tuvieron el conductor elegido y las solapas.
+let dashRentaSem = '';
+function setDashRentaSem(k) {
+  dashRentaSem = (dashRentaSem === k) ? '' : k;   // volver a tocarlo lo saca
+  renderDashClientes();
+}
+
+// Los botones se marcan contra el ESTADO y no contra el que se tocó: marcando
+// solo el clickeado ya quedó una vez un grupo diciendo una cosa mientras el
+// panel filtraba otra (el filtro por condición).
+function _renderSemaforoRenta(base) {
+  const box = document.getElementById('dash-renta-filtro');
+  if (!box) return;
+  const cv = dashCorteRenta('verde'), ca = dashCorteRenta('ambar');
+
+  const cnt = {}, fact = {};
+  DASH_RENTA_BANDAS.forEach(b => { cnt[b.k] = 0; fact[b.k] = 0; });
+  base.forEach(x => { const k = dashBandaRenta(x); cnt[k]++; fact[k] += x.factura; });
+
+  const ayuda = k => k === 'verde' ? 'Margen de ' + cv + '% o más'
+    : k === 'ambar' ? 'Margen entre ' + ca + '% y ' + cv + '%'
+    : k === 'rojo' ? 'Margen por debajo de ' + ca + '%, o clientes que no facturan nada'
+    : 'Todos los clientes del período';
+
+  // Un botón sin nadie queda deshabilitado en vez de desaparecer: que no haya
+  // ninguno en rojo es justamente la respuesta que se vino a buscar.
+  const btn = (k, label, punto, n, plata) =>
+    '<button class="btn btn-sm dash-sem-btn' + (dashRentaSem === k ? ' active' : '') + '"' +
+      ' onclick="setDashRentaSem(\'' + k + '\')"' + (n ? '' : ' disabled') +
+      ' title="' + ayuda(k) + '">' +
+      (punto ? '<span class="dash-sem-dot" style="background:' + punto + '"></span>' : '') +
+      label + ' <strong>' + n + '</strong>' +
+      (plata != null ? '<span class="muted"> · ' + fmtPeso(plata) + '</span>' : '') +
+    '</button>';
+
+  // El corte lo cambia quien puede decidir plata, igual que el precio del km de
+  // desvío; el resto lo ve, porque sin el umbral el color no se puede leer.
+  const puedeEditar = (typeof puedeAutorizar === 'function') && puedeAutorizar();
+  const campo = (cual, v) => puedeEditar
+    ? '<input type="number" value="' + v + '" min="0" max="100" step="1"' +
+      ' onchange="guardarCorteRenta(\'' + cual + '\',this.value)"' +
+      ' style="width:50px;padding:1px 4px;border:1px solid var(--border);border-radius:5px;' +
+      'font-size:11px;text-align:right;font-variant-numeric:tabular-nums;background:var(--surface-1)">'
+    : '<strong>' + v + '</strong>';
+
+  box.innerHTML =
+    '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">' +
+      '<span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Renta</span>' +
+      btn('', 'Todos', '', base.length, null) +
+      DASH_RENTA_BANDAS.map(b => btn(b.k, b.label, b.punto, cnt[b.k], fact[b.k])).join('') +
+    '</div>' +
+    '<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">' +
+      'Verde desde ' + campo('verde', cv) + '% de margen · ámbar desde ' + campo('ambar', ca) +
+      '% · por debajo, rojo. El cliente que no factura cuenta en rojo: se le paga al conductor y no se le cobra nada.' +
+      (dashRentaSem ? ' El filtro acota la tabla; los totales de arriba son los del período completo.' : '') +
+    '</div>';
+}
+
+// El corte vale para todos, así que vive en `config` y no en localStorage: si
+// cada uno tuviera el suyo, dos personas mirarían el mismo cliente en dos
+// colores distintos y el semáforo dejaría de ser una referencia común.
+async function guardarCorteRenta(cual, valor) {
+  const n = Math.max(0, Math.min(100, Math.round(parseFloat(valor))));
+  if (isNaN(n)) { renderDashClientes(); return; }
+  // El ámbar no puede quedar por encima del verde: dejaría la banda del medio
+  // vacía y dos colores diciendo lo mismo.
+  const otro = dashCorteRenta(cual === 'verde' ? 'ambar' : 'verde');
+  if ((cual === 'verde' && n < otro) || (cual === 'ambar' && n > otro)) {
+    alert('El corte del verde (' + (cual === 'verde' ? n : otro) + '%) tiene que ser mayor que el del ámbar (' +
+      (cual === 'ambar' ? n : otro) + '%): si no, la banda del medio queda vacía.');
+    renderDashClientes();
+    return;
+  }
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.setConfig('renta_corte_' + cual, String(n));
+    AppData.config['renta_corte_' + cual] = String(n);
+    try { localStorage.setItem('liq_config', JSON.stringify(AppData.config)); } catch (e) {}
+    renderDashClientes();
+    showToast('Renta ' + (cual === 'verde' ? 'buena' : 'para mirar') + ' desde ' + n + '% de margen');
+  } catch (e) {
+    console.warn('guardarCorteRenta', e);
+    alert('No se pudo guardar el corte: ' + (e.message || e));
+    renderDashClientes();
+  }
+}
+
 // Rango del filtro del dashboard en el formato que usa la facturación.
 function _dashRangoCliente() {
   const r = getDashFechaRango();
@@ -733,7 +877,11 @@ function renderDashClientes() {
   const v = data.ventana;
   _renderDashPerFiltro(data);
   const q = (document.getElementById('dash-cli-search')?.value || '').toLowerCase().trim();
-  const lista = todos.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
+  const base = todos.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
+  // Los botones cuentan sobre lo que el buscador dejó: si contaran sobre
+  // todos, dirían "3 en rojo" con la tabla mostrando otra cosa.
+  _renderSemaforoRenta(base);
+  const lista = dashRentaSem ? base.filter(x => dashBandaRenta(x) === dashRentaSem) : base;
 
   const factura = todos.reduce((s, x) => s + x.factura, 0);
   const costo = todos.reduce((s, x) => s + x.costo, 0);
@@ -802,14 +950,17 @@ function renderDashClientes() {
     : '';
 
   const countEl = document.getElementById('dash-cli-count');
-  if (countEl) countEl.textContent = lista.length === todos.length
-    ? todos.length + ' cliente(s)'
-    : lista.length + ' de ' + todos.length + ' cliente(s)';
+  // Dice CUÁL de los dos filtros está puesto: un "13 de 108" sin motivo manda a
+  // buscar el problema a otro lado. Y lo dice también si la banda se lleva a
+  // TODOS los clientes, porque si no el filtro quedaría puesto sin ninguna señal.
+  if (countEl) countEl.textContent = (lista.length === todos.length ? todos.length + ' cliente(s)'
+      : lista.length + ' de ' + todos.length + ' cliente(s)') +
+    (dashRentaSem ? ' · ' + _dashBandaDef(dashRentaSem).corto : '');
 
   if (!lista.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
-      '<div class="empty-title">' + (todos.length ? 'Sin coincidencias' : AppData._cargandoRegistros ? 'Cargando los envíos…' : v ? 'Sin envíos en estas fechas' : 'Sin clientes con envíos') + '</div>' +
-      '<div class="empty-sub">' + (todos.length ? 'Ajustá el buscador'
+      '<div class="empty-title">' + (dashRentaSem ? 'Ningún cliente con ' + _dashBandaDef(dashRentaSem).corto : todos.length ? 'Sin coincidencias' : AppData._cargandoRegistros ? 'Cargando los envíos…' : v ? 'Sin envíos en estas fechas' : 'Sin clientes con envíos') + '</div>' +
+      '<div class="empty-sub">' + (dashRentaSem ? 'En este período no hay ninguno en esa banda. Tocá Todos para ver el resto.' : todos.length ? 'Ajustá el buscador'
         : AppData._cargandoRegistros ? 'La facturación se completa sola cuando terminan de bajar.'
         : v ? 'Ningún ' + (quienes ? 'cliente ' + quienes.replace(/es$/, '') : 'cliente') +
           ' tuvo envíos entregados en estas fechas. Probá con otras.'
@@ -819,6 +970,7 @@ function renderDashClientes() {
 
   body.innerHTML = lista.map(x => {
     const p = x.factura > 0 ? Math.round(x.margen * 100 / x.factura) : 0;
+    const banda = dashBandaRenta(x);
     const codEsc = jsAttr(x.cod);
     return '<tr>' +
       '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(x.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(x.nombre) + '</div>' +
@@ -829,8 +981,14 @@ function renderDashClientes() {
       '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(x.factura) + '</td>' +
       '<td class="mono" style="text-align:right;color:var(--text-muted)">' + fmtPeso(x.costo) + '</td>' +
-      '<td class="mono" style="text-align:right;font-weight:700;color:' + (x.margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(x.margen) +
-        '<div style="font-size:10px;color:var(--text-muted);font-weight:400">' + p + '%</div></td>' +
+      // El IMPORTE conserva su sentido de siempre —verde si queda plata, rojo si
+      // se pierde—, y el color del semáforo va en el PORCENTAJE, que es lo que
+      // mide la banda: son dos hechos distintos. Pintar los $13.500 que gana un
+      // cliente al 39% de rojo haría leer una pérdida donde no la hay.
+      '<td class="mono rent-' + (x.margen >= 0 ? 'verde' : 'rojo') + '" style="text-align:right;font-weight:700">' + fmtPeso(x.margen) +
+        '<div class="dash-sem-txt rent-' + banda + '">' +
+          '<span class="dash-sem-dot" style="background:' + _dashBandaDef(banda).punto + '"></span>' +
+          (x.factura > 0 ? p + '%' : 'no factura') + '</div></td>' +
       '<td style="text-align:right"><button class="btn btn-sm" onclick="verRentaCliente(\'' + codEsc + '\')">Ver</button></td>' +
     '</tr>';
   }).join('');

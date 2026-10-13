@@ -54,7 +54,13 @@ let _rtRegCompleto = false;   // llegó algo que no se puede aplicar suelto: rec
 // re-renderiza la pantalla activa (evita repintar de prepo mientras el operador
 // está trabajando).
 const RT_PANTALLA_TABLAS = {
-  'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias'],
+  // 'config' lleva los cortes del semáforo de renta, que valen para TODOS: si no
+  // se repintara, dos personas verían el mismo cliente en dos colores distintos
+  // hasta que alguna recargara, que es justo lo que se evita guardándolos en la
+  // nube. 'cliente_cargos' y 'viajes_particulares' entran en la facturación de
+  // este panel desde que existen —una colecta o un viaje mueven el total y el
+  // margen— y tampoco estaban: el Dashboard quedaba con un número viejo.
+  'dashboard':              ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'config', 'cliente_cargos', 'viajes_particulares'],
   'upload':                 ['registros', 'importaciones', 'archivo_solicitudes', 'conductor_liquidaciones', 'cliente_liquidaciones'],
   'beneficios':             ['descuentos_items', 'proveedores'],
   'liquidaciones':          ['registros', 'tarifas', 'super_sla', 'panel_conductores', 'dimensiones_catalogo',
