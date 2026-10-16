@@ -51,10 +51,19 @@ function renderAdelantos() {
   const colBenef = document.getElementById('adelantos-col-benef');
   if (colBenef) colBenef.textContent = esEmp ? 'Empleado' : 'Conductor';
 
+  // El rótulo del selector de imputación cambia con la solapa: la cuota del
+  // conductor cae en una SEMANA de liquidación y la del empleado en el mes de
+  // su sueldo. Decir "semana" en la solapa de empleados sería decirlo mal.
+  const fLabel = document.getElementById('adelantos-fecha-label');
+  if (fLabel) fLabel.textContent = esEmp ? 'Imputar al día' : 'Imputar a la semana';
+
+  // OJO con `.alert`: es `display:flex`, así que cada <strong> suelto se
+  // convierte en una COLUMNA. El texto venía sin envolver y la ayuda se leía
+  // como una tira de bloques de una palabra de ancho; va todo dentro de UN hijo.
   const ayuda = document.getElementById('adelantos-ayuda');
-  if (ayuda) ayuda.innerHTML = '<i class="ic ic-card"></i> ' + (esEmp
-    ? 'Préstamos al <strong>personal de la empresa</strong>. Cada cuota que descontás queda imputada a la fecha elegida y aparece en la <strong>liquidación de sueldo</strong> de ese mes (panel Empleados), donde se puede tildar para que baje del neto. No afectan las liquidaciones de conductores.'
-    : 'Registrá un préstamo/adelanto (monto total y cantidad de cuotas) y la app calcula la cuota. Cada vez que <strong>descontás una cuota</strong> (por conductor con "− Cuota", o a todos con "Descontar cuota semanal"), esa cuota se imputa a la <strong>semana elegida</strong> y aparece automáticamente como deducción en la <strong>liquidación de esa semana</strong> (baja el neto del PDF). Elegí primero la semana arriba.');
+  if (ayuda) ayuda.innerHTML = '<i class="ic ic-card"></i><div>' + (esEmp
+    ? 'Préstamos al <strong>personal de la empresa</strong>. Cada cuota que descontás queda imputada a la fecha elegida arriba y aparece en la <strong>liquidación de sueldo</strong> de ese mes (panel Empleados), donde se puede tildar para que baje del neto. No afectan las liquidaciones de conductores. El <strong>mes</strong> de abajo elige qué préstamos se ven; la fecha de arriba, dónde se imputa lo que descuentes.'
+    : 'Registrá un préstamo/adelanto (monto total y cantidad de cuotas) y la app calcula la cuota. Cada vez que <strong>descontás una cuota</strong> (por conductor con "− Cuota", o a todos con "Descontar cuota semanal"), esa cuota se imputa a la <strong>semana elegida arriba</strong> y aparece automáticamente como deducción en la <strong>liquidación de esa semana</strong> (baja el neto del PDF). Ojo: el <strong>mes</strong> de abajo solo elige qué préstamos se ven — "Descontar cuota semanal" alcanza a <strong>todos los activos</strong>, sean del mes que sean.') + '</div>';
 
   // Contadores de cada solapa (activos), para ver de un vistazo dónde hay deuda.
   ['conductor', 'empleado'].forEach(g => {
@@ -64,20 +73,29 @@ function renderAdelantos() {
     el.textContent = n ? '(' + n + ')' : '';
   });
 
+  _pintarPanelMes('adelantos');
+
+  // DOS FILTROS QUE NO MIDEN LO MISMO: el buscador acota QUIÉN y el mes acota
+  // CUÁNDO se prestó. Por eso la deuda —que es un saldo, no un flujo— sigue al
+  // buscador pero NO al mes: "la deuda de JAVIER" es un número real, "la deuda
+  // de octubre" no lo es, porque un saldo no pertenece a un mes.
   const search = (document.getElementById('adelantos-search')?.value || '').toLowerCase().trim();
   const delGrupo = adelantosDeGrupo(adelGrupo);
-  const lista = delGrupo
-    .filter(a => !search || String(a.conductor).toLowerCase().includes(search))
+  const deQuien = delGrupo.filter(a => !search || String(a.conductor).toLowerCase().includes(search));
+  const lista = filtrarPorMesPanel('adelantos', deQuien)
     .sort((a, b) => (adelantoSaldado(a) ? 1 : 0) - (adelantoSaldado(b) ? 1 : 0)
                  || String(a.conductor).localeCompare(String(b.conductor)));
 
   const countEl = document.getElementById('adelantos-count');
   const activos = delGrupo.filter(a => !adelantoSaldado(a) && esAutorizado(a)).length;
   const pendientes = delGrupo.filter(a => a.estado === 'pendiente').length;
-  if (countEl) countEl.textContent = delGrupo.length + ' adelantos · ' + activos + ' activos'
+  if (countEl) countEl.textContent =
+    (lista.length === delGrupo.length ? delGrupo.length + ' adelantos'
+      : lista.length + ' de ' + delGrupo.length + ' adelantos')
+    + ' · ' + activos + ' activos'
     + (pendientes ? ' · ⏳ ' + pendientes + ' pendiente' + (pendientes > 1 ? 's' : '') : '');
 
-  renderAdelantosResumen(lista);
+  renderAdelantosResumen(lista, deQuien);
 
   if (!lista.length) {
     cont.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-card"></i></div><div class="empty-title">Sin adelantos ' +
@@ -177,33 +195,99 @@ async function rechazarAdelanto(id) {
 // Resumen de deuda (solo adelantos AUTORIZADOS con saldo) del grupo activo.
 // Respeta el buscador. Pesos y dólares se muestran POR SEPARADO: sumarlos en un
 // solo número exigiría fijar una cotización y daría una deuda que no es real.
-function renderAdelantosResumen(lista) {
+// `delMes` es lo que muestra la tabla (grupo + buscador + mes) y `deQuien` lo
+// mismo sin el mes. La diferencia entre los dos es deliberada: ver más abajo.
+function renderAdelantosResumen(delMes, deQuien) {
   const cont = document.getElementById('adelantos-resumen');
   if (!cont) return;
   const esEmp = adelGrupo === 'empleado';
-  const conDeuda = (lista || []).filter(a => esAutorizado(a) && saldoAdelanto(a) > 0);
-  const deudaARS = conDeuda.filter(a => !adelantoEsUSD(a)).reduce((s, a) => s + saldoAdelanto(a), 0);
-  const deudaUSD = conDeuda.filter(a => adelantoEsUSD(a)).reduce((s, a) => s + saldoAdelanto(a), 0);
-  const personas = new Set(conDeuda.map(a => esEmp ? ('e' + a.empleado_id) : conductorKey(a.conductor)));
-  const prestadoARS = conDeuda.filter(a => !adelantoEsUSD(a)).reduce((s, a) => s + _num(a.monto_total), 0);
-  const prestadoUSD = conDeuda.filter(a => adelantoEsUSD(a)).reduce((s, a) => s + _num(a.monto_total), 0);
-  const q = (document.getElementById('adelantos-search')?.value || '').trim();
+  delMes = delMes || [];
+  deQuien = deQuien || delMes;
+  const mes = _panelMesActivo('adelantos');
+  const ars = l => l.filter(a => !adelantoEsUSD(a));
+  const usd = l => l.filter(a => adelantoEsUSD(a));
   const linUSD = v => v > 0 ? '<div class="metric-sub" style="color:#065f46;font-weight:600">+ ' + fmtUSD(v) + ' en dólares</div>' : '';
+
+  // LO PRESTADO EN EL MES es un FLUJO: cuánta plata se entregó en esas fechas.
+  // Es la pregunta que el panel no contestaba — "Total prestado" sumaba los
+  // préstamos de todos los meses, así que no se podía separar lo que se dio
+  // ahora de la deuda que se viene arrastrando de atrás.
+  const prestados = delMes.filter(esAutorizado);
+  const prestadoARS = ars(prestados).reduce((s, a) => s + _num(a.monto_total), 0);
+  const prestadoUSD = usd(prestados).reduce((s, a) => s + _num(a.monto_total), 0);
+
+  // LA DEUDA VIGENTE es un SALDO, y un saldo no pertenece a un mes: se arrastra.
+  // Por eso NO sigue al navegador de mes —sí al buscador, que acota personas— y
+  // se dice cuánto viene de otros meses, que es justo lo que no se podía ver.
+  const conDeuda = deQuien.filter(a => esAutorizado(a) && saldoAdelanto(a) > 0);
+  const deudaARS = ars(conDeuda).reduce((s, a) => s + saldoAdelanto(a), 0);
+  const deudaUSD = usd(conDeuda).reduce((s, a) => s + saldoAdelanto(a), 0);
+  const personas = new Set(conDeuda.map(a => esEmp ? ('e' + a.empleado_id) : conductorKey(a.conductor)));
+  const delMesSet = new Set(delMes.map(a => a.id));
+  const arrastre = conDeuda.filter(a => !delMesSet.has(a.id));
+  const arrastreARS = ars(arrastre).reduce((s, a) => s + saldoAdelanto(a), 0);
+  const arrastreUSD = usd(arrastre).reduce((s, a) => s + saldoAdelanto(a), 0);
+
+  const q = (document.getElementById('adelantos-search')?.value || '').trim();
+  const filtrado = q ? ' (filtrado)' : '';
+  const mesTxt = mes ? _adelMesTexto(mes) : '';
+
   cont.innerHTML =
     '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
-      '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
-        '<div class="metric-label">Deuda vigente' + (q ? ' (filtrado)' : '') + '</div>' +
-        '<div class="metric-value">' + fmtPeso(deudaARS) + '</div>' +
-        '<div class="metric-sub">saldo pendiente de cobro</div>' + linUSD(deudaUSD) + '</div>' +
-      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-users"></i></div>' +
-        '<div class="metric-label">' + (esEmp ? 'Empleados' : 'Conductores') + ' con deuda</div>' +
-        '<div class="metric-value">' + personas.size + '</div>' +
-        '<div class="metric-sub">con saldo &gt; 0</div></div>' +
-      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-card"></i></div>' +
-        '<div class="metric-label">Total prestado (activo)</div>' +
+      '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-card"></i></div>' +
+        '<div class="metric-label">' + (mes ? 'Prestado en ' + mesTxt : 'Prestado (todos los meses)') + filtrado + '</div>' +
         '<div class="metric-value">' + fmtPeso(prestadoARS) + '</div>' +
-        '<div class="metric-sub">' + conDeuda.length + ' adelanto' + (conDeuda.length !== 1 ? 's' : '') + ' con saldo</div>' + linUSD(prestadoUSD) + '</div>' +
-    '</div>';
+        '<div class="metric-sub">' + (prestados.length
+          ? prestados.length + ' adelanto' + (prestados.length !== 1 ? 's' : '') + (mes ? ' dado' + (prestados.length !== 1 ? 's' : '') + ' en el mes' : '')
+          : (mes ? 'ninguno en este mes' : 'sin adelantos')) + '</div>' + linUSD(prestadoUSD) + '</div>' +
+      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
+        '<div class="metric-label">Deuda vigente' + filtrado + '</div>' +
+        '<div class="metric-value" style="color:#b45309">' + fmtPeso(deudaARS) + '</div>' +
+        '<div class="metric-sub">saldo pendiente, de todos los meses</div>' + linUSD(deudaUSD) +
+        // El dato que pedía el panel: cuánto de lo que falta cobrar NO se prestó
+        // en el mes que se está mirando.
+        (mes && (arrastreARS > 0 || arrastreUSD > 0)
+          ? '<div class="metric-sub" style="color:#b45309;font-weight:600;margin-top:2px">' +
+            'de los cuales ' + fmtPeso(arrastreARS) + (arrastreUSD > 0 ? ' + ' + fmtUSD(arrastreUSD) : '') +
+            ' vienen de otros meses</div>'
+          : '') + '</div>' +
+      '<div class="metric-card"><div class="metric-ic"><i class="ic ic-users"></i></div>' +
+        '<div class="metric-label">' + (esEmp ? 'Empleados' : 'Conductores') + ' con deuda' + filtrado + '</div>' +
+        '<div class="metric-value">' + personas.size + '</div>' +
+        '<div class="metric-sub">con saldo &gt; 0, de cualquier mes</div></div>' +
+    '</div>' + _adelAvisoFueraDelMes(arrastre, mes);
+}
+
+// Los meses, de este módulo: un mes escrito "2026-10" en el rótulo de una
+// tarjeta de plata no se lee, y pedirle el nombre a otro panel ya hizo que el
+// banco agarrara un "2026-08" donde tenía que decir "Agosto 2026".
+const _ADEL_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function _adelMesTexto(m) {
+  const p = String(m || '').split('-');
+  const i = (+p[1] || 0) - 1;
+  return (_ADEL_MESES[i] || m) + ' ' + p[0];
+}
+
+// LO QUE NO SE VE PERO HAY QUE COBRAR. El mes acota la tabla, y lo que queda
+// afuera no es ruido: son préstamos ACTIVOS con saldo, de meses anteriores, a
+// los que igual hay que descontarles la cuota. Esconderlos sin decirlo
+// convertiría el filtro en un punto ciego sobre plata por cobrar, así que se
+// cuentan con su importe y con la salida de un clic.
+function _adelAvisoFueraDelMes(arrastre, mes) {
+  if (!mes) return '';
+  const vivos = (arrastre || []).filter(a => !adelantoSaldado(a));
+  if (!vivos.length) return '';
+  const ars = vivos.filter(a => !adelantoEsUSD(a)).reduce((s, a) => s + saldoAdelanto(a), 0);
+  const usd = vivos.filter(a => adelantoEsUSD(a)).reduce((s, a) => s + saldoAdelanto(a), 0);
+  return '<div class="alert" style="margin:0 0 14px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
+    '<i class="ic ic-alert"></i><div>' +
+      '<strong>' + vivos.length + ' adelanto' + (vivos.length !== 1 ? 's' : '') + ' con saldo</strong> ' +
+      'de otros meses no se ' + (vivos.length !== 1 ? 'están' : 'está') + ' viendo acá: ' +
+      '<strong>' + fmtPeso(ars) + (usd > 0 ? ' + ' + fmtUSD(usd) : '') + '</strong> por cobrar. ' +
+      'Les corresponde cuota igual. ' +
+      '<button class="btn btn-sm" style="margin-left:6px" onclick="panelTodosLosMeses(\'adelantos\')">Ver todos los meses</button>' +
+    '</div></div>';
 }
 
 // ── Tipo de cambio de la cuota ──────────────────────────────────────────

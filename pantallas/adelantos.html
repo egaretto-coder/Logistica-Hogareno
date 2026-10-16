@@ -3,12 +3,17 @@
         <div class="section-head" style="margin-bottom:8px">
           <span class="section-title"><i class="ic ic-card"></i> Adelantos</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <div class="date-range">
+            <!-- Esto NO es un filtro de lo que se ve —eso lo decide el mes, más
+                 abajo—: es la fecha A LA QUE SE IMPUTA la cuota que se descuente,
+                 y por eso vive pegada a los dos botones que la usan. Una cuota va
+                 en UNA sola liquidación y la decide su fecha, así que esto tiene
+                 que seguir siendo un día y no un mes. -->
+            <div class="date-range" title="Fecha a la que se imputan las cuotas que descuentes. No filtra la tabla.">
               <i class="ic ic-calendar"></i>
-              <span class="date-label">Semana</span>
-              <input type="date" id="adelantos-fecha" title="Semana a la que se imputan las cuotas que descuentes" aria-label="Semana de imputación">
+              <span class="date-label" id="adelantos-fecha-label">Imputar a la semana</span>
+              <input type="date" id="adelantos-fecha" aria-label="Fecha de imputación de las cuotas">
             </div>
-            <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos del grupo en la semana elegida"><i class="ic ic-chevrons-down"></i> Descontar cuota semanal (todos)</button>
+            <button class="btn btn-sm" onclick="descontarCuotaSemanal()" title="Descuenta una cuota a TODOS los adelantos activos del grupo, estén o no en el mes que estás viendo"><i class="ic ic-chevrons-down"></i> Descontar cuota semanal (todos)</button>
             <label class="btn btn-sm" style="cursor:pointer;margin:0"><i class="ic ic-folder"></i> Importar Excel
               <input type="file" id="adelantos-file-input" accept=".xlsx,.xls,.csv" onchange="importAdelantos(event)" style="display:none">
             </label>
@@ -26,7 +31,22 @@
 
         <div class="alert alert-info" style="margin-bottom:16px" id="adelantos-ayuda"></div>
 
-        <!-- Resumen de deuda (total + por beneficiario, respeta el buscador) -->
+        <!-- El mes que se está mirando, el mismo navegador del resto de
+             Imputaciones. Acota la tabla y contesta "cuánto se prestó en
+             octubre": sin él, "Total prestado" mezcla préstamos de todos los
+             meses y no se puede separar lo que se dio ahora de la deuda que se
+             viene arrastrando. Arranca en el corriente, con "Todos" al lado. -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+          <div class="date-range" id="adelantos-mes-nav">
+            <button class="btn btn-sm" onclick="panelMoverMes('adelantos',-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+            <input type="month" id="adelantos-mes" onchange="panelElegirMes('adelantos',this.value)" aria-label="Mes a ver">
+            <button class="btn btn-sm" onclick="panelMoverMes('adelantos',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+          </div>
+          <button class="btn btn-sm" id="adelantos-mes-todos" onclick="panelTodosLosMeses('adelantos')" title="Ver los adelantos de todos los meses">Todos</button>
+        </div>
+
+        <!-- Resumen: lo prestado en el mes (flujo) y la deuda vigente (saldo) -->
         <div id="adelantos-resumen"></div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">

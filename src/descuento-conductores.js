@@ -93,6 +93,10 @@ function _panelMesRepintar(id) {
     if (typeof renderSimTarifas === 'function') renderSimTarifas();
     return;
   }
+  if (id === 'adelantos') {
+    if (typeof renderAdelantos === 'function') renderAdelantos();
+    return;
+  }
   if (id.indexOf('descitem-') === 0 && typeof renderDescItems === 'function') {
     renderDescItems(id.slice('descitem-'.length));
   }
