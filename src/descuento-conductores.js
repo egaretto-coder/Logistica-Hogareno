@@ -71,6 +71,9 @@ async function guardarKmValor(el) {
 // defecto que no se pueda sacar de un clic esconde registros viejos y hace
 // pensar que se perdieron. El contador ("3 de 47") deja ver cuándo está acotado.
 const _panelMes = {};                  // id del panel → 'AAAA-MM' | '' (todos)
+// El mes que se estaba mirando antes de apretar "Todos". Se recuerda para que
+// el botón se pueda DESTILDAR y para que el campo nunca quede vacío.
+const _panelMesPrevio = {};
 function _panelMesHoy() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -97,12 +100,27 @@ function _panelMesRepintar(id) {
     if (typeof renderAdelantos === 'function') renderAdelantos();
     return;
   }
+  // Viajes particulares armó su navegador —lo lee con filtrarPorMesPanel y lo
+  // pinta con _pintarPanelMes— pero nunca se registró acá, así que mover el mes
+  // cambiaba el estado y NO repintaba: el panel se quedaba en el mes anterior.
+  if (id === 'vp') {
+    if (typeof renderViajesParticulares === 'function') renderViajesParticulares();
+    return;
+  }
   if (id.indexOf('descitem-') === 0 && typeof renderDescItems === 'function') {
     renderDescItems(id.slice('descitem-'.length));
   }
 }
+// Qué mes muestra el control. Con "Todos" puesto no hay mes activo, pero el
+// campo igual tiene que decir algo: es el mes al que se vuelve.
+function _panelMesVisible(id) {
+  return _panelMesActivo(id) || _panelMesPrevio[id] || _panelMesHoy();
+}
 function panelMoverMes(id, n) {
-  const m = _panelMesActivo(id) || _panelMesHoy();
+  // Las flechas parten de lo que el campo MUESTRA. Partiendo de hoy, con
+  // "Todos" puesto sobre octubre, › saltaba a noviembre: el control decía una
+  // cosa y la flecha hacía otra.
+  const m = _panelMesVisible(id);
   const d = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1 + _num(n), 1);
   _panelMes[id] = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   _panelMesRepintar(id);
@@ -112,23 +130,40 @@ function panelElegirMes(id, v) {
   _panelMes[id] = v;
   _panelMesRepintar(id);
 }
+// "Todos" es un INTERRUPTOR: se tilda y se destilda. Encendido y sin forma de
+// apagarlo, volver a un mes obligaba a ir a buscarlo al calendario — y el
+// botón se veía marcado sin que nada lo pudiera desmarcar.
 function panelTodosLosMeses(id) {
-  _panelMes[id] = '';
+  if (_panelMesActivo(id) === '') {
+    _panelMes[id] = _panelMesPrevio[id] || _panelMesHoy();   // destildar: vuelve
+  } else {
+    _panelMesPrevio[id] = _panelMesActivo(id);
+    _panelMes[id] = '';
+  }
   _panelMesRepintar(id);
 }
 // Deja el control mostrando el mes activo y marca si está acotado. Como en el
 // Dashboard, el marcado sale del ESTADO y no del botón que se tocó.
 function _pintarPanelMes(id) {
   const mes = _panelMesActivo(id);
+  // El campo muestra SIEMPRE un mes, igual que el navegador del Dashboard.
+  // Vaciarlo con "Todos" dejaba el control en "---------- de ----", que se lee
+  // como que se rompió (reportado). Lo que dice que NO está filtrando es el
+  // resaltado apagado y "Todos" encendido, no un campo en blanco.
   const inp = document.getElementById(id + '-mes');
-  if (inp && inp.value !== mes) inp.value = mes;
+  const visible = _panelMesVisible(id);
+  if (inp && inp.value !== visible) inp.value = visible;
   const nav = document.getElementById(id + '-mes-nav');
   if (nav) {
     nav.style.borderColor = mes ? 'var(--accent)' : '';
     nav.style.boxShadow = mes ? '0 0 0 3px var(--accent-light)' : '';
   }
   const btn = document.getElementById(id + '-mes-todos');
-  if (btn) btn.classList.toggle('active', !mes);
+  if (btn) {
+    btn.classList.toggle('active', !mes);
+    btn.title = mes ? 'Ver los registros de todos los meses'
+                    : 'Volver a filtrar por el mes que muestra el selector';
+  }
 }
 // Deja solo los registros del mes activo. Sin mes, pasan todos.
 function filtrarPorMesPanel(id, lista) {

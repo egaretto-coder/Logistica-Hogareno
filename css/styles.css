@@ -521,6 +521,11 @@
   .dash-per-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   .liq-fecha-btn { font-size:11px; padding:4px 10px; border-radius:20px; }
   .liq-fecha-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+  /* El "Todos" del navegador de mes de los paneles. Llevaba la clase `active`
+     desde que existe, pero `.btn.active` NO tiene estilo: el botón se tildaba
+     y no se veía tildado, así que nadie podía saber si el filtro estaba puesto
+     ni cómo sacarlo (reportado). */
+  .panel-mes-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   /* LOGIN */
   #login-overlay {
     position: fixed; inset: 0; z-index: 9999;
