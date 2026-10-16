@@ -455,6 +455,25 @@ const DB = {
     return ids;
   },
 
+  // Escribe filas resolviendo por su CLAVE ÚNICA: la que ya está se actualiza y
+  // la que falta se inserta, todo en un request. Es lo que hay que usar cuando
+  // se vuelve a cargar una lista entera sobre una clave única, en vez de
+  // "borro y después inserto": ese camino son dos viajes, y entre los dos la
+  // tabla queda a medio escribir si algo falla — además de que reintentar
+  // choca con lo que ya entró. Acá repetir la operación es inofensivo.
+  // `onConflict` son las columnas de la unique, separadas por coma.
+  async upsertRows(table, rows, onConflict) {
+    if (!sb) throw new Error('offline');
+    const ids = [];
+    for (let i = 0; i < rows.length; i += 500) {
+      const { data, error } = await sb.from(table)
+        .upsert(rows.slice(i, i + 500), { onConflict }).select('id');
+      if (error) throw error;
+      (data || []).forEach(d => ids.push(d.id));
+    }
+    return ids;
+  },
+
   // Actualiza campos de una fila puntual por igualdad. La RLS decide permisos.
   async updateWhere(table, col, val, campos) {
     if (!sb) throw new Error('offline');

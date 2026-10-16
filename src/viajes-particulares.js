@@ -932,7 +932,16 @@ function vpPintarMargenFila(el) {
   cel.style.color = p != null && p < 0 ? '#b91c1c' : 'var(--text-muted)';
 }
 
+// Un segundo clic no puede arrancar una SEGUNDA escritura. Pasó de verdad: el
+// guardado hacía un request POR FILA —18 idas a la nube, media mano de reloj—
+// con el botón habilitado y sin ninguna señal, así que el operador apretaba de
+// nuevo; las dos corridas se pisaban y la que llegaba segunda moría con
+// "duplicate key value violates unique constraint", dejando la lista a medio
+// escribir (17 de 18 tramos) y todo reintento posterior chocando contra eso.
+let _vpGuardandoTarifa = false;
+
 async function guardarVpTarifa() {
+  if (_vpGuardandoTarifa) return;
   const desde = _vpEl('mvpt-desde').value;
   if (!desde) { alert('Poné desde qué día rige la lista nueva.'); return; }
   const body = _vpEl('mvpt-rows');
@@ -947,6 +956,22 @@ async function guardarVpTarifa() {
       creado_por: (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || ''
     };
   });
+  // Dos filas con la misma clave no las puede resolver la base, y el error que
+  // devuelve ("duplicate key value violates unique constraint …") no se
+  // entiende del otro lado de la pantalla. Hoy la grilla no las puede generar,
+  // pero es el único modo en que esto puede volver a fallar, así que se dice
+  // en castellano y nombrando el tramo.
+  const vistas = new Set(), repes = [];
+  filas.forEach(f => {
+    const k = f.vehiculo + '|' + f.modalidad + '|' + f.tramo;
+    if (vistas.has(k)) repes.push(vpVehiculoLabel(f.vehiculo) + ' · hasta ' + f.tramo + ' ' + vpUnidad(f.modalidad));
+    vistas.add(k);
+  });
+  if (repes.length) {
+    alert('La lista trae el mismo tramo dos veces y no se puede guardar así: ' + repes.join(', ') + '.');
+    return;
+  }
+
   const hoy = vpHoyISO();
   const aviso = desde < hoy
     ? '\n\nOJO: la fecha YA PASÓ. Los viajes de esos días pasan a valuarse con estos precios, así que las liquidaciones que los incluyan cambian de total.'
@@ -955,22 +980,34 @@ async function guardarVpTarifa() {
     'Las listas anteriores se conservan: lo ya facturado mantiene su precio.' + aviso)) return;
 
   try {
-    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
-    // Se pisan SOLO las filas de esa misma fecha, para que reintentar la carga
-    // no acumule dos versiones del mismo aumento.
-    const previas = (AppData.viajeTarifas || []).filter(t => vpVigenteDesde(t) === desde && t.id);
-    for (const p of previas) await DB.deleteWhere('viaje_tarifas', 'id', p.id);
-    AppData.viajeTarifas = (AppData.viajeTarifas || []).filter(t => vpVigenteDesde(t) !== desde);
-    for (const f of filas) {
-      const row = await DB.insertRow('viaje_tarifas', f);
-      AppData.viajeTarifas.push(Object.assign({ id: row && row.id }, f));
-    }
+    _vpGuardandoTarifa = true;
+    if (typeof _btnGuardando === 'function') _btnGuardando('mvpt-guardar', true);
+    // El mute del realtime dura TODA la escritura y no una ventana fija: si
+    // venciera a mitad, la re-hidratación leería la tabla a medio escribir.
+    if (typeof inicioEscrituraNube === 'function') inicioEscrituraNube();
+    else if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+
+    // UN solo request, resolviendo por la clave única de la tabla
+    // (vehiculo, modalidad, tramo, vigente_desde): la fila de esa fecha que ya
+    // esté se actualiza y la que falte se inserta. Antes era "borrar las de esa
+    // fecha y después insertar una por una", que son 35 idas a la nube y deja
+    // la lista a medio escribir si algo falla en el medio — que es exactamente
+    // lo que pasó. Así, además, **repetir la operación es inofensivo** y una
+    // lista que quedó incompleta se completa sola al volver a aplicarla.
+    const ids = await DB.upsertRows('viaje_tarifas', filas, 'vehiculo,modalidad,tramo,vigente_desde');
+    AppData.viajeTarifas = (AppData.viajeTarifas || []).filter(t => vpVigenteDesde(t) !== desde)
+      .concat(filas.map((f, i) => Object.assign({ id: ids[i] }, f)));
     try { localStorage.setItem('liq_viaje_tarifas', JSON.stringify(AppData.viajeTarifas)); } catch (e) {}
     _vpEl('modal-vptarifa-backdrop').style.display = 'none';
     renderViajesParticulares();
     showToast('💵 Tarifario de viajes actualizado · rige desde el ' + isoToDMY(desde));
   } catch (e) {
     console.warn('guardarVpTarifa', e);
-    alert('No se pudo guardar el tarifario: ' + (e.message || e));
+    alert('No se pudo guardar el tarifario: ' + (e.message || e) +
+      '\n\nNo se cambió nada: sigue rigiendo la lista anterior.');
+  } finally {
+    _vpGuardandoTarifa = false;
+    if (typeof _btnGuardando === 'function') _btnGuardando('mvpt-guardar', false);
+    if (typeof finEscrituraNube === 'function') finEscrituraNube();
   }
 }
