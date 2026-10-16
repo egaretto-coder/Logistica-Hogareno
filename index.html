@@ -45,8 +45,16 @@
      también lleva su propio estilo acá adentro en vez de en styles.css.
 
      Y NUNCA puede convertirse en una pared: se cierra sola cuando la app
-     está lista, tiene "Entrar igual" para el que no quiere esperar los
-     envíos, y un plazo máximo que la saca pase lo que pase.
+     está lista —y antes si no hay sesión, si se vuelve del mail de
+     recuperación o si la interfaz no cargó— y hay un plazo máximo que la
+     saca pase lo que pase.
+
+     NO tiene botón para entrar sin esperar. Lo tuvo, y era un pedido al
+     operador para que decidiera algo que no puede: entrar con los envíos a
+     medio bajar es entrar a un Dashboard incompleto, que es exactamente lo
+     que esta pantalla viene a evitar. Un botón que ofrece el problema no es
+     una salida, es una trampa con nombre amable. Las salidas son todas
+     automáticas, y las decide el estado de la carga, no el cansancio.
      ════════════════════════════════════════════════════════════════════ -->
 <div id="app-splash" role="status" aria-live="polite">
   <div class="splash-box">
@@ -58,7 +66,6 @@
     </div>
     <div class="splash-barra" aria-hidden="true"><span id="splash-barra-fill"></span></div>
     <div class="splash-txt" id="splash-txt">Abriendo el sistema…</div>
-    <button type="button" class="splash-entrar" id="splash-entrar" onclick="splashCerrar(true)">Entrar igual</button>
   </div>
 </div>
 <style>
@@ -98,11 +105,6 @@
 
   .splash-txt{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12.5px;letter-spacing:.14em;
     text-transform:uppercase;color:#9fb4dc;text-align:center;min-height:16px}
-  .splash-entrar{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;
-    background:transparent;border:1px solid rgba(255,255,255,.22);color:#c9d8f5;border-radius:99px;
-    padding:7px 18px;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s ease,background .2s ease}
-  .splash-entrar:hover{background:rgba(255,255,255,.08)}
-  .splash-entrar.visible{opacity:1;pointer-events:auto}
 
   /* Quien pidió menos movimiento no lo recibe: la pantalla igual informa. */
   @media (prefers-reduced-motion:reduce){
@@ -128,12 +130,6 @@
     var el = document.getElementById('app-splash');
     if (el) el.parentNode.removeChild(el);
   }, 6000);
-  // Y el botón para no esperar aparece solo a los 4 s: ofrecerlo de entrada
-  // haría parecer un obstáculo lo que es un aviso de que está trabajando.
-  setTimeout(function () {
-    var b = document.getElementById('splash-entrar');
-    if (b) b.classList.add('visible');
-  }, 4000);
 </script>
 
 <!-- Puntos de montaje: los parciales se inyectan desde app/main.js -->

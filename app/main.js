@@ -134,13 +134,16 @@ function splashEstado(txt, pct) {
 
 // Se va. Es idempotente y no se puede quedar a medias: si la transición no
 // dispara (pestaña en segundo plano), el nodo igual se saca por tiempo.
-function splashCerrar(porElUsuario) {
+// La cierra SIEMPRE el estado de la carga, nunca el operador: el botón
+// "Entrar igual" que tenía le pedía decidir algo que no puede —entrar con los
+// envíos a medio bajar es entrar a un Dashboard incompleto, que es justo lo
+// que esta pantalla viene a evitar—. Por eso ya no recibe quién la cerró.
+function splashCerrar() {
   if (_splashIda) return;
   _splashIda = true;
   try { clearTimeout(window.__splashPlazo); } catch (e) {}
   const el = document.getElementById('app-splash');
   if (!el) return;
-  if (porElUsuario) splashEstado('Entrando…');
   el.classList.add('splash-fuera');
   setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 600);
 }
