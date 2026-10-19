@@ -434,7 +434,21 @@ function _dashEspecialesPorDia(rango, conductores) {
     if (desde && f < desde) return;
     if (hasta && f > hasta) return;
     const iso = fechaISOde(d.fecha);
-    if (!iso || _dashEsDomingo(iso)) return;   // el domingo no se grafica
+    if (!iso) return;
+    // ACÁ ESTABA EXCLUIDO EL DOMINGO, Y SACABA LA PLATA DE LAS TARJETAS.
+    // El domingo no se GRAFICA, que es otra cosa que no se CUENTA: este total
+    // alimenta "Total liquidado", el costo por envío y el promedio por
+    // conductor, y la liquidación paga el especial igual —imputacionesConductor
+    // no mira el día de la semana—. Un especial cargado un domingo salía de
+    // las tres tarjetas en silencio: el Dashboard decía que se pagó menos de
+    // lo que se pagó, que es la forma exacta en que dos cuentas del mismo
+    // número terminan discrepando.
+    // Y el filtro NO servía ni para no dibujarlo: los especiales se pegan a
+    // los días de la serie (`datos.forEach`), y la serie NUNCA tiene domingos
+    // —el camino de los envíos ya los aparta—, así que no había ninguna barra
+    // a la que pudiera ir. Sacarlo no dibuja nada nuevo: solo deja de perder
+    // plata. Lo que no entra en ninguna barra lo avisa el gráfico, igual que
+    // los envíos sin fecha.
     const m = _num(d.monto);
     porDia.set(iso, _num(porDia.get(iso)) + m);
     total += m; n++;
@@ -1417,6 +1431,9 @@ function _dashGraficoDef(tab, dias) {
         peor: 'max', peorRotulo: 'Envío más caro',
       },
       total: d => d.costo + _num(d.especial), totalRotulo: 'Se paga',
+      // La única solapa que cuenta los recorridos especiales, así que la única
+      // que tiene que avisar por los que no entraron en ninguna barra.
+      especiales: true,
       nota: 'La barra es lo que se le paga a los conductores ese día: la tarifa de cada envío y, aparte, los recorridos especiales (el monto pactado por una ruta). El km de desvío NO entra, porque es el reintegro de un gasto y no el precio del trabajo. La línea es cuánto cuesta cada envío pagado — la misma cuenta que la tarjeta de arriba, día por día.',
     };
   }
@@ -1608,6 +1625,16 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
         (def.total && def.totalRotulo === 'Facturado' ? fmtPeso(dom.factura) : fmtPeso(dom.costo)) + ')</span>'
     : '';
 
+  // Los recorridos especiales que no tienen barra: cuentan en las tarjetas y no
+  // se dibujan, así que se dice cuánto fue. Mismo criterio que los dos avisos
+  // de arriba, y solo en la solapa que los cuenta.
+  const ef = datos.especialesFuera;
+  const avisoEsp = (def.especiales && ef && ef.total > 0)
+    ? '<span style="font-size:11.5px;color:var(--text-muted)" title="Un recorrido especial de un domingo, o de un día sin envíos, no tiene barra a la que ir: el domingo no se grafica y un día sin envíos no abre una barra. La liquidación los paga igual, así que cuentan en las tarjetas.">' +
+        fmtPeso(ef.total) + ' de recorridos especiales no se grafican (' +
+        ef.dias + (ef.dias === 1 ? ' día' : ' días') + ' sin barra) · sí cuentan en las tarjetas</span>'
+    : '';
+
   return '<div class="card" style="margin-bottom:14px;padding:14px 16px">' +
     '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
       '<strong style="font-size:14px"><i class="ic ic-trend"></i> ' + def.titulo + '</strong>' +
@@ -1623,7 +1650,7 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
         (n === 1 ? ' día contemplado</strong> (el ' + _dashDM(datos[0].iso)
                  : ' días contemplados</strong> (del ' + _dashDM(datos[0].iso) + ' al ' + _dashDM(datos[n - 1].iso)) +
         ') · pico ' + fmtPeso(totalDe(pico)) + '</span>' +
-      avisoSF + avisoDom +
+      avisoSF + avisoDom + avisoEsp +
     '</div>' +
     svg +
     '<div style="font-size:11.5px;color:var(--text-secondary);margin-top:8px">' + leyenda +
@@ -1664,8 +1691,21 @@ function renderDashGraficoDiario(records, periodoTxt, especialesPorDia) {
   // que no salen de la pasada por los recorridos: se pegan acá, al día que les
   // corresponde. Un especial en un día sin envíos no abre un día nuevo —no
   // habría contra qué leerlo— y queda contado igual en el KPI de arriba.
+  // Dos casos no tienen barra a la que ir: el domingo (no se grafica) y un día
+  // sin envíos (no abre un día nuevo, no habría contra qué leerlo). En los dos
+  // la plata SÍ cuenta en las tarjetas, así que el gráfico tiene que decir
+  // cuánto dejó afuera — si no, la suma de las barras no da el número de
+  // arriba y no hay dónde ver por qué. Es la misma identidad que sostienen el
+  // aviso de los envíos sin fecha y el de los domingos.
+  const espFuera = { total: 0, dias: 0 };
   if (especialesPorDia && especialesPorDia.size) {
+    const conBarra = new Set(datos.map(d => d.iso));
     datos.forEach(d => { d.especial = _num(especialesPorDia.get(d.iso)); });
+    especialesPorDia.forEach((monto, isoD) => {
+      if (conBarra.has(isoD)) return;
+      espFuera.total += _num(monto); espFuera.dias++;
+    });
   }
+  datos.especialesFuera = espFuera;
   cont.innerHTML = _dashGraficoDiario(datos, _dashGraficoDef(dashTab, datos), periodoTxt || '');
 }
