@@ -1611,8 +1611,18 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
   return '<div class="card" style="margin-bottom:14px;padding:14px 16px">' +
     '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
       '<strong style="font-size:14px"><i class="ic ic-trend"></i> ' + def.titulo + '</strong>' +
-      '<span style="font-size:12px;color:var(--text-muted)">' + periodoTxt + ' · ' + n +
-        (n === 1 ? ' día' : ' días') + ' · pico ' + fmtPeso(totalDe(pico)) + '</span>' +
+      // CUÁNTOS DÍAS CONTEMPLA Y CUÁLES. El contador decía "· 16 días ·"
+      // pegado al nombre del mes, que se lee como "el mes tiene 16 días" en
+      // vez de "estoy graficando 16", y sobre todo NO decía cuáles. Eso es
+      // justo el diagnóstico que faltaba: con el mes en "Octubre 2026" y el
+      // gráfico arrancando el 05/10 —porque el arranque se había llevado los
+      // envíos del 1 al 4— no había nada en pantalla que lo delatara, y se
+      // reportó como "el dashboard arranca el lunes 5 de octubre". Un rango
+      // que no coincide con el período de arriba ahora se ve de una.
+      '<span style="font-size:12px;color:var(--text-muted)">' + periodoTxt + ' · <strong>' + n +
+        (n === 1 ? ' día contemplado</strong> (el ' + _dashDM(datos[0].iso)
+                 : ' días contemplados</strong> (del ' + _dashDM(datos[0].iso) + ' al ' + _dashDM(datos[n - 1].iso)) +
+        ') · pico ' + fmtPeso(totalDe(pico)) + '</span>' +
       avisoSF + avisoDom +
     '</div>' +
     svg +
@@ -1631,6 +1641,12 @@ function _dashMiles(v) {
   if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.', ',') + ' M';
   if (n >= 1000) return Math.round(n / 1000) + ' k';
   return String(Math.round(n));
+}
+// "01/10", para decir de qué día a qué día va el gráfico sin gastar el ancho
+// de un "1 de octubre de 2026" por punta.
+function _dashDM(isoD) {
+  const s = String(isoD || '');
+  return s.length >= 10 ? s.slice(8, 10) + '/' + s.slice(5, 7) : s;
 }
 const _DASH_MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function _dashFechaLarga(iso) {

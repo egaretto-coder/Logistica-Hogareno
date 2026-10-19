@@ -224,6 +224,14 @@ async function _traerRegistrosDesde(desdeISO) {
 function asegurarPeriodoEnPantalla(desdeISO, repintar) {
   if (!periodoFueraDeVentana(desdeISO)) return '';
   const pido = _desdePedido(desdeISO);
+  // MIENTRAS EL ARRANQUE BAJA SU VENTANA no se pide nada: esa carga REEMPLAZA
+  // AppData.records entero al terminar, así que lo que se trajera ahora se
+  // perdería igual — y de paso serían dos cargas peleándose por el mismo
+  // array. Se avisa que están viniendo (es verdad: los está bajando el
+  // arranque) y el re-render de hydrateEnFases pide la extensión después,
+  // ya con la cobertura quieta. La red que atajaba esto igual queda puesta
+  // arriba: cargadoDesde nunca afirma más de lo que hay.
+  if (AppData._cargandoRegistros) return _bloqueTraerEnvios(pido, true);
   if (AppData._falloTraer === pido) return _bloqueTraerEnvios(pido, false);
   asegurarRegistrosDesde(pido).then(n => {
     if (n !== false && typeof repintar === 'function') repintar();
@@ -877,9 +885,30 @@ async function _hydrateRegistrosReal() {
   actualizarEstadoCarga();
   try {
     // Con avance: son ~20 páginas y sin una señal el arranque parece colgado.
-    const filas = await DB.selectRegistrosVentana(registrosDesdeISO(),
+    // La cobertura se resuelve ACÁ y se guarda abajo tal cual: entre este
+    // punto y el `await` pueden pasar segundos, y otro panel puede haber
+    // pedido un período más viejo en el medio.
+    const desde = registrosDesdeISO();
+    const filas = await DB.selectRegistrosVentana(desde,
       (hechas, total) => { AppData._cargaRegProgreso = { hechas, total }; actualizarEstadoCarga(); });
     AppData.records = _archivadosEnMemoria().concat((filas || []).map(mapRegistroNube));
+    // ESTA LÍNEA ES LA QUE FALTABA, y sin ella el Dashboard mostraba el mes
+    // empezando en "hoy menos 14" sin que nada lo dijera (bug real,
+    // reportado: "el dashboard arranca el lunes 5 de octubre").
+    // El Dashboard es la pantalla de aterrizaje, así que es la ÚNICA que pide
+    // su cobertura mientras esta carga todavía está en vuelo — y su pedido es
+    // mucho más chico (4 días contra 14), así que termina PRIMERO. Entonces:
+    // el Dashboard dejaba los envíos del 1 al 4 en memoria y ponía
+    // cargadoDesde = 01/10; el arranque terminaba después y la línea de arriba
+    // REEMPLAZA el array entero, llevándose esos envíos — pero cargadoDesde
+    // seguía diciendo 01/10, o sea afirmando una cobertura que ya no existía.
+    // Desde ahí periodoFueraDeVentana(01/10) daba false (pide lo mismo que
+    // cree tener) y NADIE volvía a pedirlo nunca. Estable entre recargas,
+    // porque la carrera se resuelve igual siempre.
+    // La invariante: `cargadoDesde` describe LO QUE HAY, no lo que se pidió.
+    // Si esta carga se llevó algo más viejo, la fecha vuelve atrás y el panel
+    // lo pide de nuevo en el próximo render: se arregla solo.
+    AppData.cargadoDesde = desde;
     invalidarLiquidaciones();   // base nueva en memoria: recalcular totales
     if (window.__perfLog) window.__perfLog('cargar recorridos (' + AppData.records.length + ')', _t0);
     return true;
@@ -959,8 +988,14 @@ async function hydrateEnFases() {
     await hydrateFromSupabase({ sinRegistros: true });          // config (liviana)
     if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
   } catch (e) { console.warn('Fase config:', e); }
-  const ok = await pRegistros;                                 // recorridos (pesado)
-  if (ok && typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+  // Se espera igual que ANTES, pero el repintado va SIEMPRE, no solo si salió
+  // bien: los paneles que se abstuvieron de pedir mientras esto bajaba quedan
+  // mostrando "trayendo los envíos", y si la carga falla y nadie repinta, ese
+  // aviso se queda para siempre sin nada en vuelo. Repintando se ve el estado
+  // real —vacío con su error— en vez de uno viejo que promete algo que no va
+  // a pasar.
+  await pRegistros;                                            // recorridos (pesado)
+  if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
 }
 
 // Empuja una tabla de configuración a Supabase (reemplazo total).
