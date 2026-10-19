@@ -601,9 +601,30 @@ async function eliminarRendicion(id) {
 //     `rendiciones.envio_clave` con su índice único.
 // ══════════════════════════════════════════════════════════════════════════
 
-// Un envío entregado con cobro > 0 es una rendición pendiente. Nada más.
+// ── EL PANEL ARRANCA EN UNA FECHA ────────────────────────────────────────
+//  Los cobros de agosto, septiembre y octubre hasta el 18/10 son operaciones
+//  CERRADAS: se rindieron por fuera del sistema mientras la columna no llegaba.
+//  Traerlos ahora llenaría el panel de deuda que no existe y le reclamaría a
+//  los choferes plata que ya trajeron — que es peor que no tener el panel,
+//  porque un listado de deuda falsa se deja de mirar enseguida.
+//  El corte vive en `config` (`rendicion_control_desde`) con el default en el
+//  código: mismo criterio que `cliente_corte_iso` y que el control de "qué
+//  falta facturar" —UNA fecha, no marcar miles de filas—, se explica solo, es
+//  reversible y se corre sin desplegar nada.
+//  Se mide por FECHA DE ENTREGA, que es cuando el conductor cobró.
+const REND_CONTROL_DESDE = '2026-10-19';
+
+function rendControlDesde() {
+  const v = String((AppData.config && AppData.config.rendicion_control_desde) || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : REND_CONTROL_DESDE;
+}
+
+// Un envío entregado con cobro > 0, entregado desde el corte, es una rendición
+// pendiente. Nada más.
 function esCobroEnDestino(r) {
-  return !!r && _num(r.cobro_destino) > 0 && contabilizaRegistro(r);
+  if (!r || !(_num(r.cobro_destino) > 0) || !contabilizaRegistro(r)) return false;
+  const iso = fechaISOde(r.fecha);
+  return !!iso && iso >= rendControlDesde();
 }
 
 function rendicionDeEnvio(r) {
@@ -672,9 +693,11 @@ async function generarRendicionesDesdeEnvios() {
   const ventana = (typeof textoVentanaCargada === 'function') ? textoVentanaCargada() : '';
   if (!pend.length) {
     alert('No hay cobros nuevos para registrar.' +
-      (ventana ? '\n\nSe miraron los envíos cargados: ' + ventana + '.' : '') +
-      '\n\nSe buscan envíos ENTREGADOS con "Total a cobrar" mayor a 0. Si el listado no trae esa columna, ' +
-      'mapeala al importar: el resumen de la carga dice cuántos cobros encontró.');
+      '\n\nSe buscan envíos ENTREGADOS con "Total a cobrar" mayor a 0, entregados desde el ' +
+      isoToDMY(rendControlDesde()) + ' (lo anterior son operaciones ya cerradas).' +
+      (ventana ? '\nEnvíos cargados: ' + ventana + '.' : '') +
+      '\n\nSi el listado no trae esa columna, mapeala al importar: el resumen de la carga dice ' +
+      'cuántos cobros encontró.');
     return;
   }
   const total = pend.reduce((s, r) => s + _num(r.cobro_destino), 0);
@@ -701,13 +724,24 @@ function _btnGenerandoCobros(on) {
 
 // El aviso que hace innecesario acordarse del botón: lo que el listado trajo y
 // todavía no está registrado, con su plata y a la vista.
+// **Dice las dos cosas**: cuando hay pendientes los pone arriba, y cuando no hay
+// igual deja el renglón con la fecha de corte — un panel vacío sin explicación
+// se lee como que el control se rompió, y acá además hay que poder entender por
+// qué no figura nada de agosto ni de septiembre.
 function _renderCobrosPendientes() {
   const box = document.getElementById('rend-aviso-envios');
   if (!box) return;
   const pend = cobrosSinRendir(AppData.records);
-  if (!pend.length) { box.innerHTML = ''; return; }
-  const total = pend.reduce((s, r) => s + _num(r.cobro_destino), 0);
+  const desdeTxt = isoToDMY(rendControlDesde());
   const ventana = (typeof textoVentanaCargada === 'function') ? textoVentanaCargada() : '';
+  if (!pend.length) {
+    box.innerHTML = '<div class="alert" style="margin:0 0 14px;font-size:12px">' +
+      '<i class="ic ic-check"></i><div>Los cobros del listado están todos registrados. ' +
+      '<span style="opacity:.75">Se controlan las entregas desde el <strong>' + desdeTxt + '</strong>: ' +
+      'lo anterior son operaciones ya cerradas, que se rindieron por fuera del sistema.</span></div></div>';
+    return;
+  }
+  const total = pend.reduce((s, r) => s + _num(r.cobro_destino), 0);
   box.innerHTML =
     '<div class="alert" style="margin:0 0 14px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412">' +
       '<i class="ic ic-alert"></i><div style="font-size:13px">' +
@@ -715,7 +749,8 @@ function _renderCobrosPendientes() {
         'Son envíos entregados con "Total a cobrar" que todavía no están en esta lista. ' +
         '<button class="btn btn-sm" id="rend-btn-traer-aviso" style="margin-left:6px;padding:2px 10px;font-size:11px" ' +
           'onclick="generarRendicionesDesdeEnvios()">Registrarlos</button>' +
-        (ventana ? '<div style="opacity:.8;margin-top:4px">Se miran los envíos cargados: ' + ventana + '.</div>' : '') +
+        '<div style="opacity:.8;margin-top:4px">Entregas desde el ' + desdeTxt +
+          (ventana ? ' · envíos cargados: ' + ventana : '') + '.</div>' +
       '</div>' +
     '</div>';
 }
@@ -747,10 +782,17 @@ function closeCobroEnvioModal(e) {
 // está registrado invita a cobrarlo dos veces.
 function _candidatosCobro(q) {
   const yaClave = new Set((AppData.rendiciones || []).map(r => r.envio_clave).filter(Boolean));
+  const desde = rendControlDesde();
   const t = String(q || '').toLowerCase().trim();
   const out = [];
   for (const r of (AppData.records || [])) {
     if (!contabilizaRegistro(r) || !r.clave || yaClave.has(r.clave)) continue;
+    // Mismo corte que el automático: un envío de una operación ya cerrada no se
+    // ofrece, porque registrarlo inventaría una deuda que nadie tiene. Para ese
+    // caso excepcional queda el alta libre ("+ Nuevo cobro"), que no cuelga de
+    // ningún envío y por eso no se confunde con lo que trae el listado.
+    const iso = fechaISOde(r.fecha);
+    if (!iso || iso < desde) continue;
     if (t) {
       const hay = [r.tracking, r.destinatario, r.cliente, r.direccion, r.cadete]
         .map(v => String(v || '').toLowerCase()).join(' ');
@@ -774,7 +816,9 @@ function buscarEnvioCobro() {
   const lista = _candidatosCobro(q);
   if (!lista.length) {
     box.innerHTML = '<div style="font-size:12px;color:#9a3412;padding:8px">' +
-      'Ningún envío entregado coincide. Puede estar <strong>fuera de los días cargados</strong>, o ya tener su cobro registrado. ' +
+      'Ningún envío entregado coincide. Puede estar <strong>fuera de los días cargados</strong>, ' +
+      'ser <strong>anterior al ' + isoToDMY(rendControlDesde()) + '</strong> (operaciones ya cerradas), ' +
+      'o ya tener su cobro registrado. ' +
       'Si el envío no está en el listado, usá <strong>“+ Nuevo cobro”</strong>.</div>';
     return;
   }
