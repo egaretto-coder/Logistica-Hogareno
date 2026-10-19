@@ -178,6 +178,59 @@ function renderDashConductoresPanel(liqParam) {
       </div>`;
     }).join('');
 
+  // ── COSTO por categorización ────────────────────────────────────────────
+  // La torta de arriba cuenta PERSONAS; esta cuenta PLATA. Son dos preguntas
+  // distintas y ninguna reemplaza a la otra: cuántos conductores hay de cada
+  // categoría, y cuánto se lleva cada una. El 61% de los conductores puede no
+  // ser el 61% del costo —una categoría más cara, o con más envíos por cabeza,
+  // pesa distinto— y mirando solo el headcount eso no se ve.
+  // Sale del MISMO `liq` que la participación en facturación de al lado
+  // (calcLiquidaciones, la cuenta que paga) y del MISMO universo ya filtrado
+  // (liqPorConductor), así los dos números de este panel no pueden discrepar.
+  const _catDePanel = {};
+  AppData.panelConductores.forEach(c => {
+    _catDePanel[String(c.nombre || '').toUpperCase().trim()] = c.categoria || 'sin_cat';
+  });
+  const catMonto = {}, catConLiq = {};
+  liqPorConductor.forEach(x => {
+    const cat = _catDePanel[String(x.nombre || '').toUpperCase().trim()] || 'sin_cat';
+    catMonto[cat] = _num(catMonto[cat]) + _num(x.monto);
+    catConLiq[cat] = _num(catConLiq[cat]) + 1;
+  });
+  const catMontoTotal = Object.values(catMonto).reduce((a, b) => a + _num(b), 0);
+  const catMontoOrden = Object.entries(catMonto).sort((a, b) => b[1] - a[1]);
+  const catMontoPartes = catMontoOrden.map(([cat, m]) => {
+    const info = CAT_INFO[cat] || { label: cat, color: '#9ca3af' };
+    return { label: info.label, color: info.color, cnt: m };
+  });
+  const catMontoRows = catMontoOrden.map(([cat, m]) => {
+    const info = CAT_INFO[cat] || { label: cat, color: '#9ca3af' };
+    const pPlata = catMontoTotal ? Math.round(m / catMontoTotal * 100) : 0;
+    return `<div class="dash-bar-row">
+      <span class="lbl"><span class="dot" style="background:${info.color}"></span>${info.label}</span>
+      <span class="dash-bar-track"><span class="dash-bar-fill" style="width:${pPlata}%;background:${info.color}"></span></span>
+      <span class="meta"><b style="color:${info.color}">${pPlata}%</b><span>${fmtPeso(m)}</span></span>
+    </div>`;
+  }).join('');
+  // LA COMPARACIÓN, EN PALABRAS: es la respuesta que se vino a buscar acá —una
+  // categoría que pesa más en plata que en gente—, y tenerla que deducir
+  // mirando dos tortas de arriba abajo no lo hace nadie. Se mide sobre LOS QUE
+  // COBRARON, que es el conjunto de las dos cifras, y no contra el headcount de
+  // arriba: con un filtro por condición ese cuenta también a los del panel que
+  // no tienen liquidación, y comparar contra él daría una brecha inventada.
+  // Solo se dice cuando la diferencia llega a 5 puntos: un aviso que sale
+  // siempre deja de leerse.
+  const _nConLiq = liqPorConductor.length;
+  const catBrecha = catMontoOrden.map(([cat, m]) => {
+    const info = CAT_INFO[cat] || { label: cat, color: '#9ca3af' };
+    const pPlata = catMontoTotal ? Math.round(m / catMontoTotal * 100) : 0;
+    const pGente = _nConLiq ? Math.round(_num(catConLiq[cat]) / _nConLiq * 100) : 0;
+    return { label: info.label, pPlata: pPlata, pGente: pGente, dif: pPlata - pGente };
+  }).filter(x => Math.abs(x.dif) >= 5).slice(0, 2)
+    .map(x => x.label + ' es el ' + x.pGente + '% de los que cobraron y el ' + x.pPlata +
+      '% de lo que se paga')
+    .join(' · ');
+
   // ── Participación en facturación por conductor (ranking) ─────────────────
   const factRows = top8.length ? top8.map(({ nombre, monto }) => {
     const partPct = montoGrupo > 0 ? Math.round(monto / montoGrupo * 100) : 0;
@@ -194,7 +247,16 @@ function renderDashConductoresPanel(liqParam) {
         <div class="dash-subtitle">Distribución por categorización · <b style="color:var(--text-secondary)">${dashCondFilter ? cantidad : totalConLiq} conductores</b></div>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
           <div style="flex-shrink:0">${_dashDonut(catPartes, totalParaPct, { valor: totalParaPct, etiqueta: 'conductores' })}</div>
-          <div style="flex:1;min-width:200px">${catRows || '<div style="color:var(--text-muted);font-size:12px">Sin conductores</div>'}</div>
+          <div id="dash-cat-rows" style="flex:1;min-width:200px">${catRows || '<div style="color:var(--text-muted);font-size:12px">Sin conductores</div>'}</div>
+        </div>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <div class="dash-subtitle">Costo por categorización · <b style="color:var(--text-secondary)">${fmtPeso(catMontoTotal)}</b></div>
+          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <div style="flex-shrink:0">${_dashDonut(catMontoPartes, catMontoTotal, { valor: fmtPeso(catMontoTotal), etiqueta: 'se paga', chico: true }, fmtPeso)}</div>
+            <div id="dash-cat-costo-rows" style="flex:1;min-width:200px">${catMontoRows || '<div style="color:var(--text-muted);font-size:12px">Sin liquidaciones en el período</div>'}</div>
+          </div>
+          ${catBrecha ? '<div style="font-size:11.5px;color:var(--text-secondary);margin-top:8px">' + catBrecha + '</div>' : ''}
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Lo que se paga por los ENVÍOS del período, con la misma cuenta que la liquidación. El recorrido especial no entra: es un monto pactado a mano y no la tarifa de ninguna categoría.</div>
         </div>
       </div>
       <div>
