@@ -419,3 +419,147 @@ async function _ejecutarArchivo(tope, cuantos, sol) {
 
 // Compatibilidad: el botón del panel llama a este nombre.
 async function archivarCerrados() { return pedirArchivoCerrados(); }
+
+// ══════════════════════════════════════════════════════════════════════════
+//  EL ARCHIVO CORRE SOLO
+//
+//  Archivar era una decisión que alguien tenía que acordarse de tomar, y por
+//  eso no se tomaba: la tabla viva llegó a 120.221 envíos con junio y julio
+//  como único archivo. Ahora se hace solo, con DOS condiciones que tienen que
+//  cumplirse las dos:
+//
+//  1) **CERRADO de los dos lados** — pagado al conductor y cobrado al cliente,
+//     que es la regla que ya existía (`envioCerrado`). No se reemplaza por la
+//     fecha: archivar por fecha a secas se lleva envíos con plata pendiente de
+//     un lado, y archivado el envío queda SOLO LECTURA — no se le puede
+//     corregir la zona, ni pagar la visita, ni cerrar la liquidación que falta.
+//  2) **Y más viejo que el margen de meses**: se deja vivo el mes en curso y
+//     el anterior completo. En octubre se archiva hasta el 31/08 y septiembre
+//     queda entero, por si aparece algo que corregir.
+//
+//  La fecha es un margen ARRIBA del cierre, no en su lugar. Medido en
+//  producción al escribirlo: de los 49.857 envíos de agosto, ~37.700 estaban
+//  cerrados y ~7.600 seguían abiertos (se facturaron por fuera del sistema).
+//  Con las dos condiciones se archivan los 37.700 y los otros quedan donde
+//  están — que es justo lo que el panel de Cierre lista diciendo qué falta.
+//
+//  LO QUE SE PIERDE, DICHO: el maker-checker. Archivar lo pedía un
+//  administrativo y lo autorizaba un supervisor, porque mueve decenas de miles
+//  de filas sin vuelta atrás. Automatizarlo saca esa aprobación; se puede
+//  porque la condición de cierre garantiza que no toca nada en curso. Queda el
+//  registro: cada corrida deja su fila en `archivo_solicitudes` marcada
+//  `automatica`, con cuántos movió y cuándo.
+//
+//  POR QUÉ NO ES UN pg_cron: la regla de cierre vive en JavaScript y es
+//  compleja —la semana de cada conductor según su condición, el período de
+//  cada cliente con sus vigencias, el corte del modelo anterior—.
+//  Reimplementarla en SQL serían dos versiones de la misma regla, y en este
+//  proyecto eso siempre terminó discrepando. Corre en la app, que alguien abre
+//  todos los días para importar.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Meses que quedan vivos además del que está corriendo.
+const CIERRE_MESES_VIVOS = 1;
+// Por debajo de esto no vale la pena: mover 30 filas no cambia nada y la
+// corrida cuesta una consulta.
+const ARCHIVO_AUTO_MINIMO = 200;
+
+// El 1º del mes a partir del cual NO se archiva. En octubre con
+// CIERRE_MESES_VIVOS=1 da el 01/09: se archiva agosto y lo anterior.
+function topeArchivoAuto() {
+  const h = new Date();
+  return _cieISO(new Date(h.getFullYear(), h.getMonth() - CIERRE_MESES_VIVOS, 1));
+}
+
+// La corrida de hoy, si ya se hizo. Va en `config` y no en localStorage porque
+// vale para todos: con uno por navegador, dos operadores la correrían dos veces.
+function archivoAutoHechoHoy() {
+  const v = String((AppData.config && AppData.config.archivo_auto_ultimo) || '').slice(0, 10);
+  return v === _cieISO(new Date());
+}
+
+// ¿Hasta dónde se puede archivar sin tocar nada abierto?
+//  OJO: la app arranca con los últimos 14 días en memoria, así que `AppData.records`
+//  NO alcanza para contestar esto — con la ventana corta, el envío abierto más
+//  viejo que se ve es de hace una semana y el cálculo diría que todo lo anterior
+//  está cerrado. Por eso se piden a la nube los envíos ANTERIORES al tope, que
+//  son justo los candidatos, y se los evalúa aparte: no entran en AppData.records
+//  —no son de la ventana de trabajo— y se descartan al terminar.
+async function _topeArchivoCerrado(tope) {
+  const res = await DB.selectRegistrosRango(null, tope);
+  const filas = (res.vivos || []).map(mapRegistroNube);
+  if (!filas.length) return { tope: tope, cuantos: 0 };
+  const e = estadoCierre(filas);
+  // El envío EN CURSO más viejo manda: más allá de ahí se archivaría trabajo
+  // pendiente. Si no hay ninguno abierto, vale el tope de meses.
+  const corte = (e.masViejo && e.masViejo < tope) ? e.masViejo : tope;
+  const cuantos = e.cerradosFilas.filter(r => {
+    const i = fechaISOde(r.fecha);
+    return !!i && i < corte;
+  }).length;
+  return { tope: corte, cuantos: cuantos, abiertos: e.enCurso };
+}
+
+let _archivoAutoCorriendo = false;
+
+// Se llama al terminar de hidratar. No molesta: si no hay nada que archivar
+// no dice una palabra — un aviso que sale todos los días deja de leerse.
+async function archivoAutomatico() {
+  if (_archivoAutoCorriendo) return;
+  // Lo ejecuta quien PODRÍA autorizarlo a mano: la función de la base exige
+  // `puede_autorizar()`, así que con un administrativo fallaría igual. Si hoy
+  // solo abren la app administrativos, corre mañana — es mantenimiento, no
+  // algo urgente.
+  if (typeof puedeAutorizar !== 'function' || !puedeAutorizar()) return;
+  if (!window.DB || !DB.ready) return;
+  if (AppData._cargandoRegistros) return;
+  if (archivoAutoHechoHoy()) return;
+
+  _archivoAutoCorriendo = true;
+  try {
+    const limite = topeArchivoAuto();
+    const r = await _topeArchivoCerrado(limite);
+    // Se marca el día SIEMPRE que la corrida haya podido evaluar, haya movido
+    // o no: si no, cada arranque volvería a pedir los candidatos.
+    const marcar = async () => {
+      try { await DB.setConfig('archivo_auto_ultimo', _cieISO(new Date())); } catch (e) {}
+      AppData.config = AppData.config || {};
+      AppData.config.archivo_auto_ultimo = _cieISO(new Date());
+    };
+    if (r.cuantos < ARCHIVO_AUTO_MINIMO) { await marcar(); return; }
+
+    const movidos = await DB.archivarRegistros(r.tope);
+    await marcar();
+    if (!(movidos > 0)) return;
+
+    // Queda el registro de lo que hizo: sin esto, decenas de miles de filas se
+    // mueven y no hay dónde ver quién ni cuándo.
+    const fila = {
+      hasta: r.tope, envios: movidos,
+      solicitado_por: '(automático)', solicitado_en: new Date().toISOString(),
+      motivo: 'Archivo automático: cerrado de los dos lados y anterior al ' + _cieFmt(r.tope),
+      estado: 'automatica',
+      resuelto_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || '',
+      resuelto_en: new Date().toISOString(), archivados: movidos
+    };
+    try {
+      const row = await DB.insertRow('archivo_solicitudes', fila);
+      AppData.archivoSolicitudes = (AppData.archivoSolicitudes || []).concat([Object.assign({ id: row && row.id }, fila)]);
+      _persistirArchivoSolic();
+    } catch (e) { console.warn('registrar archivo automático:', e); }
+
+    // La ventana se recarga sin los archivados, igual que en el archivo a mano.
+    AppData.historialCompleto = false;
+    AppData.cargadoDesde = null;
+    await hydrateFromSupabase();
+    if (typeof showToast === 'function') {
+      showToast('🗄️ ' + Number(movidos).toLocaleString('es-AR') + ' envíos cerrados se archivaron solos');
+    }
+    if (typeof renderCierrePanel === 'function') renderCierrePanel();
+    if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+  } catch (e) {
+    // Un fallo acá no puede entorpecer el arranque: es mantenimiento. Se
+    // reintenta mañana, y el panel de Cierre sigue ofreciendo hacerlo a mano.
+    console.warn('archivoAutomatico:', e);
+  } finally { _archivoAutoCorriendo = false; }
+}

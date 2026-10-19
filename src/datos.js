@@ -890,6 +890,11 @@ async function _hydrateRegistrosReal() {
     AppData._cargandoRegistros = false;
     AppData._cargaRegProgreso = null;
     actualizarEstadoCarga();
+    // El archivo automático, una vez por día. Va ACÁ y no antes: necesita el
+    // resto de AppData hidratado (liquidaciones, panel, clientes) para saber
+    // qué está cerrado. No se espera (`await`): es mantenimiento y no puede
+    // demorar el arranque ni un milisegundo.
+    if (typeof archivoAutomatico === 'function') { try { archivoAutomatico(); } catch (e) {} }
   }
 }
 
