@@ -453,9 +453,14 @@ async function entrarConUsuario(user, perfilPrecargado) {
   // (loadSavedConfig ya corrió al bootstrap). Los datos frescos se traen en
   // SEGUNDO PLANO y EN 2 FASES (config primero, recorridos después) para que la
   // app sea usable enseguida en vez de esperar los ~10k registros.
-  showApp();
+  // LA HIDRATACIÓN ARRANCA ANTES DE MOSTRAR LA APP, y el orden importa: las
+  // dos son síncronas hasta su primer `await`, así que llamarla primero deja
+  // _cargandoRegistros en true ANTES de que showApp() renderice el Dashboard.
+  // Al revés —como estaba— el Dashboard pedía su mes con la carga todavía sin
+  // marcar, y ese pedido cerraba la pantalla de carga de arranque.
   hydrateEnFases()
     .catch(e => console.warn('Hidratación en segundo plano falló:', e));
+  showApp();
   if (typeof iniciarRealtime === 'function') iniciarRealtime();   // sincronización en vivo
 }
 

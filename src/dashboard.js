@@ -649,7 +649,17 @@ function renderDashboard() {
   document.getElementById('sidebar-record-count').textContent = AppData.records.length
     ? (AppData.records.length + ' registros' + (AppData.historialCompleto ? ' (historial completo)' : ' · últimos ' + VENTANA_DIAS_REGISTROS + ' días'))
     : 'Sin datos cargados';
-  document.getElementById('no-data-alert').style.display = AppData.records.length ? 'none' : 'flex';
+  // "No hay datos cargados · usá Importar datos" es una INSTRUCCIÓN, y darla
+  // mientras los envíos están bajando manda al operador a importar algo que
+  // ya tiene. Peor: contradice al aviso de arriba, que en ese mismo momento
+  // dice "Cargando los envíos (2 de 22)" — el renglón de abajo no puede
+  // desmentir al de arriba, que es el mismo criterio por el que la tabla de
+  // Detalle de cliente no dice "sin envíos" mientras los está esperando.
+  // Solo se muestra cuando el arranque terminó, no hay nada en vuelo y de
+  // verdad no hay un solo envío.
+  const _sinDatos = !AppData.records.length && AppData._arranqueHidratado
+    && !AppData._cargandoRegistros && !AppData._trayendoDesde;
+  document.getElementById('no-data-alert').style.display = _sinDatos ? 'flex' : 'none';
 
   // SOLO la solapa que se está viendo. Antes se recalculaban las tres en cada
   // render, y la de Clientes es la cara de todas: con 47.684 envíos, entrar al

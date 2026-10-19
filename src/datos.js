@@ -939,9 +939,28 @@ function actualizarEstadoCarga() {
     if (cargando) {
       const pct = (p && p.total > 1) ? 70 + Math.round(p.hechas / p.total * 29) : null;
       splashEstado('Trayendo los envíos' + (partes ? ' · ' + partes : '') + '…', pct);
-    } else if (typeof splashCerrar === 'function') {
+    } else if (AppData._trayendoDesde) {
+      // Falta el pedazo que pidió el panel que está en pantalla. No hay un
+      // porcentaje medido, así que la barra se pasea en vez de inventar uno.
+      splashEstado('Trayendo los envíos del período…', null);
+    } else if (AppData._arranqueHidratado && typeof splashCerrar === 'function') {
       splashCerrar();
     }
+    // Y si el arranque NO terminó y no hay nada en vuelo, no se toca nada: la
+    // pantalla sigue con el texto que le puso el bootstrap.
+    //
+    // ACÁ ESTABA EL BUG, y era de una sola línea: el `else` cerraba la
+    // pantalla por "no hay nada bajando EN ESTE INSTANTE", que no es lo mismo
+    // que "el arranque terminó". Y esta función la llama TAMBIÉN el cargador
+    // de período (_traerRegistrosDesde), que corre con _cargandoRegistros en
+    // false. Como showApp() renderiza el Dashboard —y el Dashboard pide su
+    // mes— ANTES de que hydrateEnFases marque la carga, ese pedido llamaba
+    // acá con todo en false y cerraba la pantalla antes de que se hubiera
+    // bajado UN SOLO ENVÍO. Como splashCerrar es irreversible (_splashIda),
+    // una sola llamada temprana la mata para siempre: el operador entraba a
+    // un Dashboard en $0 con el cartel "Cargando los envíos (2 de 22)"
+    // abajo, que es exactamente lo que esta pantalla existe para evitar
+    // (bug real, reportado con esa captura).
   }
   const el = document.getElementById('sidebar-record-count');
   if (el) {
@@ -994,8 +1013,21 @@ async function hydrateEnFases() {
   // aviso se queda para siempre sin nada en vuelo. Repintando se ve el estado
   // real —vacío con su error— en vez de uno viejo que promete algo que no va
   // a pasar.
-  await pRegistros;                                            // recorridos (pesado)
-  if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+  try {
+    await pRegistros;                                          // recorridos (pesado)
+  } finally {
+    // EL ARRANQUE TERMINÓ. Esta marca es la que cierra la pantalla de carga,
+    // y va en un `finally` para que un fallo tampoco la deje tapando la app.
+    // Se pone ANTES del repintado a propósito: ese render es el que dispara
+    // la cobertura del panel que quedó en pantalla, así que cuando
+    // actualizarEstadoCarga() corra abajo ya va a ver ese pedido en vuelo
+    // (_trayendoDesde) y la pantalla se queda hasta que llegue — que es el
+    // punto: entrar con el Dashboard a medio llenar es justo lo que la
+    // pantalla de carga viene a evitar.
+    AppData._arranqueHidratado = true;
+    if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+    actualizarEstadoCarga();
+  }
 }
 
 // Empuja una tabla de configuración a Supabase (reemplazo total).
