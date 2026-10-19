@@ -168,6 +168,167 @@ function cliqCambioSemana() {
   renderClienteLiquidaciones();
 }
 
+// ── QUÉ FALTA FACTURAR ────────────────────────────────────────────────────
+//
+//  Un período del cliente que CERRÓ, tuvo envíos entregados y no tiene
+//  liquidación es plata que no se facturó, y hoy no se nota en ningún lado:
+//  el panel muestra UNA semana por vez, así que el que no armó la del 18/09
+//  no se entera mirando la del 25/09. Pasó de verdad y es el caso que explica
+//  para qué está esto: GAMING CITY tiene liquidación TODAS las semanas del
+//  28/08 al 15/10 **menos la del 18/09 → 24/09** —955 envíos entregados, del
+//  orden de $5 M por lo que facturaron las semanas de al lado—.
+//  Esa semana SÍ se cobró: lo que falta es el REGISTRO, porque septiembre se
+//  facturó por fuera mientras se cargaban las listas de precios. Pero desde la
+//  pantalla el hueco se veía idéntico a uno de plata sin cobrar, y hubo que
+//  cruzar la base a mano para saber cuál de los dos era — que es exactamente
+//  el trabajo que este control viene a evitar de acá en adelante.
+//
+//  `periodosSinLiquidar(cod)` ya contestaba esta pregunta, pero **por cliente**
+//  y desde la ficha: había que ir a buscarlo de a uno entre 128. Acá se hace de
+//  UNA pasada sobre los envíos y el aviso vive en el panel donde se descarga,
+//  que es donde alguien va a hacer algo con la respuesta.
+//
+//  **EMPIEZA EN UNA FECHA, Y LA FECHA ES UNA DECISIÓN DEL NEGOCIO.** La semana
+//  del 18/09 es justo la de la migración de los tarifarios de venta —se
+//  cargaron las listas de precios de los 128 clientes—, así que lo anterior no
+//  es un hueco que haya que perseguir: es un registro que todavía no valía
+//  como tal. Marcarlo llenaría la pantalla de avisos que nadie va a accionar,
+//  y un aviso que no se acciona enseña a ignorar los demás. Octubre se toma
+//  como el primer mes completo y bien registrado.
+//  El corte vive en `config` (`facturacion_control_desde`) con el default en
+//  el código: es el mismo criterio que `cliente_corte_iso` —UNA fecha, no
+//  marcar miles de filas—, se explica solo, es reversible y se puede correr
+//  sin desplegar nada. Correrlo hacia atrás **también hace que el panel baje
+//  los envíos de esos días**, porque la cobertura se pide desde el corte.
+//
+//  **El período se mide ENTERO**: cuenta si ABRE en la fecha de corte o
+//  después. Uno que arranca el 25/09 y cierra el 01/10 es de septiembre, y
+//  partirlo daría un importe que no es el de ninguna factura.
+const CLIQ_CONTROL_DESDE = '2026-10-01';
+
+function cliqControlDesde() {
+  const v = String((AppData.config && AppData.config.facturacion_control_desde) || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : CLIQ_CONTROL_DESDE;
+}
+
+// Una sola pasada por los envíos: agrupa por (cliente, período) y deja los que
+// ya cerraron y no tienen liquidación. Se guardan los registros de cada grupo
+// para pasárselos a `calcLiquidacionCliente` por `opts.registros`: sin eso,
+// cada hueco volvería a recorrer la base entera para calcular su total.
+// `liquidacionArmada` y `periodoClienteRango` son los MISMOS que usan la ficha
+// del cliente y el cierre, así que este número no puede discrepar con los de
+// allá — dos cuentas para el mismo hecho siempre terminan separándose.
+function facturacionPendiente() {
+  const desde = cliqControlDesde();
+  // Si la ventana cargada no llega al corte, no se puede opinar: decir "al día"
+  // sobre envíos que no están en memoria es peor que no decir nada.
+  if (typeof periodoFueraDeVentana === 'function' && periodoFueraDeVentana(desde)) {
+    return { desde: desde, faltan: [], periodos: 0, incompleto: true };
+  }
+  if (AppData._cargandoRegistros) return { desde: desde, faltan: [], periodos: 0, incompleto: true };
+
+  const ahora = new Date();
+  const grupos = new Map();          // cod|ancla → { cod, ancla, rango, regs }
+  const memo = new Map();            // cod|iso → rango (resolver el período cuesta)
+  (AppData.records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;
+    const cod = clienteCodDeRegistro(r);
+    if (!cod) return;                // sin cliente no se le factura a nadie: eso lo cuenta el control de fuga
+    const iso = fechaISOde(r.fecha);
+    if (!iso || iso < desde) return; // atajo barato, antes de resolver el período
+    const mk = cod + '|' + iso;
+    let rango = memo.get(mk);
+    if (rango === undefined) { rango = periodoClienteRango(cod, iso) || null; memo.set(mk, rango); }
+    if (!rango || !rango.hastaD) return;
+    if (rango.hastaD > ahora) return;                      // el período en curso está abierto por definición
+    if ((fechaISOde(rango.desde) || '') < desde) return;   // ABRE antes del corte: fuera de esta ventana
+    const ancla = viernesDeRango(rango);
+    const key = cod + '|' + ancla;
+    if (!grupos.has(key)) grupos.set(key, { cod: cod, ancla: ancla, rango: rango, regs: [] });
+    grupos.get(key).regs.push(r);
+  });
+
+  const faltan = [];
+  grupos.forEach(g => {
+    if (liquidacionArmada(g.cod, g.rango)) return;
+    const liq = calcLiquidacionCliente(g.cod, g.rango, { registros: g.regs });
+    faltan.push({
+      cod: g.cod, nombre: clienteNombreDe(g.cod), ancla: g.ancla, rango: g.rango,
+      envios: g.regs.length, total: _num(liq && liq.total)
+    });
+  });
+  // Lo más viejo primero: es lo que más riesgo corre de no cobrarse nunca.
+  faltan.sort((a, b) => String(a.ancla).localeCompare(String(b.ancla)) ||
+                        String(a.nombre).localeCompare(String(b.nombre)));
+  return { desde: desde, faltan: faltan, periodos: grupos.size, incompleto: false };
+}
+
+// El aviso. **Dice las dos cosas, no una**: cuando falta algo lo pone arriba con
+// su plata, y cuando no falta nada lo dice igual en un renglón — un control que
+// solo habla cuando hay problemas es indistinguible de uno que se rompió, y la
+// pregunta "¿me quedó algo sin facturar?" tiene dos respuestas y las dos valen.
+// Hoy, de hecho, octubre está limpio: sin el renglón verde este control se
+// desplegaría y no se vería nada.
+function _renderCliqPendiente() {
+  const box = document.getElementById('cliq-pendiente');
+  if (!box) return;
+  const p = facturacionPendiente();
+  const desdeTxt = typeof isoToDMY === 'function' ? isoToDMY(p.desde) : p.desde;
+
+  if (p.incompleto) {
+    box.innerHTML = '<div class="alert" style="margin:0 0 14px;font-size:13px"><i class="ic ic-refresh"></i>' +
+      '<div><strong>Control de facturación:</strong> esperando los envíos desde el ' + desdeTxt +
+      ' para poder revisarlo. Se completa solo.</div></div>';
+    return;
+  }
+
+  if (!p.faltan.length) {
+    // Verde por TOKEN (`.alert-success`) y no por un hex inline: este renglón
+    // sale todos los días y un verde clavado queda ilegible en modo oscuro.
+    box.innerHTML = '<div class="alert alert-success" style="margin:0 0 14px;font-size:13px">' +
+      '<i class="ic ic-check"></i><div><strong>No falta facturar nada.</strong> ' +
+      'Los ' + p.periodos + ' período' + (p.periodos !== 1 ? 's' : '') + ' que cerraron desde el ' + desdeTxt +
+      ' tienen su liquidación. <span style="opacity:.75">El período en curso no cuenta: está abierto.</span></div></div>';
+    return;
+  }
+
+  const plata = p.faltan.reduce((s, x) => s + x.total, 0);
+  const envios = p.faltan.reduce((s, x) => s + x.envios, 0);
+  const clientes = new Set(p.faltan.map(x => x.cod)).size;
+  const s = n => n !== 1 ? 's' : '';
+  const filas = p.faltan.map(x =>
+    '<tr>' +
+      '<td><strong>' + x.nombre + '</strong></td>' +
+      '<td class="mono" style="font-size:12px;white-space:nowrap">' + x.rango.desde + ' &rarr; ' + x.rango.hasta + '</td>' +
+      '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
+      '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(x.total) + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-sm" style="padding:2px 10px;font-size:11px" ' +
+        'onclick="liquidarPeriodoCliente(\'' + jsAttr(x.cod) + '\',\'' + jsAttr(x.ancla) + '\')">Armarla</button></td>' +
+    '</tr>').join('');
+
+  // El titular va en el `.alert` ámbar y la tabla en su propia `.card`, NO
+  // adentro del aviso: la tabla se pinta con los tokens del tema y el aviso con
+  // un ámbar fijo, así que metida adentro quedaba una tabla OSCURA dentro de un
+  // recuadro claro apenas se prendía el modo oscuro. Separadas, cada una se
+  // tematiza por su lado y el bloque se lee igual en los dos.
+  box.innerHTML =
+    '<div class="alert" style="margin:0 0 10px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412">' +
+      '<i class="ic ic-alert"></i><div style="font-size:13px">' +
+        '<strong>Falta facturar ' + fmtPeso(plata) + '.</strong> ' +
+        p.faltan.length + ' período' + s(p.faltan.length) + ' ya cerrado' + s(p.faltan.length) +
+        ' de ' + clientes + ' cliente' + s(clientes) + ', con ' + envios + ' envío' + s(envios) +
+        ' entregado' + s(envios) + ' y sin liquidación. ' +
+        '<span style="opacity:.8">Se revisa desde el ' + desdeTxt +
+        '; el período en curso no cuenta porque está abierto.</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card" style="margin-bottom:16px"><div class="table-wrap">' +
+      '<table><thead><tr><th>Cliente</th><th>Período</th>' +
+        '<th style="text-align:right">Envíos</th><th style="text-align:right">A facturar</th>' +
+        '<th style="width:88px"></th></tr></thead><tbody>' + filas + '</tbody></table>' +
+    '</div></div>';
+}
+
 function renderClienteLiquidacionesPagina() {
   const f = document.getElementById('cliq-semana');
   if (f && !f.value) f.value = hoyISO();
@@ -189,12 +350,19 @@ function renderClienteLiquidaciones() {
   const _avWrap = document.getElementById('cliq-aviso-ventana');
   if (_avWrap) {
     const _d = fechaISOde(rango.desde) || '';
-    _avWrap.innerHTML = _d
-      ? asegurarPeriodoEnPantalla(_d.slice(0, 8) + '01', renderClienteLiquidaciones)
+    // El control de "qué falta facturar" mira desde su fecha de corte, que puede
+    // ser más vieja que el mes en pantalla: se cubre desde la MENOR de las dos,
+    // así hay UNA sola carga, UN solo aviso y la cobertura queda continua.
+    const _mes = _d ? _d.slice(0, 8) + '01' : '';
+    const _ctrl = cliqControlDesde();
+    const _pido = !_mes ? _ctrl : (_ctrl && _ctrl < _mes ? _ctrl : _mes);
+    _avWrap.innerHTML = _pido
+      ? asegurarPeriodoEnPantalla(_pido, renderClienteLiquidaciones)
       : '';
   }
 
   _cliqAvisoEmpresa();
+  _renderCliqPendiente();
 
   const q = (document.getElementById('cliq-search')?.value || '').toLowerCase().trim();
   const todas = cliqListado(rango);
