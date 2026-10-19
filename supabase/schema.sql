@@ -1951,3 +1951,18 @@ alter table public.empleado_cierres
 -- Las tres tablas (tarifas, super_sla, panel_conductores) están en RT_TABLAS
 -- y en la publicación supabase_realtime, así que las sesiones abiertas se
 -- re-hidratan solas y no pisan el cambio.
+
+-- ── rendiciones.envio_clave (migración rendiciones_envio_clave, 18/10/2026) ──
+-- Una rendición nace de UN envío. Deduplicar por `tracking` no alcanza: los
+-- envíos con cobro en destino traen la referencia interna del cliente ("1",
+-- "2", "3138", "-987@"), así que 17 envíos distintos —13 montos y 13 fechas
+-- diferentes— comparten el tracking "1". Generando por tracking se creaba UNA
+-- rendición y se perdían 16, con un monto que no era el de ninguna.
+-- `registros.clave` ya es la identidad de un envío: se usa esa.
+alter table rendiciones add column if not exists envio_clave text;
+
+-- Guardarraíl contra la doble generación (el import y el botón de puesta al día
+-- corriendo juntos, o dos sesiones): la segunda falla en vez de duplicar el
+-- cobro. Parcial, porque la carga manual libre no tiene un envío detrás.
+create unique index if not exists rendiciones_envio_clave_key
+  on rendiciones (envio_clave) where envio_clave is not null;

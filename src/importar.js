@@ -157,10 +157,22 @@ const BD_FIELDS = [
   // nombre ya nos falló antes (cayó en "Razon Social", que viene vacía, y de
   // 33.278 envíos solo 2 quedaron con cliente).
   { key: 'cliente', label: 'Cliente (columna K — identidad para facturar)', expectedCol: 'K', required: false, fijo: true },
-  // Cobro en destino: el conductor cobra al destinatario y lo rinde al día
+  // COBRO EN DESTINO: el conductor cobra al destinatario y lo rinde al día
   // siguiente (panel Rendición de envíos). En el listado es "Total a cobrar".
+  // Es la ÚNICA columna más allá de la AD, así que es la primera que se cae si
+  // el listado viene más angosto — y cuando el automatch no la encuentra el
+  // el selector queda en "No incluido" y TODOS los envíos se guardan con 0, sin
+  // que nada lo diga. Pasó: el último envío con cobro es del 10/09/2026 y
+  // desde entonces no entró ni uno, con los mismos seis clientes despachando
+  // igual (HUELLITAS 3.425 envíos después de esa fecha, AQUA LIVE 3.073). Dos
+  // meses de cobros perdidos. Por eso ahora: más grafías para encontrarla, y
+  // sobre todo el resumen de la carga DICE cuántos cobros trajo — un campo de
+  // plata no puede fallar valiendo cero en silencio.
   { key: 'cobro_destino', label: 'Cobro en destino ("Total a cobrar")', expectedCol: 'AI', required: false,
-    preferKeywords: true, keywords: ['total a cobrar', 'a cobrar', 'cobro destino', 'contrareembolso', 'contra reembolso'] },
+    plata: true,
+    preferKeywords: true, keywords: ['total a cobrar', 'a cobrar', 'importe a cobrar', 'monto a cobrar',
+      'valor a cobrar', 'cobro destino', 'cobro en destino', 'contrareembolso', 'contra reembolso',
+      'contra entrega', 'cobranza', 'reembolso'] },
 ];
 
 function showColumnMapper() {
@@ -183,12 +195,18 @@ function showColumnMapper() {
     let autoIdx = f.fijo ? porPosicion : (f.preferKeywords ? buscarPorNombre() : porPosicion);
     if (autoIdx === -1 && !f.fijo) autoIdx = f.preferKeywords ? porPosicion : buscarPorNombre();
 
+    // Una columna de PLATA que queda sin mapear no es "un campo opcional menos":
+    // es un importe que se guarda en 0 para siempre y que nadie va a extrañar.
+    // Se dice acá, que es donde todavía se puede corregir.
+    const faltaPlata = f.plata && autoIdx === -1;
+
     return `
-    <div class="column-map-row">
+    <div class="column-map-row"${faltaPlata ? ' style="background:#fff7ed;border-radius:8px"' : ''}>
       <div>
         <div class="map-label">${f.label}</div>
         <span style="font-size:10px;color:var(--text-muted)">Columna ${f.expectedCol} en tu hoja "BD"</span>
         ${f.required ? '<span style="font-size:10px;color:var(--accent);margin-left:6px">Requerido</span>' : ''}
+        ${faltaPlata ? '<div style="font-size:11px;color:#9a3412;margin-top:3px"><i class="ic ic-alert"></i> <strong>No se encontró esta columna.</strong> Es un importe: si queda sin mapear, todos los envíos entran con cobro $0 y no se le reclama a ningún chofer. Elegila a mano si está en el archivo.</div>' : ''}
       </div>
       <div class="map-arrow">→</div>
       <select class="mapper-select" data-field="${f.key}">
@@ -438,6 +456,12 @@ function processUpload() {
   // a nadie. Un envío que entra en silencio sin chofer es igual de invisible que
   // uno que se descarta en silencio.
   const sinChofer = nuevos.filter(r => !String(r.cadete || '').trim()).length;
+  // COBRO EN DESTINO: se dice SIEMPRE, traiga o no traiga. Que el número sea
+  // cero es justamente la señal que faltó durante dos meses — con el aviso
+  // callado cuando no hay nada, la columna se puede caer otra vez y nadie se
+  // entera hasta que alguien cruce la base a mano.
+  const conCobro = nuevos.filter(r => _num(r.cobro_destino) > 0);
+  const plataCobro = conCobro.reduce((a, r) => a + _num(r.cobro_destino), 0);
 
   document.getElementById('upload-success-msg').innerHTML =
     `✅ Carga del <strong>${fechaCarga}</strong>: ${nuevos.length} registros procesados — ` +
@@ -445,6 +469,9 @@ function processUpload() {
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
     (enArchivoColapsadas ? `<br>ℹ️ ${enArchivoColapsadas} fila(s) del archivo eran el mismo envío repetido (mismo tracking o misma dirección) y se unificaron. ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
+    (conCobro.length
+      ? `<br><i class="ic ic-dollar"></i> <strong>${conCobro.length} envío(s) con cobro en destino por ${fmtPeso(plataCobro)}.</strong> Los entregados se registran solos en <strong>Rendición de envíos</strong>. <span id="upload-cobros-estado"></span>`
+      : `<br><i class="ic ic-alert"></i> <strong>Este listado no trajo ningún cobro en destino.</strong> Si debería traerlos, la columna "Total a cobrar" no quedó mapeada: volvé a importar y elegila a mano. <span style="opacity:.8">Sin ella los envíos entran en $0 y no se le reclama a ningún chofer.</span>`) +
     `${sinChofer ? `<br><i class="ic ic-alert"></i> <strong>${sinChofer} envío(s) vinieron SIN chofer en el listado.</strong> Se cargan igual y se le facturan al cliente —todo lo entregado se cobra— pero no entran en la liquidación de ningún conductor. El Dashboard los lista en <strong>“se cobra y no se paga”</strong>.` : ''}` +
     `${diasFueraDeRango ? `<br><i class="ic ic-alert"></i> ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
     `${faltantesDias.length ? `<br><i class="ic ic-alert"></i> <strong>Ojo:</strong> ${faltantesDias.length} día(s) hábil(es) sin registros dentro del rango cargado (${faltantesDias.slice(0, 6).map(diaLabel).join(' · ')}${faltantesDias.length > 6 ? '…' : ''}). ¿Te faltó cargar alguna fecha?` : ''}` +
@@ -461,6 +488,26 @@ function processUpload() {
     if (est) est.innerHTML = ok
       ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
       : '<strong style="color:#b91c1c"><i class="ic ic-alert"></i> No se pudo guardar en la nube — usá el botón "Reintentar".</strong>';
+    // Los cobros en destino se registran ACÁ, en la carga de todos los días.
+    // Antes dependían de que alguien entrara al panel y apretara "Traer de los
+    // envíos": existió desde el primer día, nunca se apretó, y la tabla estuvo
+    // dos meses en cero con $5.368.071 de cobros en los envíos. Un control que
+    // depende de que alguien se acuerde no es un control.
+    // Va DESPUÉS de guardar los envíos y solo si salió bien: una rendición
+    // apunta a un envío por su clave, y crearla contra un envío que no llegó a
+    // la nube deja el cobro colgado de nada.
+    if (!ok || typeof sincronizarCobros !== 'function') return;
+    sincronizarCobros(nuevos).then(res => {
+      const c = document.getElementById('upload-cobros-estado');
+      if (c && res.creados) c.innerHTML = '<strong style="color:#166534">' + res.creados + ' pendiente(s) de rendición creados.</strong>';
+      if (res.creados && typeof renderRendiciones === 'function') renderRendiciones();
+    }).catch(e => {
+      console.warn('sincronizarCobros tras importar:', e);
+      const c = document.getElementById('upload-cobros-estado');
+      // No se traga el error: si no se registraron, hay que ir al panel y
+      // apretar "Traer de los envíos" — que ahora los sigue viendo pendientes.
+      if (c) c.innerHTML = '<strong style="color:#b91c1c">No se pudieron registrar — hacelo desde Rendición de envíos con "Traer de los envíos".</strong>';
+    });
   });
 }
 

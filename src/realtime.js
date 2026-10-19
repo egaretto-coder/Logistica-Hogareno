@@ -78,6 +78,11 @@ const RT_PANTALLA_TABLAS = {
   'cliente-liquidaciones':  ['registros', 'clientes', 'cliente_tarifas', 'cliente_cuentas', 'zona_alias', 'cliente_cargos', 'cliente_liquidaciones', 'viajes_particulares'],
   'comisiones':             ['vendedores', 'comision_categorias', 'comision_clientes', 'comision_pagos',
                              'clientes', 'cliente_tarifas', 'registros', 'config', 'cliente_liquidaciones'],
+  // 'rendiciones' no estaba en NINGUNA pantalla: el panel no se repintaba por
+  // más que otra sesión registrara o rindiera un cobro. Lleva 'registros'
+  // porque el aviso de "cobros del listado sin registrar" se calcula sobre los
+  // envíos — después de un import tiene que aparecer solo.
+  'rendiciones':            ['rendiciones', 'registros', 'panel_conductores', 'clientes'],
   'vacaciones':             ['vacaciones', 'empleados', 'empleado_licencias'],
   'gestion-permisos':       ['rol_permisos', 'roles'],
   'viajes-particulares':    ['viajes_particulares', 'viaje_tarifas', 'clientes', 'panel_conductores', 'cliente_cargos'],

@@ -184,6 +184,7 @@ function renderRendiciones() {
   const cont = document.getElementById('rend-rows');
   if (!cont) return;
   _pintarSolapasRendicion();
+  _renderCobrosPendientes();
   const lista = rendicionesDelRango();
 
   // ── Resumen: dónde está la plata ──
@@ -563,45 +564,269 @@ async function eliminarRendicion(id) {
 // ── Generar desde los envíos importados ──────────────────────────────────────
 // Toma los envíos ENTREGADOS que traen cobro en destino ("Total a cobrar" > 0)
 // y crea la rendición pendiente. No duplica los trackings ya registrados.
-async function generarRendicionesDesdeEnvios() {
-  const yaTrk = new Set((AppData.rendiciones || []).map(r => String(r.tracking || '').trim().toUpperCase()).filter(Boolean));
-  const candidatos = (AppData.records || []).filter(r => {
-    if (!(_num(r.cobro_destino) > 0)) return false;
-    const est = (r.estado || '').toUpperCase().trim();
-    if (!(est === ESTADO_CONTABILIZA || ESTADOS_CONTABILIZAN.has(est))) return false;   // solo entregados
-    const trk = String(r.tracking || '').trim().toUpperCase();
-    return trk && !yaTrk.has(trk);
+// ══════════════════════════════════════════════════════════════════════════
+//  EL COBRO EN DESTINO SALE DEL LISTADO, NO DE UN BOTÓN
+//
+//  Este panel no funcionó NUNCA: la tabla `rendiciones` estuvo en cero desde
+//  que se escribió, con $5.368.071 de cobros en los envíos. Tres causas, y
+//  cada una alcanzaba sola.
+//
+//  1) LA COLUMNA DEJÓ DE LLEGAR Y NADIE SE ENTERÓ. `cobro_destino` se mapea
+//     desde "Total a cobrar", `required: false` y `expectedCol: 'AI'` —la
+//     única columna del listado más allá de la AD—. Si el automatch no la
+//     encuentra, el `<select>` queda en "No incluido" y **todos los envíos se
+//     guardan con 0, en silencio**. Medido: el último envío con cobro es del
+//     **10/09/2026**. No fue el negocio: HUELLITAS PET SHOP hizo 3.425 envíos
+//     después de esa fecha, AQUA LIVE 3.073 y TOP RACING 736, y ninguno trae
+//     cobro. Seis clientes cortan el MISMO día. Eso es una columna, no una
+//     decisión comercial. Por eso ahora el import **cuenta los cobros que
+//     encontró y lo dice**, y avisa fuerte cuando la columna no quedó mapeada:
+//     un campo de plata no puede fallar valiendo cero sin decir nada.
+//
+//  2) HABÍA QUE APRETAR UN BOTÓN, Y NADIE LO APRETÓ. "Traer de los envíos"
+//     existía desde el principio y jamás se usó: dos meses de cobros quedaron
+//     sin registrar. Un control que depende de que alguien se acuerde no es un
+//     control. Ahora los pendientes se crean **en la importación de todos los
+//     días**, que es la acción que ya se hace, y el botón queda de puesta al
+//     día.
+//
+//  3) Y SI SE HUBIERA APRETADO, HABRÍA PERDIDO LA MITAD. Deduplicaba por
+//     `tracking`, pero los envíos con cobro traen la referencia interna del
+//     cliente: **17 envíos distintos comparten el tracking "1"**, con 13
+//     montos y 13 fechas diferentes; otros 10 comparten el "2". De 92 envíos
+//     entregados con cobro salían 62 trackings: se creaba UNA rendición por
+//     tracking, con un monto que no era el de ninguno, y las otras 30 se
+//     perdían sin aviso. La identidad de un envío es su **`clave`**, que es
+//     justo lo que el resto de la app ya usa, y ahora es la columna
+//     `rendiciones.envio_clave` con su índice único.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Un envío entregado con cobro > 0 es una rendición pendiente. Nada más.
+function esCobroEnDestino(r) {
+  return !!r && _num(r.cobro_destino) > 0 && contabilizaRegistro(r);
+}
+
+function rendicionDeEnvio(r) {
+  const fechaDMY = r.fecha || '';
+  const lim = limiteRendicion(fechaDMY);
+  const cod = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
+  return {
+    envio_clave: r.clave || null,
+    tracking: String(r.tracking || '').trim().toUpperCase(),
+    // `conductor` es NOT NULL y un envío puede venir sin chofer: la plata la
+    // cobró alguien igual, así que se registra marcado en vez de descartarse —
+    // un cobro que no entra es plata que no se reclama. Aparece en "le debe el
+    // chofer" como SIN ASIGNAR, que es exactamente el dato que hay que ver.
+    conductor: (conductorCanonico(r.cadete) || r.cadete || '').toUpperCase() || 'SIN ASIGNAR',
+    cliente: String((cod && typeof clienteNombreDe === 'function' ? clienteNombreDe(cod) : '') || r.cliente || '').toUpperCase(),
+    monto: _num(r.cobro_destino),
+    fecha_entrega: fechaDMY, fecha_entrega_date: fechaISOde(fechaDMY) || null,
+    fecha_limite: lim ? lim.toISOString().slice(0, 10) : null,
+    estado: 'pendiente', origen: 'envios',
+    registrado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || ''
+  };
+}
+
+// Los envíos con cobro que todavía no tienen su rendición.
+// El respaldo por tracking + fecha es para las cargadas A MANO, que no tienen
+// `envio_clave`: sin él, un cobro que el operador registró porque el cliente
+// avisó por otro medio volvería a entrar como nuevo cuando el listado por fin
+// traiga la columna — y se le reclamaría dos veces al chofer.
+function cobrosSinRendir(records) {
+  const porClave = new Set();
+  const porTrkFecha = new Set();
+  (AppData.rendiciones || []).forEach(r => {
+    if (r.envio_clave) porClave.add(r.envio_clave);
+    const t = String(r.tracking || '').trim().toUpperCase();
+    if (t) porTrkFecha.add(t + '|' + (r.fecha_entrega || ''));
   });
-  if (!candidatos.length) {
-    alert('No hay cobros nuevos para registrar.\n\nSe buscan envíos ENTREGADOS con "Total a cobrar" mayor a 0 que todavía no estén en la lista. Si el listado que importaste no traía esa columna, mapeala al importar.');
+  return (records || []).filter(r => {
+    if (!esCobroEnDestino(r) || !r.clave) return false;
+    if (porClave.has(r.clave)) return false;
+    const t = String(r.tracking || '').trim().toUpperCase();
+    return !(t && porTrkFecha.has(t + '|' + (r.fecha || '')));
+  });
+}
+
+// UNA sola escritura, y repetirla es inofensivo. La versión vieja insertaba de
+// a una fila dentro de un `for await` tragándose los errores con `console.warn`:
+// con 92 cobros eran 92 idas a la nube y una caída a mitad de camino dejaba la
+// lista a medio escribir informando éxito. El índice único de `envio_clave` es
+// el guardarraíl para las dos sesiones que generen a la vez.
+async function sincronizarCobros(records) {
+  const nuevos = cobrosSinRendir(records);
+  if (!nuevos.length) return { creados: 0, total: 0 };
+  const filas = nuevos.map(rendicionDeEnvio);
+  const ids = await DB.insertRows('rendiciones', filas);
+  filas.forEach((f, i) => AppData.rendiciones.push(Object.assign({ id: ids[i] }, f)));
+  persistirRendicionesLocal();
+  return { creados: filas.length, total: filas.reduce((s, f) => s + f.monto, 0) };
+}
+
+// El botón, que ahora es solo la PUESTA AL DÍA. Dice qué ventana está mirando:
+// la app arranca con los últimos días y los cobros de agosto y septiembre no
+// están en memoria — un "no hay cobros nuevos" sobre una ventana de 14 días se
+// lee como que no quedó nada pendiente, y es lo contrario.
+async function generarRendicionesDesdeEnvios() {
+  const pend = cobrosSinRendir(AppData.records);
+  const ventana = (typeof textoVentanaCargada === 'function') ? textoVentanaCargada() : '';
+  if (!pend.length) {
+    alert('No hay cobros nuevos para registrar.' +
+      (ventana ? '\n\nSe miraron los envíos cargados: ' + ventana + '.' : '') +
+      '\n\nSe buscan envíos ENTREGADOS con "Total a cobrar" mayor a 0. Si el listado no trae esa columna, ' +
+      'mapeala al importar: el resumen de la carga dice cuántos cobros encontró.');
     return;
   }
-  const total = candidatos.reduce((s, r) => s + _num(r.cobro_destino), 0);
-  if (!confirm('Se encontraron ' + candidatos.length + ' cobro(s) en destino por ' + fmtPeso(total) + '.\n\n¿Registrarlos como pendientes de rendición?')) return;
+  const total = pend.reduce((s, r) => s + _num(r.cobro_destino), 0);
+  if (!confirm('Se encontraron ' + pend.length + ' cobro(s) en destino por ' + fmtPeso(total) + '.' +
+    (ventana ? '\n(en los envíos cargados: ' + ventana + ')' : '') +
+    '\n\n¿Registrarlos como pendientes de rendición?')) return;
+  _btnGenerandoCobros(true);
+  try {
+    const res = await sincronizarCobros(AppData.records);
+    renderRendiciones();
+    showToast('✅ ' + res.creados + ' cobro(s) agregados a rendir · ' + fmtPeso(res.total));
+  } catch (e) {
+    console.warn('generarRendicionesDesdeEnvios', e);
+    alert('No se pudieron registrar los cobros: ' + (e.message || e) + '\n\nNo se guardó ninguno. Probá de nuevo.');
+  } finally { _btnGenerandoCobros(false); }
+}
 
-  let ok = 0;
-  for (const r of candidatos) {
-    const fechaDMY = r.fecha || '';
-    const lim = limiteRendicion(fechaDMY);
-    const rec = {
-      tracking: String(r.tracking || '').trim().toUpperCase(),
-      conductor: (conductorCanonico(r.cadete) || r.cadete || '').toUpperCase(),
-      cliente: (r.cliente || '').toUpperCase(),
-      monto: _num(r.cobro_destino),
-      fecha_entrega: fechaDMY, fecha_entrega_date: fechaISOde(fechaDMY),
-      fecha_limite: lim ? lim.toISOString().slice(0, 10) : null,
-      estado: 'pendiente', origen: 'envios',
-      registrado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || ''
-    };
-    try {
-      const row = await DB.insertRow('rendiciones', rec);
-      AppData.rendiciones.push(Object.assign({ id: row && row.id }, rec));
-      ok++;
-    } catch (e) { console.warn('generar rendición ' + rec.tracking, e); }
+function _btnGenerandoCobros(on) {
+  ['rend-btn-traer', 'rend-btn-traer-aviso'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.disabled = !!on; b.style.opacity = on ? '.6' : ''; }
+  });
+}
+
+// El aviso que hace innecesario acordarse del botón: lo que el listado trajo y
+// todavía no está registrado, con su plata y a la vista.
+function _renderCobrosPendientes() {
+  const box = document.getElementById('rend-aviso-envios');
+  if (!box) return;
+  const pend = cobrosSinRendir(AppData.records);
+  if (!pend.length) { box.innerHTML = ''; return; }
+  const total = pend.reduce((s, r) => s + _num(r.cobro_destino), 0);
+  const ventana = (typeof textoVentanaCargada === 'function') ? textoVentanaCargada() : '';
+  box.innerHTML =
+    '<div class="alert" style="margin:0 0 14px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412">' +
+      '<i class="ic ic-alert"></i><div style="font-size:13px">' +
+        '<strong>' + pend.length + ' cobro(s) del listado sin registrar · ' + fmtPeso(total) + '.</strong> ' +
+        'Son envíos entregados con "Total a cobrar" que todavía no están en esta lista. ' +
+        '<button class="btn btn-sm" id="rend-btn-traer-aviso" style="margin-left:6px;padding:2px 10px;font-size:11px" ' +
+          'onclick="generarRendicionesDesdeEnvios()">Registrarlos</button>' +
+        (ventana ? '<div style="opacity:.8;margin-top:4px">Se miran los envíos cargados: ' + ventana + '.</div>' : '') +
+      '</div>' +
+    '</div>';
+}
+
+// ── CARGAR UN COBRO QUE EL CLIENTE NO INFORMÓ ─────────────────────────────
+//  El caso real: el cliente se olvida de cargar el "Total a cobrar" en su
+//  sistema y avisa por otro medio (un mensaje, un llamado). El envío SÍ está en
+//  el listado —se entregó— pero viene con cobro 0, así que no aparece en ningún
+//  lado y el registro se pierde.
+//  Por eso el cobro se le pone a UN ENVÍO EXISTENTE y no se tipea de cero: el
+//  conductor, el cliente y la fecha salen del envío, que es de donde tienen que
+//  salir. Tipeados a mano entran con otra grafía, no matchean al conductor y la
+//  deuda queda colgada de alguien que no existe — es la misma razón por la que
+//  el tracking de un extravío se ELIGE y no se escribe.
+let _cobroEnvioElegido = null;
+
+function openCobroEnvioModal() {
+  _cobroEnvioElegido = null;
+  ['mcob-buscar', 'mcob-monto', 'mcob-obs'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  const el = document.getElementById('mcob-elegido'); if (el) el.innerHTML = '';
+  buscarEnvioCobro();
+  document.getElementById('modal-cobro-backdrop').style.display = 'flex';
+}
+function closeCobroEnvioModal(e) {
+  if (!e || e.target.id === 'modal-cobro-backdrop') document.getElementById('modal-cobro-backdrop').style.display = 'none';
+}
+
+// Solo envíos ENTREGADOS y que todavía no tengan rendición: ofrecer uno que ya
+// está registrado invita a cobrarlo dos veces.
+function _candidatosCobro(q) {
+  const yaClave = new Set((AppData.rendiciones || []).map(r => r.envio_clave).filter(Boolean));
+  const t = String(q || '').toLowerCase().trim();
+  const out = [];
+  for (const r of (AppData.records || [])) {
+    if (!contabilizaRegistro(r) || !r.clave || yaClave.has(r.clave)) continue;
+    if (t) {
+      const hay = [r.tracking, r.destinatario, r.cliente, r.direccion, r.cadete]
+        .map(v => String(v || '').toLowerCase()).join(' ');
+      if (!hay.includes(t)) continue;
+    }
+    out.push(r);
+    if (out.length >= 40) break;
   }
-  persistirRendicionesLocal();
-  renderRendiciones();
-  showToast('✅ ' + ok + ' cobro(s) agregados a rendir');
+  return out;
+}
+
+function buscarEnvioCobro() {
+  const q = (document.getElementById('mcob-buscar') || {}).value || '';
+  const box = document.getElementById('mcob-resultados');
+  if (!box) return;
+  if (!q.trim()) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">' +
+      'Buscá el envío por tracking, destinatario, cliente o dirección.</div>';
+    return;
+  }
+  const lista = _candidatosCobro(q);
+  if (!lista.length) {
+    box.innerHTML = '<div style="font-size:12px;color:#9a3412;padding:8px">' +
+      'Ningún envío entregado coincide. Puede estar <strong>fuera de los días cargados</strong>, o ya tener su cobro registrado. ' +
+      'Si el envío no está en el listado, usá <strong>“+ Nuevo cobro”</strong>.</div>';
+    return;
+  }
+  box.innerHTML = '<div class="table-wrap" style="max-height:220px;overflow:auto"><table><tbody>' +
+    lista.map(r =>
+      '<tr style="cursor:pointer" onclick="elegirEnvioCobro(\'' + jsAttr(r.clave) + '\')">' +
+        '<td style="font-size:12px"><strong>' + (r.tracking || '—') + '</strong><div style="color:var(--text-muted)">' +
+          (r.destinatario || '') + '</div></td>' +
+        '<td style="font-size:12px">' + (r.cliente || '—') + '<div style="color:var(--text-muted)">' + (r.zona || '') + '</div></td>' +
+        '<td style="font-size:12px">' + (r.fecha || '') + '<div style="color:var(--text-muted)">' + (r.cadete || 'sin chofer') + '</div></td>' +
+      '</tr>').join('') + '</tbody></table></div>' +
+    (lista.length >= 40 ? '<div style="font-size:11px;color:var(--text-muted);padding:4px 8px">Se muestran los primeros 40 — afiná la búsqueda.</div>' : '');
+}
+
+function elegirEnvioCobro(clave) {
+  const r = (AppData.records || []).find(x => x.clave === clave);
+  if (!r) { showToast('Ese envío ya no está en la lista'); buscarEnvioCobro(); return; }
+  _cobroEnvioElegido = clave;
+  const el = document.getElementById('mcob-elegido');
+  if (el) el.innerHTML =
+    '<div class="alert" style="margin:0;background:var(--surface-1);border:1px solid var(--border);font-size:12px">' +
+      '<i class="ic ic-check"></i><div><strong>' + (r.tracking || 'sin tracking') + '</strong> · ' +
+      (r.destinatario || 's/d') + '<br>' +
+      (r.cliente || 'sin cliente') + ' · entregado el ' + (r.fecha || 's/f') + ' por <strong>' +
+      (r.cadete || 'SIN CHOFER') + '</strong></div></div>';
+  const m = document.getElementById('mcob-monto'); if (m) m.focus();
+}
+
+async function guardarCobroEnvio() {
+  if (!_cobroEnvioElegido) { alert('Elegí primero el envío al que corresponde el cobro.'); return; }
+  const r = (AppData.records || []).find(x => x.clave === _cobroEnvioElegido);
+  if (!r) { alert('Ese envío ya no está cargado. Volvé a buscarlo.'); return; }
+  const monto = parseFloat((document.getElementById('mcob-monto') || {}).value) || 0;
+  if (!(monto > 0)) { alert('El monto cobrado al destinatario tiene que ser mayor a 0.'); return; }
+  if ((AppData.rendiciones || []).some(x => x.envio_clave === r.clave)) {
+    alert('Ese envío ya tiene su cobro registrado.'); return;
+  }
+  const fila = rendicionDeEnvio(Object.assign({}, r, { cobro_destino: monto }));
+  fila.origen = 'manual';
+  fila.obs = (document.getElementById('mcob-obs') || {}).value.trim() || 'Cobro informado por el cliente fuera del listado';
+  _btnGuardando('mcob-guardar', true);
+  try {
+    const ids = await DB.insertRows('rendiciones', [fila]);
+    AppData.rendiciones.push(Object.assign({ id: ids[0] }, fila));
+    persistirRendicionesLocal();
+    document.getElementById('modal-cobro-backdrop').style.display = 'none';
+    renderRendiciones();
+    showToast('✅ Cobro de ' + fmtPeso(monto) + ' registrado a ' + fila.conductor);
+  } catch (e) {
+    console.warn('guardarCobroEnvio', e);
+    alert('No se pudo registrar el cobro: ' + (e.message || e));
+  } finally { _btnGuardando('mcob-guardar', false); }
 }
 
 // ── PDF / export ─────────────────────────────────────────────────────────────

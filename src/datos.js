@@ -681,7 +681,11 @@ async function _hydrateFromSupabaseReal(opts) {
 
   // Rendiciones de cobros en destino.
   AppData.rendiciones = (data.rendiciones || []).map(r => ({
-    id: r.id, tracking: r.tracking || '', conductor: r.conductor, cliente: r.cliente || '',
+    // envio_clave: de QUÉ envío salió este cobro. Es la identidad con la que se
+    // deduplica — el tracking no alcanza: los envíos con cobro traen la
+    // referencia interna del cliente y 17 distintos comparten el "1".
+    id: r.id, envio_clave: r.envio_clave || null,
+    tracking: r.tracking || '', conductor: r.conductor, cliente: r.cliente || '',
     monto: _num(r.monto), fecha_entrega: r.fecha_entrega || '', fecha_limite: r.fecha_limite || '',
     estado: r.estado || 'pendiente', fecha_rendicion: r.fecha_rendicion || '',
     medio: r.medio || '', obs: r.obs || '', origen: r.origen || 'manual',

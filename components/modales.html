@@ -1175,6 +1175,47 @@
 </div>
 
 <!-- MODAL COBRO EN DESTINO (alta / edición) -->
+<!-- COBRO QUE EL CLIENTE NO INFORMÓ. El envío está en el listado —se entregó—
+     pero vino con "Total a cobrar" vacío porque el cliente se olvidó de
+     cargarlo y avisó por otro medio. El cobro se le pone a ESE envío: el
+     conductor, el cliente y la fecha salen de ahí y no se tipean, que es donde
+     se cuelan las grafías que después no matchean a nadie (mismo criterio que
+     el tracking de un extravío, que se ELIGE). -->
+<div class="modal-backdrop" id="modal-cobro-backdrop" onclick="closeCobroEnvioModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:620px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-dollar"></i> Cobro en destino no informado</span>
+      <button class="modal-close" onclick="closeCobroEnvioModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0;font-size:12px"><i class="ic ic-dollar"></i><div>
+        El envío <strong>ya está cargado</strong> pero el cliente no informó el "Total a cobrar".
+        Buscalo y poné cuánto cobró el conductor: el resto sale del propio envío.
+        Si el envío tampoco está en el listado, usá <strong>"+ Nuevo cobro"</strong>.</div></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Buscar el envío</label>
+        <input type="search" id="mcob-buscar" class="form-input" style="width:100%" oninput="buscarEnvioCobro()" placeholder="Tracking, destinatario, cliente o dirección..." />
+      </div>
+      <div id="mcob-resultados"></div>
+      <div id="mcob-elegido"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-dollar"></i> Monto cobrado ($) *</label>
+          <input type="number" id="mcob-monto" class="form-input" placeholder="0" min="0" step="1" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Observación</label>
+          <input type="text" id="mcob-obs" class="form-input" placeholder="Cómo avisó el cliente" style="width:100%" />
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn" onclick="closeCobroEnvioModal()">Cancelar</button>
+      <button class="btn btn-primary" id="mcob-guardar" onclick="guardarCobroEnvio()">Registrar el cobro</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-rend-backdrop" onclick="closeRendModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
   <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
     <div class="modal-header">
