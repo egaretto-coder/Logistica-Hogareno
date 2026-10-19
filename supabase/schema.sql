@@ -1560,6 +1560,31 @@ alter publication supabase_realtime add table public.conductor_liquidaciones;
 insert into public.config (clave, valor) values ('cliente_corte_iso', '2026-08-24')
   on conflict (clave) do update set valor = excluded.valor;
 
+-- ---------- DESDE CUANDO CONTROLA CADA PANEL ----------
+-- Mismo criterio que cliente_corte_iso, y por la misma razon: UNA fecha en vez
+-- de marcar miles de filas. Lo anterior a cada corte son operaciones CERRADAS
+-- que se cobraron o se rindieron por fuera del sistema, asi que traerlas
+-- llenaria el panel de deuda que no existe — y un listado de deuda falsa se
+-- deja de mirar enseguida, que es como se pierde el panel por segunda vez.
+--
+--   rendicion_control_desde   = cobros en destino (src/rendiciones.js)
+--   facturacion_control_desde = "que falta facturar" (src/cliente-liquidaciones.js)
+--
+-- EL PUNTO DE QUE VIVAN ACA es poder correr el corte SIN DESPLEGAR NADA. El
+-- codigo tiene el mismo valor de default (REND_CONTROL_DESDE / CLIQ_CONTROL_DESDE)
+-- para que la app funcione igual si la fila falta, pero mientras no exista la
+-- fila el corte solo se puede mover con un despliegue, que es justo lo que este
+-- diseno vino a evitar. Por eso se siembran.
+--
+-- VA "do nothing" Y NO "do update": el valor es una decision del negocio que se
+-- edita en la base, asi que re-aplicar este archivo no puede pisar un corte que
+-- alguien ya corrio. (cliente_corte_iso usa do update porque es un hecho
+-- historico de la migracion, no una perilla.)
+insert into public.config (clave, valor) values
+  ('rendicion_control_desde',   '2026-10-19'),
+  ('facturacion_control_desde', '2026-10-01')
+  on conflict (clave) do nothing;
+
 -- ---------- PEDIDOS DE ARCHIVO (maker-checker) ----------
 -- Archivar lo puede PEDIR un administrativo, pero lo AUTORIZA un supervisor o un
 -- analista. La operacion mueve decenas de miles de filas a una tabla de solo
