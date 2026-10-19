@@ -19,6 +19,22 @@
 // Solapa activa: 'conductor' | 'empleado'
 let adelGrupo = 'conductor';
 
+// VER SOLO LO QUE FALTA COBRAR, de cualquier mes. El navegador de mes contesta
+// "cuánto se prestó en octubre", pero para DESCONTAR una cuota hay que ver el
+// adelanto, y los arrastrados de hace meses quedan fuera de ese filtro: el
+// aviso decía que existían y no había forma de trabajar con ellos sin perder
+// el mes. Esta vista los junta a todos —y solo a ellos— con sus botones de
+// "− Cuota" a mano. Es la lista de trabajo del que cobra.
+let adelSoloDeuda = false;
+function adelToggleSoloDeuda() {
+  adelSoloDeuda = !adelSoloDeuda;
+  renderAdelantos();
+}
+// Lo que forma la deuda: con saldo y ya autorizado. Un adelanto PENDIENTE
+// todavía no se puede descontar, así que no es deuda cobrable y no entra —el
+// mismo criterio que usa la tarjeta, para que las dos digan lo mismo.
+function _adelEsDeuda(a) { return esAutorizado(a) && saldoAdelanto(a) > 0; }
+
 // Fecha (DD/MM/YYYY) a la que se imputa la cuota — la del selector del panel.
 function fechaDescuentoAdelanto() {
   const iso = document.getElementById('adelantos-fecha')?.value || hoyISO();
@@ -73,8 +89,6 @@ function renderAdelantos() {
     el.textContent = n ? '(' + n + ')' : '';
   });
 
-  _pintarPanelMes('adelantos');
-
   // DOS FILTROS QUE NO MIDEN LO MISMO: el buscador acota QUIÉN y el mes acota
   // CUÁNDO se prestó. Por eso la deuda —que es un saldo, no un flujo— sigue al
   // buscador pero NO al mes: "la deuda de JAVIER" es un número real, "la deuda
@@ -82,9 +96,12 @@ function renderAdelantos() {
   const search = (document.getElementById('adelantos-search')?.value || '').toLowerCase().trim();
   const delGrupo = adelantosDeGrupo(adelGrupo);
   const deQuien = delGrupo.filter(a => !search || String(a.conductor).toLowerCase().includes(search));
-  const lista = filtrarPorMesPanel('adelantos', deQuien)
+  // "Deuda vigente" IGNORA el mes a propósito: una cuota arrastrada es
+  // justamente la que el mes esconde.
+  const lista = (adelSoloDeuda ? deQuien.filter(_adelEsDeuda) : filtrarPorMesPanel('adelantos', deQuien))
     .sort((a, b) => (adelantoSaldado(a) ? 1 : 0) - (adelantoSaldado(b) ? 1 : 0)
                  || String(a.conductor).localeCompare(String(b.conductor)));
+  _adelPintarVista(deQuien.filter(_adelEsDeuda).length);
 
   const countEl = document.getElementById('adelantos-count');
   const activos = delGrupo.filter(a => !adelantoSaldado(a) && esAutorizado(a)).length;
@@ -195,6 +212,31 @@ async function rechazarAdelanto(id) {
 // Resumen de deuda (solo adelantos AUTORIZADOS con saldo) del grupo activo.
 // Respeta el buscador. Pesos y dólares se muestran POR SEPARADO: sumarlos en un
 // solo número exigiría fijar una cotización y daría una deuda que no es real.
+// Los tres controles de arriba son TRES VISTAS de lo mismo —el mes, todos, y
+// solo la deuda— así que se marcan contra el ESTADO y nunca contra el botón que
+// se tocó: marcando solo el clickeado, el navegador quedaba resaltado mientras
+// la tabla mostraba otra cosa (el bug que ya tuvo el filtro por condición).
+function _adelPintarVista(cuantosDeuda) {
+  _pintarPanelMes('adelantos');
+  const nav = document.getElementById('adelantos-mes-nav');
+  const todos = document.getElementById('adelantos-mes-todos');
+  const deuda = document.getElementById('adelantos-solo-deuda');
+  if (adelSoloDeuda) {
+    // El mes no manda: apagarlo es lo que evita que el operador crea que
+    // además está filtrando por octubre.
+    if (nav) { nav.style.borderColor = ''; nav.style.boxShadow = ''; }
+    if (todos) todos.classList.remove('active');
+  }
+  if (deuda) {
+    deuda.classList.toggle('active', adelSoloDeuda);
+    // El contador lo convierte en una respuesta y no solo en un control: dice
+    // cuántos hay que seguir cobrando sin tener que apretarlo.
+    deuda.innerHTML = '<i class="ic ic-dollar"></i> Deuda vigente' +
+      (cuantosDeuda ? ' <strong>' + cuantosDeuda + '</strong>' : '');
+    deuda.disabled = !cuantosDeuda && !adelSoloDeuda;
+  }
+}
+
 // `delMes` es lo que muestra la tabla (grupo + buscador + mes) y `deQuien` lo
 // mismo sin el mes. La diferencia entre los dos es deliberada: ver más abajo.
 function renderAdelantosResumen(delMes, deQuien) {
@@ -203,7 +245,10 @@ function renderAdelantosResumen(delMes, deQuien) {
   const esEmp = adelGrupo === 'empleado';
   delMes = delMes || [];
   deQuien = deQuien || delMes;
-  const mes = _panelMesActivo('adelantos');
+  // Con "Deuda vigente" no hay mes que valga: la vista junta lo de todos. Se
+  // trata como "sin mes" para que no aparezca ni el renglón de lo que se
+  // arrastra ni el aviso de lo escondido — no hay nada escondido.
+  const mes = adelSoloDeuda ? '' : _panelMesActivo('adelantos');
   const ars = l => l.filter(a => !adelantoEsUSD(a));
   const usd = l => l.filter(a => adelantoEsUSD(a));
   const linUSD = v => v > 0 ? '<div class="metric-sub" style="color:#065f46;font-weight:600">+ ' + fmtUSD(v) + ' en dólares</div>' : '';
@@ -235,7 +280,8 @@ function renderAdelantosResumen(delMes, deQuien) {
   cont.innerHTML =
     '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
       '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-card"></i></div>' +
-        '<div class="metric-label">' + (mes ? 'Prestado en ' + mesTxt : 'Prestado (todos los meses)') + filtrado + '</div>' +
+        '<div class="metric-label">' + (mes ? 'Prestado en ' + mesTxt
+          : adelSoloDeuda ? 'Prestado (lo que todavía se debe)' : 'Prestado (todos los meses)') + filtrado + '</div>' +
         '<div class="metric-value">' + fmtPeso(prestadoARS) + '</div>' +
         '<div class="metric-sub">' + (prestados.length
           ? prestados.length + ' adelanto' + (prestados.length !== 1 ? 's' : '') + (mes ? ' dado' + (prestados.length !== 1 ? 's' : '') + ' en el mes' : '')
@@ -286,7 +332,11 @@ function _adelAvisoFueraDelMes(arrastre, mes) {
       'de otros meses no se ' + (vivos.length !== 1 ? 'están' : 'está') + ' viendo acá: ' +
       '<strong>' + fmtPeso(ars) + (usd > 0 ? ' + ' + fmtUSD(usd) : '') + '</strong> por cobrar. ' +
       'Les corresponde cuota igual. ' +
-      '<button class="btn btn-sm" style="margin-left:6px" onclick="panelTodosLosMeses(\'adelantos\')">Ver todos los meses</button>' +
+      // Lleva a la vista de DEUDA y no a "todos los meses": lo que hace falta
+      // es la lista de lo que hay que descontar, no el historial entero con los
+      // saldados mezclados adentro.
+      '<button class="btn btn-sm" style="margin-left:6px" onclick="adelToggleSoloDeuda()">' +
+        '<i class="ic ic-dollar"></i> Ver la deuda vigente</button>' +
     '</div></div>';
 }
 

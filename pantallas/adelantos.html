@@ -44,6 +44,14 @@
             <button class="btn btn-sm" onclick="panelMoverMes('adelantos',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
           </div>
           <button class="btn btn-sm panel-mes-btn" id="adelantos-mes-todos" onclick="panelTodosLosMeses('adelantos')" title="Ver los adelantos de todos los meses">Todos</button>
+          <!-- La vista de trabajo para descontar: una cuota arrastrada de hace
+               meses hay que verla para poder descontarla, y el mes la esconde.
+               Muestra EXACTAMENTE las filas que forman la tarjeta "Deuda
+               vigente", así el número de arriba y la tabla no se contradicen. -->
+          <button class="btn btn-sm panel-mes-btn" id="adelantos-solo-deuda" onclick="adelToggleSoloDeuda()"
+                  title="Ver solo los adelantos con saldo, de cualquier mes — los que hay que seguir descontando">
+            <i class="ic ic-dollar"></i> Deuda vigente
+          </button>
         </div>
 
         <!-- Resumen: lo prestado en el mes (flujo) y la deuda vigente (saldo) -->
