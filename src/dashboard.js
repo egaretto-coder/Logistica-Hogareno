@@ -442,7 +442,36 @@ function _dashEspecialesPorDia(rango, conductores) {
   return { porDia, total, n };
 }
 
+// ── EL DASHBOARD BAJA LOS ENVÍOS DEL PERÍODO QUE MUESTRA ─────────────────
+//  La app arranca con los últimos 14 días. Los otros cuatro paneles que miran
+//  un período —Detalle de cliente, Liquidación de clientes, Liquidación de
+//  conductores y Detalle de conductores— ya piden lo que les falta; el
+//  Dashboard era el único que NO, y es el que tiene un navegador de mes.
+//  O sea que mover el navegador a septiembre repintaba con lo que hubiera en
+//  memoria —nada— y el panel mostraba **todo en $0**: exactamente lo que se ve
+//  si los datos se hubieran borrado. Es el mismo síntoma que ya se reportó como
+//  "la app borra la información de semanas anteriores", en el único panel donde
+//  todavía pasaba.
+//  Se pide desde el PRIMER día del período y hacia atrás la cobertura queda
+//  continua (AppData.cargadoDesde), así no puede quedar un agujero en el medio
+//  que nadie note. "Todo" y "Personalizado" sin fecha piden el historial entero:
+//  es lo que el operador acaba de pedir.
+function _dashAsegurarPeriodo() {
+  const box = document.getElementById('dash-aviso-ventana');
+  if (!box) return;
+  if (typeof asegurarPeriodoEnPantalla !== 'function') { box.innerHTML = ''; return; }
+  const rango = getDashFechaRango();
+  const d = rango && rango.desde;
+  // Sin rango el operador está pidiendo TODO: la cobertura se lleva como una
+  // fecha, así que se pide desde el piso.
+  const desde = d
+    ? (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))
+    : (typeof REGISTROS_PISO_ISO === 'string' ? REGISTROS_PISO_ISO : '');
+  box.innerHTML = desde ? asegurarPeriodoEnPantalla(desde, renderDashboard) : '';
+}
+
 function renderDashboard() {
+  _dashAsegurarPeriodo();
   const rango = getDashFechaRango();
   const recordsFiltrados = recordsDelDashboard();
 

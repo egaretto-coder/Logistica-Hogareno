@@ -139,6 +139,92 @@ const DB = {
     return out;
   },
 
+  // ── PAGINAR POR CURSOR, NO POR OFFSET ──────────────────────────────────
+  //  PostgREST pagina con `range`, que en SQL es LIMIT/OFFSET: para darte la
+  //  página 120 el servidor tiene que **recorrer y descartar las 119.000 filas
+  //  anteriores**, en cada página. El costo no es el volumen, es la PROFUNDIDAD,
+  //  y crece en cada paso. Medido sobre la base real (120.221 envíos vivos):
+  //
+  //    página 1 del arranque .................    8 ms
+  //    página 21 de un mes (offset 20.000) ...  913 ms
+  //    última del historial (offset 119.000) . 1399 ms
+  //
+  //  O sea que "Cargar historial completo" son ~120 páginas cuyo costo sube
+  //  hasta el segundo y medio: ~84 s de base. Y como se disparan de a 6, el
+  //  servidor se satura y devuelve 500/522 — que es el bug que el semáforo y
+  //  los reintentos vinieron a tapar, pero la causa estaba acá.
+  //
+  //  El cursor (keyset/seek) lo resuelve: en vez de "saltá 119.000", se pide
+  //  "dame lo que viene DESPUÉS de esta fila", que es un posicionamiento en el
+  //  índice. El costo deja de depender de la profundidad:
+  //
+  //    historial completo, página profunda ...   5,9 ms  (era 1399)
+  //    rango de un mes, página profunda ......   3,4 ms  (era 913)
+  //
+  //  Dos detalles hacen que funcione:
+  //  1) Con filtro de fecha, el cursor **mueve también el piso del rango**
+  //     (`gte('fecha_date', cursor)`), así el Index Cond arranca en el cursor.
+  //     Moviendo solo el desempate, el motor vuelve a leer y descartar todo lo
+  //     anterior: medido, 18,9 ms contra 3,4 ms — anda, pero sigue creciendo.
+  //  2) `fecha_date` no es única (hay ~2.000 envíos por día), así que el
+  //     desempate va por `id`: `fecha > X  OR  (fecha = X AND id > Y)`. Sin eso
+  //     se pierden filas del día del corte o se repiten.
+  //
+  //  Va EN SERIE y no en paralelo, al revés que el camino viejo: cada página es
+  //  un salto en el índice (~5 ms), así que 120 en fila son ~1 s — menos que lo
+  //  que tardaba UNA de las profundas. Y de paso deja de haber 6 consultas
+  //  pesadas simultáneas, que es lo que tiraba al servidor.
+  async _fetchAllSeek(table, { desdeISO = null, hastaISO = null, onProgress = null, cols = '*' } = {}) {
+    const PAGE = 1000;
+    const porFecha = !!desdeISO || !!hastaISO;   // sin filtro de fecha el cursor es el id solo
+    let piso = desdeISO || null, ultimoId = null, ultimaFecha = null;
+
+    // Primera página con el count exacto, solo para poder mostrar avance: 120
+    // páginas sin una señal parecen un cuelgue.
+    const armar = (conCount) => {
+      let q = conCount ? sb.from(table).select(cols, { count: 'exact' }) : sb.from(table).select(cols);
+      if (porFecha) {
+        if (piso) q = q.gte('fecha_date', piso);
+        if (hastaISO) q = q.lt('fecha_date', hastaISO);
+        if (ultimaFecha != null) {
+          // El desempate del día del corte. Las fechas van sin comillas: es la
+          // sintaxis de PostgREST, no SQL.
+          q = q.or('fecha_date.gt.' + ultimaFecha + ',and(fecha_date.eq.' + ultimaFecha + ',id.gt.' + ultimoId + ')');
+        }
+        q = q.order('fecha_date').order('id');
+      } else {
+        if (ultimoId != null) q = q.gt('id', ultimoId);
+        q = q.order('id');
+      }
+      return q;
+    };
+
+    const out = [];
+    let paginas = 1, hechas = 0;
+    for (;;) {
+      const r = await _dbPedirPagina(() => armar(hechas === 0), 0, PAGE - 1);
+      const filas = r.data || [];
+      if (hechas === 0 && r.count != null) paginas = Math.max(1, Math.ceil(r.count / PAGE));
+      hechas++;
+      if (onProgress) { try { onProgress(Math.min(hechas, paginas), paginas); } catch (e) {} }
+      for (const f of filas) out.push(f);
+      if (filas.length < PAGE) break;
+      const ult = filas[filas.length - 1];
+      ultimoId = ult.id;
+      if (porFecha) {
+        ultimaFecha = String(ult.fecha_date || '').slice(0, 10);
+        // Sin fecha no hay por dónde seguir el cursor: se corta en vez de
+        // quedar pidiendo la misma página para siempre.
+        if (!ultimaFecha) break;
+        piso = ultimaFecha;
+      }
+      // Red de seguridad: 1.000 páginas son un millón de filas. Si algo hiciera
+      // que el cursor no avance, mejor cortar que colgar el navegador.
+      if (hechas > 1000) { console.warn('_fetchAllSeek: demasiadas páginas en ' + table); break; }
+    }
+    return out;
+  },
+
   // Trae una tabla completa. Imprescindible paginar para 'registros'.
   async selectAll(table, orderCol) {
     return this._fetchAllParallel(table, { orderCol });
@@ -156,12 +242,12 @@ const DB = {
   // siempre viene vacía). Al final se ordena por id para que AppData.records
   // quede EXACTAMENTE en el mismo orden que antes.
   async selectRegistrosVentana(desdeISO, onProgress) {
-    if (!desdeISO) return this._fetchAllParallel('registros', { orderCol: 'id', onProgress: onProgress || null });
+    // Sin fecha es el historial COMPLETO: no hay filtro, así que el cursor es
+    // el id solo y cada página es un salto en la clave primaria (5,9 ms medidos
+    // contra los 1.399 ms de la última página por offset).
+    if (!desdeISO) return this._fetchAllSeek('registros', { onProgress: onProgress || null });
     const [enVentana, sinFecha] = await Promise.all([
-      this._fetchAllParallel('registros', {
-        orderCol: ['fecha_date', 'id'], onProgress: onProgress || null,
-        filter: q => q.gte('fecha_date', desdeISO)
-      }),
+      this._fetchAllSeek('registros', { desdeISO: desdeISO, onProgress: onProgress || null }),
       this._fetchAllParallel('registros', { orderCol: 'id', filter: q => q.is('fecha_date', null) }),
     ]);
     const out = enVentana.concat(sinFecha);
@@ -171,7 +257,7 @@ const DB = {
 
   // Trae todos los registros archivados (tabla registros_historico).
   async selectHistorico(onProgress) {
-    return this._fetchAllParallel('registros_historico', { orderCol: 'id', onProgress: onProgress || null });
+    return this._fetchAllSeek('registros_historico', { onProgress: onProgress || null });
   },
 
   // TODOS los recorridos de un cliente (vivos + archivados), sin importar la
@@ -191,15 +277,13 @@ const DB = {
   // Los recorridos de un RANGO de fechas, de las dos tablas. Es lo que permite
   // mirar un periodo anterior a la ventana del arranque sin bajar las 99.000
   // filas: se pide solo el pedazo que falta.
-  async selectRegistrosRango(desdeISO, hastaISO) {
-    const f = q => {
-      if (desdeISO) q = q.gte('fecha_date', desdeISO);
-      if (hastaISO) q = q.lt('fecha_date', hastaISO);   // lo que ya esta cargado arranca en hastaISO
-      return q;
-    };
+  async selectRegistrosRango(desdeISO, hastaISO, onProgress) {
+    // Las dos tablas: archivar NO saca un envío de la vista, solo lo mueve de
+    // tabla. Por cursor, porque un mes son ~22 páginas y por offset la última
+    // costaba 913 ms (3,4 ms por cursor).
     const [vivos, historico] = await Promise.all([
-      this._fetchAllParallel('registros', { orderCol: ['fecha_date', 'id'], filter: f }),
-      this._fetchAllParallel('registros_historico', { orderCol: ['fecha_date', 'id'], filter: f }),
+      this._fetchAllSeek('registros', { desdeISO: desdeISO, hastaISO: hastaISO, onProgress: onProgress || null }),
+      this._fetchAllSeek('registros_historico', { desdeISO: desdeISO, hastaISO: hastaISO }),
     ]);
     return { vivos: vivos || [], historico: historico || [] };
   },
