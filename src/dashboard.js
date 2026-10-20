@@ -1036,12 +1036,15 @@ function renderDashClientes() {
   const todos = data.filas;
   const v = data.ventana;
   _renderDashPerFiltro(data);
-  const q = (document.getElementById('dash-cli-search')?.value || '').toLowerCase().trim();
-  const base = todos.filter(x => !q || x.nombre.toLowerCase().includes(q) || x.cod.toLowerCase().includes(q));
+  // La TABLA y la DESCARGA salen del mismo selector (vistaClientesReport, en
+  // src/reportes.js): filtrando cada una por su cuenta, el archivo terminaría
+  // diciendo otra cosa que la pantalla.
+  const vistaCli = vistaClientesReport(data);
+  const q = vistaCli.q, base = vistaCli.base;
   // Los botones cuentan sobre lo que el buscador dejó: si contaran sobre
   // todos, dirían "3 en rojo" con la tabla mostrando otra cosa.
   _renderSemaforoRenta(base);
-  const lista = dashRentaSem ? base.filter(x => dashBandaRenta(x) === dashRentaSem) : base;
+  const lista = vistaCli.lista;
 
   const factura = todos.reduce((s, x) => s + x.factura, 0);
   const costo = todos.reduce((s, x) => s + x.costo, 0);
