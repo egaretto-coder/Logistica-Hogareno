@@ -495,6 +495,236 @@ function ultimaListaPreciosTxt(cod) {
   return { txt, sub, original: u.original, quien };
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  HISTORIAL DE PRECIOS DEL CLIENTE — qué lista rigió cuándo, y quién la cargó
+//
+//  La pregunta aparece siempre igual: un precio sorprende y hay que saber de
+//  dónde salió. La ficha ya decía desde cuándo rige la lista de HOY y quién la
+//  cargó, pero eso contesta solo por la última: para explicar una factura de
+//  hace dos meses —o para encontrar la carga con la que se metió un error—
+//  había que ir a la base de datos. Pasó de verdad: una lista de SABORES Y
+//  RECARGAS quedó mal cargada y desde la pantalla no había forma de saber
+//  cuándo había entrado ni quién la había subido.
+//
+//  Es el mismo historial que ya tiene el tarifario de CONDUCTOR
+//  (`abrirHistorialTarifario`), del lado del que cobra.
+//
+//  OJO CON `creado_por`: está en blanco en todo lo anterior al 05/10/2026, que
+//  es cuando se empezó a registrar. Eso NO es "nadie", es **"no se sabe"**, y
+//  la ventana lo dice así —contestar con confianza y contestar mal es peor que
+//  admitir que el dato no está—, nombrando igual la fecha y la hora de la
+//  carga, que es lo único que de esas sí consta.
+// ════════════════════════════════════════════════════════════════════════
+function _cliTarFilasDe(cod) {
+  const k = clienteKey(cod);
+  return (AppData.clienteTarifas || []).filter(t =>
+    clienteKey(t.cliente_cod) === k || (!t.cliente_cod && normCliente(t.cliente) === normCliente(k)));
+}
+
+function _cliDiaAntes(iso) {
+  const d = new Date(String(iso) + 'T12:00:00');
+  if (isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() - 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function _cliCuandoTxt(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  return _fechaCorta(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+// Las listas de un cliente, de la más nueva a la más vieja.
+function _cliTarVigencias(cod) {
+  const porFecha = new Map();
+  _cliTarFilasDe(cod).forEach(t => {
+    const d = tarifaVigenteDesde(t);
+    if (!porFecha.has(d)) porFecha.set(d, { desde: d, filas: [], quienes: new Set(), cuando: '' });
+    const e = porFecha.get(d);
+    e.filas.push(t);
+    const q = String(t.creado_por || '').trim();
+    if (q) e.quienes.add(q);
+    const ts = String(t.created_at || '');
+    if (ts && (!e.cuando || ts < e.cuando)) e.cuando = ts;
+  });
+  return Array.from(porFecha.values())
+    .sort((a, b) => a.desde < b.desde ? 1 : a.desde > b.desde ? -1 : 0)
+    .map(e => ({
+      desde: e.desde,
+      original: e.desde === TARIFA_DESDE_SIEMPRE,
+      quien: e.quienes.size ? Array.from(e.quienes).join(', ') : '',
+      cuando: e.cuando,
+      filas: e.filas
+    }));
+}
+
+// Qué cambió EL DÍA en que esa lista empezó a regir.
+//
+// Se compara lo VIGENTE el día anterior contra lo vigente ese día, y NO una
+// lista contra la anterior: las vigencias se superponen POR ZONA, así que un
+// aumento que toca 5 zonas deja a las otras 40 con su precio de siempre.
+// Comparando lista contra lista, esas 40 saldrían como "dejaron de tener
+// precio" —falso y alarmante: diría que el cliente se quedó sin tarifa donde
+// se le sigue cobrando igual—. Es la misma lección que ya pagó el historial
+// del tarifario de conductor.
+function _cliTarCambio(cod, desde) {
+  const prev = new Map();
+  tarifasVigentesDe(cod, _cliDiaAntes(desde)).forEach(t => prev.set(normNombre(t.zona), t));
+  const detalle = [];
+  let suben = 0, bajan = 0, igual = 0, nuevas = 0, sumaPct = 0, nPct = 0;
+  tarifasVigentesDe(cod, desde).forEach(t => {
+    const antes = prev.get(normNombre(t.zona));
+    const vD = _num(t.precio);
+    if (!antes) { nuevas++; detalle.push({ t: t, antes: null }); return; }
+    const vA = _num(antes.precio);
+    if (vD === vA) { igual++; return; }
+    if (vD > vA) suben++; else bajan++;
+    if (vA > 0) { sumaPct += (vD / vA * 100 - 100); nPct++; }
+    detalle.push({ t: t, antes: antes });
+  });
+  detalle.sort((a, b) => String(a.t.zona).localeCompare(String(b.t.zona)));
+  return { suben: suben, bajan: bajan, igual: igual, nuevas: nuevas,
+           pctProm: nPct ? (sumaPct / nPct) : 0, detalle: detalle };
+}
+
+function historialTarifasCliente(cod) {
+  const vigs = _cliTarVigencias(cod);
+  const hoy = _hoyISO();
+  return vigs.map((v, i) => Object.assign({}, v, {
+    vigente: v.desde <= hoy && !vigs.slice(0, i).some(x => x.desde <= hoy),
+    futura: v.desde > hoy,
+    cambio: i + 1 < vigs.length ? _cliTarCambio(cod, v.desde) : null
+  }));
+}
+
+function _cliTogglePanel(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// El antes/después, zona por zona. Es lo que contesta "cuánto salía antes".
+function _cliTarTablaCambio(c) {
+  const filas = c.detalle.map(d => {
+    const vD = _num(d.t.precio);
+    const celda = !d.antes
+      ? '<td style="padding:5px 8px;color:#166534">nueva · ' + fmtPeso(vD) + '</td><td></td>'
+      : (function () {
+          const vA = _num(d.antes.precio);
+          const sube = vD > vA;
+          const pct = vA > 0 ? (vD / vA * 100 - 100) : 0;
+          return '<td style="padding:5px 8px"><span style="color:var(--text-muted)">' + fmtPeso(vA) + '</span> → ' +
+            '<strong style="color:' + (sube ? '#b45309' : '#166534') + '">' + fmtPeso(vD) + '</strong></td>' +
+            '<td style="padding:5px 8px;font-size:11.5px;color:var(--text-muted)">' +
+            (sube ? '+' : '−') + fmtPeso(Math.abs(vD - vA)) +
+            (vA > 0 ? ' · ' + (pct >= 0 ? '+' : '−') + Math.abs(pct).toFixed(1).replace('.', ',') + '%' : '') + '</td>';
+        })();
+    return '<tr style="border-top:1px solid var(--border)">' +
+      '<td style="padding:5px 8px">' + (d.t.zona || '') + '</td>' + celda + '</tr>';
+  }).join('');
+  return '<div style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>' +
+      ['Zona', 'Antes → después', 'Diferencia'].map(t =>
+        '<th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text-muted);text-transform:uppercase">' + t + '</th>').join('') +
+    '</tr></thead><tbody>' + filas + '</tbody></table></div>';
+}
+
+function abrirHistorialTarifasCliente(cod) {
+  const hist = historialTarifasCliente(cod);
+  const nombre = clienteNombreDe(cod);
+  if (!hist.length) {
+    alert('"' + nombre + '" todavía no tiene ninguna lista de precios cargada, así que todos sus envíos se facturan en $0.');
+    return;
+  }
+  const bloques = hist.map((v, i) => {
+    const id = 'clihist-' + i;
+    const chip = v.vigente
+      ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600">VIGENTE</span>'
+      : (v.futura
+        ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600">EMPIEZA EL ' + _precFmt(v.desde) + '</span>'
+        : '<span style="background:var(--bg-alt);color:var(--text-muted);padding:2px 8px;border-radius:999px;font-size:11px">anterior</span>');
+    const c = v.cambio;
+    let resumen;
+    if (!c) {
+      resumen = 'Es la primera lista que se le cargó, así que no hay un antes con qué compararla.';
+    } else {
+      const partes = [];
+      if (c.suben) partes.push('<strong>' + c.suben + '</strong> zona(s) al alza');
+      if (c.bajan) partes.push('<strong>' + c.bajan + '</strong> a la baja');
+      if (c.igual) partes.push(c.igual + ' sin cambio');
+      if (c.nuevas) partes.push('<strong>' + c.nuevas + '</strong> nueva(s)');
+      const pct = c.pctProm ? ' · promedio ' + (c.pctProm >= 0 ? '+' : '−') +
+        Math.abs(c.pctProm).toFixed(1).replace('.', ',') + '%' : '';
+      resumen = (partes.join(' · ') || 'No movió ningún precio') + pct;
+    }
+    const cuando = _cliCuandoTxt(v.cuando);
+    return '<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<strong style="font-size:14px">' + (v.original ? 'La lista original' : 'Desde el ' + _precFmt(v.desde)) + '</strong>' +
+        chip +
+        '<span style="font-size:12px;color:var(--text-muted)">' + v.filas.length + ' zona(s)</span>' +
+      '</div>' +
+      // Quién y cuándo, que es la pregunta que trae a esta ventana. En blanco
+      // NO es "nadie": es que la carga es anterior a que se registrara, y
+      // decirlo así es lo único honesto que se puede contestar.
+      '<div style="font-size:12px;margin-bottom:6px">' +
+        (v.quien
+          ? '<span style="color:var(--text-secondary)"><i class="ic ic-user"></i> la cargó <strong>' + v.quien + '</strong></span>'
+          : '<span style="color:#b45309"><i class="ic ic-alert"></i> no consta quién la cargó — es anterior al 05/10/2026, que es cuando se empezó a registrar</span>') +
+        (cuando ? '<span style="color:var(--text-muted)"> · ' + cuando + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:8px">' + resumen + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        (c ? '<button class="btn btn-sm" onclick="_cliTogglePanel(\'' + id + '\')">Ver qué cambió</button>' : '') +
+        '<button class="btn btn-sm" onclick="descargarListaTarifasCliente(\'' + jsAttr(cod) + '\',\'' + v.desde + '\')">' +
+          '<i class="ic ic-download"></i> Descargar esta lista</button>' +
+      '</div>' +
+      (c ? '<div id="' + id + '" style="display:none;margin-top:10px">' + _cliTarTablaCambio(c) + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  document.getElementById('modal-title').textContent = 'Historial de precios — ' + nombre;
+  document.getElementById('modal-body').innerHTML =
+    '<div class="alert alert-info" style="margin-bottom:12px"><div><i class="ic ic-info"></i> ' +
+    'Cada aumento <strong>crea una lista nueva</strong> y la anterior se conserva: un envío se factura con ' +
+    'el precio que regía <strong>el día que se entregó</strong>, así que las viejas siguen haciendo falta ' +
+    'para explicar una liquidación pasada.' +
+    '</div></div>' + bloques +
+    '<div style="display:flex;justify-content:flex-end;margin-top:8px">' +
+      '<button class="btn" onclick="closeModal()">Cerrar</button></div>';
+  // Ancha: la tabla del antes/después no entra en los 540px de `.modal`.
+  // closeModal se la saca, si no el próximo modal abre ancho.
+  document.getElementById('modal-content').classList.add('modal-ancho');
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// La descarga de UNA lista puntual, en el formato de la plantilla —así una
+// lista vieja se puede volver a subir si hay que revertir un aumento—, con el
+// aviso adentro: reimportarla no es consultarla, le cambia el precio al cliente.
+function descargarListaTarifasCliente(cod, desde) {
+  const v = _cliTarVigencias(cod).find(x => x.desde === desde);
+  if (!v) { showToast('Esa lista ya no está'); return; }
+  const nombre = clienteNombreDe(cod);
+  const cuando = v.original ? 'la lista ORIGINAL (rige desde siempre)' : 'la lista que rige DESDE EL ' + _precFmt(desde);
+  const aoa = [
+    ['⚠ Copia para consultar de ' + nombre + ': esta es ' + cuando +
+     (v.quien ? ', cargada por ' + v.quien : '') +
+     '. Si la volvés a importar, estos precios pasan a regir desde la fecha que elijas en el panel.'],
+    ['Cod.Cliente', 'Cliente', 'Zona', 'Precio']
+  ];
+  v.filas.slice().sort((a, b) => String(a.zona).localeCompare(String(b.zona)))
+    .forEach(t => aoa.push([clienteKey(cod), nombre, t.zona || '', _num(t.precio)]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 22 }, { wch: 28 }, { wch: 24 }, { wch: 14 }];
+  ws['!rows'] = [{ hpx: 34 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Tarifario');
+  XLSX.writeFile(wb, 'Tarifario_' + String(nombre).replace(/[^\w]+/g, '_') + '_' +
+    (v.original ? 'original' : 'desde_' + desde) + '.xlsx');
+  showToast('📥 Lista descargada');
+}
+
 // Cantidad de zonas con tarifa cargada de un cliente (las que rigen hoy).
 function clienteNZonas(cod) {
   return tarifasVigentesDe(cod).filter(t => _num(t.precio) > 0).length;
@@ -849,10 +1079,17 @@ function verCardCliente(cod) {
       dato('Zonas con tarifa', nz ? String(nz) : '<span style="color:#b45309">ninguna</span>') +
       dato('Lista de precios', (function(){
         const u = ultimaListaPreciosTxt(k);
+        // El historial va ACÁ y no en el pie de la ficha: la pregunta nace
+        // mirando este número —"¿de dónde salió este precio?"— y el que la
+        // tiene no sabe que existe una ventana en otro lado.
         return (u.original
             ? '<span title="Nunca se le cargó un aumento">original</span>'
             : 'desde ' + u.txt) +
-          (u.sub ? '<div style="font-size:11px;font-weight:400;color:#b45309">' + u.sub + '</div>' : '');
+          (u.sub ? '<div style="font-size:11px;font-weight:400;color:#b45309">' + u.sub + '</div>' : '') +
+          '<button class="btn btn-sm" style="margin-top:6px;font-size:11px;padding:3px 8px;font-weight:500" ' +
+            'onclick="abrirHistorialTarifasCliente(\'' + jsAttr(k) + '\')" ' +
+            'title="Todas las listas que tuvo, desde cuándo rigió cada una y quién la cargó">' +
+            '<i class="ic ic-file"></i> Ver historial</button>';
       })()) +
       dato('Envíos de la semana', liq.totalEnvios ? String(liq.totalEnvios) : '—') +
       dato('A facturar', fmtPeso(liq.total)) +

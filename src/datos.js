@@ -513,7 +513,11 @@ async function _hydrateFromSupabaseReal(opts) {
     // Quién la cargó. Vacío en las anteriores al 05/10/2026, que es cuando se
     // empezó a registrar: eso NO es "nadie", es "no se sabe", y la ficha lo
     // dice así en vez de dejar el renglón en blanco.
-    creado_por: t.creado_por || ''
+    creado_por: t.creado_por || '',
+    // Cuándo entró la fila. Es la otra mitad de la pregunta "quién cargó esto":
+    // de las listas anteriores al 05/10/2026 el operador no consta, pero la
+    // fecha y la hora sí, y con eso se puede ir a buscar quién estuvo cargando.
+    created_at: t.created_at || ''
   }));
 
   // Comisiones: vendedores, escala de categorización, clientes en comisión y pagos.
