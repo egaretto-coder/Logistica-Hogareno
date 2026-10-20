@@ -800,9 +800,24 @@ function _ddmmIso(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) :
 // Una fila de la tabla a partir de las liquidaciones de sus períodos.
 function _filaRenta(cod, liqs) {
   const s = campo => liqs.reduce((t, l) => t + _num(l && l[campo]), 0);
+  const envios = s('totalEnvios');
+  const factura = s('total');
+  // EL PRECIO DE VENTA VARIABLE: lo que deja cada envío de este cliente. Los
+  // totales dependen del volumen y no se comparan entre clientes ni entre meses
+  // —uno de 3.000 envíos factura más que uno de 300 sin ser mejor negocio— y
+  // este sí: es el número con el que se discute una tarifa.
+  //
+  // Es FACTURACIÓN ÷ ENVÍOS, con TODO lo que se le factura adentro: los envíos
+  // con dimensión especial —que son más caros—, las colectas, los viajes
+  // particulares y cualquier cargo. Lo decidió el negocio y además es lo que
+  // hace que la fila cierre consigo misma: venta por envío − costo por envío =
+  // margen por envío, porque los tres salen del mismo numerador y del mismo
+  // denominador. Dejando los cargos afuera del numerador esa identidad no daba,
+  // y las tres columnas de la tabla se contradecían entre sí.
   return {
     cod, nombre: clienteNombreDe(cod), dias: periodoDiasDe(cod),
-    envios: s('totalEnvios'), factura: s('total'), costo: s('pagado'), margen: s('margen'), sinTarifa: s('sinTarifa')
+    envios: envios, factura: factura, costo: s('pagado'), margen: s('margen'), sinTarifa: s('sinTarifa'),
+    unit: envios ? factura / envios : 0
   };
 }
 
@@ -1121,7 +1136,7 @@ function renderDashClientes() {
     (dashRentaSem ? ' · ' + _dashBandaDef(dashRentaSem).corto : '');
 
   if (!lista.length) {
-    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon"><i class="ic ic-building"></i></div>' +
       '<div class="empty-title">' + (dashRentaSem ? 'Ningún cliente con ' + _dashBandaDef(dashRentaSem).corto : todos.length ? 'Sin coincidencias' : AppData._cargandoRegistros ? 'Cargando los envíos…' : v ? 'Sin envíos en estas fechas' : 'Sin clientes con envíos') + '</div>' +
       '<div class="empty-sub">' + (dashRentaSem ? 'En este período no hay ninguno en esa banda. Tocá Todos para ver el resto.' : todos.length ? 'Ajustá el buscador'
         : AppData._cargandoRegistros ? 'La facturación se completa sola cuando terminan de bajar.'
@@ -1143,6 +1158,11 @@ function renderDashClientes() {
       '<td style="font-size:12px">' + _txtPeriodoFila(x) + '</td>' +
       '<td class="mono" style="text-align:right">' + x.envios + '</td>' +
       '<td class="mono" style="text-align:right">' + fmtPeso(x.factura) + '</td>' +
+      // Un cliente SIN envíos —solo viajes particulares— no tiene precio por
+      // envío: mostrar $0 diría que no se le cobra nada por llevarle uno.
+      '<td class="mono" style="text-align:right">' +
+        (x.envios ? fmtPeso(x.unit) : '<span class="muted">—</span>') +
+      '</td>' +
       '<td class="mono" style="text-align:right;color:var(--text-muted)">' + fmtPeso(x.costo) + '</td>' +
       // El IMPORTE conserva su sentido de siempre —verde si queda plata, rojo si
       // se pierde—, y el color del semáforo va en el PORCENTAJE, que es lo que
@@ -1212,11 +1232,12 @@ function verRentaCliente(cod) {
   // Lo que vale CADA envío, de los dos lados. Es el número con el que se discute
   // una tarifa: los totales dependen del volumen y no se comparan entre clientes
   // ni entre meses, y el promedio sí.
-  // El denominador son los envíos, así que arriba va lo facturado POR ENVÍOS
-  // (`totalEnvio`) y no el total: una colecta o un viaje particular no son un
-  // envío, y meterlos subiría un "precio por envío" que nadie cobró.
+  // La venta es FACTURACIÓN ÷ ENVÍOS, con los cargos adentro, igual que la
+  // columna de la tabla: la misma etiqueta con dos cuentas distintas haría que
+  // el operador vea un precio acá y otro allá sin saber cuál vale. Y así los
+  // tres números cierran: venta por envío − costo por envío = margen por envío.
   const nEnv = _num(liq.totalEnvios);
-  const ventaProm = nEnv ? _num(liq.totalEnvio) / nEnv : 0;
+  const ventaProm = nEnv ? _num(liq.total) / nEnv : 0;
   const costoProm = nEnv ? _num(liq.pagado) / nEnv : 0;
   const hayCargos = _num(liq.totalCargos) > 0;
 
@@ -1234,7 +1255,7 @@ function verRentaCliente(cod) {
         '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>' +
       '<div class="metric-card"><div class="metric-label">Venta promedio</div>' +
         '<div class="metric-value">' + fmtPeso(ventaProm) + '</div>' +
-        '<div class="metric-sub">por envío' + (hayCargos ? ' · sin los cargos' : '') + '</div></div>' +
+        '<div class="metric-sub">por envío' + (hayCargos ? ' · incluye los cargos' : '') + '</div></div>' +
       '<div class="metric-card"><div class="metric-label">Costo promedio</div>' +
         '<div class="metric-value">' + fmtPeso(costoProm) + '</div>' +
         '<div class="metric-sub">por envío, al conductor</div></div>' +

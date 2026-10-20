@@ -370,6 +370,9 @@ function _repFilasClientes(v) {
     periodo: (typeof periodoLabel === 'function') ? periodoLabel(x.dias) : '',
     envios: _num(x.envios), factura: _num(x.factura), costo: _num(x.costo), margen: _num(x.margen),
     pct: _num(x.factura) > 0 ? _num(x.margen) * 100 / _num(x.factura) : 0,
+    // El precio de venta por envío, el MISMO que la pantalla y que la ficha del
+    // cliente: toda su facturación ÷ sus envíos.
+    unit: _num(x.unit),
     sinTarifa: _num(x.sinTarifa)
   }));
 }
@@ -528,7 +531,7 @@ function exportReporteClientesPDF() {
   if (!filas.length) { alert('Sin clientes para exportar con lo que está puesto en pantalla.'); return; }
   const body = filas.map(c => [
     c.cliente, c.periodo, c.envios.toLocaleString('es-AR'),
-    fmtPeso(c.factura), fmtPeso(c.costo), fmtPeso(c.margen),
+    fmtPeso(c.factura), c.envios ? fmtPeso(c.unit) : '—', fmtPeso(c.costo), fmtPeso(c.margen),
     // El cliente que NO factura no es un 0%: se le paga al conductor y no se le
     // cobra nada. Decir "0%" lo haría pasar por un caso neutro.
     c.factura > 0 ? c.pct.toFixed(1) + '%' : 'no factura'
@@ -541,12 +544,15 @@ function exportReporteClientesPDF() {
         ' cliente(s)' + (filas.length !== v.todos.length ? ' de ' + v.todos.length : '') +
         ' · ' + en.toLocaleString('es-AR') + ' envíos',
       colSpan: 3, styles: { halign: 'right' } },
-    fmtPeso(f), fmtPeso(co), fmtPeso(f - co), f > 0 ? ((f - co) * 100 / f).toFixed(1) + '%' : '—'
+    // PONDERADO —toda la facturación sobre todos los envíos— y no el promedio
+    // de los promedios: un cliente de 3 envíos no puede pesar lo mismo que uno
+    // de 3.000.
+    fmtPeso(f), en ? fmtPeso(f / en) : '—', fmtPeso(co), fmtPeso(f - co), f > 0 ? ((f - co) * 100 / f).toFixed(1) + '%' : '—'
   ]];
   _repPDF('Renta por cliente', v.filtros,
-    ['Cliente', 'Período', 'Envíos', 'Facturación', 'Costo', 'Margen', 'Margen %'],
+    ['Cliente', 'Período', 'Envíos', 'Facturación', 'Venta/envío', 'Costo', 'Margen', 'Margen %'],
     body, foot,
-    { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+    { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
     'Renta_por_cliente_' + _repFechaArchivo() + '.pdf');
   showToast('📥 Renta por cliente descargada');
 }
@@ -558,18 +564,22 @@ function exportReporteClientesExcel() {
   const aoa = [
     [_repCabecera('Renta por cliente', v.filtros,
       filas.length + ' cliente(s)' + (filas.length !== v.todos.length ? ' de ' + v.todos.length : ''))],
-    ['CLIENTE', 'CÓDIGO', 'PERÍODO', 'ENVÍOS', 'FACTURACIÓN', 'COSTO', 'MARGEN', 'MARGEN %', 'ENVÍOS SIN TARIFA']
+    ['CLIENTE', 'CÓDIGO', 'PERÍODO', 'ENVÍOS', 'FACTURACIÓN', 'VENTA / ENVÍO', 'COSTO', 'MARGEN', 'MARGEN %', 'ENVÍOS SIN TARIFA']
   ];
-  filas.forEach(c => aoa.push([c.cliente, c.cod, c.periodo, c.envios, c.factura, c.costo, c.margen,
+  // Como número y no como texto con "$": el archivo se baja justamente para
+  // cruzarlo contra otra planilla y ordenar por este precio.
+  filas.forEach(c => aoa.push([c.cliente, c.cod, c.periodo, c.envios, c.factura,
+    c.envios ? Math.round(c.unit * 100) / 100 : '', c.costo, c.margen,
     c.factura > 0 ? Math.round(c.pct * 10) / 10 : '', c.sinTarifa || '']));
   const f = filas.reduce((s, c) => s + c.factura, 0);
   const co = filas.reduce((s, c) => s + c.costo, 0);
   const en = filas.reduce((s, c) => s + c.envios, 0);
   aoa.push([]);
-  aoa.push([v.filtros.length ? 'TOTAL DE LO FILTRADO' : 'TOTAL', '', '', en, f, co, f - co,
+  aoa.push([v.filtros.length ? 'TOTAL DE LO FILTRADO' : 'TOTAL', '', '', en, f,
+    en ? Math.round(f * 100 / en) / 100 : '', co, f - co,
     f > 0 ? Math.round((f - co) * 1000 / f) / 10 : '', '']);
   _repExcel('Renta_por_cliente_' + _repFechaArchivo() + '.xlsx',
-    [{ nombre: 'Renta por cliente', aoa: aoa, anchos: [30, 16, 12, 10, 16, 16, 16, 11, 17] }]);
+    [{ nombre: 'Renta por cliente', aoa: aoa, anchos: [30, 16, 12, 10, 16, 15, 16, 16, 11, 17] }]);
   showToast('📥 Renta por cliente en Excel');
 }
 
