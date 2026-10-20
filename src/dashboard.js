@@ -143,7 +143,7 @@ function renderDashConductoresPanel(liqParam) {
     // Filtro "Todos": monto grupo = total general, incluir todos los conductores con liq
     montoGrupo = totalMontoGeneral;
     Object.entries(liq).forEach(([nombre, d]) => {
-      liqPorConductor.push({ nombre, monto: d.total });
+      liqPorConductor.push({ nombre, monto: d.total, envios: (d.filas || []).length });
     });
   } else {
     // Filtro por condición: solo conductores del panel con esa condición
@@ -151,15 +151,12 @@ function renderDashConductoresPanel(liqParam) {
     Object.entries(liq).forEach(([nombre, d]) => {
       if (nombresFilterSet.has(nombre.toUpperCase().trim())) {
         montoGrupo += d.total;
-        liqPorConductor.push({ nombre, monto: d.total });
+        liqPorConductor.push({ nombre, monto: d.total, envios: (d.filas || []).length });
       }
     });
   }
 
-  const pctFacturacion = totalMontoGeneral > 0 ? Math.round(montoGrupo / totalMontoGeneral * 100) : 0;
   liqPorConductor.sort((a, b) => b.monto - a.monto);
-  const maxMonto = liqPorConductor.length ? liqPorConductor[0].monto : 1;
-  const top8 = liqPorConductor.slice(0, 8);
 
   // ── Distribución por categorización (torta + barras) ─────────────────────
   const catOrden = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
@@ -231,15 +228,58 @@ function renderDashConductoresPanel(liqParam) {
       '% de lo que se paga')
     .join(' · ');
 
-  // ── Participación en facturación por conductor (ranking) ─────────────────
-  const factRows = top8.length ? top8.map(({ nombre, monto }) => {
-    const partPct = montoGrupo > 0 ? Math.round(monto / montoGrupo * 100) : 0;
-    return `<div class="dash-rank-row">
-      <div class="conductor-avatar" style="background:${avatarColor(nombre)};width:26px;height:26px;font-size:9px;flex-shrink:0">${initials(nombre)}</div>
-      <span class="nom">${nombre}</span>
-      <span class="amt">${fmtPeso(monto)}<span>${partPct}%</span></span>
-    </div>`;
-  }).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">Sin liquidaciones para esta condición</div>';
+  // ── LOS 10 DE COSTO POR ENVÍO MÁS ALTO ───────────────────────────────────
+  // Este listado ordenaba por CUÁNTO FACTURA cada conductor, que contesta
+  // "quién mueve más" — y eso ya lo dicen la torta de al lado y el reporte de
+  // abajo. Lo que no se veía es CUÁNTO CUESTA CADA ENVÍO de cada uno, que es
+  // la pregunta donde se escapa la plata: dos conductores con el mismo total
+  // pueden tener unitarios muy distintos, y el caro no es el que más factura.
+  //
+  // EL DENOMINADOR son LOS ENVÍOS QUE FORMAN SU LIQUIDACIÓN (`d.filas`), el
+  // MISMO de la tarjeta "Costo variable unitario" de arriba y el del reporte
+  // por conductor de abajo: dividir un número por su propia cantidad es lo que
+  // impide que las tres lecturas se contradigan.
+  //
+  // PIDE UN MÍNIMO DE ENVÍOS, y es la diferencia entre una tabla útil y una
+  // inservible: con uno o dos envíos el unitario es UN CASO, no una tendencia
+  // —un envío suelto a una zona lejana da un unitario altísimo y no significa
+  // nada—. Medido en producción sobre octubre: de 135 conductores con envíos,
+  // 45 tienen menos de 10 y varios tienen exactamente 1, así que sin el mínimo
+  // los 10 primeros serían casi todos de un envío y la tabla no diría nada
+  // sobre dónde está el costo. NO se esconden en silencio: el pie dice cuántos
+  // quedaron afuera y por qué — mismo criterio que el gráfico con los domingos.
+  const DASH_UNIT_MIN_ENVIOS = 10;
+  const porUnitario = liqPorConductor.map(x => ({
+    nombre: x.nombre, monto: _num(x.monto), envios: _num(x.envios),
+    unit: _num(x.envios) ? _num(x.monto) / _num(x.envios) : 0
+  }));
+  const unitConVolumen = porUnitario.filter(x => x.envios >= DASH_UNIT_MIN_ENVIOS);
+  const unitPocos = porUnitario.length - unitConVolumen.length;
+  const top10Unit = unitConVolumen.slice().sort((a, b) => b.unit - a.unit).slice(0, 10);
+  // El promedio del grupo es LA VARA: "$3.879" no dice nada sin saber contra
+  // qué. Sale de la misma plata que ya muestra el subtítulo (montoGrupo) y de
+  // los mismos envíos, así que la fila y la referencia no pueden discrepar.
+  const enviosGrupo = porUnitario.reduce((a, x) => a + x.envios, 0);
+  const unitGrupo = enviosGrupo ? montoGrupo / enviosGrupo : 0;
+  const unitRows = top10Unit.length ? top10Unit.map(x => {
+    const dif = unitGrupo ? Math.round((x.unit - unitGrupo) / unitGrupo * 100) : 0;
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <div class="conductor-avatar" style="background:${avatarColor(x.nombre)};width:24px;height:24px;font-size:9px;flex-shrink:0">${initials(x.nombre)}</div>
+        <span style="font-size:12.5px">${x.nombre}</span></div></td>
+      <td style="text-align:right">${x.envios.toLocaleString('es-AR')}</td>
+      <td style="text-align:right">${fmtPeso(x.monto)}</td>
+      <td style="text-align:right"><b>${fmtPeso(x.unit)}</b>${dif > 0 ? '<span style="color:var(--warning);font-size:11px;margin-left:5px">+' + dif + '%</span>' : ''}</td>
+    </tr>`;
+  // El vacío tiene DOS causas y se arreglan distinto: que no haya liquidaciones,
+  // o que las haya pero ninguna llegue al mínimo de envíos. Decir "sin
+  // liquidaciones" en el segundo caso contradice al pie, que justo abajo está
+  // diciendo cuántos quedaron afuera — y un renglón que desmiente al de al lado
+  // es exactamente lo que hace dudar de todo el panel.
+  }).join('') : ('<tr><td colspan="4" style="font-size:12px;color:var(--text-muted);padding:10px 0">' +
+    (porUnitario.length
+      ? 'Ninguno llega a los ' + DASH_UNIT_MIN_ENVIOS + ' envíos: con menos, el unitario es un caso y no una tendencia.'
+      : 'Sin liquidaciones para esta condición') + '</td></tr>');
 
   body.innerHTML = `
     <div class="dash-cond-grid">
@@ -260,9 +300,14 @@ function renderDashConductoresPanel(liqParam) {
         </div>
       </div>
       <div>
-        <div class="dash-subtitle">Participación en facturación${dashCondFilter ? ' · ' + condLabel : ''} · <b style="color:var(--text-secondary)">${fmtPeso(montoGrupo)}</b></div>
-        ${factRows}
-        ${liqPorConductor.length > 8 ? '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:center">+ ' + (liqPorConductor.length - 8) + ' conductores más</div>' : ''}
+        <div class="dash-subtitle">Costo por envío · los 10 más altos${dashCondFilter ? ' · ' + condLabel : ''} · <b style="color:var(--text-secondary)">promedio ${fmtPeso(unitGrupo)}</b></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Conductor</th><th style="text-align:right">Envíos</th><th style="text-align:right">Se paga</th><th style="text-align:right">Por envío</th></tr></thead>
+            <tbody>${unitRows}</tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Lo que cuesta cada envío que se le paga: su total dividido por los envíos que forman su liquidación — la misma cuenta que la tarjeta de arriba.${unitPocos ? ' Quedan afuera ' + unitPocos + (unitPocos === 1 ? ' conductor con menos de ' : ' conductores con menos de ') + DASH_UNIT_MIN_ENVIOS + ' envíos: con uno o dos, el unitario es un caso y no una tendencia.' : ''}</div>
       </div>
     </div>`;
 }
