@@ -115,7 +115,10 @@
                 <input type="month" id="com-cierre-mes" onchange="renderCierreMensual()">
               </div>
               <span id="com-cierre-periodo" style="font-size:12px;color:var(--text-secondary);font-weight:600;padding-bottom:8px"></span>
-              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="exportComisionesMesPDF()"><i class="ic ic-download"></i> Descargar PDF</button>
+              <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-sm" onclick="exportRecibosComisiones()" title="Un recibo por beneficiario, uno por página: es lo que se imprime el día del pago para que cada uno firme el suyo"><i class="ic ic-file"></i> Recibos para firmar</button>
+                <button class="btn btn-sm btn-primary" onclick="exportComisionesMesPDF()"><i class="ic ic-download"></i> Descargar PDF</button>
+              </div>
             </div>
           </div>
           <div id="com-cierre-body">

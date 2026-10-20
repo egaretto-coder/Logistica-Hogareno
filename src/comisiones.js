@@ -1307,9 +1307,11 @@ function renderCierreMensual() {
       '<td><div class="conductor-cell" style="align-items:flex-start"><div class="conductor-avatar" style="background:' + avatarColor(v.vendedor) + ';width:26px;height:26px;font-size:9px;flex:0 0 auto">' + initials(v.vendedor) + '</div><div><strong>' + v.vendedor + '</strong>' + detalle + '</div></div></td>' +
       '<td class="mono" style="text-align:right">' + v.clientes.length + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(v.monto) + '</td>' +
-      '<td style="text-align:center">' + (pago
+      '<td><div style="display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap">' + (pago
         ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ',\'vendedor\')" title="Deshacer">↺</button>'
-        : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ',\'vendedor\',' + v.monto + ')"><i class="ic ic-check"></i> Marcar pagado</button>') + '</td>' +
+        : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(v.vendedor) + ',\'vendedor\',' + v.monto + ')"><i class="ic ic-check"></i> Marcar pagado</button>') +
+      '<button class="btn btn-sm" onclick="exportReciboComisionPDF(' + jsStr(v.vendedor) + ',\'vendedor\',\'' + periodo + '\')" title="Recibo con el detalle de SUS comisiones, para que lo firme"><i class="ic ic-download"></i> Recibo</button>' +
+      '</div></td>' +
     '</tr>';
   }).join('');
 
@@ -1320,11 +1322,13 @@ function renderCierreMensual() {
     '<td><strong>' + supNombre + '</strong> <span class="muted" style="font-size:11px">· supervisor (' + r.pct + '% del equipo)</span></td>' +
     '<td class="mono" style="text-align:right">—</td>' +
     '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(r.supMonto) + '</td>' +
-    '<td style="text-align:center">' + (!r.supNombre
+    '<td><div style="display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap">' + (!r.supNombre
       ? '<span class="muted" style="font-size:11px">definí el supervisor</span>'
       : (pagoSup
         ? '<span class="badge" style="background:#dcfce7;color:#166534">✓ Pagado</span> <button class="btn btn-sm" onclick="deshacerPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ',\'supervisor\')" title="Deshacer">↺</button>'
-        : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ',\'supervisor\',' + r.supMonto + ')"><i class="ic ic-check"></i> Marcar pagado</button>')) + '</td>' +
+        : '<button class="btn btn-sm btn-primary" onclick="marcarPagoComision(\'' + periodo + '\',' + jsStr(r.supNombre) + ',\'supervisor\',' + r.supMonto + ')"><i class="ic ic-check"></i> Marcar pagado</button>')) +
+    (!r.supNombre ? '' : '<button class="btn btn-sm" onclick="exportReciboComisionPDF(' + jsStr(r.supNombre) + ',\'supervisor\',\'' + periodo + '\')" title="Su recibo lleva adentro la base: lo que comisionó todo el equipo"><i class="ic ic-download"></i> Recibo</button>') +
+    '</div></td>' +
   '</tr>';
 
   // Clientes de baja que caen dentro de sus 5 meses: se listan en $0. Si la fila
@@ -1378,7 +1382,7 @@ function renderCierreMensual() {
       '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div><div class="metric-label">Total a pagar</div><div class="metric-value">' + fmtPeso(r.total) + '</div><div class="metric-sub">' + mesLabel(periodo) + '</div></div>' +
     '</div>' +
     '<div class="card"><div class="table-wrap"><table>' +
-      '<thead><tr><th>Beneficiario</th><th style="text-align:right">Clientes</th><th style="text-align:right">Monto</th><th style="text-align:center;width:170px">Estado</th></tr></thead>' +
+      '<thead><tr><th>Beneficiario</th><th style="text-align:right">Clientes</th><th style="text-align:right">Monto</th><th style="text-align:center;width:245px">Estado</th></tr></thead>' +
       '<tbody>' + filasVend + filaSup + '</tbody>' +
       '<tfoot><tr style="font-weight:700;background:var(--surface-0)"><td>TOTAL</td><td></td><td class="mono" style="text-align:right">' + fmtPeso(r.total) + '</td><td></td></tr></tfoot>' +
     '</table></div></div>' + bloqueBajas + bloqueFuera;
@@ -1467,4 +1471,188 @@ function exportComisionesMesPDF() {
   }
   doc.save('Comisiones_' + periodo + '.pdf');
   showToast('📥 Comisiones de ' + mesLabel(periodo) + ' descargadas');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  RECIBO DE COMISIONES — UNO POR BENEFICIARIO, PARA FIRMAR
+//
+//  El PDF del cierre (arriba) es la PLANILLA del mes: todos los beneficiarios
+//  en una tabla, que es lo que hace falta para pagar. Pero el papel que cada
+//  vendedor FIRMA tiene que ser el detalle de LO SUYO —cliente por cliente,
+//  con su categoría y en qué mes de los 5 va— y no una hoja donde figuran
+//  también las comisiones de sus compañeros: eso no se le puede dar a firmar.
+//
+//  La FORMA es la misma del recibo de sueldo (`_reciboEncabezado` /
+//  `_reciboFichas` / `_reciboPie` en empleados.js), con sus textos: una
+//  segunda copia de ese layout se desfasa en el próximo cambio de marca.
+// ════════════════════════════════════════════════════════════════════════
+
+// Número estable: el par mes + beneficiario ya es único, y un número que
+// cambiara en cada descarga no serviría para citar el papel.
+function _comSlug(s) {
+  return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Z0-9]+/g, '').slice(0, 12) || 'SN';
+}
+
+// Lo que va en el recibo de uno, sacado del MISMO `calcComisionesMes` que la
+// pantalla y la planilla: si el recibo tuviera su propia cuenta, el papel que
+// el vendedor firma podría no coincidir con el total que se marcó pagado.
+function _comReciboDatos(beneficiario, tipo, periodo, calc) {
+  const r = calc || calcComisionesMes(periodo);
+  const esSup = (tipo === 'supervisor');
+  const v = esSup ? null : r.vendedores.find(x => normNombre(x.vendedor) === normNombre(beneficiario));
+  // Los clientes dados de BAJA van en el recibo, en $0 y con su motivo: el
+  // vendedor tiene que ver que el cliente salió, no que el renglón desapareció
+  // — el mismo criterio que la pantalla y la planilla del cierre.
+  const bajas = esSup ? [] : r.bajas.filter(b => normNombre(b.vendedor) === normNombre(beneficiario));
+  return {
+    r: r, esSup: esSup, bajas: bajas,
+    clientes: v ? v.clientes.slice().sort((a, b) => b.monto - a.monto) : [],
+    monto: esSup ? r.supMonto : (v ? v.monto : 0),
+    pago: comisionPagoDe(periodo, beneficiario, tipo)
+  };
+}
+
+// Recibo de UN beneficiario. opts.doc encadena varios en un solo archivo y
+// opts.calc comparte el cálculo del mes (el lote no lo rehace por cada uno).
+function exportReciboComisionPDF(beneficiario, tipo, periodo, opts) {
+  opts = opts || {};
+  tipo = (tipo === 'supervisor') ? 'supervisor' : 'vendedor';
+  periodo = periodo || (document.getElementById('com-cierre-mes') || {}).value || mesActualYYYYMM();
+  const d = _comReciboDatos(beneficiario, tipo, periodo, opts.calc);
+  if (!d.monto && !d.bajas.length) {
+    alert(beneficiario + ' no tiene comisiones en ' + mesLabel(periodo) + '.');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = opts.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  if (opts.doc && opts.nuevaPagina) doc.addPage();
+
+  const ctx = {
+    titulo: 'RECIBO DE COMISIONES',
+    rotuloIzq: d.esSup ? 'SUPERVISOR' : 'VENDEDOR',
+    rotuloDer: 'PERÍODO LIQUIDADO',
+    nombre: beneficiario,
+    numero: 'LH-COM-' + String(periodo).replace('-', '') + '-' + _comSlug(beneficiario),
+    emitido: _fechaCorta(new Date()),
+    periodoTxt: _mesTexto(periodo),
+    firma: d.esSup ? 'Firma del supervisor' : 'Firma del vendedor',
+    leyenda: 'Constancia interna de pago de comisiones. No reemplaza al recibo de sueldo de ley.',
+    datosEmp: d.esSup
+      ? ['Supervisión comercial  ·  ' + d.r.pct + '% del total del equipo',
+         d.r.vendedores.length + ' vendedor(es)  ·  ' + fmtPeso(d.r.totalVendedores) + ' comisionados']
+      : [d.clientes.length + ' cliente(s) en comisión' + (d.bajas.length ? '  ·  ' + d.bajas.length + ' de baja' : ''),
+         'Comisión por cliente nuevo, 5 meses desde su evaluación'],
+    datosPer: [
+      'Comisiones devengadas en ' + _mesTexto(periodo),
+      d.pago ? ('Abonado' + (d.pago.pagado_en ? ' el ' + _fechaCorta(d.pago.pagado_en) : '')) : 'Pendiente de pago'
+    ]
+  };
+  _reciboEncabezado(doc, ctx);
+  _reciboFichas(doc, ctx);
+
+  // ── El detalle que se firma ──────────────────────────────────────────────
+  const head = d.esSup
+    ? [['Concepto', 'Base', 'Alícuota', 'Comisión']]
+    : [['Cliente', 'Categoría', 'Mes de pago', 'Comisión']];
+  const body = d.esSup
+    ? [['Supervisión del equipo comercial',
+        fmtPeso(d.r.totalVendedores) + ' comisionados', d.r.pct + '%', fmtPeso(d.monto)]]
+    : d.clientes.map(c => [c.cliente, c.categoria || '—', 'mes ' + c.nroMes + ' de 5', fmtPeso(c.monto)]);
+  d.bajas.forEach(b => body.push([
+    b.cliente, b.categoria || '—',
+    'de baja' + (b.mesBaja ? ' desde ' + _mesTexto(b.mesBaja) : '') + (b.motivo ? '  ·  ' + b.motivo : ''),
+    fmtPeso(0)
+  ]));
+
+  doc.autoTable({
+    startY: 66,
+    head: head,
+    body: body,
+    foot: [[{ content: 'TOTAL DEL DETALLE', colSpan: 3, styles: { halign: 'right' } }, fmtPeso(d.monto)]],
+    theme: 'striped',
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: { top: 2.6, bottom: 2.6, left: 3, right: 3 }, lineWidth: 0 },
+    headStyles: { fillColor: MARCA.navy, textColor: 255, fontSize: 8, fontStyle: 'bold', cellPadding: { top: 3, bottom: 3, left: 3, right: 3 } },
+    footStyles: { fillColor: MARCA.azul, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles: { textColor: MARCA.texto },
+    alternateRowStyles: { fillColor: [247, 249, 252] },
+    columnStyles: {
+      0: { cellWidth: 'auto' }, 1: { cellWidth: 34 }, 2: { cellWidth: 44, fontSize: 7.5 },
+      3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
+    },
+    margin: { left: RECIBO.izq, right: RECIBO.izq, top: 25, bottom: 40 }
+  });
+
+  // El supervisor cobra un PORCENTAJE, así que su número no se puede verificar
+  // sin la base: va abajo, rotulada como base y con su propio total, para que
+  // nadie lea ese importe como lo que él cobra.
+  if (d.esSup && d.r.vendedores.length) {
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 7,
+      head: [['Base del cálculo — comisiones del equipo en ' + _mesTexto(periodo), 'Clientes', 'Comisión']],
+      body: d.r.vendedores.map(v => [v.vendedor, v.clientes.length, fmtPeso(v.monto)]),
+      foot: [[{ content: 'TOTAL COMISIONADO POR EL EQUIPO', styles: { halign: 'right' } }, '', fmtPeso(d.r.totalVendedores)]],
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2 },
+      headStyles: { fillColor: [237, 241, 248], textColor: MARCA.navy, fontSize: 7, fontStyle: 'bold' },
+      footStyles: { fillColor: [237, 241, 248], textColor: MARCA.navy, fontStyle: 'bold', fontSize: 7.5 },
+      bodyStyles: { textColor: MARCA.gris },
+      columnStyles: { 1: { cellWidth: 20, halign: 'right' }, 2: { cellWidth: 30, halign: 'right' } },
+      margin: { left: RECIBO.izq, right: RECIBO.izq, top: 25, bottom: 40 }
+    });
+  }
+
+  let y = doc.lastAutoTable.finalY + 8;
+  // Si la tabla llegó hasta el pie, el total y las firmas pasan a la hoja
+  // siguiente: un neto pisado por la regla del pie no se puede firmar.
+  if (y + 26 > RECIBO.pieRegla - 16) { doc.addPage(); y = 28; }
+
+  const RX = 112;
+  _pdfRelleno(doc, MARCA.navy); doc.roundedRect(RX, y, 84, 15, 1.8, 1.8, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont(undefined, 'bold'); doc.setFontSize(7.5);
+  doc.text('TOTAL A COBRAR', RX + 5, y + 5.5);
+  doc.setFontSize(15);
+  doc.text(fmtPeso(d.monto), RECIBO.der - 5, y + 11.8, { align: 'right' });
+
+  // Cómo se llega a ese número, a la izquierda: un importe sin su regla no se
+  // puede revisar, que es lo que el vendedor va a querer hacer antes de firmar.
+  _pdfTexto(doc, MARCA.azul); doc.setFont(undefined, 'bold'); doc.setFontSize(6.5);
+  doc.text('CÓMO SE CALCULA', RECIBO.izq, y + 3);
+  doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.texto);
+  const nota = d.esSup
+    ? ['El supervisor cobra el ' + d.r.pct + '% del total comisionado por todo el equipo, ' +
+       'su propia comisión de vendedor incluida.']
+    : ['Cada cliente nuevo comisiona un monto fijo durante 5 meses, según la categoría ' +
+       'que dio la evaluación de sus 4 primeras facturas.']
+       .concat(d.bajas.length
+         ? ['Los clientes dados de baja figuran en $0: se siguen listando hasta cumplir sus 5 meses.']
+         : []);
+  let ly = y + 8;
+  nota.forEach(t => {
+    doc.splitTextToSize(t, 92).forEach(linea => { doc.text(linea, RECIBO.izq, ly); ly += 3.9; });
+    ly += 1.4;
+  });
+
+  _reciboPie(doc, ctx);
+  if (opts.doc) return doc;
+  doc.save('Recibo_comisiones_' + String(beneficiario).replace(/\s+/g, '_') + '_' + periodo + '.pdf');
+  showToast('📄 Recibo de ' + beneficiario + ' · ' + mesLabel(periodo));
+}
+
+// Todos los recibos del mes en un solo archivo, uno por página: es lo que se
+// imprime el día del pago para que cada uno firme el suyo. Mismo criterio que
+// "Recibos para firmar" de la liquidación de sueldos.
+function exportRecibosComisiones() {
+  const periodo = (document.getElementById('com-cierre-mes') || {}).value || mesActualYYYYMM();
+  const calc = calcComisionesMes(periodo);
+  // En el mismo orden que la tabla del cierre, con el supervisor al final.
+  // Van solo los que COBRAN: un recibo en $0 no se firma.
+  const lista = calc.vendedores.map(v => ({ nombre: v.vendedor, tipo: 'vendedor' }));
+  if (calc.supNombre && calc.supMonto > 0) lista.push({ nombre: calc.supNombre, tipo: 'supervisor' });
+  if (!lista.length) { alert('No hay comisiones a pagar en ' + mesLabel(periodo) + '.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  lista.forEach((x, i) => exportReciboComisionPDF(x.nombre, x.tipo, periodo, { doc, nuevaPagina: i > 0, calc }));
+  doc.save('Recibos_comisiones_' + periodo + '.pdf');
+  showToast('📄 ' + lista.length + ' recibo(s) en un solo PDF');
 }

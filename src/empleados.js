@@ -3458,6 +3458,14 @@ async function guardarSueldo(marcarPagado, conRecibo) {
 //  Ojo con jsPDF y WinAnsi: los acentos y el · entran, las flechas y los
 //  símbolos no. Por eso no hay ni una flecha en este papel.
 // ════════════════════════════════════════════════════════════════════════
+//  LA FORMA DEL RECIBO ES UNA SOLA, y la usan dos documentos: el sueldo del
+//  empleado y la comisión del vendedor (`exportReciboComisionPDF`, en
+//  comisiones.js). Los tres helpers de abajo son el papel —membrete, las dos
+//  fichas de arriba, las firmas y el pie del emisor— y los TEXTOS salen del
+//  ctx, con los del sueldo como valor por defecto: dos copias de este layout
+//  se desfasan en el próximo cambio de marca, y el que quede atrás emite
+//  papeles con otro membrete que nadie va a revisar.
+// ════════════════════════════════════════════════════════════════════════
 const RECIBO = { izq: 14, der: 196, ancho: 182, pieRegla: 268 };
 
 // Último día del mes, para escribir el período sin ambigüedad.
@@ -3505,7 +3513,7 @@ function _reciboEncabezado(doc, ctx) {
   const L = RECIBO.izq, R = RECIBO.der;
   try { doc.addImage(MARCA.logo, 'PNG', L, 12, 44, 44 / MARCA.logoRatio); } catch (err) {}
   _pdfTexto(doc, MARCA.navy); doc.setFont(undefined, 'bold'); doc.setFontSize(12.5);
-  doc.text('RECIBO DE LIQUIDACIÓN DE SUELDO', R, 16.5, { align: 'right' });
+  doc.text(ctx.titulo || 'RECIBO DE LIQUIDACIÓN DE SUELDO', R, 16.5, { align: 'right' });
   doc.setFont(undefined, 'normal'); doc.setFontSize(8); _pdfTexto(doc, MARCA.gris);
   doc.text('N° ' + ctx.numero, R, 21.5, { align: 'right' });
   doc.text('Emitido el ' + ctx.emitido, R, 25.5, { align: 'right' });
@@ -3527,8 +3535,8 @@ function _reciboFichas(doc, ctx) {
     let ly = Y + 17;
     lineas.filter(Boolean).slice(0, 3).forEach(t => { doc.text(_recorte(doc, t, W - 10), x + 5, ly); ly += 3.9; });
   };
-  ficha('EMPLEADO', ctx.nombre, ctx.datosEmp, L);
-  ficha('PERÍODO LIQUIDADO', ctx.periodoTxt, ctx.datosPer, X2);
+  ficha(ctx.rotuloIzq || 'EMPLEADO', ctx.nombre, ctx.datosEmp, L);
+  ficha(ctx.rotuloDer || 'PERÍODO LIQUIDADO', ctx.periodoTxt, ctx.datosPer, X2);
 }
 
 function _reciboPie(doc, ctx) {
@@ -3538,7 +3546,7 @@ function _reciboPie(doc, ctx) {
   doc.line(L + 6, Y - 4, L + 76, Y - 4);
   doc.line(R - 76, Y - 4, R - 6, Y - 4);
   doc.setFont(undefined, 'normal'); doc.setFontSize(7.5); _pdfTexto(doc, MARCA.gris);
-  doc.text('Firma del empleado', L + 41, Y, { align: 'center' });
+  doc.text(ctx.firma || 'Firma del empleado', L + 41, Y, { align: 'center' });
   doc.text('Por ' + (empresaDato('empresa_razon') || empresaNombre()), R - 41, Y, { align: 'center' });
   doc.setFontSize(6.5);
   doc.text('Aclaración y DNI', L + 41, Y + 3.5, { align: 'center' });
@@ -3551,7 +3559,7 @@ function _reciboPie(doc, ctx) {
   doc.setFont(undefined, 'normal'); _pdfTexto(doc, MARCA.gris);
   if (contacto) doc.text(doc.splitTextToSize(contacto, 140)[0], L, Y + 17);
   doc.setFontSize(6.5);
-  doc.text('Constancia interna de pago. No reemplaza al recibo de sueldo de ley.', L, Y + 20.5);
+  doc.text(ctx.leyenda || 'Constancia interna de pago. No reemplaza al recibo de sueldo de ley.', L, Y + 20.5);
   doc.setFontSize(7.5);
   doc.text('Recibo ' + ctx.numero, R, Y + 13.5, { align: 'right' });
 }
