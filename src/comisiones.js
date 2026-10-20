@@ -163,6 +163,7 @@ function calcComisionesMes(periodo) {
   const porVend = {};
   const bajas = [];
   const fuera = [];
+  const supPropios = [];
   AppData.comisionClientes.forEach(row => {
     if (!row.bloqueado) return;
     const meses = mesesPagoComision(row);
@@ -177,6 +178,15 @@ function calcComisionesMes(periodo) {
     }
     const v = row.vendedor || '(sin vendedor)';
     const nroMes = meses.indexOf(periodo) + 1;
+    // EL SUPERVISOR NO COMISIONA POR CLIENTES PROPIOS: cobra un % de lo que
+    // venden los vendedores que tiene a cargo. Una fila a su nombre NO entra en
+    // la base —sería pagarle un porcentaje sobre sí mismo— pero tampoco
+    // desaparece: se lista aparte, porque un renglón que se esfuma es plata que
+    // después nadie puede explicar.
+    if (esSupervisorComision(v)) {
+      supPropios.push({ cliente: row.cliente, categoria: row.categoria || '', nroMes, monto: _num(row.monto) });
+      return;
+    }
     // Los de baja caen dentro de la ventana de 5 meses pero cobran $0. Se listan
     // igual, como en la planilla: un renglón que desaparece se lee como un error
     // de cálculo, y el vendedor no tendría dónde ver que perdió al cliente.
@@ -199,7 +209,8 @@ function calcComisionesMes(periodo) {
   const supMonto = totalVendedores * pct / 100;
   bajas.sort((a, b) => String(a.vendedor).localeCompare(String(b.vendedor)) || String(a.cliente).localeCompare(String(b.cliente)));
   fuera.sort((a, b) => (a.antes === b.antes ? 0 : (a.antes ? -1 : 1)) || String(a.desde).localeCompare(String(b.desde)) || String(a.cliente).localeCompare(String(b.cliente)));
-  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto, bajas, fuera };
+  supPropios.sort((a, b) => String(a.cliente).localeCompare(String(b.cliente)));
+  return { vendedores, totalVendedores, supNombre, supMonto, pct, total: totalVendedores + supMonto, bajas, fuera, supPropios };
 }
 
 // El supervisor puede ser TAMBIÉN vendedor (cobra por sus propios clientes y
@@ -281,7 +292,9 @@ function renderVendedoresYEscala() {
         // que poder leer POR QUÉ dejó de ofrecerse en vez de ver una fila
         // apagada sin explicación.
         const emp = empleadoDeVendedor(v.nombre);
-        const chip = !emp
+        const chip = esSupervisorComision(v.nombre)
+          ? ' <span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:9.5px">supervisor · cobra el ' + supervisorPct() + '% del equipo, no clientes propios</span>'
+          : !emp
           ? ''
           : (emp.activo === false
               ? ' <span class="badge" style="background:#fee2e2;color:#991b1b;font-size:9.5px">de baja en el plantel</span>'
@@ -356,6 +369,12 @@ async function guardarSupervisorConfig() {
 //  Comercial no comisionan.
 // ════════════════════════════════════════════════════════════════════════
 const COM_AREAS_VENDEDORES = ['Ventas'];
+// El SUPERVISOR del área no entra al padrón: no comisiona por clientes propios
+// —cobra un % de lo que venden los vendedores que tiene a cargo—, así que
+// ofrecerlo para asignarle un cliente sería cargar una comisión que no se le va
+// a pagar. Es una LISTA por el mismo motivo que las áreas: sumar un puesto que
+// no comisiona es cambiar una línea.
+const COM_PUESTOS_NO_COMISIONAN = ['Supervisor'];
 
 // Dos grafías de la misma persona: igual, o una es el arranque de la otra por
 // palabra entera ("DANTE" ⊂ "DANTE LIZARRAGA"). No es un parecido difuso: un
@@ -367,18 +386,32 @@ function _mismaPersonaCom(a, b) {
   return x === y || x.startsWith(y + ' ') || y.startsWith(x + ' ');
 }
 
+// ¿Este nombre es el supervisor de comisiones? Se compara con la misma regla de
+// emparejado que el resto —el config puede tener el nombre de pila y el legajo
+// el completo— para que la plata no dependa de cómo se tipeó.
+function esSupervisorComision(nombre) { return _mismaPersonaCom(nombre, supervisorName()); }
+
+function _empleadoDeAreaComision(nombre) {
+  return (AppData.empleados || []).find(e => e && e.nombre &&
+    COM_AREAS_VENDEDORES.some(a => normNombre(a) === normNombre(e.area)) &&
+    _mismaPersonaCom(e.nombre, nombre)) || null;
+}
+
 function empleadoComisiona(e) {
-  return !!(e && e.nombre) && COM_AREAS_VENDEDORES.some(a => normNombre(a) === normNombre(e.area));
+  if (!e || !e.nombre) return false;
+  if (!COM_AREAS_VENDEDORES.some(a => normNombre(a) === normNombre(e.area))) return false;
+  if (COM_PUESTOS_NO_COMISIONAN.some(p => normNombre(p) === normNombre(e.puesto))) return false;
+  return !esSupervisorComision(e.nombre);
 }
 // El vendedor que YA es ese empleado, si está en el padrón.
 function vendedorDeEmpleado(nombre) {
   return (AppData.vendedores || []).find(v => _mismaPersonaCom(v.nombre, nombre)) || null;
 }
-// Y al revés: el legajo detrás de un vendedor. Un vendedor sin legajo no es un
-// error —puede ser alguien de afuera, o de antes— y por eso no se lo marca.
-function empleadoDeVendedor(nombre) {
-  return (AppData.empleados || []).find(e => empleadoComisiona(e) && _mismaPersonaCom(e.nombre, nombre)) || null;
-}
+// Y al revés: el legajo detrás de un vendedor — incluido el supervisor, que no
+// comisiona pero SÍ está en el plantel y la fila tiene que poder decirlo. Un
+// vendedor sin legajo no es un error —puede ser alguien de afuera, o de antes—
+// y por eso no se lo marca.
+function empleadoDeVendedor(nombre) { return _empleadoDeAreaComision(nombre); }
 
 // Corre al guardar un empleado Y al abrir Comisiones: colgada de un solo evento
 // quedaría a medias para los que ya estaban cargados, para los que entran desde
@@ -576,7 +609,7 @@ function renderComisionClientes() {
   // se fue del plantel invita a darle clientes a alguien que ya no está. Sus
   // comisiones vigentes no se tocan —se siguen pagando— y el filtro de la
   // tabla sí los sigue mostrando, para poder mirar lo suyo hacia atrás.
-  if (dlVen) dlVen.innerHTML = AppData.vendedores.filter(v => v.activo !== false)
+  if (dlVen) dlVen.innerHTML = AppData.vendedores.filter(v => v.activo !== false && !esSupervisorComision(v.nombre))
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
     .map(v => '<option value="' + String(v.nombre).replace(/"/g, '&quot;') + '">').join('');
 
@@ -1122,6 +1155,14 @@ async function guardarComisionClienteModal() {
   if (estado === 'baja' && !mes_baja) { alert('Indicá desde qué mes el cliente deja de comisionar. Para cargar la fecha exacta usá "Dar de baja" en el listado.'); return; }
   if (!cliente) { alert('Elegí un cliente.'); return; }
   if (!vendedor) { alert('Elegí o escribí un vendedor.'); return; }
+  // El supervisor cobra un % de lo que venden los que tiene a cargo, no
+  // comisiona por clientes propios: asignarle uno sería cargar una comisión que
+  // no se le va a pagar y que encima inflaría la base de su porcentaje.
+  if (esSupervisorComision(vendedor)) {
+    alert(vendedor + ' es el supervisor de comisiones: cobra el ' + supervisorPct() + '% de lo que venden los vendedores a cargo y no comisiona por clientes propios.' +
+      String.fromCharCode(10) + String.fromCharCode(10) + 'Asignale el cliente al vendedor que lo trajo.');
+    return;
+  }
   const mes_inicio = mesManual || (catManual ? mesInicioDefaultCliente(cliente) : '');
   const dup = AppData.comisionClientes.find(c => normCliente(c.cliente) === normCliente(cliente) && c.id !== comisionClienteEditId);
   if (dup) { alert('El cliente "' + cliente + '" ya está asignado a ' + dup.vendedor + '.'); return; }
@@ -1468,6 +1509,23 @@ function renderCierreMensual() {
       '</tr>').join('') +
     '</tbody></table></div></div>';
 
+  // Una fila quedó a nombre del supervisor. No entra en la base de su % y hay
+  // que poder ver por qué: en $0, con el cliente, como las bajas.
+  const bloqueSupPropios = !(r.supPropios || []).length ? '' :
+    '<div class="card" style="margin-top:12px"><div class="table-wrap"><table>' +
+      '<thead><tr><th colspan="3" style="background:var(--surface-0);font-weight:700">Clientes a nombre de ' + (r.supNombre || 'el supervisor') + ' — el supervisor no comisiona por clientes propios</th></tr>' +
+      '<tr><th>Cliente</th><th>Mes</th><th style="text-align:right">Comisión</th></tr></thead><tbody>' +
+      r.supPropios.map(x => '<tr style="opacity:.65">' +
+        '<td>' + x.cliente + (x.categoria ? ' <span class="muted" style="font-size:10px">(' + x.categoria + ')</span>' : '') + '</td>' +
+        '<td style="font-size:11px">mes ' + x.nroMes + '/5</td>' +
+        '<td class="mono" style="text-align:right">' + fmtPeso(0) + '</td>' +
+      '</tr>').join('') +
+    '</tbody></table></div>' +
+    '<div style="padding:8px 14px;font-size:11px;color:var(--text-muted)">' +
+      'Cobra el <strong>' + r.pct + '%</strong> de lo que venden los vendedores a cargo, y esa base no lo incluye a él. ' +
+      'Si el cliente lo trajo un vendedor, reasignalo desde su fila.' +
+    '</div></div>';
+
   // Los que no cobran este mes, con el motivo. Va plegado: es material de
   // control, no la liquidación. Lo que resuelve es la pregunta "¿por qué me
   // falta este cliente?", que sin esto no se puede contestar desde la pantalla.
@@ -1508,7 +1566,7 @@ function renderCierreMensual() {
       '<thead><tr><th>Beneficiario</th><th style="text-align:right">Clientes</th><th style="text-align:right">Monto</th><th style="text-align:center;width:245px">Estado</th></tr></thead>' +
       '<tbody>' + filasVend + filaSup + '</tbody>' +
       '<tfoot><tr style="font-weight:700;background:var(--surface-0)"><td>TOTAL</td><td></td><td class="mono" style="text-align:right">' + fmtPeso(r.total) + '</td><td></td></tr></tfoot>' +
-    '</table></div></div>' + bloqueBajas + bloqueFuera;
+    '</table></div></div>' + bloqueBajas + bloqueSupPropios + bloqueFuera;
 }
 
 // Escapa un string para incrustarlo como argumento JS en un onclick.

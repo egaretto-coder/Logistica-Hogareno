@@ -1086,22 +1086,36 @@ async function reactivarCliente(id) {
 // La asignación NO se guarda en `clientes`: escribe derecho en
 // `comision_clientes`, que es de donde sale la comisión. Un segundo padrón se
 // desincroniza, y el vendedor que cobra tiene que ser el mismo que se asignó acá.
+// A quién se le puede asignar un cliente: los que siguen y que NO son el
+// supervisor de comisiones —cobra un % de lo que venden los vendedores que
+// tiene a cargo, no comisiona por clientes propios, así que asignarle uno sería
+// cargar una comisión que no se le va a pagar—.
+function _vendedoresAsignables() {
+  return (AppData.vendedores || [])
+    .filter(v => v.activo !== false && !_esSupCom(v.nombre))
+    .slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+// El guard de typeof es por los bancos que levantan Clientes sin comisiones.js.
+function _esSupCom(n) { return typeof esSupervisorComision === 'function' && esSupervisorComision(n); }
+// El que ya está asignado pero no se ofrece se muestra igual —si no, guardar la
+// ficha se lo borraría— y el rótulo dice POR QUÉ: son dos casos distintos.
+function _vendedorFueraTxt(n) { return _esSupCom(n) ? ' (supervisor · no comisiona)' : ' (dado de baja)'; }
+
 function comisionDeCliente(nombre) {
   return (AppData.comisionClientes || []).find(x => normCliente(x.cliente) === normCliente(nombre));
 }
 function _cardVendedor(c) {
   const row = comisionDeCliente(c.nombre);
   const actual = row ? (row.vendedor || '') : '';
-  const vends = (AppData.vendedores || []).filter(v => v.activo !== false)
-    .slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  const vends = _vendedoresAsignables();
   const esc = s => String(s).replace(/"/g, '&quot;');
   const hayActual = actual && vends.some(v => normNombre(v.nombre) === normNombre(actual));
   const opts = '<option value="">Sin vendedor asignado</option>' +
     vends.map(v => '<option value="' + esc(v.nombre) + '"' +
       (normNombre(v.nombre) === normNombre(actual) ? ' selected' : '') + '>' + v.nombre + '</option>').join('') +
-    // Un vendedor dado de baja que figure en una asignación vieja se muestra
-    // marcado en vez de desaparecer: si no, guardar la ficha se lo borraría.
-    (actual && !hayActual ? '<option value="' + esc(actual) + '" selected>' + actual + ' (dado de baja)</option>' : '');
+    // Un vendedor que ya no se ofrece —dado de baja, o el supervisor— pero que
+    // figura en una asignación vieja se muestra marcado en vez de desaparecer.
+    (actual && !hayActual ? '<option value="' + esc(actual) + '" selected>' + actual + _vendedorFueraTxt(actual) + '</option>' : '');
 
   let estado;
   if (!row) {
@@ -1134,6 +1148,11 @@ async function asignarVendedorCliente(nombre) {
   const row = comisionDeCliente(nombre);
   const actual = row ? (row.vendedor || '') : '';
   if (normNombre(vendedor) === normNombre(actual)) { showToast('El vendedor ya es ese'); return; }
+  if (vendedor && _esSupCom(vendedor)) {
+    alert(vendedor + ' es el supervisor de comisiones: cobra un % de lo que venden los vendedores a cargo y no comisiona por clientes propios.' +
+      String.fromCharCode(10) + String.fromCharCode(10) + 'Asignale el cliente al vendedor que lo trajo.');
+    return;
+  }
 
   try {
     // Sacarle el vendedor: si ya está confirmado, la comisión está corriendo y
@@ -1851,13 +1870,12 @@ function _mcliVendedores(actual) {
   const sel = document.getElementById('mcli-vendedor');
   if (!sel) return;
   const esc = s => String(s).replace(/"/g, '&quot;');
-  const vends = (AppData.vendedores || []).filter(v => v.activo !== false)
-    .slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  const vends = _vendedoresAsignables();
   const hay = actual && vends.some(v => normNombre(v.nombre) === normNombre(actual));
   sel.innerHTML = '<option value="">Sin vendedor</option>' +
     vends.map(v => '<option value="' + esc(v.nombre) + '"' +
       (normNombre(v.nombre) === normNombre(actual) ? ' selected' : '') + '>' + v.nombre + '</option>').join('') +
-    (actual && !hay ? '<option value="' + esc(actual) + '" selected>' + actual + ' (dado de baja)</option>' : '');
+    (actual && !hay ? '<option value="' + esc(actual) + '" selected>' + actual + _vendedorFueraTxt(actual) + '</option>' : '');
 }
 
 // Pobla el select de condición de IVA conservando lo que el cliente ya tenía.
