@@ -257,6 +257,15 @@ function renderVendedoresYEscala() {
   if (sn && document.activeElement !== sn) sn.value = supervisorName();
   if (sp && document.activeElement !== sp) sp.value = supervisorPct();
 
+  // El padrón se completa solo con el plantel. Va UNA vez por sesión: es
+  // idempotente, pero no tiene sentido recorrerlo en cada repintado del
+  // realtime. Si falla (sin red), la bandera queda sin poner y se reintenta.
+  if (!_comPlantelSincronizado) {
+    _comPlantelSincronizado = true;
+    Promise.resolve(sincronizarVendedoresConPlantel())
+      .catch(err => { _comPlantelSincronizado = false; console.warn('sync plantel', err); });
+  }
+
   // Vendedores
   const cont = document.getElementById('com-vend-rows');
   if (cont) {
@@ -264,12 +273,21 @@ function renderVendedoresYEscala() {
     const cEl = document.getElementById('com-vend-count');
     if (cEl) cEl.textContent = AppData.vendedores.length + ' vendedor' + (AppData.vendedores.length !== 1 ? 'es' : '');
     if (!lista.length) {
-      cont.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">Sin vendedores</div><div class="empty-sub">Agregá uno con "+ Nuevo vendedor"</div></div></td></tr>';
+      cont.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-icon"><i class="ic ic-user"></i></div><div class="empty-title">Sin vendedores</div><div class="empty-sub">Los de ' + COM_AREAS_VENDEDORES.join(' y ') + ' entran solos desde Empleados. Para alguien de afuera del plantel, "+ Nuevo vendedor"</div></div></td></tr>';
     } else {
       cont.innerHTML = lista.map(v => {
         const nCli = AppData.comisionClientes.filter(c => normNombre(c.vendedor) === normNombre(v.nombre)).length;
+        // De dónde sale: el que vino del plantel entró solo, y si se fue hay
+        // que poder leer POR QUÉ dejó de ofrecerse en vez de ver una fila
+        // apagada sin explicación.
+        const emp = empleadoDeVendedor(v.nombre);
+        const chip = !emp
+          ? ''
+          : (emp.activo === false
+              ? ' <span class="badge" style="background:#fee2e2;color:#991b1b;font-size:9.5px">de baja en el plantel</span>'
+              : ' <span class="badge" style="background:#e0e7ff;color:#3730a3;font-size:9.5px">del plantel · ' + (emp.puesto || emp.area) + '</span>');
         return '<tr' + (v.activo === false ? ' style="opacity:.55"' : '') + '>' +
-          '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(v.nombre) + ';width:28px;height:28px;font-size:10px">' + initials(v.nombre) + '</div><strong>' + v.nombre + '</strong></div></td>' +
+          '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(v.nombre) + ';width:28px;height:28px;font-size:10px">' + initials(v.nombre) + '</div><strong>' + v.nombre + '</strong>' + chip + '</div></td>' +
           '<td class="mono" style="text-align:right">' + nCli + ' cliente' + (nCli !== 1 ? 's' : '') + '</td>' +
           '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
             '<button class="btn btn-sm" onclick="editVendedor(' + v.id + ')" title="Editar"><i class="ic ic-edit"></i></button>' +
@@ -310,6 +328,95 @@ async function guardarSupervisorConfig() {
     try { localStorage.setItem('liq_config', JSON.stringify(AppData.config)); } catch (e) {}
     showToast('✅ Supervisor guardado (' + (nombre || 'sin nombre') + ' · ' + pct + '%)');
   } catch (e) { console.warn('guardarSupervisorConfig', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  EL PADRÓN DE VENDEDORES SE COMPLETA SOLO DESDE EL PLANTEL
+//
+//  Dar de alta a un vendedor eran DOS cargas: la ficha en Empleados y otra acá.
+//  El día que la segunda no se hace, el vendedor no aparece en el selector, sus
+//  clientes no se le asignan a nadie y su comisión no la reclama nadie — un
+//  faltante que NO SE NOTA, porque nadie extraña plata que nunca apareció.
+//  Ahora el empleado de un área que comisiona entra al padrón solo.
+//
+//  OJO CON EL NOMBRE, que es donde esto se rompe: el módulo de comisiones venía
+//  cargado con el nombre de pila (DANTE · IVO · NAHUEL) y RRHH con el nombre
+//  completo (DANTE LIZARRAGA, IVO EICHMAN, NAHUEL AVANZINI). Dar de alta por
+//  igualdad exacta crearía un SEGUNDO vendedor para la misma persona, con 0
+//  clientes, mientras sus comisiones siguen colgadas del primero — justo el
+//  padrón partido que esto viene a evitar. Por eso se empareja por nombre de
+//  pila (`_mismaPersonaCom`), y al que ya está NO se lo toca: su nombre es el
+//  que figura en `comision_clientes`, en `comision_pagos` y en el recibo.
+//
+//  Las áreas que comisionan son una LISTA y no un `if` suelto —mismo criterio
+//  que `RRHH_AREAS_VIATICOS`—: sumar un área es cambiar una línea. Hoy es
+//  Ventas: medido en producción, los tres vendedores del padrón son los tres
+//  empleados de esa área (los dos Vendedor Flex y el Supervisor, que cobra por
+//  sus propios clientes además del % del equipo), y los cinco de Asesoría
+//  Comercial no comisionan.
+// ════════════════════════════════════════════════════════════════════════
+const COM_AREAS_VENDEDORES = ['Ventas'];
+
+// Dos grafías de la misma persona: igual, o una es el arranque de la otra por
+// palabra entera ("DANTE" ⊂ "DANTE LIZARRAGA"). No es un parecido difuso: un
+// vendedor de más es un padrón partido, y uno de menos es una comisión que no
+// se asigna.
+function _mismaPersonaCom(a, b) {
+  const x = normNombre(a), y = normNombre(b);
+  if (!x || !y) return false;
+  return x === y || x.startsWith(y + ' ') || y.startsWith(x + ' ');
+}
+
+function empleadoComisiona(e) {
+  return !!(e && e.nombre) && COM_AREAS_VENDEDORES.some(a => normNombre(a) === normNombre(e.area));
+}
+// El vendedor que YA es ese empleado, si está en el padrón.
+function vendedorDeEmpleado(nombre) {
+  return (AppData.vendedores || []).find(v => _mismaPersonaCom(v.nombre, nombre)) || null;
+}
+// Y al revés: el legajo detrás de un vendedor. Un vendedor sin legajo no es un
+// error —puede ser alguien de afuera, o de antes— y por eso no se lo marca.
+function empleadoDeVendedor(nombre) {
+  return (AppData.empleados || []).find(e => empleadoComisiona(e) && _mismaPersonaCom(e.nombre, nombre)) || null;
+}
+
+// Corre al guardar un empleado Y al abrir Comisiones: colgada de un solo evento
+// quedaría a medias para los que ya estaban cargados, para los que entran desde
+// otra sesión y para el que cambia de área después. Es idempotente —solo
+// escribe lo que falta—, así que repetirla no hace nada.
+let _comPlantelSincronizado = false;
+async function sincronizarVendedoresConPlantel() {
+  const altas = [], bajas = [], reactivados = [];
+  for (const e of (AppData.empleados || [])) {
+    if (!empleadoComisiona(e)) continue;
+    const v = vendedorDeEmpleado(e.nombre);
+    const deBaja = e.activo === false;
+    try {
+      if (!v) {
+        // Alguien que se fue antes de entrar al padrón no se da de alta: sería
+        // ofrecer para asignar clientes a quien ya no está.
+        if (deBaja) continue;
+        const nombre = String(e.nombre).trim().toUpperCase();
+        const row = await DB.insertRow('vendedores', { nombre, activo: true });
+        AppData.vendedores.push({ id: row.id, nombre, activo: true });
+        altas.push(nombre);
+      } else if (deBaja && v.activo !== false) {
+        // Se fue: deja de ofrecerse para asignaciones NUEVAS. No se borra ni se
+        // le tocan sus comisiones — las que están corriendo se siguen pagando,
+        // y su recibo tiene que poder volver a salir.
+        await DB.updateWhere('vendedores', 'id', v.id, { activo: false });
+        v.activo = false; bajas.push(v.nombre);
+      } else if (!deBaja && v.activo === false) {
+        await DB.updateWhere('vendedores', 'id', v.id, { activo: true });
+        v.activo = true; reactivados.push(v.nombre);
+      }
+    } catch (err) { console.warn('sincronizarVendedoresConPlantel', e && e.nombre, err); }
+  }
+  if (altas.length || bajas.length || reactivados.length) {
+    persistirComisionesLocal();
+    if (document.getElementById('com-vend-rows')) renderVendedoresYEscala();
+  }
+  return { altas, bajas, reactivados };
 }
 
 // ── ABM vendedor ─────────────────────────────────────────────────────────────
@@ -363,6 +470,16 @@ async function eliminarVendedor(id) {
   const v = AppData.vendedores.find(x => x.id === id);
   if (!v) return;
   const nCli = AppData.comisionClientes.filter(c => normNombre(c.vendedor) === normNombre(v.nombre)).length;
+  // Si está en el plantel, borrarlo acá no hace nada: la próxima pasada lo
+  // vuelve a dar de alta. Un botón que se deshace solo es peor que uno que no
+  // está, así que se dice dónde se resuelve de verdad.
+  const empV = empleadoDeVendedor(v.nombre);
+  if (empV && empV.activo !== false) {
+    alert(v.nombre + ' está en el plantel como ' + (empV.puesto || empV.area) + ' de ' + empV.area + ', así que vuelve a entrar solo.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Si dejó de vender, cambiale el área en Empleados; si se fue de la empresa, dale de baja ahí. En las dos el padrón se acomoda solo.');
+    return;
+  }
   if (!confirm('¿Eliminar al vendedor ' + v.nombre + '?' + (nCli ? '\nTiene ' + nCli + ' cliente(s) asignado(s); esas asignaciones quedarán sin vendedor válido.' : ''))) return;
   try {
     await DB.deleteWhere('vendedores', 'id', id);
@@ -455,7 +572,13 @@ function renderComisionClientes() {
   const dlCli = document.getElementById('mcc-clientes-list');
   if (dlCli) dlCli.innerHTML = AppData.clientes.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(c => '<option value="' + String(c.nombre).replace(/"/g, '&quot;') + '">').join('');
   const dlVen = document.getElementById('mcc-vendedores-list');
-  if (dlVen) dlVen.innerHTML = AppData.vendedores.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(v => '<option value="' + String(v.nombre).replace(/"/g, '&quot;') + '">').join('');
+  // Para una asignación NUEVA solo se ofrecen los que siguen: ofrecer a quien
+  // se fue del plantel invita a darle clientes a alguien que ya no está. Sus
+  // comisiones vigentes no se tocan —se siguen pagando— y el filtro de la
+  // tabla sí los sigue mostrando, para poder mirar lo suyo hacia atrás.
+  if (dlVen) dlVen.innerHTML = AppData.vendedores.filter(v => v.activo !== false)
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
+    .map(v => '<option value="' + String(v.nombre).replace(/"/g, '&quot;') + '">').join('');
 
   const cont = document.getElementById('com-cli-rows');
   if (!cont) return;

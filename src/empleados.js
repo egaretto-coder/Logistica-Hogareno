@@ -1502,7 +1502,16 @@ async function guardarEmpleadoModal() {
     _empSueldoAlAbrir = null;
     document.getElementById('modal-emp-backdrop').style.display = 'none';
     renderEmpleados();
-    showToast('✅ Empleado guardado' + (ajusteOk ? ' · ajuste registrado en el historial' : ''));
+    // Un vendedor nuevo tiene que poder recibir clientes el mismo día que
+    // entra. Si hubiera que acordarse de cargarlo también en Comisiones, el
+    // día que no se haga su comisión no se le asigna a nadie — y eso no se
+    // nota. El guard es por los bancos que levantan RRHH sin comisiones.js.
+    let altaVend = [];
+    if (typeof sincronizarVendedoresConPlantel === 'function') {
+      try { altaVend = (await sincronizarVendedoresConPlantel()).altas; } catch (err) { console.warn('sync vendedores', err); }
+    }
+    showToast('✅ Empleado guardado' + (ajusteOk ? ' · ajuste registrado en el historial' : '') +
+      (altaVend.length ? ' · se sumó a Comisiones como vendedor' : ''));
   } catch (e) { console.warn('guardarEmpleadoModal', e); alert('No se pudo guardar: ' + (e.message || e)); }
 }
 async function eliminarEmpleado(id) {
@@ -1517,6 +1526,11 @@ async function eliminarEmpleado(id) {
     persistirEmpleadosLocal();
     renderEmpleados();
     if (typeof renderBajas === 'function') renderBajas();
+    // Si era vendedor, deja de ofrecerse para asignaciones nuevas. No se borra:
+    // las comisiones que tenga corriendo se siguen pagando.
+    if (typeof sincronizarVendedoresConPlantel === 'function') {
+      try { await sincronizarVendedoresConPlantel(); } catch (err) { console.warn('sync vendedores', err); }
+    }
     showToast('Empleado dado de baja — quedó en la solapa Bajas');
   } catch (err) { console.warn('eliminarEmpleado', err); showToast('⛔ No se pudo dar de baja'); }
 }
@@ -3802,6 +3816,9 @@ async function reincorporarEmpleado(id) {
     e.activo = true; e.fecha_baja = null; e.motivo_baja = '';
     persistirEmpleadosLocal();
     renderBajas();
+    if (typeof sincronizarVendedoresConPlantel === 'function') {
+      try { await sincronizarVendedoresConPlantel(); } catch (err) { console.warn('sync vendedores', err); }
+    }
     showToast('✅ ' + e.nombre + ' volvió al plantel');
   } catch (err) { console.warn('reincorporarEmpleado', err); showToast('⛔ No se pudo reincorporar'); }
 }
