@@ -2368,3 +2368,96 @@
     </div>
   </div>
 </div>
+
+<!-- ══ COMPRAS ═══════════════════════════════════════════════════════════
+     La SOLICITUD: lo que un área pide y administración cotiza. Nace
+     esperando decisión; aprobarla o rechazarla es otro gesto, con sus
+     botones en la fila, porque lo decide otra persona. -->
+<div class="modal-backdrop" id="modal-compra-backdrop" onclick="closeCompraModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-compra-title">Nueva solicitud de compra</span>
+      <button class="modal-close" onclick="closeCompraModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:180px">
+          <label class="form-label">Sector que lo pide</label>
+          <select id="mcompra-sector" class="form-input" style="width:100%"></select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px">
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha de la solicitud</label>
+          <input type="date" id="mcompra-fecha" class="form-input" style="width:100%" />
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Qué se pide</label>
+        <input type="text" id="mcompra-producto" class="form-input" placeholder="Notebook, cartuchos de tinta, materiales de durlock…" style="width:100%" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Categoría</label>
+        <select id="mcompra-categoria" class="form-input" style="width:100%"></select>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-dollar"></i> Importe cotizado</label>
+          <input type="number" id="mcompra-importe" class="form-input" placeholder="0" min="0" step="0.01" style="width:100%;text-align:right;font-family:monospace" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px">
+          <label class="form-label">Urgencia</label>
+          <select id="mcompra-urgencia" class="form-input" style="width:100%"></select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label">Quién lo pidió</label>
+          <input type="text" id="mcompra-solicitante" class="form-input" placeholder="Nombre (opcional)" style="width:100%" />
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Observaciones</label>
+        <input type="text" id="mcompra-obs" class="form-input" placeholder="Detalle del pedido, proveedor cotizado, para qué es…" style="width:100%" />
+      </div>
+      <div id="mcompra-estado-nota" style="font-size:12px;color:var(--text-secondary);background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" id="mcompra-borrar" onclick="eliminarCompra()" style="margin-right:auto;border-color:#fca5a5;color:#b91c1c;display:none"><i class="ic ic-trash"></i> Borrar</button>
+        <button class="btn" onclick="closeCompraModal()">Cancelar</button>
+        <button class="btn btn-primary" id="mcompra-guardar" onclick="guardarCompraModal()"><i class="ic ic-check"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REGISTRAR LA COMPRA EFECTUADA. "Realizada" no es un estado que se tilda:
+     es tener fecha de compra, y esa fecha es la que decide en qué mes pesa.
+     El reparto en cuotas se muestra ANTES de guardar, porque es la
+     consecuencia que no se ve y la que mueve los meses que vienen. -->
+<div class="modal-backdrop" id="modal-compraejec-backdrop" onclick="closeRegistrarCompra(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:520px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-compraejec-title">Registrar la compra</span>
+      <button class="modal-close" onclick="closeRegistrarCompra()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div id="mcompraejec-resumen" style="font-size:13px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+          <label class="form-label"><i class="ic ic-calendar"></i> Fecha de la compra</label>
+          <input type="date" id="mcompraejec-fecha" class="form-input" style="width:100%" onchange="compPreviewCuotas()" />
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:170px">
+          <label class="form-label">Forma de pago</label>
+          <select id="mcompraejec-pago" class="form-input" style="width:100%" onchange="compCuotasVisibles()"></select>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0;display:none" id="mcompraejec-cuotas-fila">
+        <label class="form-label">En cuántas cuotas</label>
+        <input type="number" id="mcompraejec-cuotas" class="form-input" min="1" max="36" step="1" value="1" style="width:120px;text-align:right;font-family:monospace" oninput="compPreviewCuotas()" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Solo con tarjeta: con efectivo o transferencia la plata sale entera.</div>
+      </div>
+      <div id="mcompraejec-preview" style="background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="closeRegistrarCompra()">Cancelar</button>
+        <button class="btn btn-primary" id="mcompraejec-guardar" onclick="guardarRegistrarCompra()"><i class="ic ic-check"></i> Registrar la compra</button>
+      </div>
+    </div>
+  </div>
+</div>

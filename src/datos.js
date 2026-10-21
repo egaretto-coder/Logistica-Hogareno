@@ -21,6 +21,8 @@ function loadSavedConfig() {
   if (vpj) { try { AppData.viajesParticulares = JSON.parse(vpj) || []; } catch(e) {} }
   const vpt = localStorage.getItem('liq_viaje_tarifas');
   if (vpt) { try { AppData.viajeTarifas = JSON.parse(vpt) || []; } catch(e) {} }
+  const cpr = localStorage.getItem('liq_compras');
+  if (cpr) { try { AppData.compras = JSON.parse(cpr) || []; } catch(e) {} }
   const kmd = localStorage.getItem('liq_km_desvio');
   if (kmd) {
     try { AppData.kmDesvio = JSON.parse(kmd); } catch(e) {}
@@ -470,6 +472,20 @@ async function _hydrateFromSupabaseReal(opts) {
     costo: _num(v.costo), venta: _num(v.venta), estado: v.estado || 'realizado',
     semana: v.semana || null, creado_por: v.creado_por || '', created_at: v.created_at || ''
   }));
+  // COMPRAS. "realizada" no se guarda: es tener fecha_compra. Y el mes tampoco
+  // se guarda, se deriva de esa fecha y de las cuotas — guardar el resultado
+  // además del factor es la forma de que queden en desacuerdo.
+  AppData.compras = (data.compras || []).map(c => ({
+    id: c.id, sector: c.sector || '', producto: c.producto || '', categoria: c.categoria || '',
+    urgencia: c.urgencia || 'media',
+    fecha_solicitud: String(c.fecha_solicitud || '').slice(0, 10),
+    importe: _num(c.importe), estado: c.estado || 'solicitada', motivo: c.motivo || '',
+    fecha_compra: c.fecha_compra ? String(c.fecha_compra).slice(0, 10) : '',
+    forma_pago: c.forma_pago || '', cuotas: _num(c.cuotas) || 1, obs: c.obs || '',
+    solicitado_por: c.solicitado_por || '', cargado_por: c.cargado_por || '',
+    decidido_por: c.decidido_por || '', decidido_en: c.decidido_en || '',
+    created_at: c.created_at || ''
+  }));
   AppData.viajeTarifas = (data.viaje_tarifas || []).map(t => ({
     id: t.id, vehiculo: t.vehiculo, modalidad: t.modalidad || 'km', tramo: _num(t.tramo),
     costo: _num(t.costo), venta: _num(t.venta),
@@ -819,6 +835,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_recorridos_especiales', JSON.stringify(AppData.recorridosEspeciales || []));
     localStorage.setItem('liq_viajes_particulares', JSON.stringify(AppData.viajesParticulares || []));
     localStorage.setItem('liq_viaje_tarifas', JSON.stringify(AppData.viajeTarifas || []));
+    localStorage.setItem('liq_compras', JSON.stringify(AppData.compras || []));
     localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
     localStorage.setItem('liq_config', JSON.stringify(AppData.config));
     localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));

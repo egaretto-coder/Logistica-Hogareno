@@ -1,0 +1,47 @@
+      <div id="page-compras" class="page">
+
+        <div class="section-head" style="margin-bottom:8px">
+          <span class="section-title"><i class="ic ic-cart"></i> Compras</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="abrirCompraModal(null)"><i class="ic ic-plus"></i> Nueva solicitud</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:14px">
+          <i class="ic ic-info"></i>
+          <div>Cada área pide por mail, <strong>administración cotiza</strong> y carga la solicitud acá, y un
+          <strong>supervisor</strong> la aprueba, la programa para más adelante o la rechaza. Recién cuando se
+          efectúa la compra se cargan la <strong>fecha</strong>, la forma de pago y, con tarjeta, las cuotas.
+          <br><strong>El mes dice lo que sale de caja</strong>: una compra en cuotas reparte su importe en los
+          meses en que se cobra, así que el total de un mes es la plata que se paga ese mes — no la que se compró.</div>
+        </div>
+
+        <!-- Lo que espera decisión: de TODOS los meses, no sigue al navegador. -->
+        <div id="comp-pendientes"></div>
+
+        <!-- El mes que se está mirando. Arranca en el corriente, con "Todos"
+             al lado para no esconder lo viejo sin una salida de un clic. -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+          <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+          <div class="date-range" id="compras-mes-nav">
+            <button class="btn btn-sm" onclick="panelMoverMes('compras',-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+            <input type="month" id="compras-mes" onchange="panelElegirMes('compras',this.value)" aria-label="Mes a ver">
+            <button class="btn btn-sm" onclick="panelMoverMes('compras',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+          </div>
+          <button class="btn btn-sm panel-mes-btn" id="compras-mes-todos" onclick="panelTodosLosMeses('compras')" title="Ver todo, de cualquier mes">Todos</button>
+        </div>
+
+        <div class="tabs" id="comp-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="comp-tab-resumen" onclick="switchComprasTab('resumen')"><i class="ic ic-chart"></i> Resumen</button>
+          <button class="tab" id="comp-tab-registro" onclick="switchComprasTab('registro')"><i class="ic ic-file"></i> Registro</button>
+        </div>
+
+        <div id="comp-pane-resumen">
+          <div id="comp-resumen"></div>
+        </div>
+
+        <div id="comp-pane-registro" style="display:none">
+          <div id="comp-registro"></div>
+        </div>
+
+      </div>

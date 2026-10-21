@@ -370,7 +370,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoBonos, puestoHorarios, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias, viajes, viajeTarifas] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoBonos, puestoHorarios, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias, viajes, viajeTarifas, compras] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -418,6 +418,7 @@ const DB = {
         this.selectAll('empleado_licencias', 'id'),
         this.selectAll('viajes_particulares', 'id'),
         this.selectAll('viaje_tarifas', 'id'),
+        this.selectAll('compras', 'id'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
@@ -440,6 +441,7 @@ const DB = {
         empleado_cierres: empCierres,
         empleado_licencias: empLicencias,
         viajes_particulares: viajes, viaje_tarifas: viajeTarifas,
+        compras,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);

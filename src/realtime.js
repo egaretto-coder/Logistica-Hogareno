@@ -32,6 +32,7 @@ const RT_TABLAS = [
   // Es la mitad del circuito de dos manos, y no llegaba.
   'cliente_liquidaciones', 'proveedores',
   'viajes_particulares', 'viaje_tarifas',
+  'compras',
 ];
 
 let _rtCanal = null;
@@ -86,6 +87,7 @@ const RT_PANTALLA_TABLAS = {
   'vacaciones':             ['vacaciones', 'empleados', 'empleado_licencias'],
   'gestion-permisos':       ['rol_permisos', 'roles'],
   'viajes-particulares':    ['viajes_particulares', 'viaje_tarifas', 'clientes', 'panel_conductores', 'cliente_cargos'],
+  'compras':                ['compras'],
 };
 
 // Marca que la app acaba de escribir en la nube: evita que el "eco" de Realtime

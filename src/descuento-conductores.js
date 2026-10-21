@@ -100,6 +100,10 @@ function _panelMesRepintar(id) {
     if (typeof renderAdelantos === 'function') renderAdelantos();
     return;
   }
+  if (id === 'compras') {
+    if (typeof renderCompras === 'function') renderCompras();
+    return;
+  }
   // Viajes particulares armó su navegador —lo lee con filtrarPorMesPanel y lo
   // pinta con _pintarPanelMes— pero nunca se registró acá, así que mover el mes
   // cambiaba el estado y NO repintaba: el panel se quedaba en el mes anterior.

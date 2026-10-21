@@ -2013,3 +2013,26 @@ create unique index if not exists rendiciones_envio_clave_key
 -- El borrado en la nube es por clave, asi que con las claves viejas guardadas
 -- la carga siguiente duplicaria todo.
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 21/10/2026 · compras_panel
+-- Panel de COMPRAS: la planificacion del consumo de la empresa, para el
+-- tesorero, el supervisor y el analista.
+--   estado: solicitada | aprobada | programada | rechazada
+--   "realizada" NO es un estado: es tener fecha_compra. Y el mes tampoco se
+--   guarda: se deriva de fecha_compra y cuotas. Guardar el resultado ademas
+--   del factor es la forma de que queden en desacuerdo.
+--   cuotas > 1 solo con forma_pago = 'tarjeta'; el importe se reparte en esos
+--   meses, asi que el mes dice lo que SALE DE CAJA y no lo que se compro.
+-- RLS: for all to authenticated using (es_usuario_activo()), como las demas.
+-- Realtime: la tabla esta en la publicacion — sin eso, lo que aprueba un
+-- supervisor no le llega al tesorero hasta que recargue.
+--
+-- OJO CON LOS PERMISOS: supervisor y tesorero TIENEN filas en rol_permisos, y
+-- ahi el default de ROL_PERMISOS deja de aplicar por completo. Sumar la
+-- pantalla al codigo no alcanza: hace falta la fila.
+--   insert into rol_permisos (rol, pagina, permitido)
+--   values ('supervisor','compras',true), ('tesorero','compras',true)
+--   on conflict (rol, pagina) do update set permitido = true;
+-- (El analista no la necesita: paginasDeRol le devuelve todo desde el codigo.)
+-- ───────────────────────────────────────────────────────────────────────
