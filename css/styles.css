@@ -1065,3 +1065,22 @@
   .date-range input[type="date"]:focus,
   .date-range input[type="month"]:focus { box-shadow: none; background: var(--accent-light); }
   .date-range .date-sep { color: var(--text-muted); font-size: 11px; padding: 0 2px; }
+
+/* ── Selector de sucursal (cabecera del menú) ────────────────────────────
+   Va dentro de .sidebar-logo. Con el menú contraído el texto se apaga con
+   font-size:0, igual que el resto del menú, así que los botones se reducen a
+   una banda: lo que importa ahí es que se siga VIENDO cuál está activa. */
+.suc-wrap { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+.suc-btn {
+  flex: 1; min-width: 0; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); font-size: 11px; font-weight: 600;
+  font-family: inherit; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; transition: background .15s, color .15s;
+}
+.suc-btn:hover { background: var(--surface-0); color: var(--text-primary); }
+.suc-btn.suc-activa {
+  background: var(--accent); border-color: var(--accent); color: #fff; cursor: default;
+}
+body.nav-mini .suc-wrap { gap: 3px; }
+body.nav-mini .suc-btn { padding: 5px 2px; min-height: 18px; }

@@ -2036,3 +2036,38 @@ create unique index if not exists rendiciones_envio_clave_key
 --   on conflict (rol, pagina) do update set permitido = true;
 -- (El analista no la necesita: paginasDeRol le devuelve todo desde el codigo.)
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 21/10/2026 · sucursales (multi-boca)
+-- Tabla sucursales (GLOBAL) + columna `sucursal` en las 50 tablas de datos.
+-- Quedan SIN columna, porque son las mismas personas en todas las bocas:
+--   perfiles, roles, rol_permisos, acceso_control  (y los respaldos *_bkp_*)
+--
+-- COMO FUNCIONA
+--   La app manda la sucursal activa en la cabecera `x-sucursal` (se fija al
+--   crear el cliente de Supabase). En la base:
+--     sucursal_pedida()  -> lee la cabecera; NULL si no hay (Realtime)
+--     es_de_sucursal(s)  -> sucursal_pedida() is null or s = sucursal_pedida()
+--   y las policies de las 50 tablas la exigen. La columna tiene DEFAULT
+--   coalesce(sucursal_pedida(),'BA'), asi que toda fila nueva nace en la
+--   sucursal activa sin que el codigo tenga que estamparla.
+--
+--   es_de_sucursal envuelve las llamadas en un SUBSELECT ESCALAR a proposito:
+--   asi Postgres lo resuelve como InitPlan (una vez por consulta) en vez de
+--   una vez por fila. Medido sobre registros: 49 ms -> 26 ms por pagina.
+--
+-- OJO 1 — LAS FUNCIONES SECURITY DEFINER SALTEAN RLS.
+--   reemplazar_registros y archivar_registros filtran por sucursal A MANO.
+--   Sin eso, importar en Rosario borraba envios de Buenos Aires por clave.
+--   Cualquier funcion SECURITY DEFINER nueva tiene que hacer lo mismo.
+--
+-- OJO 2 — TODA CLAVE UNICA LLEVA LA SUCURSAL.
+--   15 constraints + 11 indices unicos + la PRIMARY KEY de config (que es la
+--   clave del parametro: sin la sucursal las dos bocas compartirian los datos
+--   del emisor y los cortes).
+--
+-- OJO 3 — si se agrega una columna a registros hay que agregarla tambien a
+--   registros_historico Y a archivar_registros, que ahora copia 29.
+--
+-- SUMAR UNA SUCURSAL: insert into sucursales (codigo, nombre, orden).
+-- ───────────────────────────────────────────────────────────────────────

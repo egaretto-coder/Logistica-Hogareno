@@ -12,8 +12,18 @@ const SUPABASE_KEY = 'sb_publishable_2ppAH-q0CiJR23WseNjbfA_PvIBfoQf';
 let sb = null;
 try {
   if (window.supabase && window.supabase.createClient) {
+    // LA SUCURSAL VIAJA COMO CABECERA, no como un filtro que cada consulta
+    // tiene que acordarse de poner. Las policies de la base la exigen
+    // (`es_de_sucursal`), así que una consulta a la que se le olvide el
+    // `where` no puede traer filas de la otra sucursal — y las filas nuevas
+    // nacen en la sucursal activa por el DEFAULT de la columna, sin que
+    // ningún camino de escritura tenga que estamparla.
+    // Se fija al CREAR el cliente: cambiar de sucursal recarga la página, que
+    // es lo que deja todo —cliente, AppData, índices de precio y caché— en un
+    // estado conocido en vez de a medio cambiar.
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      global: { headers: { 'x-sucursal': (typeof sucursalActiva === 'function' ? sucursalActiva() : 'BA') } }
     });
   } else {
     console.warn('[Supabase] SDK no disponible — modo offline (caché local).');
@@ -370,7 +380,7 @@ const DB = {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
     try {
-      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoBonos, puestoHorarios, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias, viajes, viajeTarifas, compras] = await Promise.all([
+      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoHsExtra, empleadoBonos, puestoHorarios, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias, viajes, viajeTarifas, compras, sucursales] = await Promise.all([
         this.selectAll('tarifas', 'zona'),
         this.selectAll('super_sla'),
         this.selectAll('panel_conductores', 'nombre'),
@@ -419,6 +429,7 @@ const DB = {
         this.selectAll('viajes_particulares', 'id'),
         this.selectAll('viaje_tarifas', 'id'),
         this.selectAll('compras', 'id'),
+        this.selectAll('sucursales', 'orden'),
       ]);
       return {
         tarifas, super_sla: superSla, panel_conductores: panel,
@@ -441,7 +452,7 @@ const DB = {
         empleado_cierres: empCierres,
         empleado_licencias: empLicencias,
         viajes_particulares: viajes, viaje_tarifas: viajeTarifas,
-        compras,
+        compras, sucursales,
       };
     } catch (e) {
       console.warn('[Supabase] loadAll error:', e);
@@ -481,7 +492,9 @@ const DB = {
   // tabla config tiene PK 'clave' (replaceAll asume PK 'id').
   async setConfig(clave, valor) {
     if (!sb) throw new Error('offline');
-    const { error } = await sb.from('config').upsert({ clave, valor: String(valor) });
+    const fila = { clave: clave, valor: String(valor) };
+    if (typeof sucursalActiva === 'function') fila.sucursal = sucursalActiva();
+    const { error } = await sb.from('config').upsert(fila, { onConflict: 'sucursal,clave' });
     if (error) throw error;
   },
 

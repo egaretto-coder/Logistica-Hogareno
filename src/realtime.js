@@ -139,6 +139,17 @@ function _rtReprogramar(ms) {
 // sola recarga. Anota QUÉ tabla cambió para recargar solo lo necesario.
 function _rtOnCambio(payload) {
   const t = payload && (payload.table || (payload.new && payload.new.table));
+  // La suscripción de Realtime NO lleva la cabecera de sucursal, así que la
+  // policy la deja pasar y llegan los cambios de las dos. Se filtra acá: un
+  // envío cargado en Rosario no tiene por qué hacer que Buenos Aires vuelva a
+  // bajar 80.000 filas, y un cambio aplicado suelto sobre `registros` metería
+  // una fila ajena en memoria. Si la fila no dice de qué sucursal es, se deja
+  // pasar: recargar de más es molesto, perderse un cambio es un número viejo.
+  if (typeof sucursalActiva === 'function') {
+    const fila = (payload && (payload.new || payload.old)) || null;
+    const suc = fila && fila.sucursal;
+    if (suc && suc !== sucursalActiva()) return;
+  }
   if (t === 'registros' && !_rtRegCompleto) {
     const ev = payload.eventType;
     const fila = ev === 'DELETE' ? payload.old : payload.new;

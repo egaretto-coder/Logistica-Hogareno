@@ -472,6 +472,12 @@ async function _hydrateFromSupabaseReal(opts) {
     costo: _num(v.costo), venta: _num(v.venta), estado: v.estado || 'realizado',
     semana: v.semana || null, creado_por: v.creado_por || '', created_at: v.created_at || ''
   }));
+  // El catálogo de sucursales es GLOBAL (no lleva columna sucursal): son las
+  // bocas de la misma empresa y las mismas personas entran a todas.
+  AppData.sucursales = (data.sucursales || []).map(s => ({
+    codigo: s.codigo, nombre: s.nombre || s.codigo,
+    orden: _num(s.orden) || 99, activa: s.activa !== false
+  }));
   // COMPRAS. "realizada" no se guarda: es tener fecha_compra. Y el mes tampoco
   // se guarda, se deriva de esa fecha y de las cuotas — guardar el resultado
   // además del factor es la forma de que queden en desacuerdo.
@@ -1046,6 +1052,9 @@ async function hydrateEnFases() {
     // punto: entrar con el Dashboard a medio llenar es justo lo que la
     // pantalla de carga viene a evitar.
     AppData._arranqueHidratado = true;
+    // El catalogo real ya esta: se repinta por si un nombre cambio o se sumo
+    // una sucursal desde otra sesion.
+    if (typeof renderSelectorSucursal === 'function') renderSelectorSucursal();
     if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
     actualizarEstadoCarga();
   }

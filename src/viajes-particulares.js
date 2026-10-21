@@ -994,7 +994,11 @@ async function guardarVpTarifa() {
     // la lista a medio escribir si algo falla en el medio — que es exactamente
     // lo que pasó. Así, además, **repetir la operación es inofensivo** y una
     // lista que quedó incompleta se completa sola al volver a aplicarla.
-    const ids = await DB.upsertRows('viaje_tarifas', filas, 'vehiculo,modalidad,tramo,vigente_desde');
+    // La clave única de viaje_tarifas lleva ahora la sucursal, así que el
+    // destino del upsert tiene que nombrarla: sin eso PostgREST no encuentra
+    // el índice y la carga falla entera.
+    if (typeof sucursalActiva === 'function') filas.forEach(f => { f.sucursal = sucursalActiva(); });
+    const ids = await DB.upsertRows('viaje_tarifas', filas, 'sucursal,vehiculo,modalidad,tramo,vigente_desde');
     AppData.viajeTarifas = (AppData.viajeTarifas || []).filter(t => vpVigenteDesde(t) !== desde)
       .concat(filas.map((f, i) => Object.assign({ id: ids[i] }, f)));
     try { localStorage.setItem('liq_viaje_tarifas', JSON.stringify(AppData.viajeTarifas)); } catch (e) {}

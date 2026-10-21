@@ -138,6 +138,9 @@
 <div id="modales"></div>
 
 <!-- ── Capa de datos / backend ── -->
+<!-- PRIMERO: el cliente de Supabase se crea con la cabecera de sucursal
+     puesta y el caché local se separa por sucursal antes de que nadie lo lea. -->
+<script src="src/sucursal.js" defer></script>
 <script src="src/supabase.js" defer></script>
 
 <!-- ── Núcleo (estado, helpers, cálculo) ── -->

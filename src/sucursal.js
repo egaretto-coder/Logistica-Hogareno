@@ -1,0 +1,159 @@
+// ═══════════════════════════════════════════════════════════════════════
+//  SUCURSALES — una sola app para todas las bocas de la empresa.
+//
+//  Buenos Aires es la que estaba y sigue siendo la que abre por defecto.
+//  Rosario es la primera de las que vienen. Los datos son INDEPENDIENTES:
+//  conductores, clientes, tarifas, empleados y liquidaciones de cada una.
+//
+//  EL AISLAMIENTO LO HACE CUMPLIR LA BASE, NO ESTE ARCHIVO. La sucursal
+//  activa viaja como cabecera `x-sucursal` en todas las consultas y las
+//  policies la exigen (`es_de_sucursal`), así que aunque una consulta se
+//  olvidara el filtro no puede traer filas de la otra. Es a propósito: un
+//  filtro olvidado no da error, da datos de más, y este proyecto ya pagó
+//  varias veces el costo de lo que falla en silencio.
+//
+//  ESTE ARCHIVO CARGA PRIMERO, antes que supabase.js, porque el cliente se
+//  crea con la cabecera puesta y el caché local se namespacea antes de que
+//  nadie lo lea.
+// ═══════════════════════════════════════════════════════════════════════
+
+const SUCURSAL_DEFAULT = 'BA';
+
+// Lo que NO se separa por sucursal: las preferencias de la persona (el tema y
+// el menú son de quien usa la app, no de la boca) y la propia sucursal activa.
+// Todo el resto del caché `liq_*` SÍ se separa — ver abajo.
+const SUC_CLAVES_GLOBALES = ['liq_tema', 'liq_menu', 'liq_emp_agrupa', 'liq_sucursal'];
+
+let _sucActiva = SUCURSAL_DEFAULT;
+let _sucNamespaceOk = false;
+
+// ── El caché local, separado por sucursal ───────────────────────────────
+// Son ~60 claves `liq_*` repartidas en 20 archivos. Namespacearlas una por una
+// sería 60 lugares donde olvidarse de una, y la que se olvide hace que al
+// abrir Rosario aparezcan los datos de Buenos Aires hasta que termine de
+// hidratar — o sea el panel mostrando plata de otra sucursal. Por eso se
+// intercepta localStorage en UN punto: toda clave `liq_*` que no sea una
+// preferencia queda guardada como `suc_<SUCURSAL>_liq_...`.
+(function _sucNamespaceLocalStorage() {
+  let ls;
+  try { ls = window.localStorage; } catch (e) { return; }
+  if (!ls) return;
+
+  try { _sucActiva = ls.getItem('liq_sucursal') || SUCURSAL_DEFAULT; } catch (e) {}
+
+  const _get = ls.getItem.bind(ls);
+  const _set = ls.setItem.bind(ls);
+  const _del = ls.removeItem.bind(ls);
+  const mapear = k => {
+    const s = String(k);
+    return (s.indexOf('liq_') === 0 && SUC_CLAVES_GLOBALES.indexOf(s) < 0)
+      ? 'suc_' + _sucActiva + '_' + s : s;
+  };
+  const parche = {
+    getItem: k => _get(mapear(k)),
+    setItem: (k, v) => _set(mapear(k), v),
+    removeItem: k => _del(mapear(k))
+  };
+
+  // Asignar sobre el objeto funciona en los navegadores actuales; si alguno lo
+  // impidiera se parchea el prototipo. Si NINGUNO de los dos toma, la app
+  // tiene que seguir andando —el caché es una optimización, no la fuente— así
+  // que se deja constancia en vez de romper el arranque.
+  try {
+    Object.keys(parche).forEach(k => { ls[k] = parche[k]; });
+    _sucNamespaceOk = (ls.getItem !== _get);
+  } catch (e) { _sucNamespaceOk = false; }
+  if (!_sucNamespaceOk) {
+    try {
+      Object.keys(parche).forEach(k => { Storage.prototype[k] = parche[k]; });
+      _sucNamespaceOk = true;
+    } catch (e) { _sucNamespaceOk = false; }
+  }
+  if (!_sucNamespaceOk) {
+    console.warn('[Sucursal] No se pudo separar el caché local por sucursal: ' +
+      'se va a trabajar siempre contra la nube.');
+  }
+})();
+
+function sucursalActiva() { return _sucActiva || SUCURSAL_DEFAULT; }
+function sucursalEsDefault() { return sucursalActiva() === SUCURSAL_DEFAULT; }
+function sucursalCacheSeparado() { return _sucNamespaceOk; }
+
+// El catálogo viene de la nube (`sucursales`); hasta que hidrate se usa lo
+// mínimo para poder dibujar el selector sin esperar.
+const SUC_FALLBACK = [
+  { codigo: 'BA', nombre: 'Buenos Aires', orden: 1, activa: true },
+  { codigo: 'ROS', nombre: 'Rosario', orden: 2, activa: true }
+];
+function sucursalesDisponibles() {
+  const l = (typeof AppData !== 'undefined' && AppData && AppData.sucursales) || [];
+  const base = l.length ? l : SUC_FALLBACK;
+  return base.filter(s => s && s.activa !== false)
+    .slice().sort((a, b) => (a.orden || 99) - (b.orden || 99) ||
+      String(a.codigo).localeCompare(String(b.codigo)));
+}
+function sucursalNombre(cod) {
+  const c = cod || sucursalActiva();
+  const s = sucursalesDisponibles().find(x => x.codigo === c);
+  return s ? s.nombre : c;
+}
+
+// Solo el analista cambia de sucursal. El resto trabaja en la suya y ni ve el
+// control: un botón que no se puede usar es ruido, y uno que se puede usar sin
+// querer mueve a alguien de sucursal sin que entienda qué pasó.
+function puedeCambiarSucursal() {
+  try { return typeof esAnalista === 'function' && esAnalista(); } catch (e) { return false; }
+}
+
+// ── El cambio ───────────────────────────────────────────────────────────
+// RECARGA LA PÁGINA a propósito. Cambiar en caliente obligaría a rehacer el
+// cliente de Supabase, vaciar `AppData`, tirar los índices cacheados de
+// precios y volver a pedir los envíos, todo con paneles abiertos a medio
+// pintar: una sola de esas cosas que quede a medias deja números de una
+// sucursal en la pantalla de la otra. La recarga deja todo en un estado
+// conocido, y cambiar de sucursal es algo que pasa dos veces por día.
+async function cambiarSucursal(cod) {
+  const destino = String(cod || '').trim();
+  if (!destino || destino === sucursalActiva()) return;
+  if (!puedeCambiarSucursal()) {
+    alert('Solo un analista puede cambiar de sucursal.');
+    return;
+  }
+  const nombre = sucursalNombre(destino);
+  if (!confirm('¿Pasar a ' + nombre + '?\n\n' +
+    'Se recarga la app con los datos de esa sucursal. Lo que tengas a medio ' +
+    'cargar en esta pantalla se pierde.')) return;
+  try { localStorage.setItem('liq_sucursal', destino); } catch (e) {
+    alert('No se pudo guardar la sucursal elegida. Revisá que el navegador ' +
+      'permita guardar datos de este sitio.');
+    return;
+  }
+  _sucRecargar();
+}
+
+// La recarga sale por una DECLARACION de funcion global a proposito: el banco
+// la reemplaza en window para poder verificar que cambiar de sucursal recarga
+// —espiar location.reload no se puede, el navegador lo protege— y sin esa
+// costura el caso no se puede probar y la prueba pasa sin probar nada.
+function _sucRecargar() { location.reload(); }
+
+// ── El selector, arriba de todo ─────────────────────────────────────────
+// Va en la cabecera del menú, pegado a la marca: es el contexto de TODO lo que
+// se ve abajo, y un control de contexto escondido en una pantalla hace que el
+// operador no sepa sobre qué sucursal está mirando los números.
+function renderSelectorSucursal() {
+  const cont = document.getElementById('suc-selector');
+  if (!cont) return;
+  if (!puedeCambiarSucursal()) { cont.innerHTML = ''; return; }
+  const activa = sucursalActiva();
+  const lista = sucursalesDisponibles();
+  cont.innerHTML =
+    '<div class="suc-wrap">' +
+    lista.map(s =>
+      '<button class="suc-btn' + (s.codigo === activa ? ' suc-activa' : '') + '"' +
+      ' onclick="cambiarSucursal(\'' + jsAttr(s.codigo) + '\')"' +
+      ' title="' + jsAttr(s.codigo === activa ? 'Estás trabajando en ' + s.nombre
+        : 'Pasar a ' + s.nombre) + '">' +
+      jsAttr(s.nombre) + '</button>').join('') +
+    '</div>';
+}

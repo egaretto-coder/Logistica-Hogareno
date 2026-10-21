@@ -470,6 +470,10 @@ async function entrarConUsuario(user, perfilPrecargado) {
 function showApp() {
   document.getElementById('login-overlay').classList.add('hidden');
   document.getElementById('app-layout').style.display = 'flex';
+  // El selector de sucursal se dibuja apenas entra: es el contexto de todo lo
+  // que viene abajo y el operador tiene que saber sobre que boca esta mirando
+  // los numeros ANTES de que aparezca el primer total.
+  if (typeof renderSelectorSucursal === 'function') renderSelectorSucursal();
 
   // Actualizar badge de usuario
   const badge = document.getElementById('user-badge');

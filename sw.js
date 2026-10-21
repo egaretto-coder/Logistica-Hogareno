@@ -4,7 +4,7 @@
 //  Supabase (datos/auth), que siempre van a la red para no servir datos viejos.
 // ════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'liq-cache-v296';
+const CACHE = 'liq-cache-v297';
 
 // Archivos locales (rutas relativas al scope del SW).
 const APP_SHELL = [
@@ -17,6 +17,7 @@ const APP_SHELL = [
   // del arranque offline sale sin marca, que es justo lo que viene a cubrir.
   './assets/brand/logo-dark.png',
   // Backend / núcleo
+  './src/sucursal.js',
   './src/supabase.js',
   './src/core.js',
   './src/auth.js',
