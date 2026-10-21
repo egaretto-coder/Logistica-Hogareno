@@ -339,10 +339,17 @@ function processUpload() {
 
   // Deduplicación DENTRO del archivo por clave: si dos filas comparten clave
   // (ej. 1ra y 2da visita del mismo envío en la misma carga), gana la última.
+  // Se anota CUÁL quedó afuera: el aviso decía "eran el mismo envío repetido y
+  // se unificaron", o sea afirmaba haber hecho bien su trabajo, y con seis
+  // paquetes al mismo domicilio eso era falso y no mandaba a nadie a revisar.
   const nuevoPorClave = {};
-  parsed.forEach(n => { nuevoPorClave[n.clave] = n; });
+  const colapsadas = [];
+  parsed.forEach(n => {
+    if (nuevoPorClave[n.clave]) colapsadas.push(nuevoPorClave[n.clave]);
+    nuevoPorClave[n.clave] = n;
+  });
   const nuevos = Object.values(nuevoPorClave);
-  const enArchivoColapsadas = parsed.length - nuevos.length;
+  const enArchivoColapsadas = colapsadas.length;
 
   // FUSIÓN con lo ya cargado, por CLAVE (no por tracking a secas):
   //   - Tracking real -> reemplaza por tracking.
@@ -467,7 +474,7 @@ function processUpload() {
     `✅ Carga del <strong>${fechaCarga}</strong>: ${nuevos.length} registros procesados — ` +
     `<strong>${agregados} nuevos</strong> y <strong>${sup.length} reemplazaron información anterior</strong>` +
     (sup.length ? ' (revisalas con el botón ⚠)' : '') + `. ` +
-    (enArchivoColapsadas ? `<br>ℹ️ ${enArchivoColapsadas} fila(s) del archivo eran el mismo envío repetido (mismo tracking o misma dirección) y se unificaron. ` : '') +
+    (enArchivoColapsadas ? `<br><i class="ic ic-alert"></i> <strong>${enArchivoColapsadas} fila(s) del archivo quedaron afuera</strong>: traen el mismo tracking, la misma dirección y el mismo destinatario que otra fila del mismo archivo, así que se tomaron como la misma entrega repetida (${colapsadas.slice(0, 4).map(r => (String(r.tracking || '').trim() || 'sin tracking') + (r.direccion ? ' · ' + r.direccion : '')).join(' · ')}${colapsadas.length > 4 ? '…' : ''}). <span style="opacity:.8">Si eran envíos DISTINTOS, revisá que cada uno traiga su propio número en el listado.</span> ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
     (conCobro.length
       ? `<br><i class="ic ic-dollar"></i> <strong>${conCobro.length} envío(s) con cobro en destino por ${fmtPeso(plataCobro)}.</strong> Los entregados se registran solos en <strong>Rendición de envíos</strong>. <span id="upload-cobros-estado"></span>`

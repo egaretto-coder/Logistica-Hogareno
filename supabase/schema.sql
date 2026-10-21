@@ -1991,3 +1991,25 @@ alter table rendiciones add column if not exists envio_clave text;
 -- cobro. Parcial, porque la carga manual libre no tiene un envío detrás.
 create unique index if not exists rendiciones_envio_clave_key
   on rendiciones (envio_clave) where envio_clave is not null;
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 21/10/2026 · clave_incluye_referencia_corta
+-- La clave de deduplicacion de un envio SIN tracking real pasa de
+-- 'D:direccion|destinatario[|fecha]' a 'D:direccion|destinatario|#referencia[|fecha]'.
+-- Sin la referencia, seis paquetes al mismo domicilio, al mismo comprador y el
+-- mismo dia daban UNA sola clave: el import los tomaba por el mismo envio
+-- repetido, se quedaba con el ultimo del archivo y tiraba los otros cinco
+-- (DISDEC, 16/10/2026, Alsina 3241, referencias 5646152 a 5646157).
+-- Tambien se amplia el candado de la visita pagada (V:) a las referencias
+-- cortas: pedia un tracking real, asi que la visita de un envio con referencia
+-- interna caia en la clave D: y la entrega del dia siguiente se la llevaba.
+-- Toco 2.910 claves en registros y 1.442 en registros_historico, sin cambiar
+-- ninguna fila de datos. Respaldo: registros_clave_bkp_20261021 y
+-- registros_hist_clave_bkp_20261021 (id, clave).
+-- Verificado reconstruyendo las 4.543 claves D: desde cero en SQL y
+-- comparandolas contra las guardadas, que las habia escrito JavaScript:
+-- 0 discrepancias.
+-- OJO: si se vuelve a cambiar claveRegistro() hay que migrar las DOS tablas.
+-- El borrado en la nube es por clave, asi que con las claves viejas guardadas
+-- la carga siguiente duplicaria todo.
+-- ───────────────────────────────────────────────────────────────────────

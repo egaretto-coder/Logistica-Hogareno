@@ -1329,27 +1329,48 @@ function trackingValido(t) {
 // Clave de deduplicación de un registro. Determina cuándo una carga REEMPLAZA
 // a un registro anterior (superposición) y cuándo son envíos DISTINTOS:
 //   - Tracking real  -> por tracking (dos envíos nunca comparten un tracking real).
-//   - Tracking basura -> por dirección + destinatario (la 1ra y 2da visita de un
-//     mismo envío comparten dirección => se fusionan; direcciones distintas => son
-//     envíos distintos y se pagan por separado). La fecha NO entra: 1ra y 2da
-//     visita son días distintos y deben reconocerse como el mismo envío.
-//   - Basura sin dirección -> huella por campos, para que re-importar el mismo
+//   - Sin tracking real -> por dirección + destinatario + LA REFERENCIA que
+//     traiga el listado (el número interno del cliente, aunque sea corto). La
+//     1ra y la 2da visita del mismo envío comparten las tres cosas y se
+//     fusionan; dos paquetes distintos al mismo domicilio traen referencias
+//     distintas, así que son envíos distintos y se pagan por separado.
+//   - Sin dirección -> huella por campos, para que re-importar el mismo
 //     archivo no duplique (caso muy marginal).
-// OJO: una VISITA PAGADA tiene clave propia (V:tracking|fecha). Es un evento
+// Una ENTREGA cierra el envío y le agrega la fecha a la clave (ver abajo).
+// OJO: una VISITA PAGADA tiene clave propia (V:referencia|fecha). Es un evento
 // cerrado —el conductor fue ese día y se le paga— y el listado no puede volver
 // a pisarlo: al día siguiente otro conductor puede llevar el mismo envío y
 // lograr la entrega, y esos son DOS trabajos que se pagan y se facturan por
 // separado. Con la clave T: la fila del día 2 reemplazaba la del día 1 y el
-// primer conductor perdía su visita.
+// primer conductor perdía su visita. Alcanza a las referencias CORTAS: con la
+// condición vieja (tracking real) la visita pagada de un envío con referencia
+// interna caía en la clave D: y la entrega del día siguiente se la llevaba.
 function claveRegistro(r) {
   const t = String(r.tracking || '').trim();
-  if (r && r.contabiliza_manual && trackingValido(t)) return 'V:' + t + '|' + String(r.fecha || '').trim();
+  // La referencia del listado, normalizada. Queda VACÍA cuando no hay nada
+  // utilizable —el "-" que trae el listado cuando no hubo tracking—, y para un
+  // tracking real da exactamente el mismo texto, porque son solo dígitos: las
+  // claves T: y V: que ya están en la base no se mueven.
+  const ref = _normTxt(t);
+  if (r && r.contabiliza_manual && ref) return 'V:' + ref + '|' + String(r.fecha || '').trim();
   if (trackingValido(t)) return 'T:' + t;
   const dir = _normTxt(r.direccion);
   const dest = _normTxt(r.destinatario);
   if (dir) {
-    const base = 'D:' + dir + '|' + dest;
-    // Sin tracking real, lo único que ata dos filas al mismo envío es la
+    // LA REFERENCIA ENTRA AUNQUE NO SEA UN TRACKING REAL. "5646152" no es un
+    // tracking de Mercado Libre —es el número interno de DISDEC— pero alcanza
+    // de sobra para no confundir dos paquetes. Sin ella, seis paquetes al MISMO
+    // domicilio, al mismo comprador y el mismo día daban UNA SOLA clave: el
+    // import los tomaba por "el mismo envío repetido", se quedaba con el último
+    // del archivo y tiraba los otros cinco — avisando encima que los había
+    // unificado bien, que es peor que callarse. Bug real: DISDEC, 16/10/2026,
+    // Alsina 3241, trackings 5646152 a 5646157; quedó cargado el 5646152, que
+    // es el último del archivo, y los otros cinco se cargaron a mano cuatro
+    // días después. Medido al corregirlo: 3.065 envíos de 85 clientes vienen
+    // con referencia corta y dirección, o sea expuestos al mismo choque, y
+    // había 64 envíos cargados a mano con referencia corta en 22 clientes.
+    const base = 'D:' + dir + '|' + dest + (ref ? '|#' + ref : '');
+    // Sin referencia, lo único que ata dos filas al mismo envío es la
     // dirección. Eso se rompe con el cliente que le manda VARIAS VECES al mismo
     // comprador: un jueves y el martes siguiente, mismos datos, y la segunda
     // entrega pisaba a la primera — se perdía un envío entero, sin aviso (bug
@@ -1361,11 +1382,9 @@ function claveRegistro(r) {
     if (esEstadoEntregado(r.estado)) return base + '|' + String(r.fecha || '').trim();
     return base;
   }
-  // El tracking entra IGUAL aunque no sea "real": "79261" y "79262" no son un
-  // tracking de Mercado Libre, pero son dos envios distintos y alcanzan de
-  // sobra para no confundirlos. Sin el, la clave de seis envios cargados a
-  // mano el mismo dia era identica y el borrado por clave se los llevaba a
-  // todos (bug real: 13 claves compartidas por 55 envios).
+  // Sin direccion, la referencia es lo unico que distingue dos envios cargados
+  // a mano el mismo dia: sin ella la clave de seis era identica y el borrado
+  // por clave se los llevaba a todos (bug real: 13 claves por 55 envios).
   return 'F:' + _normTxt([r.cadete, r.fecha, r.zona, r.localidad, dest, t].join('|'));
 }
 
@@ -1379,7 +1398,11 @@ function claveAbiertaRegistro(r) {
   if (trackingValido(t)) return null;
   const dir = _normTxt(r.direccion);
   if (!dir) return null;
-  return 'D:' + dir + '|' + _normTxt(r.destinatario);
+  // La referencia entra igual que en claveRegistro: las dos formas tienen que
+  // armarse idéntico, si no la entrega no encuentra su propia fila abierta y
+  // quedan las dos, el estado intermedio al lado de la entrega.
+  const ref = _normTxt(t);
+  return 'D:' + dir + '|' + _normTxt(r.destinatario) + (ref ? '|#' + ref : '');
 }
 
 function tipoLabel(t) {
