@@ -1074,8 +1074,21 @@ function getPrecio(conductor, zona, fechaISO) {
   // Tiene Super SLA en otra zona SOLO si alguna de sus reglas ya regía ese día.
   const tieneSuperSLAEnOtraZona = !!(sup && sup.desdeMin && sup.desdeMin <= f);
 
+  // UNA FILA EN $0 NO ES UN PRECIO: es la zona registrada esperando su valor,
+  // y se marca `sin_tarifa` igual que si la fila no existiera. Es la regla que
+  // el resto de la app ya aplicaba —`dimensionAsignada` trata el $0 como
+  // ausente, el lado del cliente cuenta "sin tarifario" cuando no hay ningún
+  // precio > 0, y el simulador no le pone un monto fijo a una zona en $0— y
+  // esta era la única punta que faltaba: devolvía `sin_tarifa: false` y el
+  // envío se pagaba $0 **como si fuera el precio acordado**, sin marca en
+  // ninguna pantalla. No cambia lo que se paga (ya era 0): cambia que se vea.
+  // Importa ahora porque Rosario abre con su zona cargada en $0 a la espera
+  // del costo, y arranca con ~170 envíos por día.
+  const _enCero = v => !(Number(v) > 0);
+
   if (supVig !== undefined) {
-    return { precio: supVig.precio ?? 0, tipo: 'sla', es_super: true, sin_tarifa: false };
+    return { precio: supVig.precio ?? 0, tipo: 'sla', es_super: true,
+             sin_tarifa: _enCero(supVig.precio) };
   }
 
   if (!tarifa) {
@@ -1084,10 +1097,11 @@ function getPrecio(conductor, zona, fechaISO) {
 
   // El cadete tiene Super SLA en otra zona, pero acá visita una zona sin regla → SLA Cumplido
   if (tieneSuperSLAEnOtraZona) {
-    return { precio: tarifa.sla, tipo: 'sla', es_super: false, sin_tarifa: false };
+    return { precio: tarifa.sla, tipo: 'sla', es_super: false, sin_tarifa: _enCero(tarifa.sla) };
   }
 
-  return { precio: tarifa[tipoFijo] || 0, tipo: tipoFijo, es_super: false, sin_tarifa: false };
+  return { precio: tarifa[tipoFijo] || 0, tipo: tipoFijo, es_super: false,
+           sin_tarifa: _enCero(tarifa[tipoFijo]) };
 }
 
 // Estados que contabilizan (pueden venir del XLS con variantes)
