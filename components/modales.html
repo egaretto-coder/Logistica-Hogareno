@@ -1654,6 +1654,38 @@
 </div>
 
 <!-- MODAL VISITA PAGA SIN ENTREGA (panel Conductores) -->
+<!-- CAMBIAR DE SUCURSAL. No es el confirm() del navegador a proposito: ese
+     cartel se titula "logistica-hogareno.vercel.app dice", no se puede dar
+     formato y no distingue lo que importa de lo que no. Y acá lo que hay que
+     entender antes de aceptar es grande: la app se RECARGA y todo lo que se
+     ve abajo —conductores, clientes, tarifas, liquidaciones— pasa a ser de
+     otra boca. Por eso el salto va escrito como lo que es, de dónde a dónde. -->
+<div class="modal-backdrop" id="modal-sucursal-backdrop" onclick="_sucCerrarModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:440px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-building"></i> Cambiar de sucursal</span>
+      <button class="modal-close" onclick="_sucCerrarModal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:15px;font-weight:700;padding:4px 0">
+        <span id="msuc-de" style="color:var(--text-muted)">&mdash;</span>
+        <span style="color:var(--accent);font-size:17px">&rarr;</span>
+        <span id="msuc-a" style="color:var(--text-primary)">&mdash;</span>
+      </div>
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-refresh"></i>
+        <div>La app se <strong>recarga</strong> con los datos de esa sucursal: conductores,
+        clientes, tarifas y liquidaciones pasan a ser los de <strong id="msuc-a2">&mdash;</strong>.
+        Lo que tengas a medio cargar en esta pantalla <strong>se pierde</strong>.</div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="_sucCerrarModal()">Cancelar</button>
+        <button class="btn btn-primary" id="msuc-ok" onclick="_sucConfirmarModal()"><i class="ic ic-check"></i> Pasar a <span id="msuc-a3">&mdash;</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-visita-backdrop" onclick="cerrarMotivoVisita(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:480px" onclick="event.stopPropagation()">
     <div class="modal-header">

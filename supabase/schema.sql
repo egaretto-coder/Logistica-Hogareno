@@ -2071,3 +2071,32 @@ create unique index if not exists rendiciones_envio_clave_key
 --
 -- SUMAR UNA SUCURSAL: insert into sucursales (codigo, nombre, orden).
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 24/10/2026 · relevamiento de la base
+--
+-- 1) RESPALDOS CON RLS. Siete tablas *_bkp_* se habian creado SIN RLS y la
+--    clave publicable vive en el codigo del sitio, asi que `anon` las leia
+--    enteras: 5.183 filas con los tres tarifarios y las claves
+--    D:direccion|destinatario de 4.750 envios. Quedaron con RLS y NINGUNA
+--    policy: invisibles por la API, intactas desde SQL. Un respaldo nuevo
+--    nace con RLS.
+--
+-- 2) sucursal_pedida / es_de_sucursal: SIN `SET search_path`, a proposito.
+--    El SET impide que Postgres las inlinee y la policy pasa a resolverse
+--    fila por fila. Medido (pagina del arranque, 1.000 filas, mejor de 5):
+--      sin SET 37,9 ms · con SET en las dos 127,9 ms · con uno solo 125,9 ms
+--    Estan en las policies de las 50 tablas, o sea en toda consulta de todo
+--    panel. En su lugar se calificaron todos los nombres que el search_path
+--    podria secuestrar (pg_catalog.btrim, ::pg_catalog.json,
+--    operator(pg_catalog.=)), que cierra el agujero sin perder el inlineado.
+--    El WARN del linter queda y es intencional.
+--
+-- 3) revoke execute on desbloquear_acceso(text) from anon. Se defiende sola
+--    (exige es_analista() adentro), pero el grant no hacia falta.
+--
+-- 4) reemplazar_registros NO BORRA MAS DE LO QUE REPONE. Borraba por clave a
+--    secas: con 4 filas en la base y 1 en la carga, se llevaba las 4. Ahora
+--    borra tantas como trae la carga para esa clave, y entero solo cuando la
+--    carga no trae ninguna (la fila ABIERTA que una entrega cierra).
+-- ───────────────────────────────────────────────────────────────────────

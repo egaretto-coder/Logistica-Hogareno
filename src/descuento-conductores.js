@@ -176,10 +176,6 @@ function filtrarPorMesPanel(id, lista) {
   return lista.filter(x => String(dmyToISO(x.fecha) || '').slice(0, 7) === mes);
 }
 
-function hoyISO() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
 function isoToDMY(iso) {
   if (!iso) return '';
   const p = String(iso).split('-');

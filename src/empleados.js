@@ -983,7 +983,7 @@ function exportEmpleadosExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Empleados');
   XLSX.utils.book_append_sheet(wb, ws2, 'Por área');
-  XLSX.writeFile(wb, 'Empleados_sueldos_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  XLSX.writeFile(wb, 'Empleados_sueldos_' + hoyISO() + '.xlsx');
   showToast('📥 ' + lista.length + ' empleado(s) exportados a Excel' + (filtros.length ? ' (con los filtros puestos)' : ''));
 }
 
@@ -1044,7 +1044,7 @@ async function guardarPostergacion() {
   const motivo = (document.getElementById('mpost-motivo')?.value || '').trim();
   if (!motivo) { alert('La justificación es obligatoria: es lo que explica por qué no se dio el aumento.'); return; }
   const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   let ok = 0;
   for (const id of _postergIds) {
     const e = (AppData.empleados || []).find(x => x.id === id); if (!e) continue;
@@ -1519,7 +1519,7 @@ async function eliminarEmpleado(id) {
   if (!e) return;
   const motivo = prompt('Dar de baja a ' + e.nombre + '.\n\n¿Motivo? (renuncia, despido, fin de contrato…)\n\nPasa a la solapa Bajas; su historial de sueldos se conserva.', '');
   if (motivo === null) return;   // canceló
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   try {
     await DB.updateWhere('empleados', 'id', id, { activo: false, fecha_baja: hoy, motivo_baja: motivo.trim() });
     e.activo = false; e.fecha_baja = hoy; e.motivo_baja = motivo.trim();
@@ -2018,7 +2018,7 @@ async function aplicarAjusteSueldos() {
   // El ajuste se fecha en el MES ELEGIDO, no en el día en que se aplica: si se
   // adelanta el aumento de septiembre, el ciclo de 3 meses tiene que arrancar
   // en septiembre igual.
-  const hoyIso = periodo ? (periodo + '-01') : new Date().toISOString().slice(0, 10);
+  const hoyIso = periodo ? (periodo + '-01') : hoyISO();
   let ok = 0;
   for (const id of ids) {
     const e = AppData.empleados.find(x => x.id === id); if (!e) continue;
@@ -2737,7 +2737,7 @@ async function aplicarAjusteIndividual() {
     fmtPeso(anterior) + ' a ' + fmtPeso(nuevo) + String.fromCharCode(10) + String.fromCharCode(10) +
     'Queda en su historial, fechado en ' + _mesTexto(periodo) + '.')) return;
   const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
-  const rec = { empleado_id: e.id, fecha: (periodo ? periodo + '-01' : new Date().toISOString().slice(0, 10)),
+  const rec = { empleado_id: e.id, fecha: (periodo ? periodo + '-01' : hoyISO()),
                 periodo, pct, sueldo_anterior: anterior, sueldo_nuevo: nuevo, motivo, aplicado_por: quien };
   try {
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();

@@ -163,15 +163,15 @@ function setRendPreset(cual) {
   const hoy = new Date();
   let d = '', h = '';
   if (cual === 'mes') {
-    d = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10);
-    h = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().slice(0, 10);
+    d = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+    h = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
   } else if (cual === 'mespasado') {
-    d = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 10);
-    h = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().slice(0, 10);
+    d = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1));
+    h = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 0));
   } else if (cual === 'semana') {
     const ini = new Date(hoy); ini.setDate(hoy.getDate() - 6);
-    d = ini.toISOString().slice(0, 10);
-    h = hoy.toISOString().slice(0, 10);
+    d = isoLocal(ini);
+    h = hoyISO();
   }
   const elD = document.getElementById('rend-desde'), elH = document.getElementById('rend-hasta');
   if (elD) elD.value = d;
@@ -332,7 +332,7 @@ function editRendicion(id) {
   document.getElementById('mrend-monto').value = _num(r.monto) || '';
   document.getElementById('mrend-obs').value = r.obs || '';
   const f = parseFechaReg(r.fecha_entrega);
-  document.getElementById('mrend-fecha').value = f ? f.toISOString().slice(0, 10) : hoyISO();
+  document.getElementById('mrend-fecha').value = f ? isoLocal(f) : hoyISO();
   _rendDatalists();
   document.getElementById('modal-rend-backdrop').style.display = 'flex';
 }
@@ -360,7 +360,7 @@ async function guardarRendicionModal() {
     cliente: (document.getElementById('mrend-cliente').value || '').trim().toUpperCase(),
     monto,
     fecha_entrega: fechaDMY, fecha_entrega_date: fechaISO,
-    fecha_limite: lim ? lim.toISOString().slice(0, 10) : null,
+    fecha_limite: lim ? isoLocal(lim) : null,
     obs: (document.getElementById('mrend-obs').value || '').trim(),
     origen: 'manual',
     registrado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || ''
@@ -642,7 +642,7 @@ function rendicionDeEnvio(r) {
     cliente: String((cod && typeof clienteNombreDe === 'function' ? clienteNombreDe(cod) : '') || r.cliente || '').toUpperCase(),
     monto: _num(r.cobro_destino),
     fecha_entrega: fechaDMY, fecha_entrega_date: fechaISOde(fechaDMY) || null,
-    fecha_limite: lim ? lim.toISOString().slice(0, 10) : null,
+    fecha_limite: lim ? isoLocal(lim) : null,
     estado: 'pendiente', origen: 'envios',
     registrado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || ''
   };

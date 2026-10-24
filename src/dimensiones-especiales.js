@@ -644,7 +644,7 @@ function descargarPlantillaDimensiones() {
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'HOJA DE CARGA');
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   XLSX.writeFile(wb, 'Dimensiones_Catalogo_' + hoy + '.xlsx');
   showToast(cat.length
     ? '📥 Catálogo descargado: ' + cat.length + ' precio(s) — agregá las filas nuevas y volvé a subirlo'

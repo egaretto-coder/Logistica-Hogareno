@@ -852,6 +852,25 @@ function panelConductorDe(nombre) {
 // o sea que no escapaban nada.
 // El ORDEN importa: la barra primero (si no, re-escapa lo que agregan los pasos
 // siguientes) y el & antes que las comillas (si no, rompe la entidad).
+// ── La fecha de hoy, EN HORA LOCAL ──────────────────────────────────────
+// `toISOString()` convierte a UTC, así que con la hora de Argentina (UTC-3)
+// desde las 21:00 devuelve el día SIGUIENTE. Eso no es un detalle de formato:
+// esa fecha se guarda —la baja de un empleado, la fecha de un ajuste de sueldo,
+// la de una postergación— y de ahí salen el ciclo de 3 meses, qué sueldo rige
+// cada mes y si la persona cuenta en el costo de la nómina. Un ajuste cargado
+// un 31 a las 21:30 quedaba fechado el 1º del mes siguiente, o sea el mes que
+// se estaba liquidando NO costaba el sueldo nuevo.
+// `isoLocal` arma el ISO con los getters locales, que es lo único que no
+// depende de la zona. Van las dos juntas porque `hoyISO` es su caso de uso
+// más común y tenerlas separadas invita a que una se arregle y la otra no.
+function isoLocal(d) {
+  const f = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(f.getTime())) return '';
+  return f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') +
+         '-' + String(f.getDate()).padStart(2, '0');
+}
+function hoyISO() { return isoLocal(new Date()); }
+
 function jsAttr(v) {
   return String(v == null ? '' : v)
     .replace(/\\/g, '\\\\')

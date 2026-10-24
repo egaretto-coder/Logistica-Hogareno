@@ -29,9 +29,11 @@ function dcliRango() {
 function dcliMoverSemana(dias) {
   const el = document.getElementById('dcli-semana');
   if (!el) return;
+  // El ancla en T12:00:00 es a propósito: al mediodía, ninguna zona horaria
+  // mueve el día. El ISO sale por isoLocal igual, para no depender de eso.
   const base = el.value ? new Date(el.value + 'T12:00:00') : new Date();
   base.setDate(base.getDate() + dias);
-  el.value = base.toISOString().slice(0, 10);
+  el.value = isoLocal(base);
   renderDetalleCliente();
 }
 // Al elegir un día cualquiera, el campo se corre al viernes de esa semana.
@@ -94,7 +96,7 @@ function renderDetalleClienteSelect() {
 function renderDetalleClientePagina() {
   renderDetalleClienteSelect();
   const el = document.getElementById('dcli-semana');
-  if (el && !el.value) el.value = new Date().toISOString().slice(0, 10);
+  if (el && !el.value) el.value = hoyISO();
   if (typeof snapSemanaCliente === 'function') snapSemanaCliente('dcli-semana');
   renderDetalleCliente();
 }

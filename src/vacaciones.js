@@ -353,7 +353,7 @@ function abrirHoraExtra(empId) {
     // Por defecto, un día del mes que se está mirando: lo normal es cargar
     // algo que pasó en ese mes, no hoy.
     const p = _hsMesActivo();
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = hoyISO();
     f.value = hoy.slice(0, 7) === p ? hoy : (p + '-01');
   }
   const h = document.getElementById('mhse-horas'); if (h) h.value = '';

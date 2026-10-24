@@ -119,10 +119,7 @@ async function cambiarSucursal(cod) {
     alert('Solo un analista puede cambiar de sucursal.');
     return;
   }
-  const nombre = sucursalNombre(destino);
-  if (!confirm('¿Pasar a ' + nombre + '?\n\n' +
-    'Se recarga la app con los datos de esa sucursal. Lo que tengas a medio ' +
-    'cargar en esta pantalla se pierde.')) return;
+  if (!await _sucPedirConfirmacion(destino)) return;
   try { localStorage.setItem('liq_sucursal', destino); } catch (e) {
     alert('No se pudo guardar la sucursal elegida. Revisá que el navegador ' +
       'permita guardar datos de este sitio.');
@@ -130,6 +127,55 @@ async function cambiarSucursal(cod) {
   }
   _sucRecargar();
 }
+
+// ── El aviso antes de cambiar ───────────────────────────────────────────
+// Va por un modal de la app y no por el confirm() del navegador: aquel se
+// titula con el dominio, no se puede dar formato y no distingue lo que hay
+// que leer de lo que no. Devuelve una promesa porque un modal no frena el
+// hilo como confirm; `cambiarSucursal` ya era async.
+let _sucResolver = null;
+
+function _sucPedirConfirmacion(destino) {
+  const bd = document.getElementById('modal-sucursal-backdrop');
+  // Si el modal no esta en el DOM —los parciales se inyectan en runtime y
+  // uno puede no haber cargado— se cae al confirm del navegador. Es feo, pero
+  // dejar al analista sin ninguna forma de cambiar de sucursal es peor.
+  if (!bd) {
+    return Promise.resolve(confirm('¿Pasar a ' + sucursalNombre(destino) + '?\n\n' +
+      'Se recarga la app con los datos de esa sucursal. Lo que tengas a medio ' +
+      'cargar en esta pantalla se pierde.'));
+  }
+  // Ya hay uno abierto (doble clic en el chip): no se abre otro, porque el
+  // segundo pisaria al primero y esa promesa quedaria colgada para siempre.
+  if (_sucResolver) return Promise.resolve(false);
+
+  const nom = sucursalNombre(destino);
+  const pon = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
+  pon('msuc-de', sucursalNombre(sucursalActiva()));
+  pon('msuc-a', nom); pon('msuc-a2', nom); pon('msuc-a3', nom);
+  bd.style.display = 'flex';
+  document.addEventListener('keydown', _sucTecla);
+  const ok = document.getElementById('msuc-ok');
+  if (ok) { try { ok.focus(); } catch (e) {} }
+  return new Promise(res => { _sucResolver = res; });
+}
+
+function _sucTecla(ev) { if (ev && ev.key === 'Escape') _sucCerrarModal(); }
+
+function _sucTerminar(valor) {
+  const bd = document.getElementById('modal-sucursal-backdrop');
+  if (bd) bd.style.display = 'none';
+  document.removeEventListener('keydown', _sucTecla);
+  const r = _sucResolver; _sucResolver = null;
+  if (r) r(valor);
+}
+
+// Cancelar es lo que pasa por defecto: la ✕, el fondo, Escape y el boton.
+function _sucCerrarModal(e) {
+  if (e && e.target && e.target.id !== 'modal-sucursal-backdrop') return;
+  _sucTerminar(false);
+}
+function _sucConfirmarModal() { _sucTerminar(true); }
 
 // La recarga sale por una DECLARACION de funcion global a proposito: el banco
 // la reemplaza en window para poder verificar que cambiar de sucursal recarga

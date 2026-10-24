@@ -2526,7 +2526,7 @@ function descargarPlantillaTarifario() {
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Tarifario');
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   XLSX.writeFile(wb, 'Tarifario_Clientes_' + hoy + '.xlsx');
   showToast(filas.length
     ? '📥 Tarifario descargado: ' + filas.length + ' fila(s) — actualizalo y volvé a subirlo'
