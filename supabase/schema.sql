@@ -2130,3 +2130,19 @@ create unique index if not exists rendiciones_envio_clave_key
 --   descuentos_items filtran por beneficiario_tipo: esa columna guarda el
 --   nombre del beneficiario sea conductor o EMPLEADO.
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 24/10/2026 · asignar_empleado_a_sucursal(id, destino)
+--
+-- El alta normal NO la necesita: empleados.sucursal tiene DEFAULT
+-- coalesce(sucursal_pedida(),'BA'), asi que parado en Rosario el empleado
+-- nace en Rosario y RLS hace que el panel muestre solo esa boca (verificado:
+-- desde BA se ven 32 empleados y NO el de ROS). Esto es para el error facil —
+-- Buenos Aires es la sucursal que abre por defecto.
+--
+-- Va por ID (el empleado tiene id propio en las 10 tablas que cuelgan de el).
+-- NO mueve vendedores: ese padron se regenera solo desde el plantel.
+-- NO toca empleado_cierres: es el total mensual congelado de la SUCURSAL,
+-- no una fila por persona; mover a alguien con meses pagados hace que esos
+-- cierres dejen de cuadrar, y el modal lo avisa.
+-- ───────────────────────────────────────────────────────────────────────

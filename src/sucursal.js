@@ -206,7 +206,7 @@ function abrirAsignarSucursal(tipo, clave, nombre) {
   if (!bd) { alert('No se pudo abrir la ventana de asignación.'); return; }
   const pon = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
   pon('masig-quien', nombre);
-  pon('masig-tipo', tipo === 'cliente' ? 'Cliente' : 'Conductor');
+  pon('masig-tipo', tipo === 'cliente' ? 'Cliente' : (tipo === 'empleado' ? 'Empleado' : 'Conductor'));
   pon('masig-desde', sucursalNombre(sucursalActiva()));
 
   const sel = document.getElementById('masig-destino');
@@ -231,13 +231,19 @@ function _asigPintarAviso() {
     '<strong>' + jsAttr(sucursalNombre(c.destino)) + '</strong>: ' +
     (c.tipo === 'cliente'
       ? 'sus envíos, su tarifario, sus cargos, sus liquidaciones y su comisión.'
-      : 'sus envíos, sus liquidaciones, sus adelantos, sus descuentos y su Super SLA.') +
+      : c.tipo === 'empleado'
+        ? 'sus sueldos, sus ajustes, sus bonos, sus vacaciones, sus licencias, sus horas extras y sus adelantos.'
+        : 'sus envíos, sus liquidaciones, sus adelantos, sus descuentos y su Super SLA.') +
     ' Desde acá deja de verse: cada panel muestra solo el ecosistema de su sucursal.</div>' +
     (cerradas > 0
       ? '<div style="margin-top:6px;font-weight:600">⚠ Ya tiene ' + cerradas +
-        (cerradas !== 1 ? ' liquidaciones cerradas' : ' liquidación cerrada') +
-        ': se mueven también, así que el total de cada sucursal cambia. ' +
-        'Lo normal es asignar ANTES de la primera liquidación.</div>'
+        (c.tipo === 'empleado'
+          ? ((cerradas !== 1 ? ' meses liquidados' : ' mes liquidado') +
+             ': se mueven también, así que el costo de nómina de las dos sucursales cambia ' +
+             'y los cierres mensuales ya congelados dejan de cuadrar contra el plantel.')
+          : ((cerradas !== 1 ? ' liquidaciones cerradas' : ' liquidación cerrada') +
+             ': se mueven también, así que el total de cada sucursal cambia.')) +
+        ' Lo normal es asignar ANTES de la primera liquidación.</div>'
       : '');
 }
 
@@ -246,6 +252,14 @@ function _asigCerradas(c) {
     if (c.tipo === 'cliente') {
       return (AppData.clienteLiquidaciones || [])
         .filter(x => clienteKey(x.cliente_cod) === clienteKey(c.clave)).length;
+    }
+    if (c.tipo === 'empleado') {
+      // Los meses que ya se le PAGARON. Mover a alguien con meses liquidados
+      // cambia el costo de nómina de las dos bocas, y además los cierres
+      // mensuales —que son el total congelado de la sucursal, no una fila por
+      // persona, así que no se mueven— dejan de cuadrar contra el plantel.
+      return (AppData.empleadoSueldos || [])
+        .filter(x => String(x.empleado_id) === String(c.clave) && x.pagado).length;
     }
     return (AppData.conductorLiquidaciones || [])
       .filter(x => conductorKey(x.conductor) === conductorKey(c.clave)).length;
@@ -272,7 +286,9 @@ async function confirmarAsignarSucursal() {
   try {
     const det = (c.tipo === 'cliente')
       ? await DB.asignarClienteASucursal(c.clave, destino)
-      : await DB.asignarConductorASucursal(c.clave, destino);
+      : c.tipo === 'empleado'
+        ? await DB.asignarEmpleadoASucursal(c.clave, destino)
+        : await DB.asignarConductorASucursal(c.clave, destino);
     const filas = (det || []).filter(d => (d.movidas || 0) > 0);
     const total = filas.reduce((s, d) => s + Number(d.movidas || 0), 0);
     cerrarAsignarSucursal();

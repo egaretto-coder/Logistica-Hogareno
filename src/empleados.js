@@ -819,6 +819,12 @@ function renderEmpleados() {
         '</div>' +
         '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-sm" onclick="editEmpleado(' + e.id + ')" title="Editar datos"><i class="ic ic-edit"></i></button>' +
+          // Un empleado cargado EN Rosario ya nace en Rosario; esto es para el
+          // error fácil: Buenos Aires es la sucursal que abre por defecto, así
+          // que es donde se va a cargar sin querer a alguien de la otra boca.
+          ((typeof puedeAsignarSucursal === 'function' && puedeAsignarSucursal())
+            ? '<button class="btn btn-sm" onclick="abrirAsignarSucursal(\'empleado\', ' + e.id + ', ' + "'" + jsAttr(e.nombre || '') + "'" + ')" title="Asignar a otra sucursal (se lleva su legajo)"><i class="ic ic-building"></i></button>'
+            : '') +
           '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c" onclick="eliminarEmpleado(' + e.id + ')" title="Dar de baja"><i class="ic ic-trash"></i></button>' +
         '</div>' +
       '</div>' +

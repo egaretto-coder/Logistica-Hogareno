@@ -378,6 +378,15 @@ const DB = {
     if (error) throw error;
     return data || [];
   },
+  // Va por ID: a diferencia del conductor —que se matchea por nombre y alias
+  // porque así lo guardan los envíos— el empleado tiene id propio en las diez
+  // tablas que cuelgan de él, así que no hay nada que adivinar.
+  async asignarEmpleadoASucursal(id, destino) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.rpc('asignar_empleado_a_sucursal', { p_id: id, p_destino: destino });
+    if (error) throw error;
+    return data || [];
+  },
   // A qué sucursal va cada código de cliente. Lo contesta la BASE porque desde
   // una sesión de Buenos Aires los clientes de Rosario están tapados por RLS:
   // la app no puede saberlo sola. Devuelve solo el código y su sucursal.
