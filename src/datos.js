@@ -1254,6 +1254,35 @@ function filaRegistroNube(r) {
   };
 }
 
+// Cómo quedó repartida una carga entre las sucursales. Se pregunta a la BASE
+// (sucursal_de_clientes): desde Buenos Aires la app no ve los clientes de las
+// otras bocas, así que no puede resolverlo sola. Si la consulta falla se
+// devuelve vacío y el resumen sale como siempre: el reparto es información,
+// no una condición para dar por buena una carga que YA se guardó bien.
+async function _repartoPorSucursal(nuevos) {
+  try {
+    if (!window.DB || typeof DB.sucursalDeClientes !== 'function') return '';
+    if (typeof sucursalesDisponibles !== 'function') return '';
+    const activa = (typeof sucursalActiva === 'function') ? sucursalActiva() : 'BA';
+    const cods = Array.from(new Set((nuevos || []).map(n => n.cliente_cod || '').filter(Boolean)));
+    if (!cods.length) return '';
+    const mapa = await DB.sucursalDeClientes(cods);
+    const cuenta = new Map();
+    (nuevos || []).forEach(n => {
+      const s = mapa.get(n.cliente_cod || '') || activa;
+      cuenta.set(s, (cuenta.get(s) || 0) + 1);
+    });
+    // Con una sola sucursal en juego no se dice nada: un aviso que sale
+    // siempre y nunca cambia deja de leerse.
+    if (cuenta.size < 2) return '';
+    const txt = Array.from(cuenta.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([s, n]) => n + ' a ' + (typeof sucursalNombre === 'function' ? sucursalNombre(s) : s))
+      .join(' · ');
+    return ' (' + txt + ')';
+  } catch (e) { return ''; }
+}
+
 // Última importación que no llegó a la nube (para el botón "Reintentar").
 let importPendiente = null;
 
@@ -1303,7 +1332,7 @@ async function guardarImportacionEnNube(nuevos) {
     }
     nuevos.forEach((n, i) => { n.id = ids[i]; });
     importPendiente = null;
-    showToast('✅ ' + nuevos.length + ' registros guardados en la nube');
+    showToast('✅ ' + nuevos.length + ' registros guardados en la nube' + await _repartoPorSucursal(nuevos));
     return true;
   } catch(e) {
     console.warn('guardarImportacionEnNube:', e);

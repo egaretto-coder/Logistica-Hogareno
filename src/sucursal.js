@@ -183,6 +183,113 @@ function _sucConfirmarModal() { _sucTerminar(true); }
 // costura el caso no se puede probar y la prueba pasa sin probar nada.
 function _sucRecargar() { location.reload(); }
 
+// ── Asignar un cliente o un conductor a OTRA sucursal ───────────────────
+// El import entra siempre por Buenos Aires y reparte cada envío a la sucursal
+// de SU cliente, así que esto es lo que hace que ese reparto tenga de dónde
+// leer: mientras el cliente no esté asignado, sus envíos caen en Buenos Aires.
+//
+// ARRASTRA EL HISTORIAL. Lo decidió el negocio: la asignación va antes de la
+// primera liquidación, y si se asignó mal, la reasignación se lleva todo.
+// Media mudanza es peor que ninguna — lo que quede en la boca vieja no lo ve
+// ninguno de los dos lados.
+let _asigCtx = null;
+
+function puedeAsignarSucursal() { return puedeCambiarSucursal(); }
+
+function abrirAsignarSucursal(tipo, clave, nombre) {
+  if (!puedeAsignarSucursal()) { alert('Solo un analista puede asignar a otra sucursal.'); return; }
+  const otras = sucursalesDisponibles().filter(s => s.codigo !== sucursalActiva());
+  if (!otras.length) { alert('No hay otra sucursal a la que asignar.'); return; }
+  _asigCtx = { tipo: tipo, clave: clave, nombre: nombre, destino: otras[0].codigo };
+
+  const bd = document.getElementById('modal-asignar-suc-backdrop');
+  if (!bd) { alert('No se pudo abrir la ventana de asignación.'); return; }
+  const pon = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
+  pon('masig-quien', nombre);
+  pon('masig-tipo', tipo === 'cliente' ? 'Cliente' : 'Conductor');
+  pon('masig-desde', sucursalNombre(sucursalActiva()));
+
+  const sel = document.getElementById('masig-destino');
+  if (sel) {
+    sel.innerHTML = otras.map(s => '<option value="' + jsAttr(s.codigo) + '">' + jsAttr(s.nombre) + '</option>').join('');
+    sel.onchange = () => { _asigCtx.destino = sel.value; _asigPintarAviso(); };
+  }
+  _asigPintarAviso();
+  bd.style.display = 'flex';
+}
+
+// Lo que se lleva puesto, dicho antes de apretar. Si el cliente ya tiene
+// liquidaciones CERRADAS no se bloquea —el negocio dijo que una asignación
+// equivocada se corrige y arrastra todo— pero se avisa fuerte: esas
+// liquidaciones cambian de sucursal y con ellas el total de cada boca.
+function _asigPintarAviso() {
+  const c = _asigCtx; if (!c) return;
+  const e = document.getElementById('masig-aviso'); if (!e) return;
+  const cerradas = _asigCerradas(c);
+  e.innerHTML =
+    '<div>Se mueve <strong>' + jsAttr(c.nombre) + '</strong> y <strong>todo su historial</strong> a ' +
+    '<strong>' + jsAttr(sucursalNombre(c.destino)) + '</strong>: ' +
+    (c.tipo === 'cliente'
+      ? 'sus envíos, su tarifario, sus cargos, sus liquidaciones y su comisión.'
+      : 'sus envíos, sus liquidaciones, sus adelantos, sus descuentos y su Super SLA.') +
+    ' Desde acá deja de verse: cada panel muestra solo el ecosistema de su sucursal.</div>' +
+    (cerradas > 0
+      ? '<div style="margin-top:6px;font-weight:600">⚠ Ya tiene ' + cerradas +
+        (cerradas !== 1 ? ' liquidaciones cerradas' : ' liquidación cerrada') +
+        ': se mueven también, así que el total de cada sucursal cambia. ' +
+        'Lo normal es asignar ANTES de la primera liquidación.</div>'
+      : '');
+}
+
+function _asigCerradas(c) {
+  try {
+    if (c.tipo === 'cliente') {
+      return (AppData.clienteLiquidaciones || [])
+        .filter(x => clienteKey(x.cliente_cod) === clienteKey(c.clave)).length;
+    }
+    return (AppData.conductorLiquidaciones || [])
+      .filter(x => conductorKey(x.conductor) === conductorKey(c.clave)).length;
+  } catch (e) { return 0; }
+}
+
+function cerrarAsignarSucursal(e) {
+  if (e && e.target && e.target.id !== 'modal-asignar-suc-backdrop') return;
+  const bd = document.getElementById('modal-asignar-suc-backdrop');
+  if (bd) bd.style.display = 'none';
+  _asigCtx = null;
+}
+
+async function confirmarAsignarSucursal() {
+  const c = _asigCtx; if (!c) return;
+  const destino = (document.getElementById('masig-destino') || {}).value || c.destino;
+  const nom = sucursalNombre(destino);
+  if (!confirm('¿Asignar ' + c.nombre + ' a ' + nom + '?\n\n' +
+    'Se mueve con todo su historial y deja de verse desde ' +
+    sucursalNombre(sucursalActiva()) + '.')) return;
+
+  const btn = document.getElementById('masig-ok');
+  if (btn) { btn.disabled = true; btn.textContent = 'Asignando…'; }
+  try {
+    const det = (c.tipo === 'cliente')
+      ? await DB.asignarClienteASucursal(c.clave, destino)
+      : await DB.asignarConductorASucursal(c.clave, destino);
+    const filas = (det || []).filter(d => (d.movidas || 0) > 0);
+    const total = filas.reduce((s, d) => s + Number(d.movidas || 0), 0);
+    cerrarAsignarSucursal();
+    // Re-hidratar: lo movido ya no se ve desde acá y el panel tiene que
+    // reflejarlo, si no queda una fila fantasma que al tocarla no existe.
+    if (typeof hydrateFromSupabase === 'function') await hydrateFromSupabase();
+    if (typeof rerenderPaginaActiva === 'function') rerenderPaginaActiva();
+    showToast('✅ ' + c.nombre + ' pasó a ' + nom + ' · ' + total + ' fila' + (total !== 1 ? 's' : '') +
+      ' movidas (' + filas.map(d => d.tabla + ' ' + d.movidas).join(', ') + ')');
+  } catch (err) {
+    // Un alert y no un toast: si la mudanza falló a medias hay que enterarse.
+    alert('No se pudo asignar: ' + (err && (err.message || err.hint) || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ic ic-check"></i> Asignar'; }
+  }
+}
+
 // ── El selector, arriba de todo ─────────────────────────────────────────
 // Va en la cabecera del menú, pegado a la marca: es el contexto de TODO lo que
 // se ve abajo, y un control de contexto escondido en una pantalla hace que el

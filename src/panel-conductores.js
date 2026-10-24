@@ -184,6 +184,9 @@ function renderPanelConductores() {
         </div>
         <div style="display:flex;gap:4px">
           <button class="btn btn-sm" title="Editar conductor" style="padding:4px 8px;font-size:11px" onclick='editarConductorPanel(${JSON.stringify(String(c.id))})'><i class="ic ic-edit"></i></button>
+          ${(typeof puedeAsignarSucursal === 'function' && puedeAsignarSucursal())
+            ? `<button class="btn btn-sm" title="Asignar a otra sucursal (se lleva su historial)" style="padding:4px 8px;font-size:11px" onclick='abrirAsignarSucursal("conductor", ${JSON.stringify(String(c.nombre))}, ${JSON.stringify(String(c.nombre))})'><i class="ic ic-building"></i></button>`
+            : ''}
           <button class="btn btn-sm" title="Eliminar conductor" style="padding:4px 8px;font-size:11px;color:#b91c1c;border-color:#fca5a5;background:#fef2f2" onclick='eliminarConductorPanel(${JSON.stringify(String(c.id))})'><i class="ic ic-trash"></i></button>
         </div>
       </div>`;

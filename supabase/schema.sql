@@ -2100,3 +2100,33 @@ create unique index if not exists rendiciones_envio_clave_key
 --    borra tantas como trae la carga para esa clave, y entero solo cuando la
 --    carga no trae ninguna (la fila ABIERTA que una entrega cierra).
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 24/10/2026 · el import entra por Buenos Aires y REPARTE
+--
+-- sucursal_de_cliente(cod)   -> la sucursal del cliente (pasa por
+--                               cliente_cuentas: manda el canonico). NULL si
+--                               el codigo no esta de alta en ningun lado.
+-- sucursal_de_clientes(cods) -> la version de a muchos, para que el import
+--                               pueda anticipar el reparto. Devuelve SOLO el
+--                               codigo y su sucursal, no datos del cliente.
+-- norm_nombre(s)             -> gemelo SQL de normNombre() de core.js.
+--                               Verificado contra el JS sobre los nombres
+--                               reales de produccion: 0 discrepancias.
+--
+-- reemplazar_registros: cada fila se guarda en la sucursal de SU cliente (la
+--   activa si el cliente no se reconoce). El BORRADO mira las bocas que la
+--   carga toca y topea por la cantidad TOTAL que trae para esa clave, para que
+--   un envio que cambia de sucursal se MUEVA en vez de duplicarse.
+--
+-- asignar_cliente_a_sucursal(cod, destino)
+-- asignar_conductor_a_sucursal(nombre, destino)
+--   SECURITY DEFINER + es_analista(). Hacen falta porque el with_check de las
+--   policies impide que una sesion de una boca escriba filas de la otra.
+--   Arrastran el historial ENTERO, tabla por tabla y explicito: un barrido
+--   automatico por "columna nombre" tocaria empleados, proveedores y
+--   vendedores. El cliente se mueve por TODOS sus codigos (cuentas
+--   vinculadas); el conductor, por su nombre MAS sus alias. adelantos y
+--   descuentos_items filtran por beneficiario_tipo: esa columna guarda el
+--   nombre del beneficiario sea conductor o EMPLEADO.
+-- ───────────────────────────────────────────────────────────────────────

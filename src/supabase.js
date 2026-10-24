@@ -360,6 +360,36 @@ const DB = {
     return data || [];
   },
 
+  // ── Asignar un cliente o un conductor a otra sucursal ────────────────
+  // Van por RPC y no por un update porque RLS lo impide POR DISEÑO: el
+  // `with_check` de las policies no deja que una sesión parada en Buenos
+  // Aires escriba una fila de Rosario. Las funciones son SECURITY DEFINER,
+  // exigen analista y arrastran el historial entero; devuelven el detalle de
+  // qué tabla movió cuántas filas.
+  async asignarClienteASucursal(cod, destino) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.rpc('asignar_cliente_a_sucursal', { p_cod: cod, p_destino: destino });
+    if (error) throw error;
+    return data || [];
+  },
+  async asignarConductorASucursal(nombre, destino) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.rpc('asignar_conductor_a_sucursal', { p_nombre: nombre, p_destino: destino });
+    if (error) throw error;
+    return data || [];
+  },
+  // A qué sucursal va cada código de cliente. Lo contesta la BASE porque desde
+  // una sesión de Buenos Aires los clientes de Rosario están tapados por RLS:
+  // la app no puede saberlo sola. Devuelve solo el código y su sucursal.
+  async sucursalDeClientes(cods) {
+    if (!sb) throw new Error('offline');
+    const { data, error } = await sb.rpc('sucursal_de_clientes', { cods: cods || [] });
+    if (error) throw error;
+    const m = new Map();
+    (data || []).forEach(r => { if (r && r.cod) m.set(r.cod, r.sucursal || null); });
+    return m;
+  },
+
   // Mueve a histórico los registros con fecha anterior a antesDeISO.
   // Es transaccional en el servidor (función archivar_registros). Solo analista.
   // Devuelve la cantidad de registros archivados.

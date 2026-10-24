@@ -1660,6 +1660,36 @@
      entender antes de aceptar es grande: la app se RECARGA y todo lo que se
      ve abajo —conductores, clientes, tarifas, liquidaciones— pasa a ser de
      otra boca. Por eso el salto va escrito como lo que es, de dónde a dónde. -->
+<!-- ASIGNAR UN CLIENTE O UN CONDUCTOR A OTRA SUCURSAL.
+     Es lo que le da de dónde leer al reparto del import: mientras el cliente
+     no esté asignado, sus envíos caen en Buenos Aires. Arrastra el historial
+     entero, así que el modal dice qué se lleva puesto ANTES de apretar. -->
+<div class="modal-backdrop" id="modal-asignar-suc-backdrop" onclick="cerrarAsignarSucursal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:480px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-building"></i> Asignar a sucursal</span>
+      <button class="modal-close" onclick="cerrarAsignarSucursal()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:12px;color:var(--text-muted)">
+        <span id="masig-tipo">Cliente</span>:
+        <strong id="masig-quien" style="color:var(--text-primary);font-size:14px">&mdash;</strong>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">De <strong id="masig-desde">&mdash;</strong> a</label>
+        <select id="masig-destino" class="form-input" style="width:100%"></select>
+      </div>
+      <div class="alert alert-info" style="margin:0">
+        <i class="ic ic-alert"></i><div id="masig-aviso" style="min-width:0"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn" onclick="cerrarAsignarSucursal()">Cancelar</button>
+        <button class="btn btn-primary" id="masig-ok" onclick="confirmarAsignarSucursal()"><i class="ic ic-check"></i> Asignar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-sucursal-backdrop" onclick="_sucCerrarModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center;">
   <div class="modal" style="max-width:440px" onclick="event.stopPropagation()">
     <div class="modal-header">

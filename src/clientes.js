@@ -1119,6 +1119,12 @@ function verCardCliente(cod) {
         : '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;margin-right:auto" onclick="darDeBajaCliente(' + c.id + ')">Dar de baja</button>') +
       '<button class="btn btn-sm" style="color:var(--text-muted)" onclick="eliminarCliente(' + c.id + ')" title="Borrar del padrón. Solo sirve para un cliente cargado por error: si tiene envíos o liquidaciones, no se permite."><i class="ic ic-trash"></i></button>' +
       '<button class="btn btn-sm" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
+      // La sucursal del cliente es lo que decide a qué boca van SUS ENVÍOS al
+      // importar, así que se asigna desde su ficha y no desde una pantalla
+      // aparte: es un dato del cliente, como su período de facturación.
+      ((typeof puedeAsignarSucursal === 'function' && puedeAsignarSucursal())
+        ? '<button class="btn btn-sm" onclick="abrirAsignarSucursal(\'cliente\', ' + "'" + jsAttr(c.codigo || '') + "'" + ', ' + "'" + jsAttr(c.nombre || '') + "'" + ')" title="Sus envíos pasan a liquidarse en esa sucursal. Se lleva el historial."><i class="ic ic-building"></i> Sucursal</button>'
+        : '') +
       '<button class="btn btn-sm" onclick="editCliente(' + c.id + ')"><i class="ic ic-edit"></i> Editar datos</button>' +
     '</div>';
   document.getElementById('modal-backdrop').classList.add('open');
@@ -1475,6 +1481,13 @@ function _chipsNuevosClientes() {
       '<span>' + c.nombre + ' <span style="color:#8a6d00">· ' + c.envios + '</span></span>' +
       '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es otra cuenta de un cliente que ya está cargado: comparte su tarifario" onclick="vincularClienteReconocido(' + i + ')"><i class="ic ic-clip"></i> Vincular</button>' +
       '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente nuevo: se le carga su propio tarifario" onclick="agregarClienteReconocido(' + i + ')"><i class="ic ic-plus"></i> Agregar</button>' +
+      // El import entra siempre por Buenos Aires, así que un cliente de otra
+      // boca aparece ACÁ. Darlo de alta y mandarlo a su sucursal es un paso,
+      // no dos: si hubiera que acordarse de ir después a asignarlo, sus
+      // envíos seguirían cayendo en Buenos Aires sin que nada lo dijera.
+      (typeof puedeAsignarSucursal === 'function' && puedeAsignarSucursal()
+        ? '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente de otra sucursal: se da de alta y se asigna allá" onclick="agregarClienteEnOtraSucursal(' + i + ')"><i class="ic ic-building"></i> Otra sucursal</button>'
+        : '') +
     '</span>').join('');
 
   // El contenido va TODO dentro de un solo hijo: .alert es flex y cada hijo
@@ -1500,6 +1513,25 @@ function _chipsNuevosClientes() {
       (n > 1 ? '<div style="margin-top:10px"><button class="btn btn-sm" onclick="altaClientesFaltantes()">Agregar las ' + n + ' como clientes nuevos</button></div>' : '') +
     '</div>' +
   '</div>';
+}
+
+// Da de alta al cliente en la sucursal activa y lo manda a otra en el acto.
+// Son dos pasos de la base (crear acá, mover allá) porque RLS no deja crear
+// directamente una fila de la otra boca; para el operador es uno solo.
+async function agregarClienteEnOtraSucursal(i) {
+  const c = _cliNuevosReconocidos[i];
+  if (!c) return;
+  const cod = clienteKey(c.nombre);
+  try {
+    if (!(AppData.clientes || []).some(x => clienteKey(x.codigo) === cod)) {
+      await DB.insertRows('clientes', [{ nombre: c.nombre, codigo: cod, activo: true, periodo_dias: 7 }]);
+      await hydrateFromSupabase();
+    }
+  } catch (e) {
+    alert('No se pudo dar de alta al cliente: ' + (e && e.message || e));
+    return;
+  }
+  abrirAsignarSucursal('cliente', cod, c.nombre);
 }
 
 // Alta: abre el modal de cliente nuevo con el nombre y el código ya puestos.
