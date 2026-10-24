@@ -201,7 +201,18 @@ De paso: **`rendiciones` no estaba en `RT_PANTALLA_TABLAS`**, así que el panel 
 
 **EL AGUJERO QUE LA CABECERA NO TAPA: LAS FUNCIONES `SECURITY DEFINER`.** `reemplazar_registros` y `archivar_registros` **saltean RLS**, así que la policy no las protege. La primera borraba `where clave = any(claves)` a secas: **una importación hecha en Rosario se habría llevado los envíos de Buenos Aires que compartieran una clave** — y el borrado por clave es el camino de todos los días. La segunda borraba por fecha sin mirar la sucursal y copiaba 28 columnas, así que habría archivado envíos de la otra boca y los habría etiquetado con la sucursal de quien apretó el botón. Las dos llevan ahora el filtro, y en `archivar_registros` **la sucursal sale de LA FILA y no de quien archiva**. Medido al corregirlo: con la regla vieja, importar en Rosario una clave de Buenos Aires borraba 1 fila; con la nueva, 0. **Cualquier función `SECURITY DEFINER` que se agregue tiene que filtrar por sucursal a mano.**
 
-**TODA CLAVE ÚNICA LLEVA LA SUCURSAL** — 15 constraints, 11 índices únicos y la **clave primaria de `config`**, que es la clave del parámetro: sin eso las dos bocas compartirían los datos del emisor, los cortes y el % del supervisor de comisiones. La regla **no tiene excepciones a propósito**, aunque alguna clave hoy no pueda chocar (las que cuelgan de un `id`): una regla con excepciones es una que alguien va a aplicar mal.
+**TODA CLAVE ÚNICA LLEVA LA SUCURSAL** — 15 constraints, 11 índices únicos y las **claves primarias que asigna la APP**: la de `config` (la clave del parámetro: sin eso las dos bocas compartirían los datos del emisor, los cortes y el % del supervisor) y la de `panel_conductores`, que es `(sucursal, id)`.
+
+**LA REGLA SE APLICÓ CON UNA EXCEPCIÓN Y LA EXCEPCIÓN ESTABA MAL.** Se dejaron afuera las claves primarias por `id` razonando que "no pueden chocar". Para **48 de las 50** eso es cierto: son `identity`, las numera la base y nunca repite. Pero **`panel_conductores.id` es TEXT sin default y lo genera el propio panel** (`_proximoIdPanel` propone el primer `LH` libre mirando **solo lo que la sucursal activa ve**). Entonces Rosario proponía `LH00001`, `LH00002`… contra los de Buenos Aires, **que RLS le esconde**: el insert moría con `duplicate key value violates unique constraint "panel_conductores_pkey"` y **quedaban 0 de N filas**. O sea que **el panel de Rosario no se podía guardar NUNCA** — el aviso de `dbPush` hacía bien su trabajo (decía cuántas entraron y que no recargara), pero no había forma de que entrara ninguna. Bug real, reportado con captura: *"Quedaron 0 de 57 filas en la nube"*.
+
+**Lo que estaba mal era la clave, no el generador**: tiene que seguir mirando solo su sucursal, porque la otra no la ve. La forma de encontrar los que falten es preguntar por las PK que **no** son `identity`:
+```sql
+select t.relname, a.attname from pg_index i
+join pg_class t on t.oid=i.indrelid join unnest(i.indkey) k(attnum) on true
+join pg_attribute a on a.attrelid=t.oid and a.attnum=k.attnum
+where i.indisprimary and a.attidentity = '';   -- las que asigna la APP
+```
+Hoy devuelve `config` y `panel_conductores`, las dos ya con sucursal en su clave. **Una regla con excepciones es una que alguien va a aplicar mal** — y acá la aplicó mal quien la escribió.
 
 **REALTIME NO LLEVA LA CABECERA**, así que la policy lo deja pasar y llegan los cambios de las dos bocas. El filtro lo hace `_rtOnCambio`: un envío cargado en Rosario no tiene por qué hacer que Buenos Aires vuelva a bajar 86.000 filas, y un cambio aplicado suelto metería una fila ajena en memoria. **Una fila sin sucursal se deja pasar**: recargar de más es molesto, perderse un cambio es un número viejo en pantalla sin que nadie se entere.
 

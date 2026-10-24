@@ -2146,3 +2146,28 @@ create unique index if not exists rendiciones_envio_clave_key
 -- no una fila por persona; mover a alguien con meses pagados hace que esos
 -- cierres dejen de cuadrar, y el modal lo avisa.
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 24/10/2026 · panel_conductores: PRIMARY KEY (sucursal, id)
+--
+-- BUG REAL: el panel de Rosario NO SE PODIA GUARDAR NUNCA.
+--   "duplicate key value violates unique constraint panel_conductores_pkey"
+--   "Quedaron 0 de 57 filas en la nube"
+--
+-- panel_conductores.id es TEXT sin default: lo asigna la APP
+-- (_proximoIdPanel propone el primer LH libre mirando SOLO lo que la sucursal
+-- activa ve). Rosario proponia LH00001 contra los de Buenos Aires, que RLS le
+-- esconde. La clave era solo (id), global.
+--
+-- Al aplicar "toda clave unica lleva la sucursal" se habian dejado afuera las
+-- PK por id, razonando que no podian chocar. Para las 48 que son IDENTITY es
+-- cierto. Para esta no. Para encontrar las que falten:
+--   select t.relname, a.attname from pg_index i
+--   join pg_class t on t.oid=i.indrelid join unnest(i.indkey) k(attnum) on true
+--   join pg_attribute a on a.attrelid=t.oid and a.attnum=k.attnum
+--   where i.indisprimary and a.attidentity = '';
+-- Hoy: config y panel_conductores, las dos ya con sucursal en su clave.
+--
+-- Nadie apunta a panel_conductores con una FK, asi que el cambio no arrastro
+-- nada. Buenos Aires conservo sus 157 filas con sus mismos id.
+-- ───────────────────────────────────────────────────────────────────────
