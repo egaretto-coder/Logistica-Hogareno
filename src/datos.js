@@ -1259,28 +1259,61 @@ function filaRegistroNube(r) {
 // otras bocas, así que no puede resolverlo sola. Si la consulta falla se
 // devuelve vacío y el resumen sale como siempre: el reparto es información,
 // no una condición para dar por buena una carga que YA se guardó bien.
-async function _repartoPorSucursal(nuevos) {
+// LO QUE SE GUARDÓ EN OTRA SUCURSAL TIENE QUE SALIR DE ESTA PANTALLA. El
+// import entra por Buenos Aires y reparte, así que entre las filas recién
+// cargadas hay envíos que quedaron en Rosario — y si se quedan en `AppData`
+// los cuenta el Dashboard de Buenos Aires, los suma a sus liquidaciones y los
+// muestra en sus paneles hasta la próxima hidratación completa. Números de una
+// boca en la pantalla de la otra, que es exactamente lo que el aislamiento
+// existe para impedir.
+//
+// Devuelve además las filas de CADA lado, porque hay un segundo camino que las
+// necesita: los cobros en destino. `sincronizarCobros` inserta en
+// `rendiciones`, que toma la sucursal del DEFAULT —la activa—, así que un
+// cobro de un envío de Rosario se registraría como deuda de un chofer de
+// Buenos Aires. Los de la otra boca se dejan para que se registren desde allá,
+// que es lo que su propio panel ya ofrece ("Traer de los envíos").
+let ultimoRepartoImport = null;
+
+async function _repartoDeCarga(nuevos) {
+  const activa = (typeof sucursalActiva === 'function') ? sucursalActiva() : 'BA';
+  const vacio = { texto: '', mias: nuevos || [], ajenas: [], activa: activa };
   try {
-    if (!window.DB || typeof DB.sucursalDeClientes !== 'function') return '';
-    if (typeof sucursalesDisponibles !== 'function') return '';
-    const activa = (typeof sucursalActiva === 'function') ? sucursalActiva() : 'BA';
+    if (!window.DB || typeof DB.sucursalDeClientes !== 'function') return vacio;
     const cods = Array.from(new Set((nuevos || []).map(n => n.cliente_cod || '').filter(Boolean)));
-    if (!cods.length) return '';
+    if (!cods.length) return vacio;
     const mapa = await DB.sucursalDeClientes(cods);
-    const cuenta = new Map();
+    const cuenta = new Map(), mias = [], ajenas = [];
     (nuevos || []).forEach(n => {
       const s = mapa.get(n.cliente_cod || '') || activa;
       cuenta.set(s, (cuenta.get(s) || 0) + 1);
+      (s === activa ? mias : ajenas).push(n);
     });
     // Con una sola sucursal en juego no se dice nada: un aviso que sale
     // siempre y nunca cambia deja de leerse.
-    if (cuenta.size < 2) return '';
-    const txt = Array.from(cuenta.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([s, n]) => n + ' a ' + (typeof sucursalNombre === 'function' ? sucursalNombre(s) : s))
-      .join(' · ');
-    return ' (' + txt + ')';
-  } catch (e) { return ''; }
+    if (cuenta.size < 2) return vacio;
+    const nom = s => (typeof sucursalNombre === 'function' ? sucursalNombre(s) : s);
+    const txt = Array.from(cuenta.entries()).sort((a, b) => b[1] - a[1])
+      .map(([s, n]) => n + ' a ' + nom(s)).join(' · ');
+    return { texto: ' (' + txt + ')', mias: mias, ajenas: ajenas, activa: activa };
+  } catch (e) { return vacio; }
+}
+
+// Saca de la memoria las filas que se guardaron en otra sucursal. Se comparan
+// por IDENTIDAD (son los mismos objetos que el import acaba de meter en
+// AppData.records), no por id ni por clave: es lo único que no puede
+// confundir una fila con otra parecida.
+function _sacarDeMemoria(filas) {
+  if (!filas || !filas.length) return 0;
+  const fuera = new Set(filas);
+  const antes = (AppData.records || []).length;
+  AppData.records = (AppData.records || []).filter(r => !fuera.has(r));
+  const sacadas = antes - AppData.records.length;
+  if (sacadas) {
+    if (typeof invalidarLiquidaciones === 'function') invalidarLiquidaciones();
+    if (typeof invalidarIndiceCuentas === 'function') invalidarIndiceCuentas();
+  }
+  return sacadas;
 }
 
 // Última importación que no llegó a la nube (para el botón "Reintentar").
@@ -1332,7 +1365,11 @@ async function guardarImportacionEnNube(nuevos) {
     }
     nuevos.forEach((n, i) => { n.id = ids[i]; });
     importPendiente = null;
-    showToast('✅ ' + nuevos.length + ' registros guardados en la nube' + await _repartoPorSucursal(nuevos));
+    const reparto = await _repartoDeCarga(nuevos);
+    ultimoRepartoImport = reparto;
+    // Lo de la otra boca ya está guardado ALLÁ; acá tiene que desaparecer.
+    _sacarDeMemoria(reparto.ajenas);
+    showToast('✅ ' + nuevos.length + ' registros guardados en la nube' + reparto.texto);
     return true;
   } catch(e) {
     console.warn('guardarImportacionEnNube:', e);

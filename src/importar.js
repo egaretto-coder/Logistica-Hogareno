@@ -492,8 +492,22 @@ function processUpload() {
   // registros diarios eso no escala). El banner refleja el resultado.
   guardarImportacionEnNube(nuevos).then(ok => {
     const est = document.getElementById('upload-nube-estado');
+    // El reparto: cuántos envíos quedaron en cada boca. Los de otra sucursal
+    // ya salieron de la memoria de esta pantalla (los guardó allá), así que el
+    // resumen tiene que decirlo — si no, el operador ve "N registros" arriba y
+    // un total distinto abajo y no sabe cuál vale.
+    const rep = (typeof ultimoRepartoImport !== 'undefined' && ultimoRepartoImport) || null;
+    const ajenas = (rep && rep.ajenas) || [];
     if (est) est.innerHTML = ok
-      ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
+      ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>' +
+        (rep && rep.texto
+          ? ' <strong>Reparto:</strong>' + rep.texto.replace(/^ \(/, ' ').replace(/\)$/, '') + '.' +
+            (ajenas.length
+              ? ' <span style="opacity:.85">' + ajenas.length + ' no son de esta sucursal: se guardaron en la suya y salieron de esta pantalla. La base de ' +
+                (typeof sucursalNombre === 'function' ? sucursalNombre(rep.activa) : rep.activa) +
+                ' queda en <strong>' + AppData.records.length + '</strong> registros.</span>'
+              : '')
+          : '')
       : '<strong style="color:#b91c1c"><i class="ic ic-alert"></i> No se pudo guardar en la nube — usá el botón "Reintentar".</strong>';
     // Los cobros en destino se registran ACÁ, en la carga de todos los días.
     // Antes dependían de que alguien entrara al panel y apretara "Traer de los
@@ -504,7 +518,12 @@ function processUpload() {
     // apunta a un envío por su clave, y crearla contra un envío que no llegó a
     // la nube deja el cobro colgado de nada.
     if (!ok || typeof sincronizarCobros !== 'function') return;
-    sincronizarCobros(nuevos).then(res => {
+    // SOLO los de esta sucursal: `rendiciones` toma la sucursal del DEFAULT
+    // (la activa), así que el cobro de un envío de Rosario se registraría como
+    // deuda de un chofer de Buenos Aires. Los de la otra boca los ofrece su
+    // propio panel con "Traer de los envíos", que es para lo que está.
+    const deAca = (rep && rep.mias) || nuevos;
+    sincronizarCobros(deAca).then(res => {
       const c = document.getElementById('upload-cobros-estado');
       if (c && res.creados) c.innerHTML = '<strong style="color:#166534">' + res.creados + ' pendiente(s) de rendición creados.</strong>';
       if (res.creados && typeof renderRendiciones === 'function') renderRendiciones();
