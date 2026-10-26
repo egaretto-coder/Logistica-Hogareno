@@ -123,7 +123,13 @@ function _dcliBotonArmar(cod, rango) {
 async function dcliArmar(cod) {
   const rango = dcliRango();
   const liq = calcLiquidacionCliente(cod, rango);
-  if (!liq.totalEnvios) { alert('Este cliente no tiene envíos que facturen en la semana ' + rango.desde + ' → ' + rango.hasta + '.'); return; }
+  // El MISMO criterio que el PDF: una semana con solo cargos —o con solo
+  // viajes particulares— también emite liquidación. Con "sin envíos" a secas,
+  // el cliente que solo contrata viajes no podía cerrar la suya nunca.
+  if (!liq.totalEnvios && !(liq.cargos || []).length && !(liq.viajes || []).length) {
+    alert('Este cliente no tiene envíos, cargos ni viajes que facturen en el período ' + rango.desde + ' → ' + rango.hasta + '.');
+    return;
+  }
   // Las zonas sin tarifa se facturan en $0: conviene decidirlo antes de cerrar,
   // no después de que el operador haya mandado el PDF.
   if (liq.sinTarifa && !confirm('Ojo: ' + liq.sinTarifa + ' envío(s) están en zonas SIN tarifa de venta y se facturan en $0.\n\n' +
@@ -252,7 +258,18 @@ function renderDetalleCliente() {
   // Cargos que no vienen de un envío (colecta, viajes particulares, otros).
   const cargos = (typeof cargosDeSemana === 'function') ? cargosDeSemana(cod, semanaISO) : [];
   const totCargos = cargos.reduce((s, c) => s + _num(c.monto), 0);
-  const totCobrado = totEnvios + totCargos;
+  // VIAJES PARTICULARES. No viven en `registros`, así que no están en la tabla
+  // de arriba — pero se le FACTURAN igual y `calcLiquidacionCliente` los suma
+  // al total. Sin esto el panel donde se ARMA la liquidación mostraba un número
+  // distinto del que se factura: un viaje realizado para un cliente sin envíos
+  // en la semana daba "A facturar $0 · 0 envíos", que es indistinguible de que
+  // no haya nada que cobrar (bug real, reportado con captura). Es la misma
+  // lección que la etiqueta del selector de zona, que decía el precio de HOY
+  // sobre un envío de otro día: la liquidación estaba bien y el panel donde se
+  // revisa decía otra cosa.
+  const viajes = (typeof vpViajesDeSemana === 'function') ? vpViajesDeSemana(cod, semanaISO) : [];
+  const totViajes = viajes.reduce((s, v) => s + _num(v.venta), 0);
+  const totCobrado = totEnvios + totCargos + totViajes;
   // Gestos comerciales de la semana: cuántos y cuánto se bonificó.
   const anulados = detalle.filter(d => d.anulado);
   const totBonificado = anulados.reduce((s, d) => s + d.bonificado, 0);
@@ -357,7 +374,8 @@ function renderDetalleCliente() {
             contab.length + ' facturan · ' + clienteNZonas(cod) + ' zonas con tarifa' +
             (sinTarifa ? ' · ⚠ ' + sinTarifa + ' sin tarifa' : '') +
             (sinDim ? ' · ⚠ ' + sinDim + ' con condición sin precio' : '') +
-            (anulados.length ? ' · ' + anulados.length + ' bonificado(s) por ' + fmtPeso(totBonificado) : '') + '</div>' +
+            (anulados.length ? ' · ' + anulados.length + ' bonificado(s) por ' + fmtPeso(totBonificado) : '') +
+            (viajes.length ? ' · ' + viajes.length + ' viaje(s) particular(es) por ' + fmtPeso(totViajes) : '') + '</div>' +
         '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
           '<div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.04em">A facturar</div>' +
@@ -370,7 +388,9 @@ function renderDetalleCliente() {
       '<div class="metrics" style="padding:14px 16px 0">' +
         '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
           '<div class="metric-label">Se le cobra al cliente</div><div class="metric-value">' + fmtPeso(totCobrado) + '</div>' +
-          '<div class="metric-sub">' + contab.length + ' envíos facturables</div></div>' +
+          '<div class="metric-sub">' + contab.length + ' envíos facturables' +
+            (totCargos ? ' + ' + fmtPeso(totCargos) + ' de cargos' : '') +
+            (totViajes ? ' + ' + fmtPeso(totViajes) + ' de viajes' : '') + '</div></div>' +
         '<div class="metric-card"><div class="metric-ic"><i class="ic ic-box"></i></div>' +
           '<div class="metric-label">Envíos que facturan</div><div class="metric-value">' + contab.length + '</div>' +
           '<div class="metric-sub">de ' + detalle.length + ' de la semana</div></div>' +
@@ -407,10 +427,11 @@ function renderDetalleCliente() {
              // hizo pensar que la información se había borrado.
              : periodoFueraDeVentana(fechaISOde(rango.desde)) ? 'Esperando los envíos de este período…'
              : 'Sin envíos de este cliente en la semana') + '</td></tr>') +
-          _dcliFilasCargos(cargos, totEnvios, totCargos) + '</tbody>' +
+          _dcliFilasExtras(cargos, viajes, totEnvios, totCargos, totViajes) + '</tbody>' +
       '</table></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted)">' +
         '💡 Corregí la zona o el estado y el total se recalcula solo. Cuando esté listo, marcá la liquidación como lista para que el operador pueda descargarla.' +
+        (viajes.length ? ' Los <strong>viajes particulares</strong> se cargan y se corrigen en su propia pantalla.' : '') +
       '</div>' +
     '</div>';
 }
@@ -1156,11 +1177,32 @@ async function quitarCargoCliente(id) {
   } catch (e) { alert('No se pudo: ' + (e.message || e)); }
 }
 
-// Filas de los cargos al pie de la tabla. Van SIEMPRE visibles (no se pliegan
-// con los días ni se esconden con el buscador): son parte del total y si
-// quedaran escondidos la suma del encabezado no cerraría con lo que se ve.
-function _dcliFilasCargos(cargos, totEnvios, totCargos) {
-  if (!cargos || !cargos.length) return '';
+// Filas de lo que NO sale de un envío, al pie de la tabla: los cargos (colecta,
+// viaje sin conductor, otros) y los VIAJES PARTICULARES. Van SIEMPRE visibles
+// (no se pliegan con los días ni se esconden con el buscador): son parte del
+// total y si quedaran escondidos la suma del encabezado no cerraría con lo que
+// se ve.
+//
+// El viaje se MUESTRA pero no se edita acá: se carga y se corrige en Viajes
+// particulares, que es donde vive con su tarifario y con el conductor al que se
+// le paga. Un ✕ en esta fila borraría un servicio prestado —que además alguien
+// está cobrando— desde el panel que solo factura. El cargo sí lo tiene porque
+// se crea desde acá.
+function _dcliFilasExtras(cargos, viajes, totEnvios, totCargos, totViajes) {
+  cargos = cargos || []; viajes = viajes || [];
+  if (!cargos.length && !viajes.length) return '';
+  const filasViajes = viajes.map(v =>
+    '<tr style="background:var(--surface-0);box-shadow:inset 3px 0 0 #7c3aed">' +
+      '<td colspan="3" style="font-size:12px">' +
+        '<strong>Viaje particular</strong>' +
+        (v.fecha ? ' <span class="muted">· ' + String(v.fecha).replace(/</g, '&lt;') + '</span>' : '') +
+        ((typeof vpDetalleTxt === 'function' && vpDetalleTxt(v))
+          ? ' <span class="muted">· ' + vpDetalleTxt(v).replace(/</g, '&lt;') + '</span>' : '') +
+        '<div class="muted" style="font-size:10px">se carga en Viajes particulares</div>' +
+      '</td>' +
+      '<td style="font-size:11px" class="muted">no es un envío</td>' +
+      '<td class="mono" style="text-align:right"><strong>' + fmtPeso(_num(v.venta)) + '</strong></td>' +
+    '</tr>').join('');
   const filas = cargos.map(c =>
     '<tr style="background:var(--surface-0);box-shadow:inset 3px 0 0 #0e7490">' +
       '<td colspan="3" style="font-size:12px">' +
@@ -1175,14 +1217,19 @@ function _dcliFilasCargos(cargos, totEnvios, totCargos) {
         '<button class="btn btn-sm" style="margin-left:6px;padding:1px 5px;font-size:9.5px;border-color:#fca5a5;color:#b91c1c" ' +
         'title="Quitar este cargo" onclick="quitarCargoCliente(' + c.id + ')">✕</button></td>' +
     '</tr>').join('');
+  // El resumen nombra SOLO lo que hay: con un renglón en $0 para algo que el
+  // cliente no tiene, la línea deja de leerse.
+  const partes = ['Envíos ' + fmtPeso(totEnvios)];
+  if (cargos.length) partes.push('cargos ' + fmtPeso(totCargos));
+  if (viajes.length) partes.push('viajes ' + fmtPeso(_num(totViajes)));
   const resumen =
     '<tr style="background:var(--surface-0)">' +
       '<td colspan="4" style="text-align:right;font-size:11.5px" class="muted">' +
-        'Envíos ' + fmtPeso(totEnvios) + '  ·  cargos ' + fmtPeso(totCargos) + '</td>' +
+        partes.join('  ·  ') + '</td>' +
       '<td class="mono" style="text-align:right;font-weight:700;border-top:2px solid var(--border)">' +
-        fmtPeso(totEnvios + totCargos) + '</td>' +
+        fmtPeso(totEnvios + totCargos + _num(totViajes)) + '</td>' +
     '</tr>';
-  return filas + resumen;
+  return filas + filasViajes + resumen;
 }
 
 // ── ANULAR UN ENVÍO (gesto comercial) ───────────────────────────────────────

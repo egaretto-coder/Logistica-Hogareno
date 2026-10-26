@@ -252,6 +252,48 @@ function renderConductorDetail() {
   });
   const diasTrabajados = Array.from(resumenDia.entries()).filter(([, v]) => v.contab > 0).length;
 
+  // VIAJES PARTICULARES del período. No viven en `registros`, así que no están
+  // en la tabla — pero son trabajo que el conductor hizo y que SUMA a su
+  // liquidación por imputaciones, igual que el km de desvío y el recorrido
+  // especial. Sin esto, el administrativo revisaba su semana y el viaje no
+  // aparecía en ninguna parte: ni el día que lo hizo, ni el conductor que SOLO
+  // hace viajes, que mostraba "Sin recorridos del conductor en el período"
+  // (bug real, reportado con captura). El neto de su liquidación salía más alto
+  // que lo que este panel sabía explicar.
+  //
+  // Se muestra pero NO se suma a "Total del período": esa tarjeta es el BRUTO
+  // POR ENVÍOS, el mismo número que el bruto del PDF, y meterlo adentro haría
+  // que las dos lecturas dejen de coincidir. Mismo criterio que la tarjeta del
+  // Dashboard que deja el viaje afuera y lo DICE.
+  const _vpConductor = (typeof viajesDeConductor === 'function')
+    ? viajesDeConductor(cond, {
+        desde: document.getElementById('cond-fecha-desde')?.value || '',
+        hasta: document.getElementById('cond-fecha-hasta')?.value || ''
+      })
+    : { monto: 0, n: 0, detalle: [] };
+  const bloqueViajes = !_vpConductor.n ? '' :
+    '<div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface-0);box-shadow:inset 3px 0 0 #7c3aed">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;font-weight:700">' +
+        '<i class="ic ic-truck"></i> ' + _vpConductor.n + ' viaje' + (_vpConductor.n === 1 ? '' : 's') +
+          ' particular' + (_vpConductor.n === 1 ? '' : 'es') + ' en el período' +
+        '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(_vpConductor.monto) + '</strong>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">' +
+        'No son envíos y no están en la tabla, pero <strong>suman a su liquidación</strong>. ' +
+        'Se cargan y se corrigen en <strong>Viajes particulares</strong>.' +
+      '</div>' +
+      '<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">' +
+        _vpConductor.detalle.map(d =>
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11.5px">' +
+            '<span class="muted mono">' + String(d.fecha || '—').replace(/</g, '&lt;') + '</span>' +
+            '<span>' + String(d.cliente || '').replace(/</g, '&lt;') + '</span>' +
+            ((typeof vpDetalleTxt === 'function' && vpDetalleTxt(d))
+              ? '<span class="muted">' + vpDetalleTxt(d).replace(/</g, '&lt;') + '</span>' : '') +
+            '<strong style="margin-left:auto;font-family:monospace">' + fmtPeso(d.monto) + '</strong>' +
+          '</div>').join('') +
+      '</div>' +
+    '</div>';
+
   let _diaPrev = null;
   const filas = idxsVista.map(i => {
     const r = AppData.records[i];
@@ -331,8 +373,10 @@ function renderConductorDetail() {
         <div style="margin-left:auto;text-align:right">
           <div style="font-size:11px;opacity:0.85;text-transform:uppercase;letter-spacing:.04em">Total del período</div>
           <div style="font-size:24px;font-weight:700">${fmtPeso(total)}</div>
+          ${_vpConductor.n ? '<div style="font-size:11px;opacity:.9;margin-top:2px">+ ' + fmtPeso(_vpConductor.monto) + ' de ' + _vpConductor.n + ' viaje' + (_vpConductor.n === 1 ? '' : 's') + ' particular' + (_vpConductor.n === 1 ? '' : 'es') + '</div>' : ''}
         </div>
       </div>
+      ${bloqueViajes}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">
         <span>Los días arrancan cerrados — tocá uno para ver y corregir sus envíos.</span>
         <button class="btn btn-sm" style="margin-left:auto;padding:3px 8px;font-size:10.5px" onclick="abrirTodosLosDias(true)">Abrir todos</button>
@@ -346,7 +390,7 @@ function renderConductorDetail() {
             </tr>
           </thead>
           <tbody>
-            ${filas || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">${(condSoloIncompletos && !fCli && !fTrk && !fZona) ? '✅ No hay envíos sin zona ni precio en este período' : hayFiltro ? '🔎 Ningún envío coincide con el filtro (revisá cliente / tracking / zona, o tocá Limpiar)' : 'Sin recorridos del conductor en el período elegido'}</td></tr>`}
+            ${filas || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">${(condSoloIncompletos && !fCli && !fTrk && !fZona) ? '✅ No hay envíos sin zona ni precio en este período' : hayFiltro ? '🔎 Ningún envío coincide con el filtro (revisá cliente / tracking / zona, o tocá Limpiar)' : _vpConductor.n ? 'Sin envíos en el período — solo los viajes particulares de arriba' : 'Sin recorridos del conductor en el período elegido'}</td></tr>`}
           </tbody>
         </table>
       </div>
