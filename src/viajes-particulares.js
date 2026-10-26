@@ -41,6 +41,11 @@ const VP_MODALIDADES = {
   km:      { label: 'Por kilómetros',      unidad: 'km',      corto: 'km' },
   paradas: { label: 'Especial Transportes', unidad: 'paradas', corto: 'par.' }
 };
+// Ya no se puede ELEGIR el estado: todo viaje nace "realizado" (ver el modal).
+// El catálogo se conserva igual para poder NOMBRAR una fila que tenga otro
+// valor —una vieja, una tocada desde la base—: `vpContabiliza` la dejaría
+// fuera de la plata en silencio, y en este proyecto lo que no avisa es
+// exactamente lo que se pierde.
 const VP_ESTADOS = { pendiente: 'Programado', realizado: 'Realizado', cancelado: 'Cancelado' };
 // Qué puede hacer cada conductor. Un cadete de reparto es "flex"; los que hacen
 // estas rutas son "particular"; y hay quien hace las dos cosas.
@@ -356,7 +361,9 @@ function renderVpListado() {
   const costo = hechos.reduce((s, v) => s + _num(v.costo), 0);
   const venta = hechos.reduce((s, v) => s + _num(v.venta), 0);
   const margen = venta - costo;
-  const pend = lista.filter(v => v.estado === 'pendiente').length;
+  // Lo que NO cuenta: una fila con un estado que ya no se puede elegir. No
+  // debería existir ninguna, y por eso mismo se dice si aparece.
+  const fuera = lista.length - hechos.length;
   const q = (document.getElementById('vp-search')?.value || '').trim();
 
   const kpis = document.getElementById('vp-kpis');
@@ -367,7 +374,10 @@ function renderVpListado() {
       '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-route"></i></div>' +
         '<div class="metric-label">Viajes realizados' + (q ? ' (filtrado)' : '') + '</div>' +
         '<div class="metric-value">' + hechos.length + '</div>' +
-        '<div class="metric-sub">' + (pend ? pend + ' programado(s) sin hacer' : 'sin viajes programados') + '</div></div>' +
+        '<div class="metric-sub">' + (fuera
+          ? '<span style="color:#b45309">⚠ ' + fuera + ' no cuenta(n): su estado no es "Realizado"</span>'
+          : (hechos.length ? fmtPeso(Math.round(venta / hechos.length)) + ' por viaje' : 'sin viajes en el período')) +
+        '</div></div>' +
       '<div class="metric-card"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
         '<div class="metric-label">Se factura</div><div class="metric-value">' + fmtPeso(venta) + '</div>' +
         '<div class="metric-sub">entra en la liquidación de cada cliente</div></div>' +
@@ -406,7 +416,8 @@ function renderVpListado() {
         ? '<span class="badge" style="background:#fff7ed;color:#9a3412;border:1px solid #fdba74" title="Nadie de la empresa lo hizo: se le factura al cliente y no se le paga a nadie">sin conductor</span>'
         : v.conductor) + '</td>' +
       '<td>' + vpVehiculoLabel(v.vehiculo) +
-        '<div class="muted" style="font-size:10px">hasta ' + _num(v.tramo) + ' ' + vpUnidad(v.modalidad) +
+        '<div class="muted" style="font-size:10px">' +
+        (_num(v.tramo) > 0 ? 'hasta ' + _num(v.tramo) + ' ' + vpUnidad(v.modalidad) : 'a convenir') +
         (v.modalidad === 'paradas' ? ' · Especial' : '') + '</div></td>' +
       '<td style="font-size:11.5px">' + ([v.origen, v.destino].filter(Boolean).join(' → ') || '—') +
         (v.detalle ? '<div class="muted" style="font-size:10px">' + v.detalle + '</div>' : '') + '</td>' +
@@ -414,9 +425,13 @@ function renderVpListado() {
       '<td class="mono" style="text-align:right;font-weight:700">' + fmtPeso(_num(v.venta)) + '</td>' +
       '<td class="mono" style="text-align:right;color:' + (m < 0 ? '#b91c1c' : '#166534') + '">' + fmtPeso(m) +
         (pisado ? ' <span title="El costo o la venta no son los del tarifario a esa fecha: se escribieron a mano">✎</span>' : '') + '</td>' +
+      // El badge solo aparece si el estado NO es "realizado": como es el único
+      // que se puede cargar, uno que diga siempre lo mismo es ruido — y el día
+      // que aparezca otro, se ve.
       '<td><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">' +
-        '<span class="badge ' + (v.estado === 'realizado' ? 'badge-green' : 'badge-gray') + '">' +
-          (VP_ESTADOS[v.estado] || v.estado) + '</span>' +
+        (vpContabiliza(v) ? '' :
+          '<span class="badge badge-gray" title="Este estado ya no se puede cargar: el viaje no se paga ni se factura">' +
+            (VP_ESTADOS[v.estado] || v.estado) + '</span>') +
         '<button class="btn btn-sm" onclick="editarViaje(\'' + jsAttr(String(v.id)) + '\')" title="Editar"><i class="ic ic-edit"></i></button>' +
         '<button class="btn btn-sm" onclick="eliminarViaje(\'' + jsAttr(String(v.id)) + '\')" title="Eliminar" style="border-color:#fca5a5;color:#b91c1c"><i class="ic ic-trash"></i></button>' +
       '</div></td>' +
@@ -580,7 +595,6 @@ function abrirViajeModal() {
   _vpEl('mvp-origen').value = '';
   _vpEl('mvp-destino').value = '';
   _vpEl('mvp-detalle').value = '';
-  _vpEl('mvp-estado').value = 'realizado';
   _vpEl('mvp-costo').value = '';
   _vpEl('mvp-venta').value = '';
   _vpPoblarClientes('');
@@ -600,7 +614,6 @@ function editarViaje(id) {
   _vpEl('mvp-origen').value = v.origen || '';
   _vpEl('mvp-destino').value = v.destino || '';
   _vpEl('mvp-detalle').value = v.detalle || '';
-  _vpEl('mvp-estado').value = v.estado || 'realizado';
   _vpPoblarClientes(clienteKey(v.cliente_cod));
   _vpPoblarConductores(v.conductor || '');
   vpPintarTramos(_num(v.tramo));
@@ -736,16 +749,22 @@ async function guardarViajeModal() {
   const medida = _num(_vpVal('mvp-medida'));
   const costo = _num(_vpVal('mvp-costo'));
   const venta = _num(_vpVal('mvp-venta'));
-  const estado = _vpVal('mvp-estado') || 'realizado';
+  // Todo viaje nace realizado: el selector se sacó porque el viaje se carga
+  // después de hacerlo. Al EDITAR se conserva el estado que la fila tenga, que
+  // es el único modo en que puede haber uno distinto.
+  const previoEstado = vpEditId != null ? String((vpViajePorId(vpEditId) || {}).estado || '') : '';
+  const estado = previoEstado || 'realizado';
 
-  if (venta <= 0 && estado !== 'cancelado') {
+  // Las tres confirmaciones ya no tienen excusa para no salir: antes
+  // "cancelado" las salteaba, que lo convertía en un modo "no me avises".
+  if (venta <= 0) {
     if (!confirm('El viaje se factura en $0: al cliente no se le cobra nada.\n\n¿Guardar igual?')) return;
   }
-  if (!conductor && estado !== 'cancelado') {
+  if (!conductor) {
     if (!confirm('Sin conductor asignado NO se le paga a nadie.\n\n' +
       'Es lo correcto si el viaje lo hizo alguien de afuera: al cliente se le factura igual.\n\n¿Guardar así?')) return;
   }
-  if (venta < costo && estado !== 'cancelado') {
+  if (venta < costo) {
     if (!confirm('Queda a PÉRDIDA: se le pagan ' + fmtPeso(costo) + ' al conductor y se le cobran ' +
       fmtPeso(venta) + ' al cliente.\n\n¿Guardar igual?')) return;
   }

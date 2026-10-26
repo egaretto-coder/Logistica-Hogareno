@@ -2283,18 +2283,17 @@
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
 
+      <!-- SIN SELECTOR DE ESTADO: el viaje se carga DESPUÉS de hacerlo, así que
+           todo viaje nace "realizado". Lo decidió el negocio —"si se agrega es
+           porque se realizó"— y los dos estados que estaban eran opciones que
+           nadie podía necesitar en un ALTA: "Programado" solo servía si el
+           viaje se cargaba antes de hacerlo, y "Cancelado" no hacía nada que
+           el botón de borrar de la tabla no hiciera igual. Ver el módulo en
+           CLAUDE.md. -->
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div class="form-group" style="margin:0;flex:1;min-width:150px">
+        <div class="form-group" style="margin:0;flex:0 0 220px;min-width:150px">
           <label class="form-label"><i class="ic ic-calendar"></i> Fecha del viaje</label>
           <input type="date" id="mvp-fecha" class="form-input" style="width:100%" onchange="vpCambioVehiculo()">
-        </div>
-        <div class="form-group" style="margin:0;flex:1;min-width:150px">
-          <label class="form-label">Estado</label>
-          <select id="mvp-estado" class="form-input" style="width:100%">
-            <option value="realizado">Realizado — se paga y se factura</option>
-            <option value="pendiente">Programado — todavía no se hizo</option>
-            <option value="cancelado">Cancelado — no se paga ni se factura</option>
-          </select>
         </div>
       </div>
 
