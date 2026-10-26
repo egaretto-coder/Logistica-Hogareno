@@ -923,7 +923,11 @@ function renderClientes() {
     const cod = clienteKey(c.codigo);
     const nz = clienteNZonas(cod);
     const act = porCod.get(cod);
-    const liq = act ? calcLiquidacionCliente(cod, rango) : null;
+    // El de SOLO VIAJES no tiene envíos, así que sin esto la tarjeta no
+    // calculaba nada y mostraba la semana vacía — justamente el cliente del
+    // que hay que poder ver cuánto se le factura.
+    const sv = clienteSoloViajes(c);
+    const liq = (act || sv) ? calcLiquidacionCliente(cod, rango) : null;
     const dato = (etq, val) =>
       '<div><span style="font-size:10px;color:var(--text-muted);display:block">' + etq + '</span>' +
       '<span style="font-size:12px;font-weight:600">' + val + '</span></div>';
@@ -941,6 +945,9 @@ function renderClientes() {
                     : 'background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe"') + '>' + cod +
                   (idsPendientes.has(c.id) ? ' ⚠' : '') + '</span> '
                 : '<span style="color:#b91c1c">sin código</span> ') +
+              (sv ? '<span class="tag" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-size:9.5px" ' +
+                'title="Solo contrata viajes particulares: se cotizan con su propia tabla, no con el tarifario por zona">' +
+                '<i class="ic ic-truck"></i> solo viajes</span> ' : '') +
               // Las otras cuentas del mismo cliente, para que se vea que su
               // tarifario cubre todas y se puedan separar si se unieron mal.
               cuentasDeCliente(cod).map(a =>
@@ -962,17 +969,24 @@ function renderClientes() {
           : '') +
 
         '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border)">' +
-          dato('Zonas con tarifa', nz ? nz : '<span style="color:#b45309">ninguna</span>') +
+          dato('Zonas con tarifa', nz ? nz
+            : (sv ? '<span class="muted" style="font-weight:500" title="No usa el tarifario por zona: sus viajes se cotizan con la tabla de Viajes particulares">no usa</span>'
+                  : '<span style="color:#b45309">ninguna</span>')) +
           // Desde cuándo rige la lista que se le está aplicando: es lo primero que
           // se pregunta el que factura cuando entra un aumento.
           dato('Lista de precios', (function(){
+            // Al de solo viajes no se le aplica ninguna lista: "desde —" no
+            // dice nada y hace pensar que le falta cargar algo.
+            if (sv && !nz) return '<span class="muted" style="font-weight:500" title="Sus viajes se cotizan con la tabla de Viajes particulares">no usa</span>';
             const u = ultimaListaPreciosTxt(cod);
             return (u.original
                 ? '<span title="Nunca se le cargó un aumento: rige la lista con la que se dio de alta">original</span>'
                 : 'desde ' + u.txt) +
               (u.sub ? '<div style="font-size:10px;font-weight:400;color:#b45309">' + u.sub + '</div>' : '');
           })()) +
-          dato('Envíos esta semana', act ? act.envios : '—') +
+          (sv
+            ? dato('Viajes esta semana', (liq && liq.viajes) ? liq.viajes.length : '—')
+            : dato('Envíos esta semana', act ? act.envios : '—')) +
           (liq ? dato('Se factura', fmtPeso(liq.total)) : '') +
 
         '</div>' +
@@ -1076,7 +1090,9 @@ function verCardCliente(cod) {
     '</div>' +
 
     '<div style="display:flex;flex-wrap:wrap;gap:14px;padding:12px 0;border-top:1px solid var(--border)">' +
-      dato('Zonas con tarifa', nz ? String(nz) : '<span style="color:#b45309">ninguna</span>') +
+      dato('Zonas con tarifa', nz ? String(nz)
+        : (clienteSoloViajes(c) ? '<span class="muted" style="font-weight:500" title="No usa el tarifario por zona: sus viajes se cotizan con la tabla de Viajes particulares">no usa</span>'
+                                : '<span style="color:#b45309">ninguna</span>')) +
       dato('Lista de precios', (function(){
         const u = ultimaListaPreciosTxt(k);
         // El historial va ACÁ y no en el pie de la ficha: la pregunta nace
@@ -1099,6 +1115,12 @@ function verCardCliente(cod) {
       ' con condición sin precio de venta — se facturan con la tarifa de la zona</div>' : '') +
     (liq.sinTarifa ? '<div style="font-size:11px;color:#b45309;padding:4px 0"><i class="ic ic-alert"></i> ' + liq.sinTarifa +
       ' envío(s) en zonas sin tarifa — se facturan en $0</div>' : '') +
+    (clienteSoloViajes(c)
+      ? '<div style="margin-top:10px;padding:9px 12px;border-radius:8px;background:#f5f3ff;border:1px solid #ddd6fe;font-size:11.5px;color:#5b21b6">' +
+        '<strong><i class="ic ic-truck"></i> Cliente de solo viajes particulares.</strong> No usa el tarifario por zona: sus viajes se cotizan ' +
+        'con la tabla de Viajes particulares y se le facturan igual. Si alguna vez le entra un envío, el panel vuelve a pedirle tarifario ' +
+        '—ese envío se factura por zona—.</div>'
+      : '') +
     (c.obs ? '<div style="font-size:12px;color:var(--text-secondary);padding:10px 0;border-top:1px solid var(--border)">📝 ' + c.obs + '</div>' : '') +
 
     (c.activo === false && (c.fecha_baja || c.motivo_baja)
@@ -1119,6 +1141,14 @@ function verCardCliente(cod) {
         : '<button class="btn btn-sm" style="border-color:#fca5a5;color:#b91c1c;margin-right:auto" onclick="darDeBajaCliente(' + c.id + ')">Dar de baja</button>') +
       '<button class="btn btn-sm" style="color:var(--text-muted)" onclick="eliminarCliente(' + c.id + ')" title="Borrar del padrón. Solo sirve para un cliente cargado por error: si tiene envíos o liquidaciones, no se permite."><i class="ic ic-trash"></i></button>' +
       '<button class="btn btn-sm" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
+      // Una vez marcado, el cliente sale del aviso del panel: este es el único
+      // lugar estable desde donde volver atrás.
+      '<button class="btn btn-sm"' + (clienteSoloViajes(c) ? ' style="border-color:#c4b5fd;color:#6d28d9"' : '') +
+        ' onclick="marcarClienteSoloViajes(' + c.id + ', ' + (clienteSoloViajes(c) ? 'false' : 'true') + ')" ' +
+        'title="' + (clienteSoloViajes(c)
+          ? 'Vuelve a pedirle tarifario por zona'
+          : 'Solo contrata viajes particulares: deja de pedirle tarifario por zona') + '">' +
+        '<i class="ic ic-truck"></i> ' + (clienteSoloViajes(c) ? 'Ya no es solo viajes' : 'Solo viajes') + '</button>' +
       // La sucursal del cliente es lo que decide a qué boca van SUS ENVÍOS al
       // importar, así que se asigna desde su ficha y no desde una pantalla
       // aparte: es un dato del cliente, como su período de facturación.
@@ -1601,6 +1631,9 @@ function clientesPendientesCodigo() {
   const sabemos = hayEnviosConCodigo();
   const cods = new Set(clientesDeRegistros().map(c => clienteKey(c.cod)));
   return (AppData.clientes || []).filter(c => {
+    // El que solo contrata viajes no tiene tarifario que aplicar, así que no
+    // tener envíos con su nombre es lo esperable y no un pendiente.
+    if (clienteSoloViajes(c)) return false;
     const cod = clienteKey(c.codigo);
     if (!cod) return true;
     // Sin recorridos cargados no se puede saber: vale la marca que dejó el import.
@@ -1736,6 +1769,62 @@ async function repararTarifasSinCodigo() {
     alert('No se pudo reparar: ' + (e.message || e));
   }
 }
+// ── El cliente que SOLO contrata viajes particulares ───────────────────────
+// Un viaje se cotiza a un valor fijo de tabla y NO usa el tarifario por zona,
+// así que un cliente que solo contrata viajes no tiene por qué tener uno. Los
+// dos avisos del panel se lo estaban pidiendo igual —"no tiene tarifario
+// cargado" y "no tiene ningún envío con ese nombre"— y encima le ofrecían
+// **Vincular**, que es peor que no hacer nada: lo fusionaría con la ficha de
+// otro cliente. Caso real: DISTRIBUIDORA CENTRAL, cero envíos en toda la base
+// y un viaje particular.
+//
+// LA MARCA NO TAPA PLATA, y esa es la parte que la hace aceptable: vale
+// mientras el cliente no tenga un solo envío. Si aparece uno, ese envío se
+// facturaría en $0 —el tarifario SÍ hace falta— y el aviso vuelve diciendo que
+// la marca quedó vieja. Mismo criterio que el corte del control de cobros: una
+// marca puede callar lo que está cerrado, nunca lo que todavía mueve plata.
+// Por eso tampoco se puede poner sobre un cliente que ya tiene envíos.
+function clienteSoloViajes(c) { return !!(c && c.solo_viajes); }
+
+// Cuántos envíos facturables tiene un cliente, por su código canónico.
+function _enviosDeCliente(cod) {
+  const k = clienteCodCanonico(clienteKey(cod));
+  let n = 0;
+  (AppData.records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;
+    if (clienteCodDeRegistro(r) === k) n++;
+  });
+  return n;
+}
+
+async function marcarClienteSoloViajes(id, valor) {
+  const c = (AppData.clientes || []).find(x => x.id === id);
+  if (!c) { alert('No se encontró ese cliente.'); return; }
+  const poner = valor !== false;
+  if (poner) {
+    // Si ya tiene envíos, la marca no serviría para nada: esos envíos se
+    // facturan por zona y sin tarifario salen en $0. Decirlo es mejor que
+    // aceptarla y que el aviso vuelva solo, sin que se entienda por qué.
+    const n = _enviosDeCliente(c.codigo);
+    if (n) {
+      alert(c.nombre + ' tiene ' + n.toLocaleString('es-AR') + ' envío(s) cargados, así que no es un cliente de solo viajes.\n\n' +
+        'Esos envíos se facturan por zona y sin tarifario salen en $0: cargale su lista de precios, o vinculalo con el cliente que ya la tiene.');
+      return;
+    }
+    if (!confirm('Marcar a ' + c.nombre + ' como cliente de SOLO VIAJES PARTICULARES.\n\n' +
+      'Deja de pedirle tarifario por zona: sus viajes se cotizan con la tabla de Viajes particulares y se le facturan igual.\n\n' +
+      'Si en algún momento le entra un envío, el aviso vuelve solo — ese envío sí necesita tarifario.')) return;
+  }
+  try {
+    await DB.updateWhere('clientes', 'id', id, { solo_viajes: poner });
+    c.solo_viajes = poner;
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    showToast(poner ? '✅ ' + c.nombre + ' queda como cliente de solo viajes'
+                    : '✅ ' + c.nombre + ' vuelve a necesitar tarifario');
+    renderClientes();
+  } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); }
+}
+
 function clienteTieneTarifario(cod, conPrecio) {
   const k = clienteKey(cod);
   return !!k && (conPrecio || _codigosConTarifario()).has(k);
@@ -1754,8 +1843,14 @@ function clientesSinTarifario() {
   return activos.filter(c => !clienteTieneTarifario(c.codigo, conPrecio)).map(c => ({
     id: c.id, cod: clienteKey(c.codigo), nombre: c.nombre,
     envios: envios.get(clienteCodCanonico(clienteKey(c.codigo))) || 0,
+    soloViajes: clienteSoloViajes(c),
     parecido: _clienteParecidoConTarifario(c, conTarifario)
-  })).sort((a, b) => b.envios - a.envios || String(a.nombre).localeCompare(String(b.nombre)));
+  }))
+    // El marcado como "solo viajes" sale del aviso MIENTRAS no tenga envíos: no
+    // le falta nada. Con envíos vuelve, porque entonces sí se están facturando
+    // en $0 — la marca no puede callar plata que se está moviendo.
+    .filter(x => !(x.soloViajes && !x.envios))
+    .sort((a, b) => b.envios - a.envios || String(a.nombre).localeCompare(String(b.nombre)));
 }
 
 // El cliente CON tarifario que más se parece por nombre ("PINTURERIAS" ≈
@@ -1782,16 +1877,28 @@ function _avisoSinTarifario(lista) {
     '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;color:#1f2937;border:1px solid #fca5a5;border-radius:8px;padding:4px 6px 4px 10px;font-size:12px;white-space:nowrap">' +
       '<span class="conductor-avatar" style="background:' + avatarColor(c.nombre) + ';width:22px;height:22px;font-size:9px">' + initials(c.nombre) + '</span>' +
       '<span>' + c.nombre + ' <span style="color:#991b1b">· ' + (c.envios ? c.envios.toLocaleString('es-AR') + ' envío' + (c.envios === 1 ? '' : 's') : 'sin envíos') + '</span>' +
+        // Si está marcado "solo viajes" y aun así aparece acá, es porque le
+        // entraron envíos: la marca quedó vieja y hay que decir ESO, no
+        // repetir el pedido genérico de tarifario.
+        (c.soloViajes ? ' <span style="color:#b45309" title="Está marcado como cliente de solo viajes, pero le entraron envíos: esos se facturan por zona">· marcado solo viajes</span>' : '') +
         (c.parecido ? ' <span style="color:#6b7280" title="Tiene tarifario y el nombre es casi igual">· ¿es ' + c.parecido.nombre + '?</span>' : '') + '</span>' +
       '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es un cliente propio: cargale su lista de precios" onclick="openTarifasCliente(' + c.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
       '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Es el mismo cliente que otro que ya tiene tarifario" onclick="vincularSinTarifario(' + c.id + ')"><i class="ic ic-clip"></i> Vincular</button>' +
+      // La tercera salida: NO le falta nada, solo contrata viajes particulares.
+      // Solo se ofrece a los que no tienen envíos; al que ya está marcado se le
+      // ofrece lo contrario, que es lo que su caso necesita.
+      (c.soloViajes
+        ? '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Ya no es un cliente de solo viajes: sacarle la marca" onclick="marcarClienteSoloViajes(' + c.id + ', false)"><i class="ic ic-x"></i> Ya no</button>'
+        : (c.envios ? '' :
+          '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px" title="Solo contrata viajes particulares: se cotizan con su propia tabla y no necesita tarifario por zona" onclick="marcarClienteSoloViajes(' + c.id + ', true)"><i class="ic ic-truck"></i> Solo viajes</button>')) +
     '</span>').join('');
   return '<div class="alert" style="margin:0 0 12px;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;padding:12px 16px">' +
     '<i class="ic ic-alert"></i><div style="min-width:0;flex:1">' +
       '<div style="font-weight:600;margin-bottom:4px">' + n + (n === 1 ? ' cliente no tiene' : ' clientes no tienen') + ' tarifario cargado' +
         (envios ? ' — ' + envios.toLocaleString('es-AR') + ' envío' + (envios === 1 ? ' se está' : 's se están') + ' facturando en $0' : '') + '</div>' +
       '<div style="font-size:12px;margin-bottom:10px">Decidí uno por uno: <strong>Tarifario</strong> si es un cliente propio y hay que cargarle su lista de precios; ' +
-        '<strong>Vincular</strong> si es el mismo cliente que otro que ya tiene tarifario, cargado con otro nombre: quedan en una sola ficha. ' +
+        '<strong>Vincular</strong> si es el mismo cliente que otro que ya tiene tarifario, cargado con otro nombre: quedan en una sola ficha; ' +
+        '<strong>Solo viajes</strong> si no usa el servicio de envíos y solo contrata viajes particulares, que se cotizan con su propia tabla. ' +
         '<button class="btn btn-sm" style="margin-left:6px" onclick="toggleSoloSinTarifario()">' +
         (cliSoloSinTarifario ? 'Ver todos' : (n === 1 ? 'Ver el que no tiene' : 'Ver los ' + n + ' sin tarifario')) + '</button></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto">' + chips +

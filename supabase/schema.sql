@@ -2171,3 +2171,22 @@ create unique index if not exists rendiciones_envio_clave_key
 -- Nadie apunta a panel_conductores con una FK, asi que el cambio no arrastro
 -- nada. Buenos Aires conservo sus 157 filas con sus mismos id.
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 26/10/2026 · clientes.solo_viajes
+--
+-- El cliente que SOLO contrata VIAJES PARTICULARES. Un viaje se cotiza a
+-- valor fijo de tabla (viaje_tarifas) y NO usa el tarifario por zona, asi que
+-- ese cliente no tiene por que tener uno. Los dos avisos del Panel Clientes
+-- -"no tiene tarifario cargado" y "no tiene ningun envio con ese nombre"- se
+-- lo pedian igual, y le ofrecian Vincular, que lo fusionaria con la ficha de
+-- otro cliente. Caso real: DISTRIBUIDORA CENTRAL, 0 envios en toda la base.
+--
+-- LA MARCA NO TAPA PLATA: la app la respeta mientras el cliente no tenga un
+-- solo envio. Con un envio, ese envio se factura por zona y sin tarifario
+-- sale en $0, asi que el aviso vuelve. Tampoco se puede poner sobre un
+-- cliente que ya tiene envios.
+--
+-- alter table public.clientes
+--   add column if not exists solo_viajes boolean not null default false;
+-- ───────────────────────────────────────────────────────────────────────

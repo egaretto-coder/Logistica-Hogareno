@@ -525,6 +525,8 @@ async function _hydrateFromSupabaseReal(opts) {
     periodo_dias: _num(c.periodo_dias) || 7,
     periodo_desde: c.periodo_desde ? String(c.periodo_desde).slice(0, 10) : '',
     activo: c.activo !== false,
+    // Solo contrata VIAJES PARTICULARES: no necesita tarifario por zona.
+    solo_viajes: c.solo_viajes === true,
     fecha_baja: String(c.fecha_baja || '').slice(0, 10), motivo_baja: c.motivo_baja || ''
   }));
   AppData.clienteTarifas = (data.cliente_tarifas || []).map(t => ({
