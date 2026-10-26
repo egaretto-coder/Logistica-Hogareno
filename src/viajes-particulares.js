@@ -583,9 +583,6 @@ function abrirViajeModal() {
   _vpEl('mvp-estado').value = 'realizado';
   _vpEl('mvp-costo').value = '';
   _vpEl('mvp-venta').value = '';
-  _vpEl('mvp-nuevo-wrap').style.display = 'none';
-  _vpEl('mvp-nuevo-nombre').value = '';
-  _vpEl('mvp-nuevo-cod').value = '';
   _vpPoblarClientes('');
   _vpPoblarConductores('');
   vpCambioVehiculo();
@@ -604,7 +601,6 @@ function editarViaje(id) {
   _vpEl('mvp-destino').value = v.destino || '';
   _vpEl('mvp-detalle').value = v.detalle || '';
   _vpEl('mvp-estado').value = v.estado || 'realizado';
-  _vpEl('mvp-nuevo-wrap').style.display = 'none';
   _vpPoblarClientes(clienteKey(v.cliente_cod));
   _vpPoblarConductores(v.conductor || '');
   vpPintarTramos(_num(v.tramo));
@@ -620,13 +616,6 @@ function cerrarViajeModal(e) {
     _vpEl('modal-viaje-backdrop').style.display = 'none';
     vpEditId = null;
   }
-}
-
-function vpToggleClienteNuevo() {
-  const w = _vpEl('mvp-nuevo-wrap');
-  const abierto = w.style.display !== 'none';
-  w.style.display = abierto ? 'none' : '';
-  if (!abierto) { _vpEl('mvp-cliente').value = ''; _vpEl('mvp-nuevo-nombre').focus(); }
 }
 
 // Al cambiar de vehículo o modalidad se repueblan los tramos: Especial
@@ -733,22 +722,12 @@ async function guardarViajeModal() {
   if (!iso) { alert('La fecha del viaje es obligatoria.'); return; }
   const fecha = isoToDMY(iso);
 
-  // Cliente: uno existente o uno nuevo que se da de alta acá mismo.
-  let cod = clienteKey(_vpVal('mvp-cliente'));
-  let nombre = cod ? clienteNombreDe(cod) : '';
-  let crearCliente = null;
-  if (_vpEl('mvp-nuevo-wrap').style.display !== 'none') {
-    const nn = _vpVal('mvp-nuevo-nombre').trim();
-    if (!nn) { alert('Escribí el nombre del cliente nuevo.'); return; }
-    const nc = clienteKey(_vpVal('mvp-nuevo-cod').trim() || nn);
-    if ((AppData.clientes || []).some(c => clienteKey(c.codigo) === nc)) {
-      alert('Ya existe un cliente con el código ' + nc + '. Elegilo de la lista en vez de crearlo de nuevo.');
-      return;
-    }
-    cod = nc; nombre = nn;
-    crearCliente = { nombre: nn, codigo: nc, activo: true, periodo_dias: 7 };
-  }
-  if (!cod) { alert('Elegí el cliente, o cargá uno nuevo.'); return; }
+  // El cliente SE ELIGE: el alta vive en Panel Clientes. Ver el comentario del
+  // modal — un alta desde acá nace sin CUIT, sin condición de IVA, sin
+  // tarifario y sin período, y abre un segundo camino al mismo padrón.
+  const cod = clienteKey(_vpVal('mvp-cliente'));
+  const nombre = cod ? clienteNombreDe(cod) : '';
+  if (!cod) { alert('Elegí el cliente.\n\nSi no está en la lista, hay que darlo de alta en Panel Clientes: ahí se le cargan el CUIT, la condición frente al IVA y su período de facturación.'); return; }
 
   const conductor = _vpVal('mvp-conductor').trim();
   const vehiculo = _vpVal('mvp-vehiculo');
@@ -793,17 +772,6 @@ async function guardarViajeModal() {
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
   try {
     if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
-    if (crearCliente) {
-      try {
-        const c = await DB.insertRow('clientes', crearCliente);
-        AppData.clientes.push(Object.assign({ id: c && c.id }, crearCliente));
-        if (typeof invalidarIndiceCliTarifas === 'function') invalidarIndiceCliTarifas();
-      } catch (e) {
-        console.warn('alta de cliente desde viajes', e);
-        alert('No se pudo dar de alta al cliente: ' + (e.message || e) + '\nEl viaje no se guardó.');
-        return;
-      }
-    }
     const previo = vpEditId != null ? vpViajePorId(vpEditId) : null;
     if (vpEditId != null && !previo) {
       alert('El viaje que estabas editando ya no existe: lo borró o lo cambió otra sesión.');

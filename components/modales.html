@@ -2298,26 +2298,22 @@
         </div>
       </div>
 
-      <!-- CLIENTE. Puede ser uno existente o uno nuevo: el negocio va a hacer
-           viajes para los dos. El nuevo se da de alta en el maestro, así que
-           después tiene ficha, período y liquidación como cualquier otro. -->
+      <!-- CLIENTE. SE ELIGE, NO SE CREA. El modal tenía un "+ Cliente nuevo"
+           que daba de alta en el maestro desde acá, y el alta de un cliente no
+           es un campo de este formulario: la ficha nace sin CUIT, sin
+           condición de IVA, sin contacto, sin tarifario y sin su período de
+           facturación, y el que la crea no está mirando nada de eso. Peor, es
+           un SEGUNDO camino para el mismo padrón: el mismo cliente termina
+           cargado dos veces con dos códigos, que es como se parte la
+           facturación (lo que ya resuelven a mano las cuentas vinculadas).
+           El alta vive en Panel Clientes, que pide esos datos y avisa de los
+           duplicados. Acá solo se elige, y si no está, se dice dónde darlo
+           de alta en vez de ofrecer el atajo que crea el problema. -->
       <div class="form-group" style="margin:0">
-        <label class="form-label"><i class="ic ic-building"></i> Cliente
-          <button type="button" class="btn btn-sm" style="margin-left:8px" onclick="vpToggleClienteNuevo()">+ Cliente nuevo</button>
-        </label>
+        <label class="form-label"><i class="ic ic-building"></i> Cliente</label>
         <select id="mvp-cliente" class="form-input" style="width:100%"></select>
-        <div id="mvp-nuevo-wrap" style="display:none;margin-top:8px;padding:10px;border:1px dashed var(--border);border-radius:8px">
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <div class="form-group" style="margin:0;flex:2;min-width:180px">
-              <label class="form-label">Nombre del cliente nuevo</label>
-              <input type="text" id="mvp-nuevo-nombre" class="form-input" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" placeholder="RAZÓN SOCIAL O NOMBRE DE FANTASÍA">
-            </div>
-            <div class="form-group" style="margin:0;flex:1;min-width:130px">
-              <label class="form-label">Código (opcional)</label>
-              <input type="text" id="mvp-nuevo-cod" class="form-input" style="width:100%;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" placeholder="= al nombre">
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Se da de alta en el maestro de clientes con ciclo semanal. Si además va a tener envíos, revisá que el código coincida con el del listado.</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+          ¿No está en la lista? Se da de alta en <strong>Panel Clientes</strong>, con su CUIT, su condición frente al IVA y su período de facturación.
         </div>
       </div>
 
