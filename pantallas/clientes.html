@@ -7,6 +7,7 @@
 
         <div class="tabs" id="cli-tabs" style="margin-bottom:14px">
           <button class="tab active" id="cli-btn-activos" onclick="switchClientesTab('activos')"><i class="ic ic-building"></i> Clientes</button>
+          <button class="tab" id="cli-btn-actual" onclick="switchClientesTab('actualizaciones')" title="Desde cuándo rige la lista de precios de cada cliente"><i class="ic ic-trend"></i> Actualizaciones<span id="cli-actual-count"></span></button>
           <button class="tab" id="cli-btn-bajas" onclick="switchClientesTab('bajas')"><i class="ic ic-user"></i> Bajas<span id="cli-bajas-count"></span></button>
         </div>
 
@@ -39,6 +40,29 @@
 
           <div id="cli-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
         </div><!-- /cli lista -->
+
+        <!-- ══════════ TAB: ACTUALIZACIONES DE PRECIOS ══════════ -->
+        <!-- Un ajuste general se carga cliente por cliente, así que al que se
+             saltea no lo delata nada: su lista vieja sigue facturando y el
+             panel no se queja, porque tarifario tiene. Pasó de verdad con
+             PRODUCTAZO. Acá se ve la última lista de CADA uno, ordenado por
+             los envíos que mueve: lo que se busca no es un listado
+             alfabético sino DÓNDE está la plata que sigue al precio viejo.
+             Ver el módulo en CLAUDE.md. -->
+        <div id="cli-tab-actual" style="display:none">
+          <div id="cli-actual-aviso"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input type="search" id="cli-actual-search" placeholder="🔍 Buscar por nombre o código..." style="width:320px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" oninput="renderClientesActualizaciones()">
+            <span id="cli-actual-info" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+          <div class="card"><div class="table-wrap"><table>
+            <thead><tr>
+              <th>Cliente</th><th>Última lista de precios</th><th>La cargó</th>
+              <th style="text-align:right">Envíos</th><th style="width:210px"></th>
+            </tr></thead>
+            <tbody id="cli-actual-rows"></tbody>
+          </table></div></div>
+        </div><!-- /cli actualizaciones -->
 
         <!-- ══════════ TAB: BAJAS ══════════ -->
         <!-- El cliente dado de baja no se borra: se saca del padrón operativo

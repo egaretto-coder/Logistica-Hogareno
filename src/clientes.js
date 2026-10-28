@@ -758,16 +758,201 @@ function switchClientesTab(t) {
   // llamaba con 'lista' —el nombre de cuando había una sola solapa— y con una
   // comparación estricta contra 'activos' eso escondía LAS DOS: el panel entero
   // quedaba en blanco al entrar (bug real).
-  const esBajas = t === 'bajas';
-  cliTab = esBajas ? 'bajas' : 'activos';
-  const lista = document.getElementById('cli-tab-lista');
-  const bajas = document.getElementById('cli-tab-bajas');
-  if (lista) lista.style.display = esBajas ? 'none' : '';
-  if (bajas) bajas.style.display = esBajas ? '' : 'none';
-  const bA = document.getElementById('cli-btn-activos'), bB = document.getElementById('cli-btn-bajas');
-  if (bA) bA.classList.toggle('active', !esBajas);
-  if (bB) bB.classList.toggle('active', esBajas);
-  if (esBajas) renderClientesBajas(); else renderClientes();
+  // El default sigue siendo la LISTA: el router la llama con 'lista' —el
+  // nombre de cuando había una sola solapa— y comparar estricto contra
+  // 'activos' escondía todas, dejando el panel en blanco al entrar.
+  const cual = (t === 'bajas' || t === 'actualizaciones') ? t : 'activos';
+  cliTab = cual;
+  const paneles = {
+    activos: 'cli-tab-lista', actualizaciones: 'cli-tab-actual', bajas: 'cli-tab-bajas'
+  };
+  const botones = {
+    activos: 'cli-btn-activos', actualizaciones: 'cli-btn-actual', bajas: 'cli-btn-bajas'
+  };
+  Object.keys(paneles).forEach(k => {
+    const el = document.getElementById(paneles[k]);
+    if (el) el.style.display = (k === cual) ? '' : 'none';
+    const b = document.getElementById(botones[k]);
+    if (b) b.classList.toggle('active', k === cual);
+  });
+  if (cual === 'bajas') renderClientesBajas();
+  else if (cual === 'actualizaciones') renderClientesActualizaciones();
+  else renderClientes();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ACTUALIZACIONES DE PRECIOS — quién se quedó con la lista vieja
+//
+//  Un ajuste general se carga CLIENTE POR CLIENTE, así que al que se saltea
+//  no lo delata nada: su lista anterior sigue facturando igual, el panel no
+//  se queja —tiene tarifario— y la diferencia recién aparece meses después
+//  mirando rentabilidad. Pasó de verdad: el ajuste del 18/09/2026 alcanzó a
+//  84 clientes y **42 quedaron afuera**, PRODUCTAZO entre ellos; medido al
+//  escribir esto, **38 seguían con la lista ORIGINAL** —la del alta— y dos
+//  de esos son GAMING CITY (4.943 envíos en octubre) y HUELLITAS PET SHOP
+//  (2.629), o sea los dos clientes más grandes facturando al precio viejo.
+//
+//  LA REFERENCIA NO ES UNA FECHA HARDCODEADA, y eso es lo que la hace durar:
+//  se deduce de los propios datos. Un ajuste GENERAL es una `vigente_desde`
+//  que comparten muchos clientes (el 18/09 son 84), mientras que un ajuste
+//  individual toca uno o dos. Así el panel se re-apunta solo al próximo
+//  ajuste sin que nadie toque nada — una fecha escrita en el código se queda
+//  vieja y, peor, sigue contestando con confianza.
+// ════════════════════════════════════════════════════════════════════════
+
+// Qué parte del padrón tiene que alcanzar una lista para contar como ajuste
+// GENERAL. Con menos es un acuerdo con un cliente puntual, y compararse
+// contra eso diría que 120 clientes "quedaron afuera" de algo que nunca fue
+// para ellos.
+const CLI_AJUSTE_PARTE_MIN = 0.25;
+
+function ultimoAjusteGeneral() {
+  const porFecha = new Map();
+  const conTarifario = new Set();
+  (AppData.clienteTarifas || []).forEach(t => {
+    const k = clienteKey(t.cliente_cod) || normCliente(t.cliente);
+    if (!k) return;
+    conTarifario.add(k);
+    const d = tarifaVigenteDesde(t);
+    if (!d || d === TARIFA_DESDE_SIEMPRE) return;   // la original no es un ajuste
+    if (!porFecha.has(d)) porFecha.set(d, new Set());
+    porFecha.get(d).add(k);
+  });
+  const piso = Math.max(3, Math.ceil(conTarifario.size * CLI_AJUSTE_PARTE_MIN));
+  let mejor = null;
+  porFecha.forEach((set, d) => {
+    if (set.size < piso) return;
+    if (!mejor || d > mejor.desde) mejor = { desde: d, clientes: set.size };
+  });
+  return mejor;   // null = nunca hubo un ajuste general contra el que medir
+}
+
+// Una fila por cliente ACTIVO: desde cuándo rige su lista y cuánto mueve.
+// Los de baja no entran —no hay que actualizarles nada— y tienen su solapa.
+function clientesActualizaciones() {
+  const envios = new Map();
+  (AppData.records || []).forEach(r => {
+    if (!contabilizaRegistro(r)) return;
+    const k = clienteCodDeRegistro(r);
+    if (k) envios.set(k, (envios.get(k) || 0) + 1);
+  });
+  const gral = ultimoAjusteGeneral();
+  return (AppData.clientes || []).filter(c => c.activo !== false).map(c => {
+    const cod = clienteKey(c.codigo);
+    const u = ultimaListaPrecios(cod);
+    // "Solo viajes" no usa tarifario por zona: pedirle un ajuste sería
+    // reclamarle algo que no le corresponde.
+    const soloViajes = (typeof clienteSoloViajes === 'function') && clienteSoloViajes(c);
+    return {
+      id: c.id, cod: cod, nombre: c.nombre,
+      desde: u.desde, original: u.original, proxima: u.proxima,
+      quien: cargadaPorTxt(cod),
+      envios: envios.get(clienteCodCanonico(cod)) || 0,
+      sinTarifario: !u.desde,
+      soloViajes: soloViajes,
+      // Quedó afuera del último ajuste general: tiene tarifario, no es de solo
+      // viajes, y su lista más nueva es anterior a la de ese ajuste.
+      afuera: !!(gral && u.desde && !soloViajes && u.desde < gral.desde)
+    };
+  }).sort((a, b) =>
+    // Los que quedaron AFUERA van primero: es el bloque accionable y, si no,
+    // hay que ir a buscarlos entre los que estan al dia. Dentro de cada
+    // grupo manda la plata — los envios —, no el alfabeto.
+    (b.afuera - a.afuera) ||
+    (b.envios - a.envios) ||
+    String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+function _cliActualFecha(f) {
+  if (f.sinTarifario) {
+    return f.soloViajes
+      ? '<span class="muted">no usa tarifario</span>'
+      : '<span style="color:#b91c1c;font-weight:600">sin tarifario</span>';
+  }
+  // El centinela NO se escribe como fecha: "01/01/2000" no le dice nada a
+  // nadie y suena a dato roto. Es la lista con la que se dio de alta.
+  if (f.original) {
+    return '<span style="color:#b45309;font-weight:600">original · nunca se actualizó</span>';
+  }
+  return '<strong>' + _precFmt(f.desde) + '</strong>' +
+    (f.proxima ? '<div style="font-size:10.5px;color:#b45309">nueva desde el ' + _precFmt(f.proxima) + '</div>' : '');
+}
+
+function renderClientesActualizaciones() {
+  const cont = document.getElementById('cli-actual-rows');
+  if (!cont) return;
+  const q = (document.getElementById('cli-actual-search')?.value || '').toLowerCase().trim();
+  const todos = clientesActualizaciones();
+  const lista = todos.filter(f => !q || String(f.nombre).toLowerCase().includes(q) ||
+    String(f.cod || '').toLowerCase().includes(q));
+
+  const gral = ultimoAjusteGeneral();
+  const afuera = todos.filter(f => f.afuera);
+  const enviosAfuera = afuera.reduce((s, f) => s + f.envios, 0);
+  const nunca = afuera.filter(f => f.original).length;
+
+  // El contador de la solapa dice cuántos quedaron afuera SIN apretarla: un
+  // número en el botón lo convierte en una respuesta y no solo en un control.
+  const badge = document.getElementById('cli-actual-count');
+  if (badge) badge.textContent = afuera.length ? (' · ' + afuera.length) : '';
+
+  const info = document.getElementById('cli-actual-info');
+  if (info) info.textContent = q
+    ? 'Mostrando ' + lista.length + ' de ' + todos.length
+    : todos.length + ' cliente(s) activo(s)';
+
+  const av = document.getElementById('cli-actual-aviso');
+  if (av) {
+    const ventana = (typeof textoVentanaCargada === 'function') ? textoVentanaCargada() : '';
+    const pie = '<div style="font-size:11.5px;margin-top:8px;opacity:.9">Ordenado por <strong>envíos</strong>: ' +
+      'arriba está la plata que sigue al precio viejo. Los envíos son los de <strong>' + ventana + '</strong>, ' +
+      'que es lo que hay cargado.</div>';
+    if (!gral) {
+      // Sin un ajuste general contra el que comparar, el panel no inventa una
+      // referencia: muestra el listado y lo dice.
+      av.innerHTML = '<div class="alert alert-info" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
+        '<strong>Todavía no hubo un ajuste general de precios.</strong> Acá se ve desde cuándo rige la lista de cada cliente; ' +
+        'cuando se cargue un aumento para muchos, este panel va a decir quién quedó afuera.' + pie + '</div></div>';
+    } else if (afuera.length) {
+      av.innerHTML = '<div class="alert" style="margin:0 0 12px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
+        '<i class="ic ic-alert"></i><div>' +
+        '<strong>' + afuera.length + ' cliente(s) quedaron afuera del último ajuste general</strong>, que rige desde el <strong>' +
+        _precFmt(gral.desde) + '</strong> y alcanzó a ' + gral.clientes + '. Siguen facturando con su lista anterior' +
+        (nunca ? ' — <strong>' + nunca + '</strong> de ellos nunca tuvieron una actualización' : '') + '. ' +
+        'Entre todos mueven <strong>' + enviosAfuera.toLocaleString('es-AR') + ' envío(s)</strong> de los cargados.' +
+        '<div style="font-size:12px;margin-top:6px">Un ajuste se carga cliente por cliente, así que al que se saltea ' +
+        '<strong>no lo delata nada</strong>: su lista vieja sigue facturando igual. Cargáselo con ' +
+        '<strong>Actualizar lista de precios</strong>, que no toca lo ya facturado.</div>' + pie + '</div></div>';
+    } else {
+      // Un control que solo habla cuando hay problemas es indistinguible de
+      // uno que se rompió.
+      av.innerHTML = '<div class="alert" style="margin:0 0 12px;background:#f0fdf4;color:#166534;border:1px solid #86efac">' +
+        '<i class="ic ic-check"></i><div><strong>Todos al día.</strong> El último ajuste general rige desde el <strong>' +
+        _precFmt(gral.desde) + '</strong> y lo tienen los ' + gral.clientes + ' clientes que corresponden.' + pie + '</div></div>';
+    }
+  }
+
+  if (!lista.length) {
+    cont.innerHTML = '<tr><td colspan="5"><div class="empty-state" style="padding:26px"><div class="empty-icon"><i class="ic ic-trend"></i></div>' +
+      '<div class="empty-title">' + (q ? 'Ningún cliente con esa búsqueda' : 'Sin clientes activos') + '</div></div></td></tr>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(f => {
+    const codEsc = jsAttr(f.cod || '');
+    return '<tr' + (f.afuera ? ' style="box-shadow:inset 3px 0 0 #f59e0b"' : '') + '>' +
+      '<td><div class="conductor-cell"><div class="conductor-avatar" style="background:' + avatarColor(f.nombre) + ';width:26px;height:26px;font-size:9px">' + initials(f.nombre) + '</div>' +
+        '<div><strong>' + f.nombre + '</strong><div class="muted" style="font-size:10px">' + (f.cod || 'sin código') + '</div></div></div></td>' +
+      '<td style="font-size:12px">' + _cliActualFecha(f) + '</td>' +
+      '<td class="muted" style="font-size:11.5px">' + (f.quien || (f.sinTarifario ? '—' : '<span title="Las listas anteriores al 05/10/2026 no registran quién las cargó">no consta</span>')) + '</td>' +
+      '<td class="mono" style="text-align:right">' + (f.envios ? f.envios.toLocaleString('es-AR') : '—') + '</td>' +
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
+        (f.sinTarifario ? '' :
+          '<button class="btn btn-sm" onclick="abrirHistorialTarifasCliente(\'' + codEsc + '\')" title="Todas sus listas, desde cuándo rigió cada una y quién la cargó"><i class="ic ic-file"></i> Historial</button>') +
+        '<button class="btn btn-sm" onclick="openTarifasCliente(' + f.id + ')"><i class="ic ic-tag"></i> Tarifario</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
 }
 
 // Entrar a la pantalla reabre la solapa que quedó, no siempre la primera: el
