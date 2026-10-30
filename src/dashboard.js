@@ -249,18 +249,33 @@ function renderDashConductoresPanel(liqParam) {
   // sobre dónde está el costo. NO se esconden en silencio: el pie dice cuántos
   // quedaron afuera y por qué — mismo criterio que el gráfico con los domingos.
   const DASH_UNIT_MIN_ENVIOS = 10;
-  const porUnitario = liqPorConductor.map(x => ({
-    nombre: x.nombre, monto: _num(x.monto), envios: _num(x.envios),
-    unit: _num(x.envios) ? _num(x.monto) / _num(x.envios) : 0
-  }));
+  // EL RECORRIDO ESPECIAL ENTRA ACÁ TAMBIÉN, porque el pie dice que esta es
+  // "la misma cuenta que la tarjeta de arriba" y esa tarjeta lo incluye. Sin
+  // esto las dos lecturas daban distinto apenas había un especial en el
+  // período —medido: los 4 de producción son de septiembre, $61.720— con el
+  // panel afirmando que eran el mismo número. Y es justo el conductor que
+  // importa: una ruta pactada a mano encarece sus envíos, y este listado
+  // existe para encontrar al caro. NO se toca `liqPorConductor`, que lo
+  // comparte la torta de categorización: ahí el especial NO va, porque no es
+  // la tarifa de ninguna categoría.
+  const _rangoUnit = (typeof getDashFechaRango === 'function') ? getDashFechaRango() : null;
+  const _espDe = n => (typeof recorridoEspecialConductor === 'function')
+    ? _num(recorridoEspecialConductor(n, _rangoUnit).monto) : 0;
+  const porUnitario = liqPorConductor.map(x => {
+    const esp = _espDe(x.nombre);
+    const monto = _num(x.monto) + esp;
+    return { nombre: x.nombre, monto: monto, esp: esp, envios: _num(x.envios),
+             unit: _num(x.envios) ? monto / _num(x.envios) : 0 };
+  });
+  const espUnitTotal = porUnitario.reduce((a, x) => a + x.esp, 0);
   const unitConVolumen = porUnitario.filter(x => x.envios >= DASH_UNIT_MIN_ENVIOS);
   const unitPocos = porUnitario.length - unitConVolumen.length;
   const top10Unit = unitConVolumen.slice().sort((a, b) => b.unit - a.unit).slice(0, 10);
   // El promedio del grupo es LA VARA: "$3.879" no dice nada sin saber contra
-  // qué. Sale de la misma plata que ya muestra el subtítulo (montoGrupo) y de
+  // qué. Sale de la misma plata de las filas (montoGrupo + sus especiales) y de
   // los mismos envíos, así que la fila y la referencia no pueden discrepar.
   const enviosGrupo = porUnitario.reduce((a, x) => a + x.envios, 0);
-  const unitGrupo = enviosGrupo ? montoGrupo / enviosGrupo : 0;
+  const unitGrupo = enviosGrupo ? (montoGrupo + espUnitTotal) / enviosGrupo : 0;
   const unitRows = top10Unit.length ? top10Unit.map(x => {
     const dif = unitGrupo ? Math.round((x.unit - unitGrupo) / unitGrupo * 100) : 0;
     return `<tr>
@@ -307,7 +322,7 @@ function renderDashConductoresPanel(liqParam) {
             <tbody>${unitRows}</tbody>
           </table>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Lo que cuesta cada envío que se le paga: su total dividido por los envíos que forman su liquidación — la misma cuenta que la tarjeta de arriba.${unitPocos ? ' Quedan afuera ' + unitPocos + (unitPocos === 1 ? ' conductor con menos de ' : ' conductores con menos de ') + DASH_UNIT_MIN_ENVIOS + ' envíos: con uno o dos, el unitario es un caso y no una tendencia.' : ''}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Lo que cuesta cada envío que se le paga: su total dividido por los envíos que forman su liquidación — la misma cuenta que la tarjeta de arriba.${espUnitTotal > 0 ? ' Incluye ' + fmtPeso(espUnitTotal) + ' de recorridos especiales, que es lo que esa tarjeta cuenta.' : ''}${unitPocos ? ' Quedan afuera ' + unitPocos + (unitPocos === 1 ? ' conductor con menos de ' : ' conductores con menos de ') + DASH_UNIT_MIN_ENVIOS + ' envíos: con uno o dos, el unitario es un caso y no una tendencia.' : ''}</div>
       </div>
     </div>`;
 }
@@ -623,7 +638,24 @@ function renderDashboard() {
   const totalConEspecial = totalMonto + esp.total;
   const costoUnitario = enviosPagos ? totalConEspecial / enviosPagos : 0;
   const totalRecs = recordsFiltrados.length;
-  const totalEntregados = recordsFiltrados.filter(r => esEstadoEntregado(r.estado)).length;
+  // EL DENOMINADOR NO ES "LOS ENTREGADOS", Y LA DIFERENCIA HAY QUE DECIRLA.
+  // La tarjeta de al lado dice "42.245 entregados" y esta divide por 42.163,
+  // y entre los dos números no había nada: se reportó como un bug, y la cuenta
+  // estaba bien —lo que faltaba era poder rehacerla—. Son dos ajustes y van en
+  // direcciones opuestas: un envío ENTREGADO SIN CHOFER no se le paga a nadie
+  // (`calcLiquidaciones` lo saltea con `if (!cond) return`) y una VISITA PAGADA
+  // sí se paga aunque su estado no diga "Entregado". Se cuentan en la misma
+  // pasada que ya recorría los registros, así que no cuesta nada.
+  let totalEntregados = 0, entregadosSinChofer = 0, visitasPagadas = 0;
+  recordsFiltrados.forEach(r => {
+    const conChofer = !!conductorCanonico(r.cadete);
+    if (esEstadoEntregado(r.estado)) {
+      totalEntregados++;
+      if (!conChofer) entregadosSinChofer++;
+    } else if (conChofer && contabilizaRegistro(r)) {
+      visitasPagadas++;
+    }
+  });
   const totalExcluidos = totalRecs - totalEntregados;
 
   // Etiqueta del período seleccionado
@@ -674,9 +706,23 @@ function renderDashboard() {
       (vjDash.n === 1 ? ' viaje particular' : ' viajes particulares') + ' (se miran en su panel)' : '');
   document.getElementById('metric-cvu').textContent = fmtPeso(costoUnitario);
   const cvuSub = document.getElementById('metric-cvu-sub');
-  if (cvuSub) cvuSub.textContent = enviosPagos
-    ? 'por envío pagado · ' + enviosPagos.toLocaleString('es-AR') + ' envíos'
-    : 'sin envíos pagados en el período';
+  if (cvuSub) {
+    // Se escribe como una CUENTA, no como una aclaración: el que mira este
+    // panel divide el total por los envíos para verificarlo, y tiene que
+    // poder llegar al mismo número. Si no hay nada que ajustar no se dice
+    // nada —el denominador ES los entregados y una línea que sale siempre
+    // deja de leerse—.
+    const ajustes = [];
+    if (entregadosSinChofer) ajustes.push('menos ' + entregadosSinChofer.toLocaleString('es-AR') +
+      ' sin chofer (no se le pagan a nadie)');
+    if (visitasPagadas) ajustes.push('más ' + visitasPagadas.toLocaleString('es-AR') +
+      (visitasPagadas === 1 ? ' visita pagada' : ' visitas pagadas'));
+    cvuSub.textContent = enviosPagos
+      ? 'por envío pagado · ' + enviosPagos.toLocaleString('es-AR') + ' envíos' +
+        (ajustes.length ? ' = ' + totalEntregados.toLocaleString('es-AR') + ' entregados, ' +
+          ajustes.join(', ') : '')
+      : 'sin envíos pagados en el período';
+  }
   document.getElementById('metric-conductores').textContent = conductores.length;
   document.getElementById('metric-promedio').textContent = fmtPeso(promedioPorConductor);
   document.getElementById('metric-promedio-sub').textContent = conductores.length + ' conductores en el período';
