@@ -1107,6 +1107,7 @@ function renderDashClientes() {
   _renderSemaforoRenta(base);
   const lista = vistaCli.lista;
 
+  const envios = todos.reduce((s, x) => s + _num(x.envios), 0);
   const factura = todos.reduce((s, x) => s + x.factura, 0);
   const costo = todos.reduce((s, x) => s + x.costo, 0);
   const margen = factura - costo;
@@ -1125,7 +1126,17 @@ function renderDashClientes() {
     '<div class="metric-card"><div class="metric-ic"><i class="ic ic-trend"></i></div>' +
       '<div class="metric-label">Margen</div>' +
       '<div class="metric-value" style="color:' + (margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(margen) + '</div>' +
-      '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>';
+      '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>' +
+    // CUÁNTOS ENVÍOS HAY DETRÁS DE ESA PLATA. Los tres números de al lado
+    // dependen del volumen y sin él no se comparan contra ningún otro mes.
+    // Son los que se le FACTURAN a alguien —un envío sin cliente no entra en
+    // la liquidación de nadie—, el mismo universo que la facturación de la
+    // izquierda: dividir uno por el otro da el precio de venta por envío, que
+    // es el ponderado del pie de la tabla y la columna "Venta / envío".
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-box"></i></div>' +
+      '<div class="metric-label">Envíos</div><div class="metric-value">' + envios.toLocaleString('es-AR') + '</div>' +
+      '<div class="metric-sub">' + (envios ? fmtPeso(factura / envios) + ' de venta por envío'
+                                            : 'sin envíos facturables en el período') + '</div></div>';
 
   // ── Quién trae la facturación ────────────────────────────────────────────
   // Con 110 clientes, una torta de 110 porciones no se lee. La pregunta real es
@@ -1506,7 +1517,7 @@ function _mesLargo(yyyymm) {
 function _dashSerieDiaria(records) {
   const porDia = new Map();
   let sinFecha = 0;
-  const dom = { n: 0, envios: 0, factura: 0, costo: 0, dias: new Set() };
+  const dom = { n: 0, envios: 0, enviosCli: 0, enviosLiq: 0, factura: 0, costo: 0, dias: new Set() };
   (records || []).forEach(r => {
     if (!contabilizaRegistro(r)) return;          // lo no entregado no se paga ni se cobra
     const iso = fechaISOde(r.fecha);
@@ -1519,6 +1530,14 @@ function _dashSerieDiaria(records) {
     const cod = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
     const venta = cod ? _num(precioVentaEnvio(cod, r)) : 0;
     const pago  = _num(precioPagadoConductor(r));
+    // CUÁNTOS ENVÍOS, Y DE CUÁL DE LAS DOS PREGUNTAS. Un envío SIN CLIENTE no
+    // se le factura a nadie y uno SIN CHOFER no se le paga a nadie, así que
+    // contarlos todos juntos daría un número que no es el de ninguna de las
+    // tarjetas de arriba — que es exactamente lo que hace dudar del panel.
+    // Cada solapa cuenta LOS SUYOS (`def.enviosKey`). Medido en octubre:
+    // 42.295 contabilizados, 105 sin cliente y 94 sin chofer.
+    const cond = (typeof conductorCanonico === 'function')
+      ? conductorCanonico(r.cadete) : String((r && r.cadete) || '').trim();
     // EL DOMINGO NO ES UN DÍA OPERADO. Se reparte los otros seis, y lo poco que
     // cae en domingo deforma el gráfico entero: medido en producción son el
     // 0,01% al 0,11% del volumen, y el domingo 04/10/2026 tuvo UN envío que
@@ -1528,13 +1547,15 @@ function _dashSerieDiaria(records) {
     // días de calendario—, así que no se descartan en silencio: se acumulan y
     // el gráfico dice cuánto dejó afuera.
     if (_dashEsDomingo(iso)) {
-      dom.n++; dom.envios++; dom.factura += venta; dom.costo += pago;
+      dom.n++; dom.envios++; if (cod) dom.enviosCli++; if (cond) dom.enviosLiq++;
+      dom.factura += venta; dom.costo += pago;
       dom.dias.add(iso);
       return;
     }
     let d = porDia.get(iso);
-    if (!d) { d = { iso, envios: 0, factura: 0, costo: 0, especial: 0, enviosLiq: 0, zonas: new Map() }; porDia.set(iso, d); }
+    if (!d) { d = { iso, envios: 0, enviosCli: 0, factura: 0, costo: 0, especial: 0, enviosLiq: 0, zonas: new Map() }; porDia.set(iso, d); }
     d.envios++;
+    if (cod) d.enviosCli++;
     d.factura += venta;
     d.costo += pago;
     // EL DENOMINADOR DEL COSTO UNITARIO es el MISMO que el de la tarjeta de
@@ -1543,8 +1564,6 @@ function _dashSerieDiaria(records) {
     // los que pagaron más de $0, un envío en una zona sin tarifa entraba en la
     // tarjeta y no en la línea, y las dos daban unitarios distintos para el
     // mismo día.
-    const cond = (typeof conductorCanonico === 'function')
-      ? conductorCanonico(r.cadete) : String((r && r.cadete) || '').trim();
     if (cond) d.enviosLiq++;
     // El corte de la solapa de Zonas: cuánto se pagó en cada una ese día. La
     // zona se resuelve por ALIAS, igual que getPrecio — si no, un envío en
@@ -1618,6 +1637,10 @@ function _dashGraficoDef(tab, dias) {
         peor: 'max', peorRotulo: 'Envío más caro',
       },
       total: d => d.costo + _num(d.especial), totalRotulo: 'Se paga',
+      // Los que FORMAN la liquidación: el mismo denominador que la línea y que
+      // la tarjeta "Costo variable unitario". Un envío sin chofer no se le paga
+      // a nadie, así que contarlo acá daría un tercer número para lo mismo.
+      enviosKey: 'enviosLiq', enviosRotulo: 'envíos pagados',
       // La única solapa que cuenta los recorridos especiales, así que la única
       // que tiene que avisar por los que no entraron en ninguna barra.
       especiales: true,
@@ -1635,6 +1658,7 @@ function _dashGraficoDef(tab, dias) {
         peor: 'max', peorRotulo: 'Envío más caro',
       },
       total: d => d.costo, totalRotulo: 'Se paga',
+      enviosKey: 'enviosLiq', enviosRotulo: 'envíos pagados',
       // Lo que cae en una zona que no está en el tarifario se paga $0, así que
       // acá no se vería: eso se mira en el reporte de abajo, que lo cuenta por
       // envíos en su fila "Fuera del tarifario". Una serie en $0 haría creer
@@ -1655,6 +1679,9 @@ function _dashGraficoDef(tab, dias) {
       peor: 'min', peorRotulo: 'Peor margen',
     },
     total: d => d.factura, totalRotulo: 'Facturado',
+    // Acá la pregunta es lo que se COBRA: un envío sin cliente no entra en la
+    // liquidación de nadie, así que tampoco en este conteo.
+    enviosKey: 'enviosCli', enviosRotulo: 'envíos facturados',
     nota: 'La barra entera es lo que se le factura a los clientes ese día: abajo lo que costó y arriba lo que quedó. El costo es la tarifa de los envíos de ese cliente; los recorridos especiales no son de ningún cliente y se miran en la solapa Conductores. La línea es el margen del día — un día puede facturar mucho y dejar poco.',
   };
 }
@@ -1713,6 +1740,12 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
   // pero la pregunta es cuánto facturó, y leerlo contra el eje es aproximar.
   // Se escribe completo si entra, abreviado si no, y con muchos días no se
   // escribe: el tooltip lo sigue teniendo y 30 números pisados no se leen.
+  // CUÁNTOS ENVÍOS HAY DETRÁS DE ESTAS BARRAS. La plata sola no dice si un
+  // día movió mucho a precio bajo o poco a precio alto, y el volumen es la
+  // otra mitad de la lectura. Se cuenta con la clave de la solapa, así que
+  // el número es de la misma familia que la tarjeta de arriba.
+  const KENV = def.enviosKey || 'envios';
+  const enviosTot = datos.reduce((a, d) => a + _num(d[KENV]), 0);
   const rotTotal = paso >= 86 ? (v => fmtPeso(v)) : paso >= 40 ? (v => _dashMiles(v)) : null;
   let barras = '', etqTotal = '';
   datos.forEach((d, i) => {
@@ -1732,7 +1765,7 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
       barras += '<rect x="' + x.toFixed(1) + '" y="' + (mT + alto - acum).toFixed(1) + '" width="' + wBarra.toFixed(1) +
         '" height="' + h.toFixed(1) + '" fill="' + s.color + '" rx="1">' +
         '<title>' + _dashFechaLarga(d.iso) + ' — ' + (def.totalRotulo || 'Total') + ': ' + fmtPeso(tot) +
-          ' · ' + det + ' · ' + d.envios + ' envíos · ' +
+          ' · ' + det + ' · ' + _num(d[KENV]).toLocaleString('es-AR') + ' ' + (def.enviosRotulo || 'envíos') + ' · ' +
           def.linea.nombre + ': ' + def.linea.fmt(_num(def.linea.v(d))) +
           (perdida ? ' · a pérdida: se facturó menos de lo que costó' : '') + '</title></rect>';
     });
@@ -1808,7 +1841,7 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
   const avisoDom = (dom && dom.envios)
     ? '<span style="font-size:11.5px;color:var(--text-muted)" title="El domingo no es un día operado: se excluye para que lo poco que cae ahí no deforme el gráfico. La liquidación del cliente sí los cobra.">' +
         'No se grafican los domingos (' + dom.dias.size + (dom.dias.size === 1 ? ' domingo · ' : ' domingos · ') +
-        dom.envios + (dom.envios === 1 ? ' envío · ' : ' envíos · ') +
+        _num(dom[KENV]) + (_num(dom[KENV]) === 1 ? ' envío · ' : ' envíos · ') +
         (def.total && def.totalRotulo === 'Facturado' ? fmtPeso(dom.factura) : fmtPeso(dom.costo)) + ')</span>'
     : '';
 
@@ -1836,14 +1869,16 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
       '<span style="font-size:12px;color:var(--text-muted)">' + periodoTxt + ' · <strong>' + n +
         (n === 1 ? ' día contemplado</strong> (el ' + _dashDM(datos[0].iso)
                  : ' días contemplados</strong> (del ' + _dashDM(datos[0].iso) + ' al ' + _dashDM(datos[n - 1].iso)) +
-        ') · pico ' + fmtPeso(totalDe(pico)) + '</span>' +
+        ') · <strong>' + enviosTot.toLocaleString('es-AR') + '</strong> ' + (def.enviosRotulo || 'envíos') +
+        ' · pico ' + fmtPeso(totalDe(pico)) + '</span>' +
       avisoSF + avisoDom + avisoEsp +
     '</div>' +
     svg +
     '<div style="font-size:11.5px;color:var(--text-secondary);margin-top:8px">' + leyenda +
       '<span style="color:var(--text-muted)">' + def.nota + '</span></div>' +
     '<div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">' +
-      'Día más movido: <strong>' + _dashFechaLarga(pico.iso) + '</strong> (' + fmtPeso(totalDe(pico)) + ')' +
+      'Día más movido: <strong>' + _dashFechaLarga(pico.iso) + '</strong> (' + fmtPeso(totalDe(pico)) +
+        ' · ' + _num(pico[KENV]).toLocaleString('es-AR') + ' ' + (def.enviosRotulo || 'envíos') + ')' +
       (n > 1 ? ' · ' + (def.linea.peorRotulo || 'Peor ' + def.linea.nombre.toLowerCase()) + ': <strong>' + _dashFechaLarga(datos[peorI].iso) +
         '</strong> (' + def.linea.fmt(valLinea[peorI]) + ')' : '') +
     '</div></div>';
