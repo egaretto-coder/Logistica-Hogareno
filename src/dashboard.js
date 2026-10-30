@@ -703,7 +703,7 @@ function renderDashboard() {
     (esp.total > 0 ? ' · incluye ' + fmtPeso(esp.total) + ' de ' + esp.n +
       (esp.n === 1 ? ' recorrido especial' : ' recorridos especiales') : '') +
     (vjDash.total > 0 ? ' · NO incluye ' + fmtPeso(vjDash.total) + ' de ' + vjDash.n +
-      (vjDash.n === 1 ? ' viaje particular' : ' viajes particulares') + ' (se miran en su panel)' : '');
+      (vjDash.n === 1 ? ' viaje particular' : ' viajes particulares') + ' (se miran en su solapa)' : '');
   document.getElementById('metric-cvu').textContent = fmtPeso(costoUnitario);
   const cvuSub = document.getElementById('metric-cvu-sub');
   if (cvuSub) {
@@ -767,9 +767,148 @@ function renderDashboard() {
     if (typeof renderConductorReport === 'function') renderConductorReport();
   } else if (dashTab === 'zonas') {
     if (typeof renderZonaReport === 'function') renderZonaReport();
+  } else if (dashTab === 'viajes') {
+    renderDashViajes();
   } else {
     if (typeof renderDashClientes === 'function') renderDashClientes();
   }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+//  DASHBOARD · SOLAPA VIAJES PARTICULARES — la operación, sola.
+//  Un viaje NO es un envío: no tiene zona ni tracking y se cotiza a un valor
+//  fijo de tabla por vehículo y tramo. Por eso en las otras solapas o NO
+//  entra —Conductores y Zonas lo dejan afuera a propósito: sumarlo al
+//  numerador sin nada en el denominador daría un costo por envío que nadie
+//  paga— o entra DILUIDO en la facturación del cliente. "Cuánto mueve este
+//  servicio" no lo contestaba ninguna, y es una línea entera de negocio.
+//
+//  OJO CON SUMARLO DOS VECES: esta plata TAMBIÉN está en la solapa Clientes
+//  —la venta de un viaje es facturación de ese cliente y su costo es lo que
+//  costó servirlo—, así que acá se mira SOLA, no se agrega aparte. La nota
+//  lo dice, porque un total que se puede sumar dos veces es exactamente
+//  como se infla un número sin que nadie lo note.
+// ════════════════════════════════════════════════════════════════════════
+function dashViajesDelPeriodo() {
+  if (typeof vpViajes !== 'function') return [];
+  const rango = getDashFechaRango();
+  const desde = rango && rango.desde ? new Date(rango.desde) : null;
+  const hasta = rango && rango.hasta ? new Date(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  return vpViajes().filter(v => {
+    // El mismo criterio que la liquidación: un viaje que no está "realizado"
+    // no se cobra ni se paga, así que tampoco cuenta acá.
+    if (typeof vpContabiliza === 'function' && !vpContabiliza(v)) return false;
+    if (!desde && !hasta) return true;
+    const f = parseFechaReg(v.fecha);
+    if (!f) return false;
+    if (desde && f < desde) return false;
+    if (hasta && f > hasta) return false;
+    return true;
+  });
+}
+
+function _dashVpFilas(lista, clave) {
+  const m = new Map();
+  lista.forEach(v => {
+    const k = clave(v);
+    let a = m.get(k.key);
+    if (!a) { a = { nombre: k.nombre, suelto: !!k.suelto, n: 0, venta: 0, costo: 0 }; m.set(k.key, a); }
+    a.n++; a.venta += _num(v.venta); a.costo += _num(v.costo);
+  });
+  return Array.from(m.values()).sort((a, b) => b.venta - a.venta || b.n - a.n);
+}
+
+function _dashVpTabla(titulo, filas, col) {
+  if (!filas.length) return '';
+  return '<div><div class="dash-subtitle">' + titulo + ' · <b style="color:var(--text-secondary)">' +
+      filas.length + '</b></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>' + col + '</th>' +
+      '<th style="text-align:right">Viajes</th><th style="text-align:right">Se factura</th>' +
+      '<th style="text-align:right">Se paga</th><th style="text-align:right">Margen</th></tr></thead><tbody>' +
+    filas.map(f => {
+      const mg = f.venta - f.costo;
+      return '<tr><td style="font-size:12.5px">' + f.nombre +
+          (f.suelto ? '<span class="badge" style="margin-left:6px;background:#fef3c7;color:#92400e">no se le paga a nadie</span>' : '') + '</td>' +
+        '<td style="text-align:right">' + f.n.toLocaleString('es-AR') + '</td>' +
+        '<td style="text-align:right">' + fmtPeso(f.venta) + '</td>' +
+        '<td style="text-align:right">' + fmtPeso(f.costo) + '</td>' +
+        '<td style="text-align:right;color:' + (mg >= 0 ? '#166534' : '#b91c1c') + '"><b>' + fmtPeso(mg) + '</b></td></tr>';
+    }).join('') +
+    '</tbody></table></div></div>';
+}
+
+function renderDashViajes() {
+  const kpis = document.getElementById('dash-vp-kpis');
+  const body = document.getElementById('dash-vp-body');
+  const nota = document.getElementById('dash-vp-nota');
+  if (!kpis || !body) return;
+
+  // El filtro por condición es del lado del conductor y acá no se aplica, igual
+  // que en Clientes: si la etiqueta del período dice "solo Titulares" y estos
+  // números son los de todos, el número PARECE el del filtro y no lo es.
+  if (nota) nota.innerHTML = dashCondFilter
+    ? '<div class="alert" style="margin:0 0 14px;background:#eff6ff;color:#1e3a8a;border:1px solid #93c5fd">' +
+      '<i class="ic ic-alert"></i><div>El filtro <strong>' + dashCondLabel() + '</strong> es del lado del conductor y ' +
+      'acá no se aplica: un viaje se cotiza por vehículo y tramo, no por la condición de quién lo hace. ' +
+      'Estos números son los del período completo.</div></div>'
+    : '';
+
+  const lista = dashViajesDelPeriodo();
+  const venta = lista.reduce((s, v) => s + _num(v.venta), 0);
+  const costo = lista.reduce((s, v) => s + _num(v.costo), 0);
+  const margen = venta - costo;
+  const pct = venta > 0 ? (margen * 100 / venta) : 0;
+  const clientes = _dashVpFilas(lista, v => {
+    const k = (typeof clienteKey === 'function' ? clienteKey(v.cliente_cod) : '') || '';
+    const n = String(v.cliente || '').trim() || k;
+    return { key: k || '(sin cliente)', nombre: n || 'Sin cliente', suelto: !k };
+  });
+  const conductores = _dashVpFilas(lista, v => {
+    const n = (typeof conductorCanonico === 'function'
+      ? conductorCanonico(v.conductor) : String((v && v.conductor) || '').trim()) || '';
+    // Un viaje lo puede hacer alguien de afuera: se le factura al cliente y no
+    // se le paga a nadie. Se muestra como lo que es, no como una fila sin nombre.
+    return { key: n || '(sin conductor)', nombre: n || 'Sin conductor asignado', suelto: !n };
+  });
+
+  kpis.innerHTML =
+    '<div class="metric-card accent"><div class="metric-ic"><i class="ic ic-dollar"></i></div>' +
+      '<div class="metric-label">Se factura</div><div class="metric-value">' + fmtPeso(venta) + '</div>' +
+      '<div class="metric-sub">' + clientes.length + (clientes.length === 1 ? ' cliente' : ' clientes') +
+        ' con viajes en el período</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-truck"></i></div>' +
+      '<div class="metric-label">Se paga</div><div class="metric-value">' + fmtPeso(costo) + '</div>' +
+      '<div class="metric-sub">lo que se les paga a los conductores</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-trend"></i></div>' +
+      '<div class="metric-label">Margen</div>' +
+      '<div class="metric-value" style="color:' + (margen >= 0 ? '#166534' : '#b91c1c') + '">' + fmtPeso(margen) + '</div>' +
+      '<div class="metric-sub">' + pct.toFixed(1) + '% de lo facturado</div></div>' +
+    '<div class="metric-card"><div class="metric-ic"><i class="ic ic-route"></i></div>' +
+      '<div class="metric-label">Viajes</div><div class="metric-value">' + lista.length.toLocaleString('es-AR') + '</div>' +
+      '<div class="metric-sub">' + (lista.length ? fmtPeso(venta / lista.length) + ' por viaje'
+                                                 : 'sin viajes realizados en el período') + '</div></div>';
+
+  if (!lista.length) {
+    body.innerHTML = '<div class="card" style="padding:28px;text-align:center;color:var(--text-muted)">' +
+      'Sin viajes particulares realizados en el período. Se cargan desde <strong>Viajes particulares</strong>.</div>';
+    return;
+  }
+
+  body.innerHTML =
+    '<div class="dash-cond-grid">' +
+      _dashVpTabla('Qué cliente los pide', clientes, 'Cliente') +
+      _dashVpTabla('Quién los hace', conductores, 'Conductor') +
+    '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-muted);margin-top:10px">' +
+      'Solo los viajes <strong>realizados</strong>: uno con otro estado no se cobra ni se paga. ' +
+      'Esta plata <strong>también está contada en la solapa Clientes</strong> —la venta de un viaje es facturación ' +
+      'de ese cliente y su costo es lo que costó servirlo—, así que acá se mira sola y no se suma aparte. ' +
+      'En <strong>Conductores</strong> y en <strong>Zonas</strong> no entra: un viaje no tiene envíos ni zona, ' +
+      'y meterlo ahí daría un costo por envío que nadie paga. El detalle de cada uno está en ' +
+      '<strong>Viajes particulares</strong>.</div>';
 }
 
 // ===== LIQUIDACIONES =====
@@ -784,10 +923,13 @@ function renderDashboard() {
 // ════════════════════════════════════════════════════════════════════════
 
 let dashTab = 'clientes';
+// Las solapas, en UN solo lugar: con la lista escrita dos veces, la que
+// quede atrás deja un panel que se muestra y un botón que no se marca.
+const DASH_TABS = ['clientes', 'conductores', 'zonas', 'viajes'];
 
 function switchDashTab(tab) {
-  dashTab = ['clientes', 'conductores', 'zonas'].indexOf(tab) >= 0 ? tab : 'clientes';
-  ['clientes', 'conductores', 'zonas'].forEach(t => {
+  dashTab = DASH_TABS.indexOf(tab) >= 0 ? tab : 'clientes';
+  DASH_TABS.forEach(t => {
     const panel = document.getElementById('dash-tab-' + t);
     const btn = document.getElementById('dash-btn-' + t);
     if (panel) panel.style.display = (t === dashTab) ? '' : 'none';
@@ -1579,6 +1721,48 @@ function _dashSerieDiaria(records) {
   return dias;
 }
 
+// EL DÍA A DÍA DE LOS VIAJES. Los viajes no viven en `registros`, así que
+// tienen su propia pasada; devuelve días con la MISMA forma que la de los
+// envíos para que el gráfico sea el mismo y no haya un segundo dibujante.
+//
+// ACÁ EL DOMINGO SÍ SE GRAFICA, al revés que con los envíos: el reparto no
+// opera los domingos y lo poco que cae ahí deforma el gráfico, pero una ruta
+// pactada se hace el día que la piden — y con unos pocos viajes al mes,
+// sacar un domingo borraría una parte entera de la operación en vez de
+// limpiar un ruido.
+function _dashSerieViajes(rango) {
+  const porDia = new Map();
+  let sinFecha = 0;
+  const desde = rango && rango.desde ? new Date(rango.desde) : null;
+  const hasta = rango && rango.hasta ? new Date(rango.hasta) : null;
+  if (desde) desde.setHours(0, 0, 0, 0);
+  if (hasta) hasta.setHours(23, 59, 59, 999);
+  ((typeof vpViajes === 'function') ? vpViajes() : []).forEach(v => {
+    if (typeof vpContabiliza === 'function' && !vpContabiliza(v)) return;
+    const f = parseFechaReg(v.fecha);
+    if (desde && (!f || f < desde)) return;
+    if (hasta && (!f || f > hasta)) return;
+    const iso = fechaISOde(v.fecha);
+    if (!iso) { sinFecha++; return; }
+    let d = porDia.get(iso);
+    if (!d) { d = { iso, envios: 0, enviosCli: 0, enviosLiq: 0, factura: 0, costo: 0, especial: 0, zonas: new Map() }; porDia.set(iso, d); }
+    d.envios++; d.enviosCli++;
+    const cond = (typeof conductorCanonico === 'function')
+      ? conductorCanonico(v.conductor) : String((v && v.conductor) || '').trim();
+    if (cond) d.enviosLiq++;
+    d.factura += _num(v.venta);
+    d.costo += _num(v.costo);
+  });
+  const dias = Array.from(porDia.values()).sort((a, b) => a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
+  dias.sinFecha = sinFecha;
+  // Sin domingos apartados y sin recorridos especiales: los dos avisos del
+  // gráfico quedan callados, que es lo correcto porque acá no se deja nada
+  // afuera. Van con la forma que el dibujante espera.
+  dias.domingos = { n: 0, envios: 0, enviosCli: 0, enviosLiq: 0, factura: 0, costo: 0, dias: new Set() };
+  dias.especialesFuera = { total: 0, dias: 0 };
+  return dias;
+}
+
 function _dashEsDomingo(iso) { return new Date(iso + 'T12:00:00').getDay() === 0; }
 
 const _DIA_INICIAL = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
@@ -1617,6 +1801,27 @@ function _dashSeriesZonas(dias) {
 
 // Qué grafica cada solapa. Devuelve las series apiladas (plata) y la línea.
 function _dashGraficoDef(tab, dias) {
+  if (tab === 'viajes') {
+    // La misma forma que Clientes —abajo lo que costó, arriba lo que quedó—
+    // porque la pregunta es la misma: cuánto deja la operación. Lo que cambia
+    // es de dónde salen los días.
+    return {
+      titulo: 'Viajes particulares por día',
+      series: [
+        { nombre: 'Se paga',  color: '#3b82f6', v: d => d.costo },
+        { nombre: 'Margen', color: '#10b981', v: d => Math.max(0, d.factura - d.costo) },
+      ],
+      linea: {
+        nombre: 'Margen %', color: '#f59e0b',
+        v: d => d.factura > 0 ? (d.factura - d.costo) / d.factura * 100 : 0,
+        fmt: v => v.toFixed(1).replace('.', ',') + '%',
+        peor: 'min', peorRotulo: 'Peor margen',
+      },
+      total: d => d.factura, totalRotulo: 'Facturado',
+      enviosKey: 'envios', enviosRotulo: 'viajes', unidad: 'viajes',
+      nota: 'La barra entera es lo que se le factura al cliente por los viajes de ese día: abajo lo que se le paga al conductor y arriba lo que quedó. Un viaje hecho por alguien de afuera se factura igual y no se le paga a nadie. La línea es el margen del día.',
+    };
+  }
   if (tab === 'conductores') {
     // El recorrido especial va en SU PROPIA porción y no sumado adentro: es un
     // monto pactado a mano, se aprueba de a uno, y diluirlo en la barra haría
@@ -1690,13 +1895,17 @@ function _dashGraficoDef(tab, dias) {
 // una de gráficos entera por un combinado de barras y línea no se paga.
 function _dashGraficoDiario(datos, def, periodoTxt) {
   const n = datos.length;
+  // Cómo se llama lo que grafica esta solapa: en la de viajes no son envíos,
+  // y un vacío que usa el sustantivo equivocado manda a buscar el problema
+  // al lado que no es.
+  const UNI = def.unidad || 'envíos';
   if (!n) {
     return '<div class="card" style="padding:28px;text-align:center;color:var(--text-muted)">' +
       (datos.sinFecha
-        ? datos.sinFecha + ' envío(s) del período no tienen fecha, así que no se pueden ubicar en ningún día.'
+        ? datos.sinFecha + ' ' + UNI + ' del período no tienen fecha, así que no se pueden ubicar en ningún día.'
         : (datos.domingos && datos.domingos.envios)
-          ? 'En el período solo hubo envíos en domingo, que no es un día operado y no se grafica.'
-          : 'Sin envíos en el período para graficar.') + '</div>';
+          ? 'En el período solo hubo ' + UNI + ' en domingo, que no es un día operado y no se grafica.'
+          : 'Sin ' + UNI + ' en el período para graficar.') + '</div>';
   }
   // Geometría. El ancho es fijo y el SVG escala solo (viewBox): así una barra
   // no cambia de grosor según el tamaño de la ventana.
@@ -1829,7 +2038,7 @@ function _dashGraficoDiario(datos, def, periodoTxt) {
   // número de la tarjeta.
   const avisoSF = datos.sinFecha
     ? '<span style="font-size:11.5px;color:var(--warning)"><i class="ic ic-alert"></i> ' +
-        datos.sinFecha + (datos.sinFecha === 1 ? ' envío sin fecha no se grafica' : ' envíos sin fecha no se grafican') +
+        datos.sinFecha + ' ' + (datos.sinFecha === 1 ? UNI.replace(/s$/, '') : UNI) + ' sin fecha no se grafica' + (datos.sinFecha === 1 ? '' : 'n') +
         ' (sí cuentan en las tarjetas de arriba)</span>'
     : '';
 
@@ -1908,7 +2117,11 @@ function _dashFechaLarga(iso) {
 function renderDashGraficoDiario(records, periodoTxt, especialesPorDia) {
   const cont = document.getElementById('dash-grafico-dia');
   if (!cont) return;
-  const datos = _dashSerieDiaria(records);
+  // Los viajes no viven en `registros`: tienen su propia pasada. El gráfico
+  // es el mismo —una sola forma de dibujar un día— y lo único que cambia es
+  // de dónde salen los días.
+  const esVp = dashTab === 'viajes';
+  const datos = esVp ? _dashSerieViajes(getDashFechaRango()) : _dashSerieDiaria(records);
   // Los recorridos especiales se cargan por conductor y día, no por envío, así
   // que no salen de la pasada por los recorridos: se pegan acá, al día que les
   // corresponde. Un especial en un día sin envíos no abre un día nuevo —no
@@ -1920,7 +2133,7 @@ function renderDashGraficoDiario(records, periodoTxt, especialesPorDia) {
   // arriba y no hay dónde ver por qué. Es la misma identidad que sostienen el
   // aviso de los envíos sin fecha y el de los domingos.
   const espFuera = { total: 0, dias: 0 };
-  if (especialesPorDia && especialesPorDia.size) {
+  if (!esVp && especialesPorDia && especialesPorDia.size) {
     const conBarra = new Set(datos.map(d => d.iso));
     datos.forEach(d => { d.especial = _num(especialesPorDia.get(d.iso)); });
     especialesPorDia.forEach((monto, isoD) => {
@@ -1928,6 +2141,6 @@ function renderDashGraficoDiario(records, periodoTxt, especialesPorDia) {
       espFuera.total += _num(monto); espFuera.dias++;
     });
   }
-  datos.especialesFuera = espFuera;
+  if (!esVp) datos.especialesFuera = espFuera;
   cont.innerHTML = _dashGraficoDiario(datos, _dashGraficoDef(dashTab, datos), periodoTxt || '');
 }

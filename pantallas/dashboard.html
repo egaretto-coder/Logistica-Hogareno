@@ -46,6 +46,12 @@
           <button class="tab active" id="dash-btn-clientes" onclick="switchDashTab('clientes')"><i class="ic ic-building"></i> Clientes</button>
           <button class="tab" id="dash-btn-conductores" onclick="switchDashTab('conductores')"><i class="ic ic-truck"></i> Conductores</button>
           <button class="tab" id="dash-btn-zonas" onclick="switchDashTab('zonas')"><i class="ic ic-pin"></i> Zonas</button>
+          <!-- Los viajes particulares no son envíos: no tienen zona ni tracking y se
+               cotizan a un valor fijo de tabla, así que en las otras solapas o no
+               entran (Conductores, Zonas) o entran diluidos en la facturación del
+               cliente. Acá se ve la operación sola, que es la pregunta: cuánto mueve
+               este servicio. Ver el módulo en CLAUDE.md. -->
+          <button class="tab" id="dash-btn-viajes" onclick="switchDashTab('viajes')" title="Lo que mueven los viajes particulares en el período"><i class="ic ic-route"></i> Viajes particulares</button>
         </div>
 
         <!-- ══════════ TAB: CLIENTES ══════════ -->
@@ -189,6 +195,13 @@
         </div><!-- /tab conductores -->
 
         <!-- ══════════ TAB: ZONAS ══════════ -->
+        <!-- ══════════ TAB: VIAJES PARTICULARES ══════════ -->
+        <div id="dash-tab-viajes" style="display:none">
+          <div id="dash-vp-nota"></div>
+          <div class="metrics-grid" id="dash-vp-kpis" style="grid-template-columns:repeat(auto-fit,minmax(185px,1fr))"></div>
+          <div id="dash-vp-body"></div>
+        </div><!-- /dash viajes -->
+
         <div id="dash-tab-zonas" style="display:none">
         <!-- Reportes integrados -->
         <div class="dash-reports">
