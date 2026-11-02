@@ -948,6 +948,85 @@
   </div>
 </div>
 
+
+<!-- CAMBIO DE ÁREA O DE PUESTO -->
+<!-- Un ascenso o un pase de área mueve CUATRO cosas a la vez: el área, el
+     puesto, el horario (y con él el valor de la hora extra) y a veces el
+     sueldo. Hasta acá el único camino era editar la ficha, que pisaba el dato
+     viejo sin dejar rastro y cambiaba el valor de la hora en silencio. Este
+     modal registra el movimiento con el mes desde el que rige y ANTICIPA en
+     pesos lo que se mueve, que es lo que no se ve. Lo llena abrirCambioArea. -->
+<div class="modal-backdrop" id="modal-movimiento-backdrop" onclick="cerrarCambioArea(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1002;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:560px;max-height:92vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-users"></i> Cambio de área o de puesto</span>
+      <button class="modal-close" onclick="cerrarCambioArea()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <!-- .alert es display:flex: TODO el contenido va dentro de UN solo hijo,
+           si no el texto queda en una tira vertical de una palabra de ancho. -->
+      <div class="alert alert-info" style="margin:0;font-size:12px" id="mmov-quien"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Rige desde</label>
+          <input type="month" id="mmov-periodo" class="form-input" style="width:100%" onchange="_movPreview()">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Área nueva</label>
+          <select id="mmov-area" class="form-input" style="width:100%" onchange="_movPoblarPuestos(); _movPreview()"></select>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Puesto nuevo</label>
+        <div id="mmov-puesto-wrap"></div>
+      </div>
+      <!-- El horario del puesto nuevo, ya resuelto: no se tipea. Van las DOS
+           jornadas una al lado de la otra, como ya hace el panel de horarios
+           por puesto antes de aplicar. -->
+      <div id="mmov-horario" style="font-size:12px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Sueldo <span class="muted" style="font-weight:400">— si el pase viene con aumento</span></label>
+        <input type="number" id="mmov-sueldo" class="form-input" style="width:100%" step="1000" oninput="_movPreview()">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Motivo <span style="color:#b91c1c">*</span></label>
+        <textarea id="mmov-motivo" rows="2" class="form-input" style="width:100%;resize:vertical"
+          placeholder="Ascenso a vendedora · paritaria · reorganización del área…" oninput="_movPreview()"></textarea>
+      </div>
+      <div id="mmov-preview" style="font-size:12px;display:flex;flex-direction:column;gap:7px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarCambioArea()">Cancelar</button>
+        <button class="btn btn-primary" id="mmov-guardar" onclick="guardarCambioArea()"><i class="ic ic-save"></i> Registrar el cambio</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DESHACER UN MOVIMIENTO -->
+<!-- No se borra: si desapareciera, el área y el horario volverían atrás sin que
+     nadie pueda decir por qué. Queda tachado en el historial con su motivo. -->
+<div class="modal-backdrop" id="modal-revmov-backdrop" onclick="cerrarRevertirMovimiento(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1003;align-items:center;justify-content:center;padding:20px">
+  <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ic ic-undo"></i> Deshacer el cambio de área</span>
+      <button class="modal-close" onclick="cerrarRevertirMovimiento()"><i class="ic ic-x"></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="alert alert-info" style="margin:0;font-size:12px" id="mrevmov-que"></div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Por qué se deshace <span style="color:#b91c1c">*</span></label>
+        <textarea id="mrevmov-motivo" rows="3" class="form-input" style="width:100%;resize:vertical"
+          placeholder="Se cargó por error · el pase no se hizo · el mes era otro…" oninput="_revMovPreview()"></textarea>
+      </div>
+      <div id="mrevmov-preview" style="font-size:12px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="cerrarRevertirMovimiento()">Cancelar</button>
+        <button class="btn btn-primary" id="mrevmov-guardar" onclick="revertirMovimiento()"><i class="ic ic-undo"></i> Deshacer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- HORARIOS POR PUESTO -->
 <!-- El horario es del puesto y se aplica a todos sus empleados; el sueldo es
      de cada uno. Lo llena _renderListaPuestos / editarHorarioPuesto. -->

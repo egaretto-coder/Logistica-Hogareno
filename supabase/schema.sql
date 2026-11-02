@@ -2190,3 +2190,84 @@ create unique index if not exists rendiciones_envio_clave_key
 -- alter table public.clientes
 --   add column if not exists solo_viajes boolean not null default false;
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 02/11/2026 · empleado_movimientos — LA TRAYECTORIA DEL EMPLEADO
+--
+-- Un empleado asciende o se lo mueve de area, y eso le cambia el AREA, el
+-- PUESTO, el HORARIO y a veces el SUELDO. El sueldo ya tenia vigencia
+-- historica (empleado_ajustes + sueldoVigenteEn, que reconstruye el sueldo de
+-- un mes pasado porque la fila guarda sueldo_anterior ADEMAS de sueldo_nuevo).
+-- El area, el puesto y el horario NO tenian ninguna: guardarEmpleadoModal
+-- pisaba empleados.area y el valor viejo se perdia.
+--
+-- Entonces TODO lo que los leia -el costo por area, el valor de la hora extra,
+-- los viaticos, la equivalencia de vacaciones, el recibo- los leia de la ficha
+-- VIVA y mentia sobre el pasado. Medido con el pase de LEILA MOHAMED a Ventas:
+-- su costo de mayo a octubre saltaba de Asesoria Comercial a Ventas y sus
+-- horas extras de esos meses se abarataban un 28% -de $6.324 a $4.553 la
+-- hora- porque el puesto nuevo tiene 37,5 h semanales contra 27, con el mismo
+-- sueldo. Nada de eso avisaba.
+--
+-- UNA FILA POR CAMBIO, con el MES desde el que rige. Los lectores con mes
+-- (areaVigenteEn / puestoVigenteEn / horarioVigenteEn / valorHoraEn) son el
+-- gemelo de sueldoVigenteEn: el ultimo movimiento de ese mes o antes; si no
+-- hubo, el estado ANTERIOR del primer movimiento posterior; y si no hay
+-- ninguno, lo que dice la ficha. Esa ultima caida es la que hace que los 32
+-- legajos cargados hoy se comporten EXACTAMENTE como antes.
+--
+-- EL HORARIO SE GUARDA EFECTIVO, no por referencia al puesto: puesto_horarios
+-- es mutable, asi que resolverlo con horarioDePuesto(area, puesto) daria el
+-- horario de HOY de ese puesto y cambiar el de "Vendedor Flex" reinterpretaria
+-- el noviembre de Leila. Van los 8 FACTORES y ninguna cuenta -las horas
+-- diarias, las semanales y el valor de la hora salen de ahi-: guardar el
+-- resultado ademas del factor es la forma de que queden en desacuerdo.
+--
+-- EL SUELDO DEL PASE VA A empleado_ajustes Y NO ACA. Esa es la unica tabla que
+-- leen sueldoVigenteEn, ultimoAjusteDe y el ciclo de 3 meses. Escrito solo en
+-- la tabla nueva, el mes costaria de menos y al empleado se le atrasaria el
+-- proximo aumento: el bug del lapiz del plantel, textual. El movimiento lo
+-- referencia con ajuste_id, y el historial no lo cuenta dos veces.
+--
+-- SE DESHACE, NO SE BORRA (revertido + quien y por que): si la fila
+-- desapareciera, el area y el sueldo volverian atras sin nada que explique por
+-- que. Deshacer se niega -y lo dice- si hay un cambio POSTERIOR, si alguien
+-- edito el area a mano despues, si el mes ya esta cerrado o si la liquidacion
+-- de ese mes ya esta PAGADA.
+--
+-- create table if not exists public.empleado_movimientos (
+--   id bigint generated always as identity primary key,
+--   empleado_id bigint not null references public.empleados(id) on delete cascade,
+--   periodo text not null,                      -- AAAA-MM desde el que rige
+--   decidido_en date not null default current_date,
+--   area_anterior text not null default '',
+--   area_nueva text not null default '',
+--   puesto_anterior text not null default '',
+--   puesto_nuevo text not null default '',
+--   horario_anterior jsonb,                     -- los 8 factores, sin cuentas
+--   horario_nuevo jsonb,
+--   ajuste_id bigint references public.empleado_ajustes(id) on delete set null,
+--   motivo text not null default '',            -- obligatorio al cargarlo
+--   creado_por text not null default '',
+--   revertido boolean not null default false,
+--   revertido_en timestamptz,
+--   revertido_por text not null default '',
+--   revertido_motivo text not null default '',
+--   created_at timestamptz not null default now(),
+--   sucursal text not null default coalesce(public.sucursal_pedida(), 'BA')
+--     references public.sucursales(codigo)
+-- );
+-- create index if not exists idx_emp_movim_empleado on public.empleado_movimientos (empleado_id);
+-- create index if not exists idx_emp_movim_periodo on public.empleado_movimientos (sucursal, periodo);
+-- alter table public.empleado_movimientos enable row level security;
+-- create policy empleado_movimientos_sucursal_all on public.empleado_movimientos
+--   for all to authenticated
+--   using (public.es_usuario_activo() and public.es_de_sucursal(sucursal))
+--   with check (public.es_usuario_activo() and public.es_de_sucursal(sucursal));
+-- alter publication supabase_realtime add table public.empleado_movimientos;
+--
+-- Y asignar_empleado_a_sucursal() la mueve: la funcion enumera las tablas que
+-- cuelgan del empleado A MANO -un barrido automatico por "las que tengan una
+-- columna de empleado" es mas corto y esta mal-, y lo que no se mueva queda
+-- HUERFANO en la otra boca, invisible para los dos lados.
+-- ───────────────────────────────────────────────────────────────────────

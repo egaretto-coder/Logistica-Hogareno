@@ -77,6 +77,8 @@ function loadSavedConfig() {
   if (emp) { try { AppData.empleados = JSON.parse(emp) || []; } catch(e) {} }
   const empa = localStorage.getItem('liq_empleado_ajustes');
   if (empa) { try { AppData.empleadoAjustes = JSON.parse(empa) || []; } catch(e) {} }
+  const empmv = localStorage.getItem('liq_empleado_movimientos');
+  if (empmv) { try { AppData.empleadoMovimientos = JSON.parse(empmv) || []; } catch(e) {} }
   const empp = localStorage.getItem('liq_empleado_postergaciones');
   if (empp) { try { AppData.empleadoPostergaciones = JSON.parse(empp) || []; } catch(e) {} }
   const emphe = localStorage.getItem('liq_empleado_horas_extra');
@@ -616,7 +618,24 @@ async function _hydrateFromSupabaseReal(opts) {
   AppData.empleadoPostergaciones = (data.empleado_postergaciones || []).map(p => ({
     id: p.id, empleado_id: p.empleado_id, fecha: p.fecha || '',
     mes_original: p.mes_original || '', meses: _num(p.meses) || 0, mes_nuevo: p.mes_nuevo || '',
-    motivo: p.motivo || '', creado_por: p.creado_por || ''
+    motivo: p.motivo || '', creado_por: p.creado_por || '',
+    // created_at NO se mapeaba y la columna existe: sin esto el historial no
+    // puede decir CUÁNDO se cargó la decisión, que es otra cosa que el mes al
+    // que afecta. Mismo olvido que ya hubo que corregirle a cliente_tarifas.
+    created_at: p.created_at || ''
+  }));
+  // La trayectoria. Un campo que no se mapee acá NO existe en la app aunque
+  // esté en la base, y sin dar ningún error.
+  AppData.empleadoMovimientos = (data.empleado_movimientos || []).map(m => ({
+    id: m.id, empleado_id: m.empleado_id, periodo: m.periodo || '',
+    decidido_en: String(m.decidido_en || '').slice(0, 10),
+    area_anterior: m.area_anterior || '', area_nueva: m.area_nueva || '',
+    puesto_anterior: m.puesto_anterior || '', puesto_nuevo: m.puesto_nuevo || '',
+    horario_anterior: m.horario_anterior || {}, horario_nuevo: m.horario_nuevo || {},
+    ajuste_id: m.ajuste_id || null, motivo: m.motivo || '', creado_por: m.creado_por || '',
+    revertido: !!m.revertido, revertido_en: m.revertido_en || '',
+    revertido_por: m.revertido_por || '', revertido_motivo: m.revertido_motivo || '',
+    created_at: m.created_at || ''
   }));
   AppData.empleadoHorasExtra = (data.empleado_horas_extra || []).map(h => ({
     id: h.id, empleado_id: h.empleado_id, fecha: String(h.fecha || '').slice(0, 10),
@@ -869,6 +888,7 @@ async function _hydrateFromSupabaseReal(opts) {
     localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
     localStorage.setItem('liq_empleado_licencias', JSON.stringify(AppData.empleadoLicencias || []));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
+    localStorage.setItem('liq_empleado_movimientos', JSON.stringify(AppData.empleadoMovimientos || []));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
     localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
     localStorage.setItem('liq_puesto_horarios', JSON.stringify(AppData.puestoHorarios || []));

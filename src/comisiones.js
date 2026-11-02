@@ -420,10 +420,29 @@ function empleadoDeVendedor(nombre) { return _empleadoDeAreaComision(nombre); }
 let _comPlantelSincronizado = false;
 async function sincronizarVendedoresConPlantel() {
   const altas = [], bajas = [], reactivados = [];
+  // Se recorre a TODOS y no solo a los que comisionan: con el "continue" que
+  // había antes, al que SALE de un área que comisiona no lo desactivaba nunca
+  // —y desde que existe el cambio de área eso pasa de verdad—. Peor: como ese
+  // filtro corría primero, tampoco lo desactivaba su baja del legajo, así que
+  // un ex empleado seguía ofreciéndose en el selector. Y el aviso de
+  // eliminarVendedor promete textual que "cambiale el área en Empleados… el
+  // padrón se acomoda solo": era falso justo para ese caso.
   for (const e of (AppData.empleados || [])) {
-    if (!empleadoComisiona(e)) continue;
+    const comisiona = empleadoComisiona(e);
     const v = vendedorDeEmpleado(e.nombre);
     const deBaja = e.activo === false;
+    // Ya no comisiona: deja de ofrecerse para asignaciones NUEVAS. No se borra
+    // ni se le tocan sus comisiones — las que están corriendo se siguen
+    // pagando, y su recibo tiene que poder volver a salir.
+    if (!comisiona) {
+      if (v && v.activo !== false) {
+        try {
+          await DB.updateWhere("vendedores", "id", v.id, { activo: false });
+          v.activo = false; bajas.push(v.nombre);
+        } catch (err) { console.warn("sincronizarVendedoresConPlantel", e && e.nombre, err); }
+      }
+      continue;
+    }
     try {
       if (!v) {
         // Alguien que se fue antes de entrar al padrón no se da de alta: sería

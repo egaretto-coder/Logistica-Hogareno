@@ -302,6 +302,11 @@ let AppData = {
   vacaciones: [],
   empleadoAjustes: [],
   empleadoPostergaciones: [],   // ajustes que se decidió NO dar todavía, con su justificación
+  // La trayectoria: cada pase de área/puesto con el mes desde el que rige.
+  // Nace en [] porque el primer render corre ANTES de la hidratación y lee
+  // la caché local: sin la propiedad, el primer .filter() tira TypeError y
+  // la pantalla queda en blanco en cada re-render del realtime.
+  empleadoMovimientos: [],
   empleadoHorasExtra: [],       // horas extras registradas el día que se hicieron
   empleadoBonos: [],            // bonos del mes: se pagan UNA vez y no tocan el sueldo
   puestoHorarios: [],           // el horario de cada puesto: lo comparten todos sus empleados

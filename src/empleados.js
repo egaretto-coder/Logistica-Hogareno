@@ -270,6 +270,118 @@ function _camposDesdePuesto(ph) {
 }
 function sigueHorarioPuesto(e) { return !!horarioDePuesto(e && e.area, e && e.puesto) && !(e && e.horario_propio); }
 
+// ── LA TRAYECTORIA: QUÉ ÁREA, QUÉ PUESTO Y QUÉ HORARIO TENÍA ESE MES ────────
+// El SUELDO ya tenía vigencia histórica (`empleado_ajustes` + `sueldoVigenteEn`,
+// que reconstruye el sueldo de un mes pasado porque la fila guarda el ANTERIOR
+// además del nuevo). El área, el puesto y el horario NO tenían ninguna: la ficha
+// pisaba `empleados.area` y el valor viejo se perdía, así que todo lo que los
+// leía —el costo por área, el valor de la hora extra, los viáticos, el recibo—
+// los leía de la ficha VIVA y mentía sobre el pasado. Medido con el pase de
+// LEILA MOHAMED a Ventas: su costo de mayo a octubre saltaba de Asesoría
+// Comercial a Ventas, y sus horas extras de esos meses se abarataban un 28%
+// —de $6.324 a $4.553 la hora— porque el puesto nuevo tiene 37,5 h semanales
+// contra 27. Nada de eso avisaba.
+//
+// Son el gemelo de `sueldoVigenteEn`: el último movimiento de ese mes o antes;
+// si no hubo, el estado ANTERIOR del primer movimiento posterior; y si no hay
+// ninguno, lo que dice la ficha. Esa última caída es la que hace que los 32
+// legajos cargados hoy se comporten EXACTAMENTE como antes: sin movimientos,
+// nada se reinterpreta.
+function movimientosDe(empId, incluirRevertidos) {
+  return (AppData.empleadoMovimientos || [])
+    .filter(m => m.empleado_id === empId && (incluirRevertidos || !m.revertido))
+    // El desempate por id NO es decorativo: dos movimientos del mismo mes
+    // comparten `periodo`, y sin él el orden queda al azar de la hidratación.
+    .sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)) || (_num(a.id) - _num(b.id)));
+}
+function _movVigenteEn(empId, periodo) {
+  const p = String(periodo || '').slice(0, 7);
+  let antes = null, despues = null;
+  movimientosDe(empId).forEach(m => {
+    if (String(m.periodo) <= p) antes = m;
+    else if (!despues) despues = m;
+  });
+  return { antes, despues };
+}
+function areaVigenteEn(e, periodo) {
+  if (!e) return '';
+  const v = _movVigenteEn(e.id, periodo);
+  if (v.antes) return v.antes.area_nueva || '';
+  if (v.despues) return v.despues.area_anterior || '';
+  return e.area || '';
+}
+function puestoVigenteEn(e, periodo) {
+  if (!e) return '';
+  const v = _movVigenteEn(e.id, periodo);
+  if (v.antes) return v.antes.puesto_nuevo || '';
+  if (v.despues) return v.despues.puesto_anterior || '';
+  return e.puesto || '';
+}
+// Devuelve algo con la forma de un empleado: `horasDelHorario`, `horasSemanales`
+// y `valorHoraDe` son duck-typed y lo aceptan tal cual. El horario se guardó
+// EFECTIVO y no por referencia al puesto, porque `puesto_horarios` es mutable:
+// resolverlo con `horarioDePuesto(area, puesto)` daría el horario de HOY de ese
+// puesto, y cambiar el de "Vendedor Flex" reinterpretaría el noviembre de Leila.
+function horarioVigenteEn(e, periodo) {
+  if (!e) return null;
+  const v = _movVigenteEn(e.id, periodo);
+  const h = v.antes ? v.antes.horario_nuevo : (v.despues ? v.despues.horario_anterior : null);
+  if (!h || typeof h !== 'object' || !_num(h.dias_laborales)) return e;
+  return {
+    dias_laborales: _num(h.dias_laborales), hora_entrada: h.hora_entrada || '',
+    hora_salida: h.hora_salida || '', almuerzo_min: _num(h.almuerzo_min),
+    sab_entrada: h.sab_entrada || null, sab_salida: h.sab_salida || null,
+    sab_almuerzo_min: h.sab_almuerzo_min === null || h.sab_almuerzo_min === undefined ? null : _num(h.sab_almuerzo_min),
+    horario_propio: !!h.horario_propio, sueldo: _num(e.sueldo),
+  };
+}
+function valorHoraEn(e, periodo, sueldo) { return valorHoraDe(horarioVigenteEn(e, periodo), sueldo); }
+// Los viáticos son del ÁREA, así que son del área DE ESE MES: el panel invitaba
+// a cargarle viáticos de meses en que todavía no era de Ventas, y una vez
+// congelados en `empleado_sueldos` y firmados en el recibo, corregirlos exige
+// reabrir una liquidación pagada.
+function empleadoCobraViaticosEn(e, periodo) {
+  const a = areaVigenteEn(e, periodo);
+  return RRHH_AREAS_VIATICOS.some(x => _areaKey(x) === _areaKey(a));
+}
+// El horario como lo guarda un movimiento: los 8 FACTORES, ninguna cuenta. Las
+// horas diarias, las semanales y el valor de la hora salen de acá y no se
+// guardan — guardar el resultado además del factor es la forma de que queden
+// en desacuerdo.
+function _movHorarioDe(e) {
+  const dias = _num(e && e.dias_laborales) || 0;
+  const conSab = dias >= 6 && _horaTxt(e && e.sab_entrada) && _horaTxt(e && e.sab_salida);
+  return {
+    dias_laborales: dias,
+    hora_entrada: _horaTxt(e && e.hora_entrada), hora_salida: _horaTxt(e && e.hora_salida),
+    almuerzo_min: _num(e && e.almuerzo_min) || 0,
+    sab_entrada: conSab ? _horaTxt(e.sab_entrada) : null,
+    sab_salida: conSab ? _horaTxt(e.sab_salida) : null,
+    sab_almuerzo_min: conSab ? (_num(e.sab_almuerzo_min) || 0) : null,
+    horario_propio: !!(e && e.horario_propio),
+  };
+}
+// POR DÓNDE ESTUVO: los tramos, de los movimientos más el ingreso. Es textual
+// lo que pidió el negocio y se DERIVA — no hay una tabla de tramos que pueda
+// quedar en desacuerdo con los movimientos.
+function trayectoriaEmpleado(e) {
+  if (!e) return [];
+  const movs = movimientosDe(e.id);
+  const ing = String(e.fecha_ingreso || '').slice(0, 7);
+  const tramos = [];
+  // El primer tramo sale del estado ANTERIOR del primer movimiento, NO de la
+  // ficha: con la ficha ya en Ventas, mayo tiene que seguir diciendo Asesoría.
+  let area = movs.length ? (movs[0].area_anterior || '') : (e.area || '');
+  let puesto = movs.length ? (movs[0].puesto_anterior || '') : (e.puesto || '');
+  let desde = ing;
+  movs.forEach(m => {
+    tramos.push({ area, puesto, desde, hasta: _mesMas(m.periodo, -1) });
+    area = m.area_nueva || ''; puesto = m.puesto_nuevo || ''; desde = m.periodo;
+  });
+  tramos.push({ area, puesto, desde, hasta: '' });
+  return tramos.filter(t => t.area || t.puesto);
+}
+
 // ── Panel: el horario de cada puesto ────────────────────────────────────────
 let _mphEdit = null;          // { area, puesto } que se está editando
 function abrirHorariosPuesto() {
@@ -628,6 +740,7 @@ function persistirEmpleadosLocal() {
     localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
     localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
     localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones));
+    localStorage.setItem('liq_empleado_movimientos', JSON.stringify(AppData.empleadoMovimientos || []));
     localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra));
     localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
     localStorage.setItem('liq_puesto_horarios', JSON.stringify(AppData.puestoHorarios || []));
@@ -851,8 +964,13 @@ function renderEmpleados() {
       // El historial completo: cuántos aumentos tuvo y cuándo. Un sueldo se
       // explica por lo que se le fue haciendo, no por el último renglón.
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-        '<button class="btn btn-sm" style="padding:3px 9px;font-size:11px" onclick="verHistorialEmpleado(' + e.id + ')" title="Todos sus aumentos y postergaciones, con fecha y motivo">' +
+        '<button class="btn btn-sm" style="padding:3px 9px;font-size:11px" onclick="verHistorialEmpleado(' + e.id + ')" title="Toda su trayectoria: por dónde estuvo, sus sueldos y sus postergaciones">' +
           '<i class="ic ic-file"></i> Historial' + (nMov ? ' · ' + nMov : '') + '</button>' +
+        // Un ascenso o un pase de área mueve el área, el puesto, el horario (y
+        // con él el valor de la hora extra) y a veces el sueldo. El botón va acá
+        // porque la tarjeta ya muestra a la vista los cinco datos que toca.
+        '<button class="btn btn-sm" style="padding:3px 9px;font-size:11px" onclick="abrirCambioArea(' + e.id + ')" title="Registrar un cambio de área o de puesto, con su horario y su sueldo, desde el mes que rige">' +
+          '<i class="ic ic-users"></i> Cambiar de área</button>' +
         (leTocaAjuste(e)
           ? '<button class="btn btn-sm" style="padding:3px 9px;font-size:11px;border-color:#fcd34d;color:#92400e" onclick="abrirPostergarAjuste(' + e.id + ')" title="Si no se le da el aumento ahora, se posterga con una justificación">' +
             '<i class="ic ic-calendar"></i> Postergar</button>'
@@ -1091,15 +1209,486 @@ async function quitarPostergacion(id) {
   } catch (err) { console.warn('quitarPostergacion', err); alert('No se pudo deshacer: ' + (err.message || err)); }
 }
 
+
+// ── EL PASE DE ÁREA / PUESTO ────────────────────────────────────────────────
+// Hasta acá el único camino era editar la ficha, y es el más silencioso de la
+// pantalla: el `onchange` del área dispara `_syncHorarioPuesto()`, que pisa en
+// el acto días/entrada/salida/almuerzo, y al guardar `_camposDesdePuesto` los
+// vuelve a tomar del puesto. O sea que cambiar un área cambia EL VALOR DE LA
+// HORA EXTRA sin que ninguna confirmación lo nombre —el confirm de la ficha
+// solo habla del sueldo— y sin dejar rastro de dónde venía.
+//
+// Acá el movimiento se registra con el MES desde el que rige y el modal
+// anticipa, en pesos, lo que se mueve. Medido con Leila: su hora pasa de
+// $6.324 a $4.553 (−28%) porque el puesto nuevo tiene 37,5 h semanales contra
+// 27, con el mismo sueldo.
+let _movEmpId = null;
+let _movRevertId = null;
+
+// El mes en curso sin depender de comisiones.js, que los bancos de RRHH no
+// cargan. Y por hoyISO(), nunca por toISOString(): a las 21:30 del 31/10 ese
+// devuelve noviembre y el movimiento quedaría fechado un mes adelante.
+function _movMesHoy() { return String(hoyISO()).slice(0, 7); }
+
+function abrirCambioArea(empId) {
+  const e = (AppData.empleados || []).find(x => x.id === empId);
+  if (!e) return;
+  // Por ID y no por posición: AppData.empleados se reemplaza entero al
+  // re-hidratar, y con el modal abierto el índice pasa a apuntar a otra fila.
+  _movEmpId = e.id;
+  const quien = document.getElementById('mmov-quien');
+  if (quien) quien.innerHTML = '<i class="ic ic-user"></i><div><strong>' + _eEsc(e.nombre) + '</strong> — hoy en <strong>' +
+    _eEsc(_areaDe(e)) + '</strong>' + (e.puesto ? ' · ' + _eEsc(e.puesto) : '') + '.' +
+    '<div class="muted" style="font-size:11px">Ingreso ' + _empFmt(e.fecha_ingreso) + ' · ' + antiguedadTexto(e) + '</div></div>';
+  const per = document.getElementById('mmov-periodo');
+  if (per) per.value = _movMesHoy();
+  const selArea = document.getElementById('mmov-area');
+  if (selArea) {
+    selArea.innerHTML = '<option value="">— Elegí un área —</option>' +
+      RRHH_AREAS.map(a => '<option value="' + a.replace(/"/g, '&quot;') + '"' +
+        (_areaKey(a) === _areaKey(e.area) ? ' selected' : '') + '>' + a + '</option>').join('');
+  }
+  _movPoblarPuestos(e.puesto);
+  const su = document.getElementById('mmov-sueldo');
+  if (su) su.value = _num(e.sueldo) || '';
+  const mo = document.getElementById('mmov-motivo');
+  if (mo) mo.value = '';
+  _movPreview();
+  document.getElementById('modal-movimiento-backdrop').style.display = 'flex';
+}
+function cerrarCambioArea(ev) {
+  if (!ev || ev.target.id === 'modal-movimiento-backdrop') {
+    document.getElementById('modal-movimiento-backdrop').style.display = 'none';
+    _movEmpId = null;
+  }
+}
+// El área sin lista de puestos (hoy Gerencia) cae al texto libre y lo dice, en
+// vez de dejar un select vacío que no deja cargar a nadie.
+function _movPoblarPuestos(actual) {
+  const wrap = document.getElementById('mmov-puesto-wrap');
+  if (!wrap) return;
+  const area = (document.getElementById('mmov-area') || {}).value || '';
+  const prev = actual !== undefined ? actual
+    : ((document.getElementById('mmov-puesto-sel') || {}).value || (document.getElementById('mmov-puesto') || {}).value || '');
+  const opts = puestoOptionsHTML(area, prev);
+  wrap.innerHTML = opts
+    ? '<select id="mmov-puesto-sel" class="form-input" style="width:100%" onchange="_movPreview()">' + opts + '</select>'
+    : '<input id="mmov-puesto" class="form-input" style="width:100%" value="' + String(prev || '').replace(/"/g, '&quot;') +
+      '" placeholder="Escribilo: esta área no tiene lista de puestos" oninput="_movPreview()">';
+}
+function _movPuestoElegido() {
+  const sel = document.getElementById('mmov-puesto-sel');
+  if (sel) return (sel.value || '').trim();
+  const inp = document.getElementById('mmov-puesto');
+  return inp ? (inp.value || '').trim() : '';
+}
+// El estado al que llega: el horario del puesto nuevo si lo tiene, y el suyo si
+// el empleado trabaja distinto o el área destino no tiene horario cargado.
+function _movDestino(e) {
+  const area = (document.getElementById('mmov-area') || {}).value || '';
+  const puesto = _movPuestoElegido();
+  const ph = horarioDePuesto(area, puesto);
+  // Un pase NO deshace en silencio una marca que alguien puso a propósito.
+  const propio = !!e.horario_propio;
+  // Pasa por _movHorarioDe() OTRA VEZ a propósito: _camposDesdePuesto trae
+  // tambien `horas_diarias`, que es una CUENTA, y guardarla junto a los
+  // factores es la forma de que queden en desacuerdo —el banco lo agarro: el
+  // horario nuevo la traia y el anterior no, o sea dos formas distintas de la
+  // misma fila—. La columna `horas_diarias` de la ficha se escribe aparte,
+  // derivada, para los legajos viejos que no tienen horario.
+  const hor = (ph && !propio)
+    ? _movHorarioDe(Object.assign({}, e, _camposDesdePuesto(ph), { horario_propio: false }))
+    : _movHorarioDe(e);
+  return { area: area, puesto: puesto, ph: ph, propio: propio, horario: hor };
+}
+
+function _movPreview() {
+  const box = document.getElementById('mmov-preview');
+  const horBox = document.getElementById('mmov-horario');
+  const btn = document.getElementById('mmov-guardar');
+  if (!box) return;
+  const e = (AppData.empleados || []).find(x => x.id === _movEmpId);
+  if (!e) return;
+  const periodo = (document.getElementById('mmov-periodo') || {}).value || '';
+  const motivo = ((document.getElementById('mmov-motivo') || {}).value || '').trim();
+  const d = _movDestino(e);
+  const sueldoNuevo = parseFloat((document.getElementById('mmov-sueldo') || {}).value) || 0;
+  const sueldoHoy = _num(e.sueldo);
+  const cambiaArea = _areaKey(d.area) !== _areaKey(e.area);
+  const cambiaPuesto = normNombre(d.puesto) !== normNombre(e.puesto);
+
+  // El horario, las DOS jornadas una al lado de la otra.
+  if (horBox) {
+    horBox.innerHTML = !d.area || !d.puesto
+      ? '<span class="muted">Elegí el área y el puesto para ver el horario que le queda.</span>'
+      : (d.ph && !d.propio
+          ? '<strong>Horario de ' + _eEsc(d.puesto) + '</strong> (del puesto)' +
+            '<div style="margin-top:4px">Hoy: ' + _eEsc(jornadaTexto(e)) + '</div>' +
+            '<div>Pasa a: <strong>' + _eEsc(jornadaTexto(d.horario)) + '</strong></div>'
+          : '<strong>Conserva su horario</strong> <span class="muted">(' +
+            (d.propio ? 'tiene marcado que trabaja distinto' : 'el puesto no tiene horario cargado') + ')</span>' +
+            '<div style="margin-top:4px">' + _eEsc(jornadaTexto(e)) + '</div>');
+  }
+
+  const r = [];
+  const chip = (txt, color, fondo) => '<div style="background:' + fondo + ';border:1px solid ' + color +
+    ';color:' + color + ';border-radius:8px;padding:7px 10px">' + txt + '</div>';
+  const AMB = ['#92400e', '#fffbeb'], INFO = ['#1e3a8a', '#eff6ff'], OK = ['#166534', '#f0fdf4'];
+
+  // 1) EL VALOR DE LA HORA, que es el cambio más grande y hoy no lo dice nadie.
+  const vhHoy = valorHoraDe(e, sueldoNuevo || sueldoHoy);
+  const vhNue = valorHoraDe(d.horario, sueldoNuevo || sueldoHoy);
+  if (d.area && d.puesto && vhHoy && vhNue && vhHoy !== vhNue) {
+    const pct = Math.round((vhNue - vhHoy) / vhHoy * 1000) / 10;
+    const baja = vhNue < vhHoy;
+    r.push(chip('Su <strong>hora extra</strong> pasa de ' + fmtPeso(vhHoy) + ' a <strong>' + fmtPeso(vhNue) + '</strong> (' +
+      (pct > 0 ? '+' : '') + String(pct).replace('.', ',') + '%): ' + horasSemanales(e) + ' h semanales → ' +
+      horasSemanales(d.horario) + ' h.' +
+      (baja ? ' Para que no bajara, el sueldo tendría que ser ' + fmtPeso(Math.round((sueldoNuevo || sueldoHoy) * vhHoy / vhNue)) + '.' : ''),
+      baja ? AMB[0] : OK[0], baja ? AMB[1] : OK[1]));
+  }
+
+  // 2) VIÁTICOS: son del área, así que son del área de ESE mes.
+  if (cambiaArea && periodo) {
+    const antes = RRHH_AREAS_VIATICOS.some(x => _areaKey(x) === _areaKey(e.area));
+    const ahora = RRHH_AREAS_VIATICOS.some(x => _areaKey(x) === _areaKey(d.area));
+    if (antes !== ahora) {
+      r.push(chip(ahora
+        ? 'Desde <strong>' + _mesTexto(periodo) + '</strong> cobra <strong>viáticos</strong> (' + _eEsc(d.area) +
+          ' es un área con viáticos). Las liquidaciones anteriores NO los piden.'
+        : 'Deja de cobrar <strong>viáticos</strong> desde ' + _mesTexto(periodo) + '. Las liquidaciones anteriores los conservan.',
+        INFO[0], INFO[1]));
+    }
+  }
+
+  // 3) VENDEDORES: entra o sale del padrón de Comisiones.
+  if (cambiaArea && typeof COM_AREAS_VENDEDORES !== 'undefined') {
+    const eraV = COM_AREAS_VENDEDORES.some(x => normNombre(x) === normNombre(e.area));
+    const esV = COM_AREAS_VENDEDORES.some(x => normNombre(x) === normNombre(d.area));
+    if (!eraV && esV) {
+      r.push(chip('Entra al <strong>padrón de Comisiones</strong> como ' + _eEsc(String(e.nombre).toUpperCase()) +
+        ': desde ahí se le pueden asignar clientes.', INFO[0], INFO[1]));
+    } else if (eraV && !esV) {
+      const v = (typeof vendedorDeEmpleado === 'function') ? vendedorDeEmpleado(e.nombre) : null;
+      // pagosRestantes() devuelve un OBJETO ({estado, quedan}) o null si la
+      // fila sigue en evaluacion: compararlo con 0 daba SIEMPRE false y el chip
+      // decia "no tiene comisiones corriendo" con clientes corriendo. Una fila
+      // en evaluacion cuenta: todavia no empezo a pagar, pero va a pagar.
+      const sigueCobrando = c => {
+        const pr = (typeof pagosRestantes === 'function') ? pagosRestantes(c) : null;
+        return pr ? _num(pr.quedan) > 0 : true;
+      };
+      const cls = v ? (AppData.comisionClientes || []).filter(c =>
+        normNombre(c.vendedor) === normNombre(v.nombre) && sigueCobrando(c)) : [];
+      r.push(chip('Sale del <strong>padrón de Comisiones</strong>: deja de ofrecerse para asignaciones nuevas.' +
+        (cls.length ? ' Tiene <strong>' + cls.length + '</strong> cliente(s) en comisión corriendo: eso se le sigue pagando.'
+                    : ' No tiene comisiones corriendo.'), AMB[0], AMB[1]));
+    }
+  }
+
+  // 4) VACACIONES: la equivalencia de los días salteados sale de su semana.
+  const dHoy = _num(e.dias_laborales) || 0, dNue = _num(d.horario.dias_laborales) || 0;
+  if (d.area && d.puesto && dHoy && dNue && dHoy !== dNue) {
+    r.push(chip('Sus <strong>vacaciones</strong> pasan a contarse ' + Math.max(1, dNue) + ' de cada 7 en vez de ' +
+      Math.max(1, dHoy) + ' de cada 7: trabaja ' + Math.abs(dNue - dHoy) + ' día(s) ' +
+      (dNue < dHoy ? 'menos' : 'más') + ' por semana.', INFO[0], INFO[1]));
+  }
+
+  // 5) COSTO POR ÁREA: la prueba en pantalla de que NO reescribe el pasado.
+  if (cambiaArea && periodo) {
+    r.push(chip('Su costo pasa a <strong>' + _eEsc(d.area) + '</strong> desde ' + _mesTexto(periodo) +
+      '. Los meses anteriores quedan en ' + _eEsc(_areaDe(e)) + ', como corresponde.', OK[0], OK[1]));
+  }
+
+  // 6) EL SUELDO, si cambió: el mismo bloque que la ficha.
+  if (sueldoNuevo && sueldoNuevo !== sueldoHoy && periodo) {
+    const dif = sueldoNuevo - sueldoHoy;
+    const pct = sueldoHoy > 0 ? Math.round(dif / sueldoHoy * 1000) / 10 : 0;
+    const s = (typeof sueldoDe === 'function') ? sueldoDe(e.id, periodo) : null;
+    r.push(chip('El <strong>sueldo</strong> pasa de ' + fmtPeso(sueldoHoy) + ' a <strong>' + fmtPeso(sueldoNuevo) + '</strong> (' +
+      (dif > 0 ? '+' : '') + fmtPeso(dif) + ' · ' + (pct > 0 ? '+' : '') + String(pct).replace('.', ',') + '%).' +
+      ' Queda en su historial como ajuste de ' + _mesTexto(periodo) + ' y su próximo ajuste pasa a ' +
+      _mesTexto(_mesMas(periodo, RRHH_MESES_AJUSTE)) + '.' +
+      (s && s.pagado ? ' <strong>La liquidación de ese mes ya está PAGADA</strong>: no se toca. Si corresponde pagarlo ahí, reabrila.'
+                     : (s ? ' Su liquidación de ese mes ya está cargada: se actualiza con el sueldo nuevo.' : '')),
+      (s && s.pagado) ? AMB[0] : OK[0], (s && s.pagado) ? AMB[1] : OK[1]));
+  }
+
+  const falta = [];
+  if (!periodo) falta.push('el mes desde el que rige');
+  if (!d.area) falta.push('el área');
+  if (!d.puesto) falta.push('el puesto');
+  if (!motivo) falta.push('el motivo');
+  if (!falta.length && !cambiaArea && !cambiaPuesto && (!sueldoNuevo || sueldoNuevo === sueldoHoy)) {
+    falta.push('algo que cambie: el área, el puesto o el sueldo son los mismos');
+  }
+  if (btn) btn.disabled = falta.length > 0;
+  box.innerHTML = (falta.length
+    ? chip('Falta ' + falta.join(' · ') + '.', '#b91c1c', '#fef2f2')
+    : '') + r.join('');
+}
+
+async function guardarCambioArea() {
+  const e = (AppData.empleados || []).find(x => x.id === _movEmpId);
+  if (!e) return;
+  const periodo = ((document.getElementById('mmov-periodo') || {}).value || '').slice(0, 7);
+  const motivo = ((document.getElementById('mmov-motivo') || {}).value || '').trim();
+  const d = _movDestino(e);
+  const sueldoNuevo = parseFloat((document.getElementById('mmov-sueldo') || {}).value) || 0;
+  const sueldoHoy = _num(e.sueldo);
+  if (!periodo || !d.area || !d.puesto) { alert('Falta el mes, el área o el puesto.'); return; }
+  if (!motivo) { alert('El motivo es obligatorio: es lo que explica después qué pasó.'); return; }
+  if (_areaKey(d.area) === _areaKey(e.area) && normNombre(d.puesto) === normNombre(e.puesto) &&
+      (!sueldoNuevo || sueldoNuevo === sueldoHoy)) {
+    alert('No hay nada que registrar: el área, el puesto y el sueldo son los mismos.');
+    return;
+  }
+  // Un mes ya CERRADO está congelado a propósito: un movimiento fechado antes
+  // no lo reescribiría (el cierre guarda su propio detalle) y dejaría el
+  // historial diciendo una cosa y el mes cerrado otra.
+  const ultCierre = (AppData.empleadoCierres || []).map(c => c.periodo).sort().pop();
+  if (ultCierre && periodo <= ultCierre) {
+    alert('El mes ' + _mesTexto(periodo) + ' ya está cerrado (el último cierre es ' + _mesTexto(ultCierre) + ').' +
+      String.fromCharCode(10) + 'Un cambio fechado ahí no movería ese mes y dejaría el historial diciendo otra cosa.');
+    return;
+  }
+  const cambiaSueldo = sueldoNuevo > 0 && sueldoNuevo !== sueldoHoy;
+  const vhNue = valorHoraDe(d.horario, sueldoNuevo || sueldoHoy);
+  // El confirm nombra la CONSECUENCIA y no el monto, que ya está a la vista.
+  if (!confirm(e.nombre + ' pasa a ' + d.area + ' · ' + d.puesto + ' desde ' + _mesTexto(periodo) + '.' +
+      String.fromCharCode(10) +
+      (vhNue ? 'Su hora extra queda en ' + fmtPeso(vhNue) + '.' + String.fromCharCode(10) : '') +
+      (cambiaSueldo ? 'Su próximo ajuste de sueldo pasa a ' + _mesTexto(_mesMas(periodo, RRHH_MESES_AJUSTE)) + '.' +
+        String.fromCharCode(10) : '') +
+      'Queda registrado en su historial y no toca los meses anteriores.')) return;
+
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  const mov = {
+    empleado_id: e.id, periodo: periodo, decidido_en: hoyISO(),
+    area_anterior: e.area || '', area_nueva: d.area,
+    puesto_anterior: e.puesto || '', puesto_nuevo: d.puesto,
+    horario_anterior: _movHorarioDe(e), horario_nuevo: d.horario,
+    ajuste_id: null, motivo: motivo, creado_por: quien,
+  };
+  let ajusteId = null, avisoAjuste = '';
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    // EL SUELDO VA A empleado_ajustes y NO acá: es la única tabla que leen
+    // sueldoVigenteEn, ultimoAjusteDe y el ciclo de 3 meses. Escrito solo en la
+    // tabla nueva, el mes costaría de menos y al empleado se le atrasaría el
+    // próximo aumento — el bug del lápiz del plantel, textual.
+    if (cambiaSueldo) {
+      try {
+        const pct = sueldoHoy > 0 ? Math.round(((sueldoNuevo - sueldoHoy) / sueldoHoy) * 1000) / 10 : 0;
+        const aj = { empleado_id: e.id, fecha: periodo + '-01', periodo: periodo, pct: pct,
+                     sueldo_anterior: sueldoHoy, sueldo_nuevo: sueldoNuevo,
+                     motivo: 'Cambio de área: ' + (e.area || '—') + ' → ' + d.area + ' (' + d.puesto + ')',
+                     aplicado_por: quien };
+        const rowAj = await DB.insertRow('empleado_ajustes', aj);
+        ajusteId = (rowAj && rowAj.id) || null;
+        if (!Array.isArray(AppData.empleadoAjustes)) AppData.empleadoAjustes = [];
+        AppData.empleadoAjustes.push(Object.assign({ id: ajusteId }, aj));
+      } catch (err) {
+        console.warn('guardarCambioArea · ajuste', err);
+        avisoAjuste = 'El cambio de área se registró, pero NO se pudo cargar el aumento de sueldo en el historial: ' +
+          (err.message || err) + String.fromCharCode(10) + 'Cargalo desde "Ajustes de sueldo".';
+      }
+    }
+    mov.ajuste_id = ajusteId;
+    const row = await DB.insertRow('empleado_movimientos', mov);
+    if (!Array.isArray(AppData.empleadoMovimientos)) AppData.empleadoMovimientos = [];
+    AppData.empleadoMovimientos.push(Object.assign({ id: row && row.id, created_at: '' }, mov));
+    // La ficha queda con el estado FINAL: es "lo que es de acá en adelante".
+    // Los lectores con mes resuelven el pasado por su cuenta.
+    const campos = Object.assign({ area: d.area, puesto: d.puesto }, d.horario,
+      { horas_diarias: horasDelHorario(d.horario) || 0 },
+      cambiaSueldo ? { sueldo: sueldoNuevo } : {});
+    await DB.updateWhere('empleados', 'id', e.id, campos);
+    Object.assign(e, campos);
+    if (cambiaSueldo && ajusteId) { try { await _sincronizarLiqConSueldo(e.id, periodo, sueldoNuevo); } catch (err) { console.warn(err); } }
+  } catch (err) {
+    console.warn('guardarCambioArea', err);
+    alert('No se pudo registrar el cambio: ' + (err.message || err));
+    return;
+  }
+  persistirEmpleadosLocal();
+  // El padrón de vendedores se acomoda solo: entra si pasó a un área que
+  // comisiona y se desactiva si salió de una.
+  if (typeof sincronizarVendedoresConPlantel === 'function') {
+    try { await sincronizarVendedoresConPlantel(); } catch (err) { console.warn(err); }
+  }
+  document.getElementById('modal-movimiento-backdrop').style.display = 'none';
+  _movEmpId = null;
+  renderEmpleados();
+  // Una escritura a medias NO se avisa con un toast, que se va solo.
+  if (avisoAjuste) alert(avisoAjuste);
+  showToast('✓ ' + e.nombre + ' pasa a ' + d.area + ' · ' + d.puesto + ' desde ' + _mesTexto(periodo));
+}
+
+// ── Deshacer un movimiento ──────────────────────────────────────────────────
+// Se niega y DICE por qué, en vez de ofrecer un botón que rompe.
+function _movMotivoNoRevertible(m) {
+  const e = (AppData.empleados || []).find(x => x.id === m.empleado_id);
+  if (!e) return 'el empleado ya no está en el plantel';
+  const post = movimientosDe(m.empleado_id).filter(x => x.id !== m.id &&
+    (String(x.periodo) > String(m.periodo) || (String(x.periodo) === String(m.periodo) && _num(x.id) > _num(m.id))));
+  if (post.length) return 'tiene un cambio POSTERIOR (' + _mesTexto(post[0].periodo) + '): deshacer este le borraría ese otro';
+  if (_areaKey(e.area) !== _areaKey(m.area_nueva) || normNombre(e.puesto) !== normNombre(m.puesto_nuevo)) {
+    return 'su área o su puesto de hoy ya no son los que dejó este cambio: alguien los editó después';
+  }
+  const ultCierre = (AppData.empleadoCierres || []).map(c => c.periodo).sort().pop();
+  if (ultCierre && String(m.periodo) <= ultCierre) return 'su mes (' + _mesTexto(m.periodo) + ') ya está cerrado';
+  const s = (typeof sueldoDe === 'function') ? sueldoDe(m.empleado_id, m.periodo) : null;
+  if (s && s.pagado) return 'la liquidación de ' + _mesTexto(m.periodo) + ' ya está PAGADA: reabrila primero';
+  return '';
+}
+function abrirRevertirMovimiento(id) {
+  const m = (AppData.empleadoMovimientos || []).find(x => x.id === id);
+  if (!m) return;
+  const no = _movMotivoNoRevertible(m);
+  if (no) { alert('No se puede deshacer: ' + no + '.'); return; }
+  _movRevertId = id;
+  const e = (AppData.empleados || []).find(x => x.id === m.empleado_id);
+  const box = document.getElementById('mrevmov-que');
+  if (box) box.innerHTML = '<i class="ic ic-undo"></i><div>Se deshace el cambio de <strong>' +
+    _eEsc(e ? e.nombre : '') + '</strong> de ' + _mesTexto(m.periodo) + ':<br>' +
+    _eEsc(m.area_nueva) + ' · ' + _eEsc(m.puesto_nuevo) + ' → <strong>' +
+    _eEsc(m.area_anterior || '(sin área)') + ' · ' + _eEsc(m.puesto_anterior || '(sin puesto)') + '</strong></div>';
+  const t = document.getElementById('mrevmov-motivo'); if (t) t.value = '';
+  _revMovPreview();
+  document.getElementById('modal-revmov-backdrop').style.display = 'flex';
+}
+function cerrarRevertirMovimiento(ev) {
+  if (!ev || ev.target.id === 'modal-revmov-backdrop') {
+    document.getElementById('modal-revmov-backdrop').style.display = 'none';
+    _movRevertId = null;
+  }
+}
+function _revMovPreview() {
+  const m = (AppData.empleadoMovimientos || []).find(x => x.id === _movRevertId);
+  const box = document.getElementById('mrevmov-preview');
+  const btn = document.getElementById('mrevmov-guardar');
+  if (!box || !m) return;
+  const motivo = ((document.getElementById('mrevmov-motivo') || {}).value || '').trim();
+  if (btn) btn.disabled = !motivo;
+  box.innerHTML = (m.ajuste_id
+      ? 'Se deshace TAMBIÉN el aumento que vino con el pase: un aumento de ascenso deshecho está deshecho, no es un bono de un mes.<br>'
+      : '') +
+    'El movimiento no se borra: queda tachado en su historial con el motivo.' +
+    (motivo ? '' : '<div style="color:#b91c1c;margin-top:4px">Escribí por qué se deshace.</div>');
+}
+async function revertirMovimiento() {
+  const m = (AppData.empleadoMovimientos || []).find(x => x.id === _movRevertId);
+  if (!m) return;
+  const motivo = ((document.getElementById('mrevmov-motivo') || {}).value || '').trim();
+  if (!motivo) { alert('El motivo es obligatorio.'); return; }
+  // Se revalida al confirmar, por si entró un cambio desde otra sesión.
+  const no = _movMotivoNoRevertible(m);
+  if (no) { alert('Ya no se puede deshacer: ' + no + '.'); return; }
+  const e = (AppData.empleados || []).find(x => x.id === m.empleado_id);
+  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    const marca = { revertido: true, revertido_en: new Date(hoyISO() + 'T12:00:00').toISOString(),
+                    revertido_por: quien, revertido_motivo: motivo };
+    await DB.updateWhere('empleado_movimientos', 'id', m.id, marca);
+    Object.assign(m, marca);
+    if (m.ajuste_id) {
+      const aj = (AppData.empleadoAjustes || []).find(a => a.id === m.ajuste_id);
+      if (aj) {
+        const ma = { revertido: true, revertido_en: marca.revertido_en, revertido_por: quien,
+                     revertido_motivo: 'Se deshizo el cambio de área' };
+        await DB.updateWhere('empleado_ajustes', 'id', aj.id, ma);
+        Object.assign(aj, ma);
+      }
+    }
+    const hor = (m.horario_anterior && _num(m.horario_anterior.dias_laborales))
+      ? m.horario_anterior : _movHorarioDe(e);
+    const campos = Object.assign({ area: m.area_anterior || '', puesto: m.puesto_anterior || '' }, hor,
+      { horas_diarias: horasDelHorario(hor) || 0 });
+    // El sueldo vuelve al que el ajuste dejó registrado como ANTERIOR, que es
+    // el único lugar donde consta. Sin ese dato el sueldo no se toca:
+    // bajarlo a un número adivinado es peor que dejarlo donde está.
+    if (m.ajuste_id) {
+      const aj = (AppData.empleadoAjustes || []).find(a => a.id === m.ajuste_id);
+      if (aj && _num(aj.sueldo_anterior) > 0) campos.sueldo = _num(aj.sueldo_anterior);
+    }
+    await DB.updateWhere('empleados', 'id', e.id, campos);
+    Object.assign(e, campos);
+  } catch (err) {
+    console.warn('revertirMovimiento', err);
+    alert('No se pudo deshacer: ' + (err.message || err));
+    return;
+  }
+  persistirEmpleadosLocal();
+  if (typeof sincronizarVendedoresConPlantel === 'function') {
+    try { await sincronizarVendedoresConPlantel(); } catch (err) { console.warn(err); }
+  }
+  document.getElementById('modal-revmov-backdrop').style.display = 'none';
+  const empId = m.empleado_id;
+  _movRevertId = null;
+  renderEmpleados();
+  if (document.getElementById('modal-backdrop')?.classList.contains('open')) verHistorialEmpleado(empId);
+  showToast('↺ Cambio deshecho · vuelve a ' + (m.area_anterior || 'su área anterior'));
+}
+
 // ── Historial: aumentos y postergaciones, en una sola línea de tiempo ─────
-// Un sueldo se explica por lo que se le fue haciendo. Verlo salteado —solo el
-// último aumento— no deja responder "¿hace cuánto que no le aumentan y por qué?".
+// Un sueldo —y un puesto— se explican por lo que se le fue haciendo. Verlo
+// salteado no deja responder "hace cuánto que no le aumentan", y sin el área
+// no deja responder "por dónde estuvo", que es la otra mitad de la pregunta.
+//
+// CUATRO TIPOS, con una clave de orden EXPLÍCITA. El orden se lleva por el mes
+// del EFECTO y se desempata por id: todos los ajustes de un mes comparten
+// `periodo+'-01'`, así que el empate es el caso normal y sin desempate el
+// orden queda al azar de la hidratación. Antes se ordenaba por `fecha` a
+// secas, que en un ajuste es el efecto y en una postergación la DECISIÓN: una
+// postergación decidida el 05/11 salía arriba de un aumento del 01/11.
 function historialEmpleado(empId) {
-  const ajustes = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === empId)
-    .map(a => ({ tipo: 'ajuste', fecha: String(a.fecha || '').slice(0, 10), row: a }));
-  const posts = (AppData.empleadoPostergaciones || []).filter(p => p.empleado_id === empId)
-    .map(p => ({ tipo: 'postergacion', fecha: String(p.fecha || '').slice(0, 10), row: p }));
-  return ajustes.concat(posts).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const e = (AppData.empleados || []).find(x => x.id === empId);
+  const movs = movimientosDe(empId, true);
+  // El aumento que un movimiento reclama NO sale suelto: un hecho, un renglón.
+  // Si no, el pase y su aumento —los dos del mismo mes— saldrían como dos
+  // filas encadenadas al revés.
+  const reclamados = new Set(movs.map(m => m.ajuste_id).filter(Boolean));
+  const out = [];
+  (AppData.empleadoAjustes || []).filter(a => a.empleado_id === empId && !reclamados.has(a.id))
+    .forEach(a => out.push({ tipo: 'ajuste', periodo: mesDeAjuste(a), id: _num(a.id), row: a }));
+  (AppData.empleadoPostergaciones || []).filter(p => p.empleado_id === empId)
+    .forEach(p => out.push({ tipo: 'postergacion', periodo: String(p.fecha || '').slice(0, 7), id: _num(p.id), row: p }));
+  movs.forEach(m => out.push({ tipo: 'movimiento', periodo: String(m.periodo || ''), id: _num(m.id), row: m }));
+  // El INGRESO es sintético, no una fila de tabla: sin él la ventana de alguien
+  // sin un solo ajuste —Leila, seis meses en un área concreta— se abre diciendo
+  // "todavía no tiene aumentos registrados", que se lee como que el historial
+  // está roto. Y el primer renglón de los demás es un "de $X → $Y" cuyo $X no
+  // se explica.
+  if (e && e.fecha_ingreso) {
+    const t0 = trayectoriaEmpleado(e)[0] || { area: e.area, puesto: e.puesto };
+    out.push({ tipo: 'ingreso', periodo: String(e.fecha_ingreso).slice(0, 7), id: 0,
+               row: { fecha: e.fecha_ingreso, area: t0.area, puesto: t0.puesto } });
+  }
+  return out.sort((a, b) => String(b.periodo).localeCompare(String(a.periodo)) || (b.id - a.id));
+}
+
+// La trayectoria comprimida: es textual lo que se pidió —"por dónde estuvo"—
+// y se DERIVA de los movimientos, así que no puede quedar en desacuerdo.
+function _histTrayectoriaHTML(e) {
+  const tr = trayectoriaEmpleado(e);
+  if (!tr.length) return '';
+  return '<div style="margin-bottom:12px"><div class="dash-subtitle" style="margin-bottom:5px">Por dónde estuvo</div>' +
+    '<div style="display:flex;flex-direction:column;gap:3px;font-size:12px">' +
+    tr.map(t => '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
+      '<span><strong>' + _eEsc(t.area || '(sin área)') + '</strong>' + (t.puesto ? ' · ' + _eEsc(t.puesto) : '') + '</span>' +
+      '<span class="muted">' + (t.hasta ? _mesTexto(t.desde) + ' – ' + _mesTexto(t.hasta) : 'desde ' + _mesTexto(t.desde)) + '</span>' +
+      '</div>').join('') + '</div></div>';
+}
+
+// "no consta" y no "—": vacío no es "nadie", es "no se sabe". Mismo criterio
+// que `cliente_tarifas.creado_por`.
+function _histQuien(quien, cuando) {
+  const q = String(quien || '').trim();
+  const c = String(cuando || '').slice(0, 10);
+  return (q ? _eEsc(q) : '<span class="muted">no consta</span>') +
+    (c ? '<div class="muted" style="font-size:10px">cargado ' + _empFmt(c) + '</div>' : '');
 }
 
 function verHistorialEmpleado(empId) {
@@ -1108,6 +1697,53 @@ function verHistorialEmpleado(empId) {
   const hist = historialEmpleado(empId);
   const vig = postergacionVigente(e);
   const filas = hist.map(h => {
+    const desde = '<td class="mono" style="font-size:11px;white-space:nowrap">' + _mesTexto(h.periodo) + '</td>';
+
+    if (h.tipo === 'ingreso') {
+      const r = h.row;
+      return '<tr>' + desde +
+        '<td><span class="badge" style="background:#e0e7ff;color:#3730a3">Ingreso</span></td>' +
+        '<td style="font-size:12px"><strong>' + _eEsc(r.area || '(sin área)') + '</strong>' +
+          (r.puesto ? ' · ' + _eEsc(r.puesto) : '') +
+          '<div style="font-size:10.5px;color:var(--text-muted)">Entró el ' + _empFmt(r.fecha) + '</div></td>' +
+        '<td class="muted" style="font-size:10.5px">—</td><td></td></tr>';
+    }
+
+    if (h.tipo === 'movimiento') {
+      const m = h.row;
+      const rev = !!m.revertido;
+      const aj = m.ajuste_id ? (AppData.empleadoAjustes || []).find(a => a.id === m.ajuste_id) : null;
+      const hA = m.horario_anterior || {}, hN = m.horario_nuevo || {};
+      const sA = _num(hA.dias_laborales) ? horasSemanales(hA) : 0;
+      const sN = _num(hN.dias_laborales) ? horasSemanales(hN) : 0;
+      const vA = aj ? _num(aj.sueldo_anterior) : _num(e.sueldo);
+      const no = rev ? '' : _movMotivoNoRevertible(m);
+      return '<tr' + (rev ? ' style="opacity:.62"' : '') + '>' + desde +
+        '<td><span class="badge" style="background:' + (rev ? '#f1f5f9;color:#475569' : '#e0f2fe;color:#075985') + '">' +
+          (rev ? 'Deshecho' : 'Cambio de área') + '</span></td>' +
+        '<td style="font-size:12px' + (rev ? ';text-decoration:line-through' : '') + '">' +
+          _eEsc(m.area_anterior || '(sin área)') + (m.puesto_anterior ? ' · ' + _eEsc(m.puesto_anterior) : '') +
+          '<div style="margin-top:1px">→ <strong>' + _eEsc(m.area_nueva || '(sin área)') + '</strong>' +
+            (m.puesto_nuevo ? ' · <strong>' + _eEsc(m.puesto_nuevo) + '</strong>' : '') + '</div>' +
+          // Lo que se movió de plata, que es lo que no se ve en "pasó a Ventas".
+          ((sA && sN && sA !== sN) || aj
+            ? '<div style="font-size:10.5px;color:var(--text-secondary);margin-top:2px">' +
+              ((sA && sN && sA !== sN) ? sA + ' h → ' + sN + ' h semanales' : '') +
+              ((sA && sN && sA !== sN) && aj ? ' · ' : '') +
+              (aj ? 'sueldo ' + fmtPeso(_num(aj.sueldo_anterior)) + ' → ' + fmtPeso(_num(aj.sueldo_nuevo)) : '') +
+              '</div>'
+            : '') +
+          (m.motivo ? '<div style="font-size:10.5px;color:var(--text-muted)">' + _eEsc(m.motivo) + '</div>' : '') +
+          (rev && m.revertido_motivo ? '<div style="font-size:10.5px;color:#b45309">Deshecho: ' + _eEsc(m.revertido_motivo) + '</div>' : '') +
+        '</td>' +
+        '<td style="font-size:10.5px">' + _histQuien(m.creado_por, m.created_at || m.decidido_en) + '</td>' +
+        '<td style="text-align:right">' + (rev ? ''
+          : (no
+              ? '<span class="muted" style="font-size:10px" title="' + jsAttr(no) + '">no se puede deshacer</span>'
+              : '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="abrirRevertirMovimiento(' + m.id + ')">Deshacer</button>')) +
+        '</td></tr>';
+    }
+
     if (h.tipo === 'ajuste') {
       const a = h.row;
       const de = _num(a.sueldo_anterior), aa = _num(a.sueldo_nuevo);
@@ -1115,53 +1751,59 @@ function verHistorialEmpleado(empId) {
       // Un ajuste corregido queda a la vista, tachado: es la única forma de
       // explicar después por qué el sueldo volvió atrás.
       const rev = !ajusteVigente(a);
-      return '<tr' + (rev ? ' style="opacity:.62"' : '') + '>' +
-        '<td class="mono" style="font-size:11px;white-space:nowrap">' + _empFmt(a.fecha) + '</td>' +
+      return '<tr' + (rev ? ' style="opacity:.62"' : '') + '>' + desde +
         '<td><span class="badge" style="background:' + (rev ? '#f1f5f9;color:#475569' : '#dcfce7;color:#166534') + '">' +
           (rev ? 'Corregido' : 'Aumento') + '</span></td>' +
         '<td style="font-size:12px' + (rev ? ';text-decoration:line-through' : '') + '">' +
           (de > 0 ? fmtPeso(de) + ' → <strong>' + fmtPeso(aa) + '</strong>' : fmtPeso(aa)) +
           (pct ? ' <span class="muted">(+' + pct + '%)</span>' : '') +
-          (a.motivo ? '<div style="font-size:10.5px;color:var(--text-muted)">' + a.motivo + '</div>' : '') + '</td>' +
-        '<td class="muted" style="font-size:10.5px">' + (a.aplicado_por || '—') + '</td>' +
+          (a.motivo ? '<div style="font-size:10.5px;color:var(--text-muted)">' + _eEsc(a.motivo) + '</div>' : '') + '</td>' +
+        '<td style="font-size:10.5px">' + _histQuien(a.aplicado_por, a.created_at) + '</td>' +
         '<td style="font-size:10.5px;color:var(--text-secondary)">' + (rev
           ? 'Pasó a bono de ' + _mesTexto(mesDeAjuste(a)) +
-            (a.revertido_motivo ? '<div class="muted">' + a.revertido_motivo + '</div>' : '')
+            (a.revertido_motivo ? '<div class="muted">' + _eEsc(a.revertido_motivo) + '</div>' : '')
           : '') + '</td></tr>';
     }
+
     const p = h.row;
     const esVig = vig && vig.id === p.id;
-    return '<tr' + (esVig ? '' : ' style="opacity:.62"') + '>' +
-      '<td class="mono" style="font-size:11px;white-space:nowrap">' + _empFmt(p.fecha) + '</td>' +
+    return '<tr' + (esVig ? '' : ' style="opacity:.62"') + '>' + desde +
       '<td><span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fde68a">Postergado</span></td>' +
       '<td style="font-size:12px">' + _mesTexto(p.mes_original) + ' → <strong>' + _mesTexto(p.mes_nuevo) + '</strong> ' +
         '<span class="muted">(' + _mesesTexto(p.meses) + ')</span>' +
-        '<div style="font-size:10.5px;color:var(--text-secondary)">' + (p.motivo || 'sin justificación') + '</div></td>' +
-      '<td class="muted" style="font-size:10.5px">' + (p.creado_por || '—') + '</td>' +
+        '<div style="font-size:10.5px;color:var(--text-secondary)">' + _eEsc(p.motivo || 'sin justificación') + '</div></td>' +
+      '<td style="font-size:10.5px">' + _histQuien(p.creado_por, p.created_at || p.fecha) + '</td>' +
       '<td style="text-align:right">' + (esVig
         ? '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="quitarPostergacion(' + p.id + ')">Deshacer</button>' : '') + '</td></tr>';
   }).join('');
 
   const est = estadoAjuste(e);
+  // Los aumentos VIGENTES: contando también los revertidos, el encabezado decía
+  // 2 mientras abajo se veía un solo aumento.
+  const nAum = (AppData.empleadoAjustes || []).filter(a => a.empleado_id === empId && ajusteVigente(a)).length;
+  const nMov = movimientosDe(empId).length;
   document.getElementById('modal-title').textContent = 'Historial de ' + e.nombre;
   document.getElementById('modal-body').innerHTML =
     '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;font-size:13px">' +
       '<div>Ingreso: <strong>' + _empFmt(e.fecha_ingreso) + '</strong></div>' +
       '<div>Sueldo actual: <strong>' + fmtPeso(_num(e.sueldo)) + '</strong></div>' +
-      '<div>Aumentos: <strong>' + hist.filter(h => h.tipo === 'ajuste').length + '</strong></div>' +
+      '<div>Aumentos: <strong>' + nAum + '</strong></div>' +
+      '<div>Cambios de área: <strong>' + nMov + '</strong></div>' +
       '<div>Próximo ajuste: <strong>' + (est.fecha ? _mesTexto(_yyyymm(est.fecha)) : '—') + '</strong></div>' +
     '</div>' +
+    _histTrayectoriaHTML(e) +
     (vig
       ? '<div class="alert" style="margin-bottom:12px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a">' +
         '<i class="ic ic-calendar"></i><div><strong>Ajuste postergado ' + _mesesTexto(vig.meses) + '</strong> — de ' +
-        _mesTexto(vig.mes_original) + ' a ' + _mesTexto(vig.mes_nuevo) + '.<br><em>' + (vig.motivo || 'sin justificación') + '</em></div></div>'
+        _mesTexto(vig.mes_original) + ' a ' + _mesTexto(vig.mes_nuevo) + '.<br><em>' + _eEsc(vig.motivo || 'sin justificación') + '</em></div></div>'
       : '') +
     (hist.length
-      ? '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr>' +
-        '<th>Fecha</th><th>Qué pasó</th><th>Detalle</th><th>Quién</th><th></th>' +
+      ? '<div class="table-wrap" style="max-height:44vh;overflow:auto"><table><thead><tr>' +
+        '<th>Desde</th><th>Qué pasó</th><th>Detalle</th><th>Quién y cuándo</th><th></th>' +
         '</tr></thead><tbody>' + filas + '</tbody></table></div>'
-      : '<div class="empty-state"><div class="empty-sub">Todavía no tiene aumentos ni postergaciones registrados.</div></div>') +
+      : '<div class="empty-state"><div class="empty-sub">Todavía no tiene movimientos registrados.</div></div>') +
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      '<button class="btn" onclick="closeModal(); abrirCambioArea(' + e.id + ')"><i class="ic ic-users"></i> Registrar un cambio de área</button>' +
       (leTocaAjuste(e) ? '<button class="btn" onclick="closeModal(); abrirPostergarAjuste(' + e.id + ')"><i class="ic ic-calendar"></i> Postergar el ajuste</button>' : '') +
       '<button class="btn" onclick="closeModal()">Cerrar</button>' +
     '</div>';
@@ -1614,7 +2256,7 @@ function _filaAjuste(e, fuera, mesSel) {
     '<td class="mono" style="text-align:right">' + fmtPeso(_num(e.sueldo)) + '</td>' +
     '<td class="mono" style="text-align:right;font-weight:700" id="emp-prev-' + e.id + '">—</td>' +
     '<td style="text-align:right;white-space:nowrap">' +
-      '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="verHistorialEmpleado(' + e.id + ')" title="Aumentos y postergaciones">Historial</button>' +
+      '<button class="btn btn-sm" style="padding:2px 7px;font-size:10px" onclick="verHistorialEmpleado(' + e.id + ')" title="Toda su trayectoria: área, puesto, sueldos y postergaciones">Historial</button>' +
       // Postergar solo tiene sentido para quien le TOCA: al que no le toca no
       // hay nada que postergarle.
       (fuera ? '' :
@@ -2158,7 +2800,7 @@ function remuneracionMesEmpleado(e, periodo) {
   }
   const v = sueldoVigenteEn(e, periodo);
   const hh = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
-  const hc = hh ? Math.round(hh * valorHoraDe(e, v.sueldo)) : 0;
+  const hc = hh ? Math.round(hh * valorHoraEn(e, periodo, v.sueldo)) : 0;
   const bo = bonosDelMes(e.id, periodo);
   const vd = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0;
   const vp = vacArt155(v.sueldo, vd).plus;
@@ -2458,6 +3100,23 @@ async function _sincronizarLiqConSueldo(empId, periodo, nuevo) {
   if (!s || s.pagado) return false;
   // Las vacaciones se pagan sobre el sueldo que percibe: cambian con él.
   const campos = Object.assign({ sueldo_base: nuevo }, _recalcVacLiq(s, nuevo));
+  // Y la HORA EXTRA también sale de ese sueldo. Sin esto, un ascenso con
+  // aumento dejaba la liquidación con el sueldo NUEVO y la hora extra VIEJA:
+  // el recibo mostraba una hora que no se puede derivar de su propio sueldo.
+  // PERO SOLO SI LA HORA ERA LA DERIVADA. El campo es editable a propósito —una
+  // hora al 50% o al 100% no es la hora común, y el modal tiene los atajos—, así
+  // que recalcularlo siempre PISA un número que alguien eligió: el banco agarró
+  // una liquidación con la hora a .000 quedando en .875 y el total bajando
+  // 5.500 sin que nadie lo pidiera. Se compara contra la hora que salía del
+  // sueldo VIEJO (s.sueldo_base todavía no se pisó): si coincide, es la derivada
+  // y sigue al sueldo; si no, es un recargo cargado a mano y no se toca.
+  const emp = (AppData.empleados || []).find(x => x.id === empId);
+  const vhViejo = emp ? valorHoraEn(emp, periodo, _num(s.sueldo_base)) : 0;
+  const vh = emp ? valorHoraEn(emp, periodo, nuevo) : 0;
+  if (vh && _num(s.horas_extra) > 0 && _num(s.valor_hora_extra) === vhViejo) {
+    campos.valor_hora_extra = vh;
+    campos.monto_horas_extra = Math.round(_num(s.horas_extra) * vh);
+  }
   const total = totalLiquidacionSueldo(Object.assign({}, s, campos));
   const mT = Math.round(total * _num(s.pct_transferencia) / 100);
   Object.assign(campos, { total: total, monto_transferencia: mT, monto_efectivo: total - mT });
@@ -2559,7 +3218,7 @@ function renderSueldosPanel() {
           (Math.round(hsReg * 100) / 100) + ' h registradas</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (bono ? '+' + fmtPeso(bono) : '—') + '</td>' +
       '<td class="mono" style="text-align:right">' + (viat ? '+' + fmtPeso(viat) : '—') +
-        (!s && empleadoCobraViaticos(e) ? '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">a cargar</div>' : '') + '</td>' +
+        (!s && empleadoCobraViaticosEn(e, periodo) ? '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">a cargar</div>' : '') + '</td>' +
       '<td class="mono" style="text-align:right">' + (vacMonto ? '+' + fmtPeso(vacMonto) +
           '<div style="font-size:9.5px;color:var(--text-muted);font-family:inherit">' + vacDias + (vacDias === 1 ? ' día' : ' días') + '</div>' : '—') +
         (vacFalta ? '<div style="font-size:9.5px;color:#b45309;font-family:inherit" title="Cargadas en Vacaciones y todavía no liquidadas">' +
@@ -3186,7 +3845,7 @@ function openSueldoModal(empId) {
   _pintarHorasExtra(empId, periodo, s);
   _pintarBonos(empId, periodo, s);
   _pintarVacacionesSueldo(empId, periodo, s);
-  _pintarViaticos(e, s);
+  _pintarViaticos(e, s, periodo);
   _pintarAguinaldo(e, periodo, s);
   renderAdelantosSueldoModal(empId, periodo);
   renderExtraviosSueldoModal(empId, periodo);
@@ -3197,10 +3856,15 @@ function openSueldoModal(empId) {
 // La excepción es una liquidación que ya los tiene cargados: si el empleado
 // cambió de área, esconder el campo haría desaparecer del total una plata que
 // ya está puesta, sin ninguna explicación.
-function _pintarViaticos(e, s) {
+function _pintarViaticos(e, s, periodo) {
   const wrap = document.getElementById('msld-viaticos-wrap');
   if (!wrap) return;
-  const corresponde = empleadoCobraViaticos(e);
+  // El área de ESE mes y no la de hoy: con la ficha viva, el panel invitaba a
+  // cargarle viáticos de meses en los que todavía no era de un área que los
+  // cobra — y una vez congelados en empleado_sueldos y firmados en el recibo,
+  // corregirlos exige reabrir una liquidación pagada.
+  const area = periodo ? areaVigenteEn(e, periodo) : (e && e.area) || '';
+  const corresponde = RRHH_AREAS_VIATICOS.some(x => _areaKey(x) === _areaKey(area));
   const cargado = _num(s && s.monto_viaticos) > 0;
   wrap.style.display = (corresponde || cargado) ? '' : 'none';
   const inp = document.getElementById('msld-viaticos');
@@ -3209,8 +3873,8 @@ function _pintarViaticos(e, s) {
   if (det) det.value = s ? (s.viaticos_detalle || '') : '';
   const info = document.getElementById('msld-viaticos-info');
   if (info) info.innerHTML = corresponde
-    ? 'Se suman al total y se pagan con el sueldo del mes. Los cobra <strong>' + _areaDe(e) + '</strong>.'
-    : '<span style="color:#b45309">' + _areaDe(e) + ' no es un área con viáticos (' + RRHH_AREAS_VIATICOS.join(' · ') +
+    ? 'Se suman al total y se pagan con el sueldo del mes. Los cobra <strong>' + _areaDe({ area: area }) + '</strong>.'
+    : '<span style="color:#b45309">' + _areaDe({ area: area }) + ' no es un área con viáticos (' + RRHH_AREAS_VIATICOS.join(' · ') +
       '), pero esta liquidación ya los tiene cargados.</span>';
 }
 
@@ -3600,10 +4264,16 @@ function exportReciboSueldoPDF(empId, periodo, opts) {
     numero: 'LH-SUE-' + String(e.id) + '-' + String(periodo || '').replace('-', ''),
     emitido: _fechaCorta(new Date()),
     periodoTxt: _mesTexto(periodo),
+    // EL AREA, EL PUESTO Y LA JORNADA DE ESE MES, no los de hoy. El recibo es
+    // el papel que se firma: reimprimir el de un mes viejo con el puesto nuevo
+    // lo deja diciendo algo que no pasó, y ademas la jornada es de donde sale
+    // el valor de la hora extra que ese mismo recibo liquida. Medido con el
+    // pase de Leila a Ventas: su recibo de octubre salia "Vendedor Flex · 37.5
+    // h semanales" cuando ese mes trabajo 27 h en Asesoria Comercial.
     datosEmp: [
-      (e.puesto || '') + (e.area ? '  ·  ' + e.area : ''),
+      (puestoVigenteEn(e, periodo) || '') + (areaVigenteEn(e, periodo) ? '  ·  ' + areaVigenteEn(e, periodo) : ''),
       (e.dni ? 'DNI ' + e.dni : '') + (e.registrado === false ? (e.dni ? '  ·  ' : '') + 'No registrado' : ''),
-      'Ingreso ' + _empFmt(e.fecha_ingreso) + (horasSemanales(e) ? '  ·  ' + horasSemanales(e) + ' h semanales' : '')
+      'Ingreso ' + _empFmt(e.fecha_ingreso) + (horasSemanales(horarioVigenteEn(e, periodo)) ? '  ·  ' + horasSemanales(horarioVigenteEn(e, periodo)) + ' h semanales' : '')
     ],
     datosPer: [
       'Del ' + _iniDeMesISO(periodo) + ' al ' + _finDeMesISO(periodo),
@@ -3937,7 +4607,10 @@ function calcMesEmpleados(periodo) {
       const v = sueldoVigenteEn(e, periodo);
       b = v.sueldo; est = v.estimado; if (est) estimados++;
       hh = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
-      hc = hh ? Math.round(hh * valorHoraDe(e, b)) : 0;
+      // Con el horario de ESE mes: las horas vienen fechadas (horasExtraDelMes)
+      // y el valor de la hora no. Sin esto, 10 h de octubre pasaban de costar
+      // $63.240 a $45.530 el día que Leila cambió de área, sin ninguna señal.
+      hc = hh ? Math.round(hh * valorHoraEn(e, periodo, b)) : 0;
       // Un bono ya decidido es costo del mes aunque la liquidación no esté
       // armada: si no, el mes cierra por debajo de lo que se va a pagar.
       bo = bonosDelMes(e.id, periodo); fuente = 'nomina';
@@ -3954,7 +4627,12 @@ function calcMesEmpleados(periodo) {
     }
     if (e.registrado === false) noReg++; else reg++;
     base += b; heHoras += hh; heCosto += hc; bonos += bo; vacPlus += vp; viaticos += vi; aguinaldos += ag;
-    detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false, area: _areaDe(e),
+    // EL ÁREA DE ESE MES, no la de la ficha. Esta línea está FUERA del if/else
+    // de 'liquidado', así que con la ficha viva un pase de área re-atribuía el
+    // costo de TODOS los meses abiertos —incluso uno ya pagado— y el aviso de
+    // 'cambió después del cierre' no lo veía nunca, porque compara el total.
+    detalle.push({ id: e.id, nombre: e.nombre, registrado: e.registrado !== false,
+      area: _areaDe({ area: areaVigenteEn(e, periodo) }),
       base: b, he_horas: hh, he_costo: hc, bono: bo, vac: vp, viaticos: vi, aguinaldo: ag, fuente, estimado: est });
   });
   const total = reg + noReg;
@@ -3970,12 +4648,17 @@ function calcMesEmpleados(periodo) {
 // El costo del mes repartido por ÁREA. Sale del MISMO detalle que arma el total
 // —el congelado si el mes se cerró, el calculado si no—, así las dos lecturas no
 // pueden discrepar: el costo por área siempre suma el costo del mes.
-function costoPorArea(detalle) {
+// Recibe el PERÍODO porque los cierres viejos no guardaban el área: sin él, el
+// fallback la resolvía con la ficha de hoy y un pase reescribía el reparto de
+// meses ya cerrados.
+function costoPorArea(detalle, periodo) {
   const m = new Map();
   (detalle || []).forEach(r => {
     // Los cierres viejos no guardaban el área: se resuelve con la ficha de hoy,
     // que es lo único que queda. Si esa persona ya no está, cae en (sin área).
-    const area = r.area ? _areaDe(r) : _areaDe((AppData.empleados || []).find(e => e.id === r.id));
+    const emp = r.area ? null : (AppData.empleados || []).find(e => e.id === r.id);
+    const area = r.area ? _areaDe(r)
+      : (emp && periodo ? _areaDe({ area: areaVigenteEn(emp, periodo) }) : _areaDe(emp));
     let a = m.get(area);
     if (!a) { a = { area, empleados: 0, base: 0, he_costo: 0, bonos: 0, vac: 0, viaticos: 0, aguinaldo: 0, costo: 0 }; m.set(area, a); }
     a.empleados++;
@@ -4153,7 +4836,7 @@ function _renderCostoPorArea(datos) {
   if (!cont) return;
   if (!datos || !datos.length) { cont.innerHTML = ''; return; }
   // Los meses se muestran del más nuevo al más viejo, igual que la tabla de arriba.
-  const porMes = datos.map(x => ({ periodo: x.periodo, cerrado: !!x.cierre, areas: costoPorArea(_histDetalleDe(x)) }));
+  const porMes = datos.map(x => ({ periodo: x.periodo, cerrado: !!x.cierre, areas: costoPorArea(_histDetalleDe(x), x.periodo) }));
   const areas = [];
   porMes.forEach(m => m.areas.forEach(a => { if (areas.indexOf(a.area) < 0) areas.push(a.area); }));
   if (!areas.length) { cont.innerHTML = ''; return; }
@@ -4193,7 +4876,7 @@ function exportCostoPorAreaPDF() {
   const n = parseInt((document.getElementById('emp-hist-meses') || {}).value, 10) || 6;
   const meses = _histMeses(n);
   if (!meses.length) { alert('No hay meses para exportar.'); return; }
-  const porMes = meses.map(_histDatosMes).map(x => ({ periodo: x.periodo, areas: costoPorArea(_histDetalleDe(x)) }));
+  const porMes = meses.map(_histDatosMes).map(x => ({ periodo: x.periodo, areas: costoPorArea(_histDetalleDe(x), x.periodo) }));
   const areas = [];
   porMes.forEach(m => m.areas.forEach(a => { if (areas.indexOf(a.area) < 0) areas.push(a.area); }));
   const dato = (m, area) => m.areas.find(a => a.area === area) || null;
