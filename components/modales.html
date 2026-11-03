@@ -1056,6 +1056,23 @@
         <div style="font-size:10px;color:var(--text-muted);margin-top:3px">Es la identidad: con esto se le atan las tarifas y los envíos.</div>
         <span style="font-size:11px;color:var(--text-muted)">Debe coincidir con el nombre del cliente que viene en el Excel de recorridos.</span>
       </div>
+      <!-- LA LISTA DE PRECIOS SE CARGA ACÁ, en el alta. Un cliente sin
+           tarifario factura sus envíos en $0, y cargarlo en otra pantalla
+           después es el olvido que dejó 119 de 120 clientes sin precios. -->
+      <div class="form-group" id="mcli-tar-bloque" style="margin:0">
+        <label class="form-label">Lista de precios (opcional)</label>
+        <div id="mcli-tar-vacio">
+          <input type="file" id="mcli-tar-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mcliElegirTarifario(event)" />
+          <button type="button" class="btn btn-sm" onclick="document.getElementById('mcli-tar-file').click()">
+            <i class="ic ic-upload"></i> Adjuntar su planilla de precios
+          </button>
+          <span style="font-size:11px;color:var(--text-muted);display:block;margin-top:4px">
+            La planilla del cliente: su nombre arriba y debajo las columnas <strong>ZONA</strong> y <strong>PRECIO</strong>.
+            Si no la cargás ahora, sus envíos se facturan en <strong>$0</strong> hasta que se la cargues.
+          </span>
+        </div>
+        <div id="mcli-tar-resumen" style="display:none"></div>
+      </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Razón social (opcional)</label>
         <input type="text" id="mcli-razon" class="form-input" placeholder="Razón social para la factura" style="width:100%" />

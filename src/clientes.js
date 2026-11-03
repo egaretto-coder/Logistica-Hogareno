@@ -2474,6 +2474,85 @@ function _mcliCondicionIva(actual) {
     (a && !hay ? '<option value="' + String(a).replace(/"/g, '&quot;') + '" selected>' + a + ' (fuera de la lista)</option>' : '');
 }
 
+// ── La lista de precios se carga EN EL ALTA ────────────────────────────────
+// Un cliente nace sin tarifario y sus envíos se facturan en $0 hasta que
+// alguien se acuerda de cargárselo. Ese olvido es lo que llenaba el aviso de
+// "N clientes no tienen tarifario cargado" —119 de 120 el día que se pidió
+// esto— porque el circuito era crear el cliente, ir a buscarlo a la grilla y
+// recién ahí cargarle los precios, en otra pantalla. Acá se adjunta la MISMA
+// planilla que ya acepta "Importar tarifario(s)" y se aplica al guardar.
+//
+// SE LEE AL ADJUNTAR Y SE ESCRIBE AL GUARDAR, y ese orden es el punto: así se
+// ve qué trae el archivo antes de crear nada, y si el alta se cancela no queda
+// un cliente a medio hacer con precios colgando de un código que no existe.
+let _mcliTarifas = null;   // lo que trajo la planilla adjuntada en el alta
+
+async function mcliElegirTarifario(ev) {
+  const file = (ev.target.files || [])[0];
+  if (!file) return;
+  const cont = document.getElementById('mcli-tar-resumen');
+  if (cont) { cont.style.display = ''; cont.innerHTML = '<span class="muted" style="font-size:12px">Leyendo la planilla…</span>'; }
+  try {
+    const res = await _importarUnTarifario(file, null, { soloLeer: true });
+    const cods = Object.keys(res.porCod || {});
+    if (!cods.length) throw new Error('No hay ninguna zona con precio');
+    // El archivo del tarifario COMPLETO trae muchos clientes: ese no es este
+    // camino, y aplicarlo acá le pegaría a este cliente los precios de todos.
+    if (cods.length > 1) {
+      throw new Error('La planilla trae ' + cods.length + ' clientes, y acá va la lista de UNO. ' +
+        'Para el tarifario completo está "Importar tarifario(s)" del panel.');
+    }
+    const zonas = (res.porCod[cods[0]] || {}).zonas || {};
+    _mcliTarifas = { archivo: file.name, zonas: zonas,
+      desconocidas: res.zonasDesconocidas || [], repetidas: res.repetidas || 0 };
+  } catch (e) {
+    _mcliTarifas = null;
+    if (cont) cont.innerHTML = '<span style="font-size:12px;color:#b91c1c"><strong>No se pudo leer:</strong> ' +
+      _escCli(e.message || e) + '</span>';
+    ev.target.value = '';
+    return;
+  }
+  ev.target.value = '';
+  _mcliPintarTarifario();
+}
+
+function mcliQuitarTarifario() { _mcliTarifas = null; _mcliPintarTarifario(); }
+
+function _mcliPintarTarifario() {
+  const cont = document.getElementById('mcli-tar-resumen');
+  const vacio = document.getElementById('mcli-tar-vacio');
+  if (!cont || !vacio) return;
+  if (!_mcliTarifas) { cont.style.display = 'none'; cont.innerHTML = ''; vacio.style.display = ''; return; }
+  const zonas = Object.keys(_mcliTarifas.zonas);
+  const precios = zonas.map(z => _mcliTarifas.zonas[z]);
+  const min = Math.min.apply(null, precios), max = Math.max.apply(null, precios);
+  vacio.style.display = 'none';
+  cont.style.display = '';
+  cont.innerHTML =
+    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 10px">' +
+      '<div style="font-size:12px;color:#166534"><strong>' + zonas.length + ' zona(s) con precio</strong> · ' +
+        'de $' + min.toLocaleString('es-AR') + ' a $' + max.toLocaleString('es-AR') +
+        ' <span class="muted">(' + _escCli(_mcliTarifas.archivo) + ')</span></div>' +
+      // Una zona que no existe del lado del COSTO no matchea ningún envío: esa
+      // tarifa no se aplica nunca y el envío se sigue facturando en $0, que es
+      // justo lo que este bloque viene a evitar. Se dice ahora, no después.
+      (_mcliTarifas.desconocidas.length
+        ? '<div style="font-size:11px;color:#b45309;margin-top:4px">⚠ ' + _mcliTarifas.desconocidas.length +
+          ' zona(s) no están en el tarifario de costos (' + _escCli(_mcliTarifas.desconocidas.slice(0, 4).join(', ')) +
+          (_mcliTarifas.desconocidas.length > 4 ? '…' : '') + '): esos envíos se facturan en $0 hasta vincularlas.</div>'
+        : '') +
+      (_mcliTarifas.repetidas
+        ? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + _mcliTarifas.repetidas +
+          ' fila(s) repetían una zona; queda la última.</div>' : '') +
+      '<button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:6px" onclick="mcliQuitarTarifario()">' +
+        '<i class="ic ic-x"></i> Quitar</button>' +
+    '</div>';
+}
+
+function _escCli(t) {
+  return String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 function openAddClienteModal() {
   clienteEditId = null;
   document.getElementById('modal-cliente-title').textContent = 'Nuevo cliente';
@@ -2483,6 +2562,8 @@ function openAddClienteModal() {
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('mcli-cuit').value = '';
   _mcliCondicionIva('');
+  _mcliTarifas = null; _mcliPintarTarifario();
+  const bt = document.getElementById('mcli-tar-bloque'); if (bt) bt.style.display = '';
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
 }
 function editCliente(id) {
@@ -2500,6 +2581,12 @@ function editCliente(id) {
   const rc = comisionDeCliente(c.nombre);
   _mcliVendedores(rc ? (rc.vendedor || '') : '');
   document.getElementById('mcli-cuit').value = c.cuit || '';
+  // En EDICIÓN no se ofrece: el cliente ya tiene su lista y se toca desde su
+  // propio botón, que además distingue CORREGIR la que rige de cargar una
+  // NUEVA con su fecha. Adjuntar un archivo acá no podría contestar eso, y
+  // ninguna carga de precios puede quedar sin esa pregunta.
+  _mcliTarifas = null; _mcliPintarTarifario();
+  const bt = document.getElementById('mcli-tar-bloque'); if (bt) bt.style.display = 'none';
   document.getElementById('modal-cliente-backdrop').style.display = 'flex';
 }
 function closeClienteModal(e) {
@@ -2516,6 +2603,7 @@ async function guardarClienteModal() {
   const obs = (document.getElementById('mcli-obs')?.value || '').trim();
   const condicion_iva = (document.getElementById('mcli-iva')?.value || '').trim();
   const direccion = (document.getElementById('mcli-direccion')?.value || '').trim();
+  let tarifasMsg = '';
   if (!nombre) { alert('El nombre del cliente es obligatorio.'); return; }
   if (!codigo) { alert('El código es obligatorio: es lo que une al cliente con sus envíos (columna Cod.Cliente del listado).'); return; }
   const dupCod = AppData.clientes.find(c => clienteKey(c.codigo) === clienteKey(codigo) && c.id !== clienteEditId);
@@ -2533,6 +2621,7 @@ async function guardarClienteModal() {
       const campos = { nombre, codigo, razon_social, cuit, condicion_iva, direccion, contacto, telefono, email, obs };
       const row = await DB.insertRow('clientes', Object.assign({ activo: true }, campos));
       AppData.clientes.push(Object.assign({ id: row.id, activo: true }, campos));
+      tarifasMsg = await _aplicarTarifasDelAlta(nombre, codigo);
     }
     persistirClientesLocal();
     // El vendedor no se guarda en `clientes`: va a `comision_clientes`, que es la
@@ -2541,8 +2630,43 @@ async function guardarClienteModal() {
     clienteEditId = null;
     document.getElementById('modal-cliente-backdrop').style.display = 'none';
     renderClientes();
-    showToast('✅ Cliente guardado');
+    showToast('✅ Cliente guardado' + tarifasMsg);
   } catch (e) { console.warn('guardarClienteModal:', e); alert('No se pudo guardar: ' + (e.message || e)); }
+}
+// Aplica la lista de precios que se adjuntó en el alta, con el CÓDIGO DEL
+// FORMULARIO. Esa es la diferencia con el import suelto: ahí el código se
+// adivina por nombre (maestro → envíos → provisional) y puede salir uno que no
+// matchea ningún envío, con lo cual la tarifa no se aplica nunca y el cliente
+// factura $0 sin que nadie lo note. Acá el código lo acaba de escribir el
+// operador y ya se validó que sea único, así que no hay nada que adivinar.
+//
+// Pasa por `guardarClienteTarifas`, el embudo por el que entran TODAS las
+// tarifas: ahí se canoniza la zona por alias, se completa la vigencia y se
+// anota quién la cargó. Escribir las filas derecho se saltearía las tres.
+async function _aplicarTarifasDelAlta(nombre, codigo) {
+  if (!_mcliTarifas) return '';
+  const zonas = Object.keys(_mcliTarifas.zonas);
+  if (!zonas.length) return '';
+  const filas = zonas.map(z => ({
+    cliente: nombre, cliente_cod: codigo, zona: z,
+    precio: _mcliTarifas.zonas[z], vigente_desde: TARIFA_DESDE_SIEMPRE
+  }));
+  try {
+    const ins = await guardarClienteTarifas(filas);
+    AppData.clienteTarifas = (AppData.clienteTarifas || []).concat(ins);
+    invalidarIndiceCliTarifas();
+    _mcliTarifas = null;
+    return ' · ' + filas.length + ' zona(s) con precio';
+  } catch (e) {
+    // El cliente YA se creó. Un toast que se va solo dejaría a alguien
+    // creyendo que la lista entró, y sus envíos facturándose en $0.
+    console.warn('tarifas del alta', e);
+    alert('El cliente se creó, pero su lista de precios NO se pudo guardar:' + String.fromCharCode(10) +
+      (e.message || e) + String.fromCharCode(10) + String.fromCharCode(10) +
+      'Cargásela desde el botón "Tarifario" de su tarjeta. Hasta entonces sus envíos se facturan en $0.');
+    _mcliTarifas = null;
+    return '';
+  }
 }
 // Aplica lo elegido en el select del modal. Un cliente con la comisión ya
 // confirmada no se saca de acá: eso es una baja y se decide en Comisiones, con
@@ -3011,12 +3135,12 @@ async function _procesarTarifarios(files, vigenteDesde) {
 let _impPisarHistorial = null;
 
 // Lee y aplica UN archivo. Devuelve qué hizo, para el resumen.
-function _importarUnTarifario(file, vigenteDesde) {
+function _importarUnTarifario(file, vigenteDesde, opts) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
     reader.onload = async function (e) {
-      try { resolve(await _aplicarTarifario(file.name, new Uint8Array(e.target.result), vigenteDesde)); }
+      try { resolve(await _aplicarTarifario(file.name, new Uint8Array(e.target.result), vigenteDesde, opts)); }
       catch (err) { reject(err); }
     };
     reader.readAsArrayBuffer(file);
@@ -3025,7 +3149,7 @@ function _importarUnTarifario(file, vigenteDesde) {
 
 // vigenteDesde llega hasta ACA: el trabajo real (crear el cliente y guardar sus
 // tarifas) pasa en esta funcion, no en la que lee el archivo.
-async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde) {
+async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde, opts) {
   const wb = XLSX.read(bytes, { type: 'array' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
   const res = { archivo: nombreArchivo, clientes: [], salteados: [], zonasDesconocidas: [], repetidas: 0, ignoradas: 0 };
@@ -3133,6 +3257,13 @@ async function _aplicarTarifario(nombreArchivo, bytes, vigenteDesde) {
     if (!Object.keys(porCod).length) throw new Error('No se encontró ninguna tarifa válida (Cod.Cliente, Zona y Precio > 0)');
   }
   res.zonasDesconocidas = Array.from(desconocidas);
+
+  // MODO LEER: el alta del cliente necesita mostrar qué trae la planilla ANTES
+  // de crear nada, y aplicarla recién cuando el cliente existe. Se corta acá,
+  // sobre el MISMO parser que usa el import — una segunda copia del detector de
+  // encabezados se desfasa en el próximo formato que mande Comercial, y este
+  // proyecto ya pagó esa lección con los dos tarifarios de dimensiones.
+  if (opts && opts.soloLeer) { res.porCod = porCod; return res; }
 
   for (const cod of Object.keys(porCod)) {
     const info = porCod[cod];
