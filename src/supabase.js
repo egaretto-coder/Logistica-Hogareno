@@ -415,91 +415,100 @@ const DB = {
   // opts.sinRegistros = true → NO trae la tabla 'registros' (la más pesada:
   // ~10k filas / varios MB). La usa la sincronización en vivo cuando el cambio
   // ocurrió en otra tabla, para no rebajar toda la base por un adelanto.
+  // Trae TODAS las tablas de configuración. Devuelve null si alguna no llegó.
+  //
+  // UNA TABLA QUE FALLA NO PUEDE LLEVARSE PUESTAS LAS OTRAS 49. Esto era un
+  // Promise.all: la primera que rechazaba tiraba la carga entera, el catch
+  // devolvía null y la app se quedaba con el caché del navegador mostrando
+  // datos viejos sin decirlo. Es la misma lección que ya pagó el paginador
+  // (ver _fetchAllParallel), solo que a nivel de TABLA en vez de página.
+  //
+  // Ahora las que fallan SE REINTENTAN solas, que es lo que hace que casi
+  // nunca se llegue al null. Y si después del reintento igual falta alguna,
+  // se devuelve null A PROPÓSITO: entregar lo que llegó dejaría las que
+  // faltan en [] y eso VACIARÍA AppData —un tarifario en cero factura $0 sin
+  // que nadie lo note—. Conservar lo que hay en memoria es lo seguro; lo que
+  // faltaba era DECIRLO, y por eso se nombra cuáles no llegaron.
   async loadAll(desdeISO, opts) {
     if (!sb) return null;
     const sinRegistros = !!(opts && opts.sinRegistros);
-    try {
-      const [tarifas, superSla, panel, dim, km, recEsp, kmTar, registros, config, rolPerm, roles, adelantos, adelantoCuotas, descItems, descItemCuotas, clientes, proveedores, clienteTarifas, vendedores, comisionCategorias, comisionClientes, comisionPagos, importaciones, superSlaSolic, dimCatalogo, empleados, empleadoAjustes, empleadoPosterg, empleadoMovim, empleadoHsExtra, empleadoBonos, puestoHorarios, empleadoReap, condFiscal, condFacturas, empleadoSueldos, vacaciones, rendiciones, zonaAlias, cuentas, cliLiq, condLiq, archSol, cliCargos, empCierres, empLicencias, viajes, viajeTarifas, compras, sucursales] = await Promise.all([
-        this.selectAll('tarifas', 'zona'),
-        this.selectAll('super_sla'),
-        this.selectAll('panel_conductores', 'nombre'),
-        this.selectAll('dimensiones_especiales'),
-        this.selectAll('km_desvio'),
-        this.selectAll('recorrido_especial'),
-        this.selectAll('km_tarifas', 'vigente_desde'),
-        sinRegistros ? Promise.resolve(null) : this.selectRegistrosVentana(desdeISO),
-        this.selectAll('config'),
-        this.selectAll('rol_permisos'),
-        this.selectAll('roles', 'created_at'),
-        this.selectAll('adelantos', 'id'),
-        this.selectAll('adelanto_cuotas', 'id'),
-        this.selectAll('descuentos_items', 'id'),
-        this.selectAll('descuento_cuotas', 'id'),
-        this.selectAll('clientes', 'nombre'),
-        this.selectAll('proveedores', 'nombre'),
-        this.selectAll('cliente_tarifas', 'id'),
-        this.selectAll('vendedores', 'nombre'),
-        this.selectAll('comision_categorias', 'fact_desde'),
-        this.selectAll('comision_clientes', 'id'),
-        this.selectAll('comision_pagos', 'id'),
-        this.selectAll('importaciones', 'id'),
-        this.selectAll('supersla_solicitudes', 'id'),
-        this.selectAll('dimensiones_catalogo', 'id'),
-        this.selectAll('empleados', 'nombre'),
-        this.selectAll('empleado_ajustes', 'id'),
-        this.selectAll('empleado_postergaciones', 'id'),
-        this.selectAll('empleado_movimientos', 'id'),
-        this.selectAll('empleado_horas_extra', 'id'),
-        this.selectAll('empleado_bonos', 'id'),
-        this.selectAll('puesto_horarios', 'id'),
-        this.selectAll('empleado_sueldo_reaperturas', 'id'),
-        this.selectAll('conductor_fiscal', 'conductor'),
-        this.selectAll('conductor_facturas', 'id'),
-        this.selectAll('empleado_sueldos', 'id'),
-        this.selectAll('vacaciones', 'id'),
-        this.selectAll('rendiciones', 'id'),
-        this.selectAll('zona_alias', 'alias'),
-        this.selectAll('cliente_cuentas', 'alias_cod'),
-        this.selectAll('cliente_liquidaciones', 'id'),
-        this.selectAll('conductor_liquidaciones', 'id'),
-        this.selectAll('archivo_solicitudes', 'id'),
-        this.selectAll('cliente_cargos', 'id'),
-        this.selectAll('empleado_cierres', 'periodo'),
-        this.selectAll('empleado_licencias', 'id'),
-        this.selectAll('viajes_particulares', 'id'),
-        this.selectAll('viaje_tarifas', 'id'),
-        this.selectAll('compras', 'id'),
-        this.selectAll('sucursales', 'orden'),
-      ]);
-      return {
-        tarifas, super_sla: superSla, panel_conductores: panel,
-        dimensiones_especiales: dim,
-        km_desvio: km, recorrido_especial: recEsp, km_tarifas: kmTar, registros, config,
-        rol_permisos: rolPerm, roles, adelantos, adelanto_cuotas: adelantoCuotas,
-        descuentos_items: descItems, descuento_cuotas: descItemCuotas,
-        clientes,
-        proveedores, cliente_tarifas: clienteTarifas,
-        vendedores, comision_categorias: comisionCategorias,
-        comision_clientes: comisionClientes, comision_pagos: comisionPagos,
-        importaciones, supersla_solicitudes: superSlaSolic,
-        dimensiones_catalogo: dimCatalogo,
-        empleados, empleado_ajustes: empleadoAjustes, empleado_postergaciones: empleadoPosterg,
-        empleado_movimientos: empleadoMovim,
-        empleado_horas_extra: empleadoHsExtra, empleado_bonos: empleadoBonos, puesto_horarios: puestoHorarios,
-        empleado_sueldo_reaperturas: empleadoReap,
-        conductor_fiscal: condFiscal, conductor_facturas: condFacturas,
-        empleado_sueldos: empleadoSueldos, vacaciones,
-        rendiciones, zona_alias: zonaAlias, cliente_cuentas: cuentas, cliente_liquidaciones: cliLiq, conductor_liquidaciones: condLiq, archivo_solicitudes: archSol, cliente_cargos: cliCargos,
-        empleado_cierres: empCierres,
-        empleado_licencias: empLicencias,
-        viajes_particulares: viajes, viaje_tarifas: viajeTarifas,
-        compras, sucursales,
-      };
-    } catch (e) {
-      console.warn('[Supabase] loadAll error:', e);
+    const defs = [
+      ['tarifas', () => this.selectAll('tarifas', 'zona')],
+      ['super_sla', () => this.selectAll('super_sla')],
+      ['panel_conductores', () => this.selectAll('panel_conductores', 'nombre')],
+      ['dimensiones_especiales', () => this.selectAll('dimensiones_especiales')],
+      ['km_desvio', () => this.selectAll('km_desvio')],
+      ['recorrido_especial', () => this.selectAll('recorrido_especial')],
+      ['km_tarifas', () => this.selectAll('km_tarifas', 'vigente_desde')],
+      ['config', () => this.selectAll('config')],
+      ['rol_permisos', () => this.selectAll('rol_permisos')],
+      ['roles', () => this.selectAll('roles', 'created_at')],
+      ['adelantos', () => this.selectAll('adelantos', 'id')],
+      ['adelanto_cuotas', () => this.selectAll('adelanto_cuotas', 'id')],
+      ['descuentos_items', () => this.selectAll('descuentos_items', 'id')],
+      ['descuento_cuotas', () => this.selectAll('descuento_cuotas', 'id')],
+      ['clientes', () => this.selectAll('clientes', 'nombre')],
+      ['proveedores', () => this.selectAll('proveedores', 'nombre')],
+      ['cliente_tarifas', () => this.selectAll('cliente_tarifas', 'id')],
+      ['vendedores', () => this.selectAll('vendedores', 'nombre')],
+      ['comision_categorias', () => this.selectAll('comision_categorias', 'fact_desde')],
+      ['comision_clientes', () => this.selectAll('comision_clientes', 'id')],
+      ['comision_pagos', () => this.selectAll('comision_pagos', 'id')],
+      ['importaciones', () => this.selectAll('importaciones', 'id')],
+      ['supersla_solicitudes', () => this.selectAll('supersla_solicitudes', 'id')],
+      ['dimensiones_catalogo', () => this.selectAll('dimensiones_catalogo', 'id')],
+      ['empleados', () => this.selectAll('empleados', 'nombre')],
+      ['empleado_ajustes', () => this.selectAll('empleado_ajustes', 'id')],
+      ['empleado_postergaciones', () => this.selectAll('empleado_postergaciones', 'id')],
+      ['empleado_movimientos', () => this.selectAll('empleado_movimientos', 'id')],
+      ['empleado_horas_extra', () => this.selectAll('empleado_horas_extra', 'id')],
+      ['empleado_bonos', () => this.selectAll('empleado_bonos', 'id')],
+      ['puesto_horarios', () => this.selectAll('puesto_horarios', 'id')],
+      ['empleado_sueldo_reaperturas', () => this.selectAll('empleado_sueldo_reaperturas', 'id')],
+      ['conductor_fiscal', () => this.selectAll('conductor_fiscal', 'conductor')],
+      ['conductor_facturas', () => this.selectAll('conductor_facturas', 'id')],
+      ['empleado_sueldos', () => this.selectAll('empleado_sueldos', 'id')],
+      ['vacaciones', () => this.selectAll('vacaciones', 'id')],
+      ['rendiciones', () => this.selectAll('rendiciones', 'id')],
+      ['zona_alias', () => this.selectAll('zona_alias', 'alias')],
+      ['cliente_cuentas', () => this.selectAll('cliente_cuentas', 'alias_cod')],
+      ['cliente_liquidaciones', () => this.selectAll('cliente_liquidaciones', 'id')],
+      ['conductor_liquidaciones', () => this.selectAll('conductor_liquidaciones', 'id')],
+      ['archivo_solicitudes', () => this.selectAll('archivo_solicitudes', 'id')],
+      ['cliente_cargos', () => this.selectAll('cliente_cargos', 'id')],
+      ['empleado_cierres', () => this.selectAll('empleado_cierres', 'periodo')],
+      ['empleado_licencias', () => this.selectAll('empleado_licencias', 'id')],
+      ['viajes_particulares', () => this.selectAll('viajes_particulares', 'id')],
+      ['viaje_tarifas', () => this.selectAll('viaje_tarifas', 'id')],
+      ['compras', () => this.selectAll('compras', 'id')],
+      ['sucursales', () => this.selectAll('sucursales', 'orden')],
+    ];
+    if (!sinRegistros) defs.push(['registros', () => this.selectRegistrosVentana(desdeISO)]);
+
+    const out = {};
+    let pend = defs.map((d, i) => i);
+    for (let vuelta = 0; vuelta < 2 && pend.length; vuelta++) {
+      const res = await Promise.allSettled(pend.map(i => defs[i][1]()));
+      const quedan = [];
+      res.forEach((r, k) => {
+        const i = pend[k];
+        if (r.status === 'fulfilled') out[defs[i][0]] = r.value;
+        else { quedan.push(i); if (vuelta) console.warn('[Supabase] ' + defs[i][0] + ':', r.reason); }
+      });
+      pend = quedan;
+    }
+    if (pend.length) {
+      const faltan = pend.map(i => defs[i][0]);
+      console.warn('[Supabase] loadAll incompleto: no llegaron ' + faltan.join(', ') +
+        '. No se hidrata nada para no vaciar lo que ya está en memoria.');
+      try { window.__loadAllFaltaron = faltan; } catch (e) {}
       return null;
     }
+    try { window.__loadAllFaltaron = null; } catch (e) {}
+    if (sinRegistros) out.registros = null;
+    return out;
   },
+
 
   // Estrategia "reemplazar todo": borra la tabla y reinserta el array completo.
   // Refleja el modelo de guardado actual (se persiste el array entero) y evita

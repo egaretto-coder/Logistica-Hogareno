@@ -1073,7 +1073,27 @@ function renderClientes() {
 
     // Los que no tienen tarifario van PRIMERO: son envíos que ya se están
     // facturando en $0, no un dato que falta para el futuro.
-    html += _avisoSinTarifario(sinTar);
+    //
+    // PERO SOLO SI LOS PRECIOS DE VERDAD LLEGARON. Si la configuración no se
+    // hidrató, lo que hay en memoria es el caché del navegador —o nada—, y
+    // contar sobre eso no dice cuántos clientes están sin tarifario: dice
+    // cuántos no se bajaron. Pasó de verdad: el caché se pasó de los ~5 MB que
+    // da el navegador, quedó escrito a medias, y el panel acusó a 119 de 120
+    // clientes con los 10.665 precios intactos en la nube (bug real, reportado
+    // con esa captura). Un control que acusa sobre datos que no tiene manda a
+    // arreglar lo que no está roto.
+    html += (AppData._configHidratada !== true)
+      ? '<div class="alert alert-' + (AppData._configHidratada === false ? 'warn' : 'info') +
+        '" style="margin:0 0 12px"><i class="ic ic-alert"></i><div>' +
+          (AppData._configHidratada === false
+            ? '<strong>No se pudieron traer los precios de la nube.</strong> ' +
+              'Hasta que lleguen, el panel no puede saber quién tiene tarifario y quién no, ' +
+              'así que no lo dice. <strong>Recargá la página.</strong> ' +
+              'Los precios guardados <strong>no se tocaron</strong>.'
+            : '<strong>Trayendo las listas de precios…</strong> ' +
+              'El aviso de quién está sin tarifario aparece cuando terminen de llegar.') +
+        '</div></div>'
+      : _avisoSinTarifario(sinTar);
     // Los que SÍ lo tienen pero quedó sin código: hoy facturan, mañana capaz no.
     html += _avisoTarifasSinCodigo();
 

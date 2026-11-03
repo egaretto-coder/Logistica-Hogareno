@@ -383,6 +383,47 @@ function fechaISOde(fechaStr) {
 // reutiliza en vez de disparar otra tanda de ~28 consultas (y otra bajada de
 // registros si fuera completa).
 let _pHydrate = { completa: null, config: null };
+// Escribe el caché del navegador clave por clave. Devuelve las que no entraron.
+//
+// NO alcanza con no romper: el caché es lo que la app lee al arrancar, así que
+// una clave vieja conservada "por las dudas" se lee después como si fuera la de
+// hoy. La que no entra se saca, y queda anotada para que se pueda saber que el
+// caché está incompleto en vez de descubrirlo por un número que no cierra.
+const CACHE_INCOMPLETO = 'liq_cache_incompleto';
+
+function _guardarCacheLocal(pares) {
+  const fallaron = [];
+  // Se serializa TODO primero y se guarda de menor a mayor: cada clave se
+  // intenta por separado, pero una tabla grande que sí entra se come el lugar
+  // de varias chicas que después ya no entran. De menor a mayor, el caché
+  // conserva la mayor cantidad de tablas posible — y las que quedan afuera son
+  // las pesadas, que son justo las que más rápido se vuelven viejas.
+  const listos = [];
+  for (let i = 0; i < pares.length; i++) {
+    try { listos.push([pares[i][0], JSON.stringify(pares[i][1] === undefined ? [] : pares[i][1])]); }
+    catch (e) {}
+  }
+  listos.sort((a, b) => a[1].length - b[1].length);
+  for (let i = 0; i < listos.length; i++) {
+    const clave = listos[i][0], txt = listos[i][1];
+    try { localStorage.setItem(clave, txt); continue; } catch (e) {}
+    // Puede no entrar por el espacio que ocupa su PROPIA versión anterior:
+    // se la saca y se prueba una vez más antes de darla por perdida.
+    try { localStorage.removeItem(clave); localStorage.setItem(clave, txt); continue; } catch (e) {}
+    fallaron.push(clave);
+    try { localStorage.removeItem(clave); } catch (e) {}
+  }
+  try {
+    if (fallaron.length) localStorage.setItem(CACHE_INCOMPLETO, JSON.stringify(fallaron));
+    else localStorage.removeItem(CACHE_INCOMPLETO);
+  } catch (e) {}
+  AppData._cacheIncompleto = fallaron;
+  if (fallaron.length) {
+    console.warn('[caché] No entraron ' + fallaron.length + ' tabla(s) en el navegador (' +
+      fallaron.join(', ') + '). Se borraron para que no quede una versión vieja haciéndose pasar por la de hoy; los datos se siguen leyendo de la nube.');
+  }
+  return fallaron;
+}
 function hydrateFromSupabase(opts) {
   const clave = (opts && opts.sinRegistros) ? 'config' : 'completa';
   if (_pHydrate[clave]) return _pHydrate[clave];
@@ -401,7 +442,12 @@ async function _hydrateFromSupabaseReal(opts) {
     AppData._hidratando = false;
   }
   if (window.__perfLog) window.__perfLog('hydrate' + (sinRegistros ? '(sin registros)' : '(completa)'), _t0);
-  if (!data) return; // offline: se conserva el caché local
+  // Se deja dicho si la configuración llegó COMPLETA. Sin esta marca un
+  // panel no puede distinguir "no hay tarifario cargado" de "todavía no
+  // llegó", y afirma lo primero: así un tarifario intacto en la nube se
+  // leyó como "119 clientes no tienen tarifario". Mismo criterio que la
+  // cobertura de envíos, que tampoco afirma más de lo que tiene.
+  if (!data) { AppData._configHidratada = false; return; } // se conserva lo que hay en memoria
 
   // Tablas base: si Supabase está vacío (primer arranque), conservamos los
   // valores por defecto del código y los sembramos en la nube al final.
@@ -847,58 +893,76 @@ async function _hydrateFromSupabaseReal(opts) {
     monto_ars: _num(c.monto_ars) || _num(c.monto)
   }));
 
+  AppData._configHidratada = true;
+
   // Re-aplicar permisos con los datos frescos (sidebar puede cambiar)
   if (typeof aplicarPermisos === 'function' && currentUser) aplicarPermisos();
 
-  // Refrescar caché local para uso offline
-  try {
-    localStorage.setItem('liq_tarifas', JSON.stringify(AppData.tarifas));
-    localStorage.setItem('liq_supersla', JSON.stringify(AppData.superSLA));
-    localStorage.setItem('liq_panel_conductores', JSON.stringify(AppData.panelConductores));
-    localStorage.setItem('liq_dimensiones_especiales', JSON.stringify(AppData.dimensionesEspeciales));
-    localStorage.setItem('liq_desc_items', JSON.stringify(AppData.descItems));
-    localStorage.setItem('liq_desc_cuotas', JSON.stringify(AppData.descItemCuotas));
-    localStorage.setItem('liq_km_desvio', JSON.stringify(AppData.kmDesvio));
-    localStorage.setItem('liq_recorridos_especiales', JSON.stringify(AppData.recorridosEspeciales || []));
-    localStorage.setItem('liq_viajes_particulares', JSON.stringify(AppData.viajesParticulares || []));
-    localStorage.setItem('liq_viaje_tarifas', JSON.stringify(AppData.viajeTarifas || []));
-    localStorage.setItem('liq_compras', JSON.stringify(AppData.compras || []));
-    localStorage.setItem('liq_km_tarifas', JSON.stringify(AppData.kmTarifas));
-    localStorage.setItem('liq_config', JSON.stringify(AppData.config));
-    localStorage.setItem('liq_rol_permisos', JSON.stringify(AppData.rolPermisos || null));
-    localStorage.setItem('liq_roles', JSON.stringify(AppData.roles || null));
-    localStorage.setItem('liq_adelantos', JSON.stringify(AppData.adelantos));
-    localStorage.setItem('liq_adelanto_cuotas', JSON.stringify(AppData.adelantoCuotas));
-    localStorage.setItem('liq_clientes', JSON.stringify(AppData.clientes));
-    localStorage.setItem('liq_cliente_tarifas', JSON.stringify(AppData.clienteTarifas));
-    localStorage.setItem('liq_zona_alias', JSON.stringify(AppData.zonaAlias || []));
-    localStorage.setItem('liq_cliente_cuentas', JSON.stringify(AppData.clienteCuentas || []));
-    localStorage.setItem('liq_vendedores', JSON.stringify(AppData.vendedores));
-    localStorage.setItem('liq_comision_categorias', JSON.stringify(AppData.comisionCategorias));
-    localStorage.setItem('liq_comision_clientes', JSON.stringify(AppData.comisionClientes));
-    localStorage.setItem('liq_comision_pagos', JSON.stringify(AppData.comisionPagos));
-    localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones));
-    localStorage.setItem('liq_supersla_solic', JSON.stringify(AppData.superSLASolicitudes));
-    localStorage.setItem('liq_dim_catalogo', JSON.stringify(AppData.dimCatalogo));
-    localStorage.setItem('liq_empleados', JSON.stringify(AppData.empleados));
-    localStorage.setItem('liq_vacaciones', JSON.stringify(AppData.vacaciones || []));
-    localStorage.setItem('liq_cliente_cargos', JSON.stringify(AppData.clienteCargos || []));
-    localStorage.setItem('liq_empleado_ajustes', JSON.stringify(AppData.empleadoAjustes));
-    localStorage.setItem('liq_empleado_sueldos', JSON.stringify(AppData.empleadoSueldos));
-    localStorage.setItem('liq_empleado_cierres', JSON.stringify(AppData.empleadoCierres || []));
-    localStorage.setItem('liq_empleado_licencias', JSON.stringify(AppData.empleadoLicencias || []));
-    localStorage.setItem('liq_empleado_postergaciones', JSON.stringify(AppData.empleadoPostergaciones || []));
-    localStorage.setItem('liq_empleado_movimientos', JSON.stringify(AppData.empleadoMovimientos || []));
-    localStorage.setItem('liq_empleado_horas_extra', JSON.stringify(AppData.empleadoHorasExtra || []));
-    localStorage.setItem('liq_empleado_bonos', JSON.stringify(AppData.empleadoBonos || []));
-    localStorage.setItem('liq_puesto_horarios', JSON.stringify(AppData.puestoHorarios || []));
-    localStorage.setItem('liq_empleado_reaperturas', JSON.stringify(AppData.empleadoReaperturas || []));
-    localStorage.setItem('liq_conductor_fiscal', JSON.stringify(AppData.conductorFiscal || []));
-    localStorage.setItem('liq_conductor_facturas', JSON.stringify(AppData.conductorFacturas || []));
-    localStorage.setItem('liq_conductor_liquidaciones', JSON.stringify(AppData.conductorLiquidaciones || []));
-    localStorage.setItem('liq_archivo_solicitudes', JSON.stringify(AppData.archivoSolicitudes || []));
-    localStorage.setItem('liq_rendiciones', JSON.stringify(AppData.rendiciones));
-  } catch(e) {}
+  // Refrescar el caché local para uso offline.
+  //
+  // VA CLAVE POR CLAVE, Y LA QUE NO ENTRA SE BORRA. Las dos cosas importan.
+  // Esto era UN solo try con ~40 setItem adentro y un catch mudo: cuando el
+  // caché pasó los ~5 MB que da el navegador, setItem tiró QuotaExceededError
+  // a mitad del bloque, el catch se lo tragó y TODAS las claves de abajo
+  // quedaron con su valor VIEJO. Pasó de verdad: una carga de tarifario llevó
+  // `cliente_tarifas` a 2,6 MB, el bloque se cortó justo entre `liq_clientes`
+  // (que entró) y `liq_cliente_tarifas` (que no), y al recargar la app leyó
+  // 120 clientes con el tarifario de UNO SOLO: el panel decía "119 clientes no
+  // tienen tarifario cargado" con los 10.665 precios intactos en la nube (bug
+  // real, reportado con esa captura).
+  //
+  // Un tarifario VIEJO leído como actual es peor que no tener caché: factura
+  // mal y no lo delata nada. Por eso la clave que no entra se BORRA en vez de
+  // dejar la versión anterior — mismo criterio que "la cobertura no puede
+  // afirmar más de lo que hay en memoria".
+  _guardarCacheLocal([
+    ['liq_tarifas', AppData.tarifas],
+    ['liq_supersla', AppData.superSLA],
+    ['liq_panel_conductores', AppData.panelConductores],
+    ['liq_dimensiones_especiales', AppData.dimensionesEspeciales],
+    ['liq_desc_items', AppData.descItems],
+    ['liq_desc_cuotas', AppData.descItemCuotas],
+    ['liq_km_desvio', AppData.kmDesvio],
+    ['liq_recorridos_especiales', AppData.recorridosEspeciales || []],
+    ['liq_viajes_particulares', AppData.viajesParticulares || []],
+    ['liq_viaje_tarifas', AppData.viajeTarifas || []],
+    ['liq_compras', AppData.compras || []],
+    ['liq_km_tarifas', AppData.kmTarifas],
+    ['liq_config', AppData.config],
+    ['liq_rol_permisos', AppData.rolPermisos || null],
+    ['liq_roles', AppData.roles || null],
+    ['liq_adelantos', AppData.adelantos],
+    ['liq_adelanto_cuotas', AppData.adelantoCuotas],
+    ['liq_clientes', AppData.clientes],
+    ['liq_cliente_tarifas', AppData.clienteTarifas],
+    ['liq_zona_alias', AppData.zonaAlias || []],
+    ['liq_cliente_cuentas', AppData.clienteCuentas || []],
+    ['liq_vendedores', AppData.vendedores],
+    ['liq_comision_categorias', AppData.comisionCategorias],
+    ['liq_comision_clientes', AppData.comisionClientes],
+    ['liq_comision_pagos', AppData.comisionPagos],
+    ['liq_importaciones', AppData.importaciones],
+    ['liq_supersla_solic', AppData.superSLASolicitudes],
+    ['liq_dim_catalogo', AppData.dimCatalogo],
+    ['liq_empleados', AppData.empleados],
+    ['liq_vacaciones', AppData.vacaciones || []],
+    ['liq_cliente_cargos', AppData.clienteCargos || []],
+    ['liq_empleado_ajustes', AppData.empleadoAjustes],
+    ['liq_empleado_sueldos', AppData.empleadoSueldos],
+    ['liq_empleado_cierres', AppData.empleadoCierres || []],
+    ['liq_empleado_licencias', AppData.empleadoLicencias || []],
+    ['liq_empleado_postergaciones', AppData.empleadoPostergaciones || []],
+    ['liq_empleado_movimientos', AppData.empleadoMovimientos || []],
+    ['liq_empleado_horas_extra', AppData.empleadoHorasExtra || []],
+    ['liq_empleado_bonos', AppData.empleadoBonos || []],
+    ['liq_puesto_horarios', AppData.puestoHorarios || []],
+    ['liq_empleado_reaperturas', AppData.empleadoReaperturas || []],
+    ['liq_conductor_fiscal', AppData.conductorFiscal || []],
+    ['liq_conductor_facturas', AppData.conductorFacturas || []],
+    ['liq_conductor_liquidaciones', AppData.conductorLiquidaciones || []],
+    ['liq_archivo_solicitudes', AppData.archivoSolicitudes || []],
+    ['liq_rendiciones', AppData.rendiciones],
+  ]);
 
   // Primer arranque: sembrar en Supabase las tablas base que estaban vacías.
   if (faltaSeed.length) {
