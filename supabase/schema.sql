@@ -2271,3 +2271,83 @@ create unique index if not exists rendiciones_envio_clave_key
 -- columna de empleado" es mas corto y esta mal-, y lo que no se mueva queda
 -- HUERFANO en la otra boca, invisible para los dos lados.
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ───────────────────────────────────────────────────────────────────────
+-- 03/11/2026 · LA BAJA DE UN USUARIO CORTA TODO, Y SOLO EL PRE-LOGIN
+--              QUEDA ABIERTO A anon
+--
+-- Relevamiento de seguridad. Lo que estaba sano: las 56 tablas con RLS y
+-- policy, NINGUNA abierta a anon, el bloqueo por 5 intentos / 15 minutos
+-- vivo en la base, y los respaldos invisibles por la API.
+--
+-- 1) LA BAJA SE LE ESCAPABA EN TRES TABLAS. `perfiles.activo=false` frenaba
+--    48 de las 56. Las otras tres tenian datos de negocio:
+--      registros_historico  SELECT  -> el archivo de envios: 51.467 filas con
+--                                      domicilios y nombres de compradores
+--      empleado_bonos       ALL     -> leia Y ESCRIBIA los bonos de RRHH
+--      km_tarifas           SELECT
+--    Una baja que corta en casi todos lados es PEOR que ninguna: hace creer
+--    que la persona quedo afuera. Ahora las tres piden es_usuario_activo().
+--
+--    Va envuelto en un SUBSELECT ESCALAR -(select public.es_usuario_activo())-
+--    a proposito: la funcion tiene SET search_path, asi que Postgres no la
+--    inlinea y suelta se evaluaria por fila. Como InitPlan corre UNA vez por
+--    consulta — el plan lo muestra. Medido sobre registros_historico (51.467
+--    filas, 1.000 de salida): 21,9 ms antes, 22,5 ms despues. Medio
+--    milisegundo por consulta, no por fila. Es el mismo patron que
+--    es_de_sucursal.
+--
+-- 2) es_analista() NO MIRABA SI EL USUARIO ESTABA ACTIVO, asi que un analista
+--    dado de baja seguia escribiendo el valor del km. puede_autorizar() si lo
+--    miraba: las dos tienen que decir lo mismo.
+--
+-- 3) es_usuario_activo() HACIA coalesce(..., TRUE): sin fila en `perfiles`
+--    devolvia acceso TOTAL. Es el mismo agujero en su forma extrema, y es
+--    fail-open donde corresponde fail-closed — un usuario sin perfil es un
+--    estado roto, no uno privilegiado. Medido antes de cambiarlo: 0 de los 8
+--    usuarios de auth.users esta sin perfil, y handle_new_user crea la fila
+--    con activo=false, asi que no deja a nadie afuera.
+--
+--    Verificado simulando los dos roles contra la base real:
+--      dado de baja    -> 0 / 0 / 0 / 0 y es_analista()=false
+--      analista activo -> 51.467 / 5 / 2 / 104.571 y es_analista()=true
+--
+-- 4) OCHO FUNCIONES SECURITY DEFINER SE PODIAN EJECUTAR SIN ESTAR LOGUEADO:
+--    asignar_cliente/conductor/empleado_a_sucursal, desbloquear_acceso,
+--    es_usuario_activo, puede_autorizar, sucursal_de_cliente(s). Todas se
+--    defienden por dentro, asi que no era una puerta abierta — era superficie
+--    que no hace falta, y dos de ellas MUEVEN DATOS entre sucursales.
+--
+--    OJO CON EL PATRON, que es donde esto ya fallo una vez: revocar de `anon`
+--    NO ALCANZA, porque el permiso estaba concedido a PUBLIC y anon hereda de
+--    ahi. Esta misma documentacion afirmaba que desbloquear_acceso se habia
+--    revocado y la base decia lo contrario, exactamente por eso. Se revoca de
+--    PUBLIC **y** de anon, y se vuelve a conceder a authenticated.
+--
+--    es_usuario_activo y puede_autorizar las usan las POLICIES de las 56
+--    tablas: sin el grant explicito a authenticated no se evalua ninguna y la
+--    app se queda sin leer una sola fila.
+--
+--    QUEDAN ABIERTAS A anon, y TIENEN que estarlo: estado_acceso y
+--    registrar_intento_login. Corren ANTES de que exista la sesion — son las
+--    que dicen si el mail esta bloqueado y las que cuentan el intento
+--    fallido. Sin ellas no hay barrera de login. Verificado en el codigo: son
+--    las unicas dos RPC que src/auth.js llama antes del signInWithPassword.
+--
+-- alter policy registros_historico_select on public.registros_historico
+--   using ((select public.es_usuario_activo()) and public.es_de_sucursal(sucursal));
+-- alter policy empleado_bonos_all on public.empleado_bonos
+--   using (...) with check (...);
+-- alter policy km_tarifas_select on public.km_tarifas using (...);
+-- create or replace function public.es_analista() ... and activo ...
+-- create or replace function public.es_usuario_activo() ... coalesce(..., false)
+-- revoke execute on function <las 8> from public, anon;
+-- grant  execute on function <las 8> to authenticated;
+--
+-- LO QUE QUEDA PENDIENTE (es configuracion del panel, no SQL):
+--   · Las sesiones NO CADUCAN. Medido: 36 vivas para 6 personas, una con 14,
+--     la mas antigua de 74 dias. La baja del usuario le corta los datos pero
+--     NO le cierra la sesion.
+--   · Proteccion contra contrasenas filtradas (HaveIBeenPwned): desactivada.
+--   · MFA: 0 factores configurados.
+-- ───────────────────────────────────────────────────────────────────────
