@@ -2667,7 +2667,7 @@ async function aplicarAjusteSueldos() {
   // adelanta el aumento de septiembre, el ciclo de 3 meses tiene que arrancar
   // en septiembre igual.
   const hoyIso = periodo ? (periodo + '-01') : hoyISO();
-  let ok = 0;
+  let ok = 0, liqs = 0;
   for (const id of ids) {
     const e = AppData.empleados.find(x => x.id === id); if (!e) continue;
     const anterior = _num(e.sueldo);
@@ -2679,6 +2679,15 @@ async function aplicarAjusteSueldos() {
       e.sueldo = nuevo;
       AppData.empleadoAjustes.push(Object.assign({ id: row && row.id }, rec));
       ok++;
+      // LA LIQUIDACIÓN DEL MES SIGUE AL SUELDO NUEVO. Este camino NO lo hacía:
+      // lo tapaba el botón "Ajustar" de la liquidación mensual, que sí llamaba
+      // a _sincronizarLiqConSueldo. Sacado ese botón, este quedó como el ÚNICO
+      // camino del aumento, así que sin esto el mes ya cargado se quedaba con
+      // el sueldo viejo y el recibo salía mal, en silencio. Es la misma función
+      // que usan la ficha y el cambio de área: dos copias de esa cuenta siempre
+      // terminan discrepando.
+      try { if (await _sincronizarLiqConSueldo(id, periodo, nuevo)) liqs++; }
+      catch (err) { console.warn('sincronizar liquidación ' + id, err); }
     } catch (err) { console.warn('aplicarAjuste ' + id, err); }
   }
   persistirEmpleadosLocal();
@@ -2686,7 +2695,8 @@ async function aplicarAjusteSueldos() {
   document.getElementById('emp-ajuste-monto').value = '';
   document.getElementById('emp-ajuste-motivo').value = '';
   renderAjustesPanel();
-  showToast('✅ Ajuste aplicado a ' + ok + ' empleado(s)');
+  showToast('✅ Ajuste aplicado a ' + ok + ' empleado(s)' +
+    (liqs ? ' · ' + liqs + ' liquidación(es) de ' + _mesTexto(periodo) + ' se actualizaron con el sueldo nuevo' : ''));
 
   // Los que quedaron DESTILDADOS son, por definición, los que no se ajustaron
   // cuando les tocaba. Sin registrar por qué, quedan "vencidos" para siempre y
@@ -3232,8 +3242,13 @@ function renderSueldosPanel() {
           ? fmtPeso(mT) + ' <span class="muted">transf.</span><br>' + fmtPeso(mE) + ' <span class="muted">efvo.</span>'
           : '<span class="muted">a definir al liquidar</span>') + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">' +
-        (leToca ? '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px;border-color:#fcd34d;color:#92400e" onclick="abrirAjusteIndividual(' + e.id + ')" title="Aplicarle el aumento trimestral ahora, sin salir de esta pantalla">$ Ajustar</button>' +
-          '<button class="btn btn-sm" style="padding:4px 7px;font-size:10.5px" onclick="abrirPostergarAjuste(' + e.id + ')" title="No se le da el aumento: se posterga con una justificación">Postergar</button>' : '') +
+        // NI AJUSTAR NI POSTERGAR DESDE ACÁ. Un cambio de sueldo se decide en
+        // UN solo lugar —la solapa Ajustes de sueldo—, lo pidió el negocio y es
+        // el mismo criterio que el alta de clientes en Viajes particulares: dos
+        // caminos a la misma decisión es como termina habiendo dos versiones de
+        // lo que pasó. Acá se LIQUIDA lo que ya está decidido. El chip "le toca
+        // ajuste" de la fila se queda —es información, no un control— y el aviso
+        // de arriba lleva a donde sí se resuelve.
         (s && s.pagado
           ? '<span class="badge" style="background:#dcfce7;color:#166534" title="' + (s.pagado_en ? 'Pagado el ' + _fechaCorta(s.pagado_en) : '') + '">✓ Pagado</span>'
           : '<button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:11px" onclick="openSueldoModal(' + e.id + ')"><i class="ic ic-edit"></i> Liquidar</button>') +
@@ -3293,8 +3308,15 @@ function renderSueldosPanel() {
     : '') + (pend.length
     ? '<div class="alert" style="margin:0 0 14px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d">' +
       '<i class="ic ic-alert"></i><div><strong>' + pend.length + ' empleado(s) tienen el ajuste trimestral pendiente.</strong> ' +
-      'Si se liquida así, se les paga con el sueldo viejo. Ajustalos o postergalos desde su fila: ' +
+      'Si se liquida así, se les paga con el sueldo viejo: ' +
       pend.slice(0, 6).map(x => x.nombre).join(' · ') + (pend.length > 6 ? ' …y ' + (pend.length - 6) + ' más' : '') +
+      // El aviso dejó de poder resolverse acá, así que NOMBRA dónde se resuelve
+      // y lleva: un aviso que señala un problema sin decir adónde ir es el que
+      // se deja de leer. Abre la solapa con el MES que se está liquidando
+      // puesto, para no tener que volver a elegirlo.
+      '<div style="margin-top:6px"><button class="btn btn-sm" style="padding:3px 9px;font-size:11px" onclick="irAAjustesDeSueldo(\'' + jsAttr(periodo) + '\')">' +
+      '<i class="ic ic-dollar"></i> Ir a Ajustes de sueldo</button> ' +
+      '<span class="muted" style="font-size:11px">— el aumento se aplica ahí, no desde esta pantalla</span></div>' +
       '</div></div>'
     : '') +
     (conHs.length
@@ -3337,88 +3359,25 @@ function renderSueldosPanel() {
       '<div class="metric-sub">' + (sinLiq ? sinLiq + ' sin liquidar — su forma de pago se define al liquidar' : 'todo liquidado') + '</div></div>';
 }
 
-// ── Ajuste de UN empleado, desde la liquidación mensual ────────────────────
-// El aumento se decide por lote en su propia solapa, pero cuando se está
-// liquidando el mes y alguien tiene el ajuste pendiente hay que poder dárselo
-// sin salir de acá: ir a la otra solapa y volver es donde se pierde.
-let _aj1Id = null;
+// ── El aumento NO se aplica desde la liquidación mensual ──────────────────
+// Hubo acá un camino individual (abrirAjusteIndividual + su modal) para darle
+// el aumento a alguien sin salir de la pantalla del mes. Lo sacó el negocio:
+// "si necesito hacer un ajuste, se hace sí o sí desde el panel de ajuste
+// salarial". Un cambio de sueldo decidido en dos lugares es como terminan
+// existiendo dos versiones de lo que pasó, y acá se LIQUIDA lo ya decidido.
+// Se sacó entero —el modal incluido— porque una función que nadie llama
+// vuelve sola en el próximo cambio.
+//
+// Lo que NO se sacó es `_sincronizarLiqConSueldo`: era este camino el que la
+// llamaba, así que se la llevó el camino por lote, que ahora es el único.
 
-function abrirAjusteIndividual(empId) {
-  const e = (AppData.empleados || []).find(x => x.id === empId); if (!e) return;
-  _aj1Id = empId;
-  const est = estadoAjuste(e);
-  const box = document.getElementById('maj1-info');
-  if (box) box.innerHTML = '<i class="ic ic-user"></i><div><strong>' + e.nombre + '</strong> · ' + (e.puesto || 'sin puesto') +
-    '<br>Sueldo actual <strong>' + fmtPeso(_num(e.sueldo)) + '</strong> · ' +
-    (est.estado === 'vencido' ? '<span style="color:#b91c1c">ajuste vencido desde ' + _mesTexto(_yyyymm(est.fecha)) + '</span>'
-     : est.estado === 'toca' ? '<span style="color:#92400e">le toca este mes</span>'
-     : 'próximo ajuste ' + (est.fecha ? _mesTexto(_yyyymm(est.fecha)) : '—')) + '</div>';
-  ['maj1-pct', 'maj1-monto', 'maj1-motivo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  recalcAjusteIndividual();
-  document.getElementById('modal-ajuste1-backdrop').style.display = 'flex';
-}
-
-function cerrarAjusteIndividual(e) {
-  if (!e || e.target.id === 'modal-ajuste1-backdrop') {
-    document.getElementById('modal-ajuste1-backdrop').style.display = 'none';
-    _aj1Id = null;
-  }
-}
-
-function recalcAjusteIndividual() {
-  const box = document.getElementById('maj1-preview');
-  const btn = document.getElementById('maj1-guardar');
-  if (!box) return;
-  const e = (AppData.empleados || []).find(x => x.id === _aj1Id);
-  const pct = parseFloat(document.getElementById('maj1-pct')?.value) || 0;
-  const monto = parseFloat(document.getElementById('maj1-monto')?.value) || 0;
-  if (btn) btn.disabled = !e || (!pct && !monto);
-  if (!e) { box.innerHTML = ''; return; }
-  const nuevo = _nuevoSueldo(_num(e.sueldo), pct, monto);
-  const periodo = (document.getElementById('emp-sueldo-periodo') || {}).value || '';
-  const s = sueldoDe(e.id, periodo);
-  box.innerHTML = (pct || monto)
-    ? '<div style="display:flex;justify-content:space-between"><span>Sueldo</span>' +
-      '<span><span class="muted">' + fmtPeso(_num(e.sueldo)) + '</span> a <strong>' + fmtPeso(nuevo) + '</strong> ' +
-      '<span style="color:#166534">(+' + fmtPeso(nuevo - _num(e.sueldo)) + ')</span></span></div>' +
-      '<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">El aumento se fecha en <strong>' + _mesTexto(periodo) +
-      '</strong>, así el ciclo de ' + RRHH_MESES_AJUSTE + ' meses arranca en ese mes.</div>' +
-      (s && s.pagado
-        ? '<div style="margin-top:6px;font-size:11px;color:#b45309">Este mes ya está marcado como <strong>pagado</strong>: el aumento no lo cambia. Si corresponde pagarlo en este mes, reabrí la liquidación y volvé a liquidarla.</div>'
-        : (s ? '<div style="margin-top:6px;font-size:11px;color:#0369a1">La liquidación de este mes ya está cargada: se actualiza con el sueldo nuevo.</div>' : ''))
-    : '<span class="muted">Cargá el % o el monto del aumento.</span>';
-}
-
-async function aplicarAjusteIndividual() {
-  const e = (AppData.empleados || []).find(x => x.id === _aj1Id); if (!e) return;
-  const pct = parseFloat(document.getElementById('maj1-pct')?.value) || 0;
-  const monto = parseFloat(document.getElementById('maj1-monto')?.value) || 0;
-  if (!pct && !monto) { alert('Cargá el % de aumento o un monto fijo.'); return; }
-  const motivo = (document.getElementById('maj1-motivo')?.value || '').trim();
-  const periodo = (document.getElementById('emp-sueldo-periodo') || {}).value || '';
-  const anterior = _num(e.sueldo);
-  const nuevo = _nuevoSueldo(anterior, pct, monto);
-  if (!confirm('¿Aumentar el sueldo de ' + e.nombre + '?' + String.fromCharCode(10) +
-    fmtPeso(anterior) + ' a ' + fmtPeso(nuevo) + String.fromCharCode(10) + String.fromCharCode(10) +
-    'Queda en su historial, fechado en ' + _mesTexto(periodo) + '.')) return;
-  const quien = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nombre || currentUser.usuario)) || '';
-  const rec = { empleado_id: e.id, fecha: (periodo ? periodo + '-01' : hoyISO()),
-                periodo, pct, sueldo_anterior: anterior, sueldo_nuevo: nuevo, motivo, aplicado_por: quien };
-  try {
-    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
-    await DB.updateWhere('empleados', 'id', e.id, { sueldo: nuevo });
-    const row = await DB.insertRow('empleado_ajustes', rec);
-    e.sueldo = nuevo;
-    AppData.empleadoAjustes.push(Object.assign({ id: row && row.id }, rec));
-    // La liquidación del mes, si está cargada y no pagada, queda con el sueldo
-    // nuevo: la misma cuenta que usa el aumento hecho desde la ficha.
-    await _sincronizarLiqConSueldo(e.id, periodo, nuevo);
-    persistirEmpleadosLocal();
-    document.getElementById('modal-ajuste1-backdrop').style.display = 'none';
-    _aj1Id = null;
-    renderSueldosPanel();
-    showToast('✅ ' + e.nombre + ': ' + fmtPeso(anterior) + ' a ' + fmtPeso(nuevo));
-  } catch (err) { console.warn('aplicarAjusteIndividual', err); alert('No se pudo aplicar: ' + (err.message || err)); }
+// Lleva a donde sí se decide, con el mes que se está liquidando ya puesto:
+// el aviso del mes señala quién tiene el aumento pendiente y sin esto habría
+// que ir a buscar la solapa y volver a elegir el mes.
+function irAAjustesDeSueldo(periodo) {
+  switchEmpleadosTab('ajustes');
+  const mes = document.getElementById('emp-ajuste-periodo');
+  if (mes && /^\d{4}-\d{2}$/.test(String(periodo || ''))) { mes.value = periodo; renderAjustesPanel(); }
 }
 
 // Con qué corte se le pagó la última vez. Es el mejor punto de partida para
