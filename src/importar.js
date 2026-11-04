@@ -158,21 +158,38 @@ const BD_FIELDS = [
   // 33.278 envíos solo 2 quedaron con cliente).
   { key: 'cliente', label: 'Cliente (columna K — identidad para facturar)', expectedCol: 'K', required: false, fijo: true },
   // COBRO EN DESTINO: el conductor cobra al destinatario y lo rinde al día
-  // siguiente (panel Rendición de envíos). En el listado es "Total a cobrar".
-  // Es la ÚNICA columna más allá de la AD, así que es la primera que se cae si
-  // el listado viene más angosto — y cuando el automatch no la encuentra el
-  // el selector queda en "No incluido" y TODOS los envíos se guardan con 0, sin
-  // que nada lo diga. Pasó: el último envío con cobro es del 10/09/2026 y
-  // desde entonces no entró ni uno, con los mismos seis clientes despachando
-  // igual (HUELLITAS 3.425 envíos después de esa fecha, AQUA LIVE 3.073). Dos
-  // meses de cobros perdidos. Por eso ahora: más grafías para encontrarla, y
-  // sobre todo el resumen de la carga DICE cuántos cobros trajo — un campo de
-  // plata no puede fallar valiendo cero en silencio.
-  { key: 'cobro_destino', label: 'Cobro en destino ("Total a cobrar")', expectedCol: 'AI', required: false,
+  // siguiente (panel Rendición de envíos). Solo los envíos DIRECTOS lo tienen;
+  // los flex no, así que la mayoría de las filas vienen vacías y eso es lo
+  // normal — no es señal de que la columna falte.
+  //
+  // ESTABA APUNTADA A LA "AI" Y LA COLUMNA ES LA "AJ". Por eso el automatch
+  // caía en el lugar equivocado y, cuando tampoco encontraba el encabezado por
+  // nombre, el selector quedaba en "No incluido" y TODOS los envíos se
+  // guardaban con 0 sin que nada lo dijera. Medido: el último envío con cobro
+  // es del 10/09/2026, y desde entonces entraron 75.338 envíos sin UNO solo,
+  // con los mismos clientes despachando igual. La tabla `rendiciones` llegó a
+  // hoy con 0 filas: el panel nunca recibió un dato.
+  { key: 'cobro_destino', label: 'Cobro en destino ("Total a cobrar")', expectedCol: 'AJ', required: false,
     plata: true,
     preferKeywords: true, keywords: ['total a cobrar', 'a cobrar', 'importe a cobrar', 'monto a cobrar',
       'valor a cobrar', 'cobro destino', 'cobro en destino', 'contrareembolso', 'contra reembolso',
       'contra entrega', 'cobranza', 'reembolso'] },
+
+  // Y EL MISMO COBRO A VECES VIENE EN LA COLUMNA DE LOGÍSTICA INVERSA (AK).
+  // No es que la app tenga dos conceptos: es que el cliente, cuando carga el
+  // envío en SU sistema, a veces pone el monto a cobrar en el casillero de la
+  // inversa. Si se ignorara, ese cobro no se le reclama a nadie — que es
+  // exactamente el agujero que este panel existe para tapar.
+  //
+  // MANDA LA AJ: la AK se mira SOLO si la AJ vino vacía, porque el lugar
+  // natural del dato es el primero. Y cuando un cobro sale de acá el resumen
+  // de la carga lo DICE, con los clientes que lo hicieron: es una presunción
+  // sobre plata que alguien le va a reclamar a un chofer, y una presunción
+  // silenciosa sobre plata es como se arman los reclamos que no existen.
+  { key: 'cobro_inversa', label: 'Cobro cargado en logística inversa', expectedCol: 'AK', required: false,
+    plata: true,
+    preferKeywords: true, keywords: ['logistica inversa', 'logística inversa', 'inversa',
+      'total inversa', 'cobro inversa', 'devolucion', 'logistica de inversa'] },
 ];
 
 function showColumnMapper() {
@@ -299,14 +316,25 @@ function processUpload() {
       rec[field] = String(row[colIdx] !== undefined ? row[colIdx] : '').trim();
     });
     rec.fecha = normalizaFecha(row[mapping.fecha]);
-    // Monto a cobrar en destino (0 si el envío no tiene cobro).
-    rec.cobro_destino = (() => {
-      if (mapping.cobro_destino === undefined) return 0;
-      const v = row[mapping.cobro_destino];
+    // Monto a cobrar en destino (0 si el envío no tiene cobro, que es el caso
+    // de todos los flex). MANDA LA COLUMNA NATURAL; la de logística inversa se
+    // mira solo si aquella vino vacía — ver la nota en BD_FIELDS.
+    const _cobroDe = col => {
+      if (col === undefined) return 0;
+      const v = row[col];
       if (typeof v === 'number') return v;
       const n = parseFloat(String(v || '').replace(/[^0-9.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
       return isNaN(n) ? 0 : n;
-    })();
+    };
+    rec.cobro_destino = _cobroDe(mapping.cobro_destino);
+    if (rec.cobro_destino <= 0) {
+      const inv = _cobroDe(mapping.cobro_inversa);
+      // Se marca de dónde salió para poder decirlo en el resumen. La marca NO
+      // va a la nube (filaRegistroNube tiene su lista de columnas): es para
+      // esta corrida, que es cuando el operador puede revisarlo.
+      if (inv > 0) { rec.cobro_destino = inv; rec._cobroDeInversa = true; }
+    }
+    delete rec.cobro_inversa;
     // La IDENTIDAD del cliente es su nombre (columna K), normalizado. Se guarda
     // en cliente_cod porque es la columna por la que agrupa toda la
     // facturación; el nombre tal cual viene queda en `cliente` para mostrar.
@@ -469,6 +497,12 @@ function processUpload() {
   // entera hasta que alguien cruce la base a mano.
   const conCobro = nuevos.filter(r => _num(r.cobro_destino) > 0);
   const plataCobro = conCobro.reduce((a, r) => a + _num(r.cobro_destino), 0);
+  // Los que salieron de la columna de logística inversa: es una presunción
+  // sobre plata que se le va a reclamar a un chofer, así que se nombra a los
+  // clientes que la cargaron ahí para poder avisarles —o para corregirlo si
+  // ese monto no era un cobro—.
+  const deInversa = conCobro.filter(r => r._cobroDeInversa);
+  const cliInversa = Array.from(new Set(deInversa.map(r => String(r.cliente || '').trim()).filter(Boolean)));
 
   document.getElementById('upload-success-msg').innerHTML =
     `✅ Carga del <strong>${fechaCarga}</strong>: ${nuevos.length} registros procesados — ` +
@@ -477,7 +511,10 @@ function processUpload() {
     (enArchivoColapsadas ? `<br><i class="ic ic-alert"></i> <strong>${enArchivoColapsadas} fila(s) del archivo quedaron afuera</strong>: traen el mismo tracking, la misma dirección y el mismo destinatario que otra fila del mismo archivo, así que se tomaron como la misma entrega repetida (${colapsadas.slice(0, 4).map(r => (String(r.tracking || '').trim() || 'sin tracking') + (r.direccion ? ' · ' + r.direccion : '')).join(' · ')}${colapsadas.length > 4 ? '…' : ''}). <span style="opacity:.8">Si eran envíos DISTINTOS, revisá que cada uno traiga su propio número en el listado.</span> ` : '') +
     `<strong>${entregados} entregados</strong> (contabilizan) y <strong>${noEntregados} en otros estados</strong>.` +
     (conCobro.length
-      ? `<br><i class="ic ic-dollar"></i> <strong>${conCobro.length} envío(s) con cobro en destino por ${fmtPeso(plataCobro)}.</strong> Los entregados se registran solos en <strong>Rendición de envíos</strong>. <span id="upload-cobros-estado"></span>`
+      ? `<br><i class="ic ic-dollar"></i> <strong>${conCobro.length} envío(s) con cobro en destino por ${fmtPeso(plataCobro)}.</strong> Los entregados se registran solos en <strong>Rendición de envíos</strong>. <span id="upload-cobros-estado"></span>` +
+        (deInversa.length ? `<br><i class="ic ic-alert"></i> <strong>${deInversa.length} de esos cobros vinieron en la columna de logística inversa</strong>, no en "Total a cobrar"` +
+          (cliInversa.length ? ` (${cliInversa.slice(0, 5).join(" · ")}${cliInversa.length > 5 ? "…" : ""})` : "") +
+          `. Se tomaron como cobro igual. <span style="opacity:.8">Si alguno NO era un cobro al destinatario, sacalo de Rendición de envíos antes de reclamárselo al chofer.</span>` : "")
       : `<br><i class="ic ic-alert"></i> <strong>Este listado no trajo ningún cobro en destino.</strong> Si debería traerlos, la columna "Total a cobrar" no quedó mapeada: volvé a importar y elegila a mano. <span style="opacity:.8">Sin ella los envíos entran en $0 y no se le reclama a ningún chofer.</span>`) +
     `${sinChofer ? `<br><i class="ic ic-alert"></i> <strong>${sinChofer} envío(s) vinieron SIN chofer en el listado.</strong> Se cargan igual y se le facturan al cliente —todo lo entregado se cobra— pero no entran en la liquidación de ningún conductor. El Dashboard los lista en <strong>“se cobra y no se paga”</strong>.` : ''}` +
     `${diasFueraDeRango ? `<br><i class="ic ic-alert"></i> ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
