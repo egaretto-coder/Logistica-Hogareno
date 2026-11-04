@@ -18,7 +18,16 @@
 #  ----------------------------------------------------------------------------
 #  PRIMERA VEZ (una sola vez, pide el navegador):
 #      npx -y supabase@latest login
-#      npx -y supabase@latest link --project-ref rsglddbierwejiusrpvd
+#
+#  Y NADA MÁS: el proyecto se pasa por --remote=<ref>, que es el -Proyecto de
+#  acá abajo. NO hace falta "supabase link": ese se guarda POR CARPETA, así que
+#  corrido en otro directorio el respaldo falla con ProjectRefNotLinkedError y
+#  no hay forma de saber por qué (pasó, 04/11/2026). Un paso manual que se puede
+#  hacer en el lugar equivocado es un paso que va a fallar.
+#
+#  Si preferís no depender del login interactivo -por ejemplo para la tarea
+#  programada- creá un Personal Access Token en Supabase y dejalo en la variable
+#  de entorno SUPABASE_ACCESS_TOKEN. El CLI usa cualquiera de las dos.
 #
 #  USO:
 #      .\scripts\respaldo.ps1
@@ -58,11 +67,11 @@ try {
   $ErrorActionPreference = 'Continue'
 
   Log "Bajando la estructura…"
-  npx -y supabase@latest db dump --remote -f (Join-Path $trabajo 'esquema.sql')
+  npx -y supabase@latest db dump --remote=$Proyecto -f (Join-Path $trabajo 'esquema.sql')
   if ($LASTEXITCODE -ne 0) { $ErrorActionPreference='Stop'; throw "El dump de la estructura falló (exit $LASTEXITCODE)" }
 
   Log "Bajando los datos… (es lo que tarda)"
-  npx -y supabase@latest db dump --remote --data-only -f (Join-Path $trabajo 'datos.sql')
+  npx -y supabase@latest db dump --remote=$Proyecto --data-only -f (Join-Path $trabajo 'datos.sql')
   if ($LASTEXITCODE -ne 0) { $ErrorActionPreference='Stop'; throw "El dump de los datos falló (exit $LASTEXITCODE)" }
 
   $ErrorActionPreference = 'Stop'
@@ -112,8 +121,9 @@ catch {
   "[$(Get-Date -Format 'dd/MM/yyyy HH:mm')] $($_.Exception.Message)" | Add-Content -Path $log -Encoding utf8
   Write-Host ""
   Write-Host "  El respaldo NO se hizo. Revisá $log" -ForegroundColor Red
-  Write-Host "  Si dice que no estás autenticado, corré:" -ForegroundColor Yellow
-  Write-Host "     npx -y supabase@latest login" -ForegroundColor Yellow
-  Write-Host "     npx -y supabase@latest link --project-ref $Proyecto" -ForegroundColor Yellow
+  Write-Host "  Si dice AccessTokenRequiredError, el CLI no tiene token. Dos formas:" -ForegroundColor Yellow
+  Write-Host "     npx -y supabase@latest login        (abre el navegador)" -ForegroundColor Yellow
+  Write-Host "     o bien crear un Personal Access Token en Supabase y exportarlo" -ForegroundColor Yellow
+  Write-Host "     como SUPABASE_ACCESS_TOKEN (sirve para la tarea programada)." -ForegroundColor Yellow
   exit 1
 }
