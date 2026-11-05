@@ -236,6 +236,24 @@ const DB = {
   },
 
   // Trae una tabla completa. Imprescindible paginar para 'registros'.
+
+  // TODAS las tablas de datos: las que hidrata la app más las tres que deja
+  // afuera a propósito por pesadas (el archivo de envíos y el detalle
+  // congelado de cada liquidación se piden de a uno). Un respaldo que se
+  // saltee una tabla no avisa, así que la lista se DERIVA en vez de copiarse.
+  tablasDelRespaldo() {
+    const base = this._defsHidratacion(null, true).map(d => d[0]);
+    return base.concat(['registros', 'registros_historico', 'liquidacion_detalle']);
+  },
+
+  // Baja una tabla ENTERA. Las dos grandes van por el camino de cursor que ya
+  // existe (sin desdeISO trae todo); el resto por páginas normales.
+  async selectTablaCompleta(tabla, onProgress) {
+    if (tabla === 'registros') return this.selectRegistrosVentana(null, onProgress);
+    if (tabla === 'registros_historico') return this.selectHistorico(onProgress);
+    return this._fetchAllParallel(tabla, { onProgress: onProgress || null });
+  },
+
   async selectAll(table, orderCol) {
     return this._fetchAllParallel(table, { orderCol });
   },
@@ -429,9 +447,12 @@ const DB = {
   // faltan en [] y eso VACIARÍA AppData —un tarifario en cero factura $0 sin
   // que nadie lo note—. Conservar lo que hay en memoria es lo seguro; lo que
   // faltaba era DECIRLO, y por eso se nombra cuáles no llegaron.
-  async loadAll(desdeISO, opts) {
-    if (!sb) return null;
-    const sinRegistros = !!(opts && opts.sinRegistros);
+  // La lista de tablas que la app hidrata. Vive acá y no adentro de loadAll
+  // porque el RESPALDO la necesita para enumerar qué bajar: con una lista
+  // copiada, una tabla nueva entraría a la app y quedaría fuera del respaldo
+  // sin que nada lo dijera — el modo de falla que este proyecto ya pagó con
+  // archivar_registros copiando 17 de 28 columnas.
+  _defsHidratacion(desdeISO, sinRegistros) {
     const defs = [
       ['tarifas', () => this.selectAll('tarifas', 'zona')],
       ['super_sla', () => this.selectAll('super_sla')],
@@ -484,6 +505,13 @@ const DB = {
       ['sucursales', () => this.selectAll('sucursales', 'orden')],
     ];
     if (!sinRegistros) defs.push(['registros', () => this.selectRegistrosVentana(desdeISO)]);
+    return defs;
+  },
+
+  async loadAll(desdeISO, opts) {
+    if (!sb) return null;
+    const sinRegistros = !!(opts && opts.sinRegistros);
+    const defs = this._defsHidratacion(desdeISO, sinRegistros);
 
     const out = {};
     let pend = defs.map((d, i) => i);

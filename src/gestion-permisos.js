@@ -33,6 +33,7 @@ let gpPerfilesCache = []; // último listado de perfiles cargado (para los selec
 let gpBloqueosCache = {}; // email → { intentos, bloqueado_hasta } (control de accesos)
 
 function renderGestionPermisos() {
+  renderGpRespaldo();
   renderGpCrearRol();
   renderGpAltaUsuario();
   renderGpMatriz();
@@ -420,5 +421,86 @@ async function cambiarRolUsuario(userId, nuevoRol, el) {
     showToast('⛔ No se pudo cambiar el rol');
   } finally {
     renderGpGrupos();
+  }
+}
+
+// ─── Respaldo de la base ────────────────────────────────────────────────
+// El nombre de la sucursal sale de una tabla, asi que se escapa: no hay un
+// escapador de texto HTML global y tomar prestado el de otro modulo es fragil.
+function _respEscSuc(t) {
+  return String(t == null ? '' : t).replace(/[&<>]/g, function (c) {
+    return c === '&' ? '&amp;' : (c === '<' ? '&lt;' : '&gt;');
+  });
+}
+
+// Solo el analista: baja TODA la base con su propia sesion. Va en esta
+// pantalla porque es la unica de Sistema y ya es solo-analista por permisos.
+function renderGpRespaldo() {
+  const cont = document.getElementById('gp-respaldo');
+  if (!cont) return;
+  if (!esAnalista()) { cont.innerHTML = ''; return; }
+  const suc = (typeof sucursalActiva === 'function') ? sucursalActiva() : '';
+  const nom = (typeof sucursalNombre === 'function') ? sucursalNombre(suc) : suc;
+  cont.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:600"><i class="ic ic-download"></i> Respaldo de la base</span>
+          <button class="btn btn-sm" onclick="bajarRespaldoCompleto(this)">Descargar respaldo completo</button>
+          <span id="gp-resp-estado" style="font-size:11px;color:var(--text-muted)"></span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.6">
+          Baja <strong>todas las tablas</strong> en un archivo JSON, con tu sesion. Son los <strong>datos</strong>:
+          la estructura esta en <code>supabase/schema.sql</code> del repo, y hacen falta las dos para reconstruir la base.
+          <br>Cubre <strong>la sucursal ${_respEscSuc(nom)}</strong>: lo que no ves en pantalla tampoco entra en el archivo.
+          <br>Supabase ya guarda copias diarias de los ultimos 7 dias; esta es para cuando el error se descubre despues.
+          Guardala en Drive o OneDrive para que quede fuera de tu disco.
+        </div>
+      </div>
+    </div>`;
+}
+
+async function bajarRespaldoCompleto(btn) {
+  if (!esAnalista()) { showToast('⛔ Solo un analista puede bajar el respaldo'); return; }
+  if (window._respBajando) return;              // dos corridas bajan la base dos veces
+  window._respBajando = true;
+  const est = document.getElementById('gp-resp-estado');
+  const rotulo = btn ? btn.textContent : '';
+  if (btn) btn.disabled = true;
+  try {
+    const r = await respaldoCompleto((i, n, t) => {
+      if (btn) btn.textContent = 'Bajando ' + (i + 1) + ' de ' + n + '…';
+      if (est) est.textContent = 'trayendo ' + t + '…';
+    });
+    const blob = new Blob(r.partes, { type: 'application/json' });
+    const mb = Math.round(blob.size / 1048576 * 10) / 10;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = _respNombreArchivo(r.sucursal, r.fallaron.length > 0);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 20000);
+
+    const resumen = r.total.toLocaleString('es-AR') + ' filas de ' + r.tablas + ' tablas · ' + mb + ' MB';
+    if (r.fallaron.length) {
+      // Un respaldo a medias que PARECE bueno es el peor de los casos: se
+      // avisa con alert (un toast se va solo) y el archivo sale marcado.
+      if (est) est.textContent = '';
+      alert('⚠️ El respaldo quedo INCOMPLETO.' + '\n\n' +
+        'No se pudieron bajar: ' + r.fallaron.join(', ') + '.' + '\n\n' +
+        'El archivo se descargo igual, con "INCOMPLETO" en el nombre y la lista adentro. ' +
+        'Volve a intentarlo: si falla de nuevo, es un problema de conexion con la base.');
+    } else {
+      if (est) est.textContent = resumen;
+      showToast('✅ Respaldo descargado · ' + resumen);
+    }
+  } catch (e) {
+    console.warn('respaldo:', e);
+    if (est) est.textContent = '';
+    alert('⚠️ No se pudo generar el respaldo.' + '\n\n' + (e && e.message ? e.message : e) +
+      '\n\nNo se bajo ningun archivo.');
+  } finally {
+    window._respBajando = false;
+    if (btn) { btn.disabled = false; btn.textContent = rotulo || 'Descargar respaldo completo'; }
   }
 }

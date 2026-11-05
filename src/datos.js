@@ -1572,3 +1572,78 @@ async function cargarSeedRegistros() {
 }
 
 // ===== DATOS REALES (importados del XLS) =====
+
+// ===== RESPALDO COMPLETO DE LA BASE =====
+// El plan Pro guarda 7 dias. En esta app los errores tardan MAS que eso en
+// aparecer -la lista de CERAMITODO x90 se descubrio dias despues y la semana
+// sin facturar de GAMING CITY casi un mes-, asi que hace falta una copia
+// propia con retencion larga. El CLI de Supabase la bajaria, pero corre
+// pg_dump DENTRO DE DOCKER: una instalacion de 2 GB en la maquina del
+// operador para apretar un boton una vez por semana. Esto la baja con la
+// sesion que la persona YA tiene abierta, sin instalar nada.
+//
+// LO QUE ES Y LO QUE NO: son los DATOS, no la estructura. El esquema vive en
+// supabase/schema.sql, en el repo. Entre los dos se reconstruye la base; con
+// uno solo, no — y por eso el archivo lo dice adentro.
+//
+// Y ES DE UNA SUCURSAL: RLS filtra por la boca activa, asi que parado en
+// Buenos Aires no entra una fila de Rosario. Se dice en el archivo y en la
+// pantalla: un respaldo que PARECE completo y no lo es es peor que ninguno.
+function _respNombreArchivo(suc, incompleto) {
+  return 'respaldo' + (incompleto ? '-INCOMPLETO' : '') + '-' + (suc || 'base') + '-' + hoyISO() + '.json';
+}
+
+// Las filas se serializan DE A TROZOS. `registros` son ~105.000 y un solo
+// JSON.stringify de esa tabla arma un string de cientos de MB que el
+// navegador puede no llegar a alocar; troceado, el pico es el trozo y el
+// Blob se arma con las partes sueltas.
+function _respSerializarFilas(filas, partes) {
+  if (!filas.length) { partes.push('[]'); return; }
+  const PASO = 2000;
+  partes.push('[');
+  for (let i = 0; i < filas.length; i += PASO) {
+    const hasta = Math.min(i + PASO, filas.length);
+    const trozo = [];
+    for (let k = i; k < hasta; k++) trozo.push(JSON.stringify(filas[k]));
+    partes.push((i ? ',' : '') + trozo.join(','));
+  }
+  partes.push(']');
+}
+
+async function respaldoCompleto(onPaso) {
+  const tablas = DB.tablasDelRespaldo();
+  const suc = (typeof sucursalActiva === 'function') ? sucursalActiva() : '';
+  const partes = [], conteo = {}, fallaron = [];
+  let total = 0, primera = true;
+
+  partes.push('{' + '\n');
+  partes.push('  "respaldo": "Logistica Hogareno",\n');
+  partes.push('  "generado": ' + JSON.stringify(new Date().toISOString()) + ',\n');
+  partes.push('  "sucursal": ' + JSON.stringify(suc) + ',\n');
+  partes.push('  "aviso": "Son los DATOS. La estructura esta en supabase/schema.sql del repo. Cubre UNA sucursal: la que estaba activa al generarlo.",\n');
+  partes.push('  "tablas": {\n');
+
+  for (let i = 0; i < tablas.length; i++) {
+    const t = tablas[i];
+    if (onPaso) onPaso(i, tablas.length, t);
+    let filas = null;
+    try { filas = await DB.selectTablaCompleta(t); }
+    catch (e) { fallaron.push(t); console.warn('[respaldo] ' + t + ':', e); continue; }
+    conteo[t] = filas.length;
+    total += filas.length;
+    partes.push((primera ? '' : ',\n') + '    ' + JSON.stringify(t) + ': ');
+    primera = false;
+    _respSerializarFilas(filas, partes);
+    filas = null;   // que el recolector pueda llevarse la tabla grande
+  }
+
+  partes.push('\n  },\n');
+  // Lo que NO entro queda escrito ADENTRO del archivo: si alguien lo abre
+  // dentro de seis meses, tiene que poder saber que esta incompleto sin
+  // depender de acordarse del cartel que vio ese dia.
+  partes.push('  "no_pudieron_bajarse": ' + JSON.stringify(fallaron) + ',\n');
+  partes.push('  "filas_por_tabla": ' + JSON.stringify(conteo) + '\n');
+  partes.push('}' + '\n');
+
+  return { partes, conteo, fallaron, total, sucursal: suc, tablas: tablas.length };
+}
