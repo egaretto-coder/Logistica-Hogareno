@@ -13,5 +13,10 @@ npm-debug.log*
 *.tmp
 scratchpad/
 
+# Estado local del CLI de Supabase. Hoy solo tiene el ref y la organización,
+# pero el CLI deja ahí la URL del pooler -con contraseña- segun la version,
+# y este repo es PUBLICO.
+supabase/.temp/
+
 # Config local de Claude Code (específica de la máquina)
 .claude/settings.local.json
