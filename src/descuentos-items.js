@@ -25,6 +25,14 @@ const DESC_ITEMS = {
       ['SERGIO MOLINA', '17/07/2026', 12000, '9410811899000011112222', 'Paquete extraviado'],
     ],
   },
+  // No tiene panel propio: nace y se deshace desde Rendición de envíos, que
+  // es donde está el cobro. Vive acá para que el rótulo, el color y el
+  // detalle de la liquidación salgan del mismo catálogo que los demás.
+  cobros: {
+    label: 'Cobro no rendido', emoji: '💵', color: '#0f766e', refLabel: 'Tracking / Envío',
+    headers: ['Conductor', 'Fecha', 'Monto', 'Tracking / Envío', 'Detalle'],
+    ejemplos: [],
+  },
   proveedores: {
     label: 'Servicio Proveedores', emoji: '🧾', color: '#4f46e5', refLabel: 'Proveedor',
     headers: ['Conductor', 'Fecha', 'Monto', 'Proveedor', 'Detalle'],

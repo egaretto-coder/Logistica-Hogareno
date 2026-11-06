@@ -152,6 +152,7 @@ function snapshotConductor(cond, rango, liqPre) {
       combustible: descItemDescuentoConductor('combustible', cond, rango).monto,
       extraviados: descItemDescuentoConductor('extraviados', cond, rango).monto,
       proveedores: descItemDescuentoConductor('proveedores', cond, rango).monto,
+      cobros: descItemDescuentoConductor('cobros', cond, rango).monto,
       obs: ''
     }
   };

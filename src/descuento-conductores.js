@@ -111,6 +111,10 @@ function _panelMesRepintar(id) {
     if (typeof renderViajesParticulares === 'function') renderViajesParticulares();
     return;
   }
+  if (id === 'rendiciones') {
+    if (typeof renderRendiciones === 'function') renderRendiciones();
+    return;
+  }
   if (id.indexOf('descitem-') === 0 && typeof renderDescItems === 'function') {
     renderDescItems(id.slice('descitem-'.length));
   }

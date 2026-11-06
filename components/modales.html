@@ -177,6 +177,19 @@
           </div>
           <div id="liq-desc-proveedores-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
 
+          <!-- Cobro en destino que el conductor no rindió. Nace en Rendición de
+               envíos; acá solo se ve y se tilda, como los demás. Oculto si no hay. -->
+          <div id="liq-cobros-wrap" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
+              <div>
+                <label style="font-size:13px;display:flex;align-items:center;gap:6px"><i class="ic ic-dollar"></i> Cobro en destino no rendido</label>
+                <span id="liq-desc-cobros-info" style="font-size:10px;color:#6b7280"></span>
+              </div>
+              <div id="liq-desc-cobros-total" style="text-align:right;font-family:monospace;font-weight:700;font-size:15px;padding:8px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:8px">$0</div>
+            </div>
+            <div id="liq-desc-cobros-detalle" style="display:none;margin:-4px 0 4px 4px;padding-left:8px;border-left:2px solid var(--border)"></div>
+          </div>
+
           <!-- Km de desvío: SUMA al neto. No se cuotea: cada registro se imputa entero o no se imputa. -->
           <div id="liq-km-wrap" style="display:none">
             <div style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center">
@@ -1251,11 +1264,16 @@
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="alert alert-info" style="margin:0;font-size:12px"><i class="ic ic-dollar"></i><div>
         El envío <strong>ya está cargado</strong> pero el cliente no informó el "Total a cobrar".
-        Buscalo y poné cuánto cobró el conductor: el resto sale del propio envío.
+        Elegí <strong>el cliente</strong> y buscá el envío por tracking o dirección: el conductor,
+        la fecha y el estado salen del propio envío.
         Si el envío tampoco está en el listado, usá <strong>"+ Nuevo cobro"</strong>.</div></div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">Buscar el envío</label>
-        <input type="search" id="mcob-buscar" class="form-input" style="width:100%" oninput="buscarEnvioCobro()" placeholder="Tracking, destinatario, cliente o dirección..." />
+        <label class="form-label">Cliente *</label>
+        <select id="mcob-cliente" class="form-input" style="width:100%" onchange="buscarEnvioCobro()"></select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Buscar el envío de ese cliente</label>
+        <input type="search" id="mcob-buscar" class="form-input" style="width:100%" oninput="buscarEnvioCobro()" placeholder="Tracking, dirección o destinatario..." />
       </div>
       <div id="mcob-resultados"></div>
       <div id="mcob-elegido"></div>

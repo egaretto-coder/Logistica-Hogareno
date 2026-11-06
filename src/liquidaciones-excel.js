@@ -312,7 +312,8 @@ function _xlsConductorDatos(cond, d, rango) {
     extravio: extravioCuotaDescuento(cond, rango),
     combustible: descItemDescuentoConductor('combustible', cond, rango),
     proveedores: descItemDescuentoConductor('proveedores', cond, rango),
-    extraviados: descItemDescuentoConductor('extraviados', cond, rango)
+    extraviados: descItemDescuentoConductor('extraviados', cond, rango),
+    cobros: descItemDescuentoConductor('cobros', cond, rango)
   } : null;
   const bruto = _num(d.total);
   // El neto sale de la MISMA cuenta que el PDF y que el panel: reimplementarlo

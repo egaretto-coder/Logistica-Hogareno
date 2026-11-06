@@ -103,7 +103,8 @@ function openLiqModal(conductor) {
   };
   const totalItemsPre = setItemPre('combustible', 'combustible')
     + setItemPre('extraviados', 'extraviados')
-    + setItemPre('proveedores', 'proveedores');
+    + setItemPre('proveedores', 'proveedores')
+    + setItemPre('cobros', 'cobros');
   document.getElementById('liq-desc-obs').value = '';
   const origenEl = document.getElementById('liq-desc-origen');
   if (origenEl) origenEl.textContent = totalItemsPre > 0 ? 'Imputado por fecha del período · destildá lo que no quieras descontar' : '';
@@ -373,9 +374,15 @@ function recalcLiqModal() {
   const combustible = descItemDescuentoConductor('combustible', liqModalConductor, rangoAct).monto;
   const extraviados = descItemDescuentoConductor('extraviados', liqModalConductor, rangoAct).monto;
   const proveedores = descItemDescuentoConductor('proveedores', liqModalConductor, rangoAct).monto;
-  const totalDesc = combustible + extraviados + proveedores;
+  const cobros = descItemDescuentoConductor('cobros', liqModalConductor, rangoAct).monto;
+  const totalDesc = combustible + extraviados + proveedores + cobros;
   const pinta = (campo, monto) => { const el = document.getElementById('liq-desc-' + campo + '-total'); if (el) el.textContent = fmtPeso(monto); };
   pinta('combustible', combustible); pinta('extraviados', extraviados); pinta('proveedores', proveedores);
+  pinta('cobros', cobros);
+  // El bloque solo aparece si hay algo: un renglón en $0 que sale siempre
+  // deja de leerse, y este concepto es excepcional.
+  const wrapCob = document.getElementById('liq-cobros-wrap');
+  if (wrapCob) wrapCob.style.display = cobros > 0 ? '' : 'none';
 
   // Adicional por km de desvío del período filtrado (suma al neto, igual que el PDF)
   const kmAd = kmAdicionalConductor(liqModalConductor, _liqRangoModal());
@@ -489,6 +496,7 @@ async function confirmarYDescargarPDF() {
     combustible: descItemDescuentoConductor('combustible', liqModalConductor, _liqRangoModal()).monto,
     extraviados: descItemDescuentoConductor('extraviados', liqModalConductor, _liqRangoModal()).monto,
     proveedores: descItemDescuentoConductor('proveedores', liqModalConductor, _liqRangoModal()).monto,
+    cobros:      descItemDescuentoConductor('cobros', liqModalConductor, _liqRangoModal()).monto,
     obs:         document.getElementById('liq-desc-obs').value || ''
   };
 
@@ -908,7 +916,8 @@ function exportPDF(conductor, opts) {
   // ═══════════════════════════════════════════════════════════════════════
   // ═════════════ BLOQUE DE DESCUENTOS + TOTAL NETO ═══════════════════════
   // ═══════════════════════════════════════════════════════════════════════
-  const totalDescuentos = (descuentos.combustible || 0) + (descuentos.extraviados || 0) + (descuentos.proveedores || 0);
+  const totalDescuentos = (descuentos.combustible || 0) + (descuentos.extraviados || 0) +
+    (descuentos.proveedores || 0) + (descuentos.cobros || 0);
 
   // Adicional por km de desvío del período liquidado: compensación por retiros
   // de mercadería fuera de ruta. SUMA al total. Cada desvío ya tiene su monto
@@ -1067,6 +1076,8 @@ function exportPDF(conductor, opts) {
     { letter: 'C', color: LH_ORANGE,  label: 'Combustible', val: descuentos.combustible || 0 },
     { letter: 'P', color: LH_RED,     label: 'Envíos extraviados / rotos', val: descuentos.extraviados || 0 },
     { letter: 'S', color: LH_INDIGO,  label: 'Servicio proveedores' + _refsDeItems('proveedores', conductor, rangoImput), val: descuentos.proveedores || 0 },
+    // El conductor tiene derecho a saber de qué es: se nombra el envío.
+    { letter: 'R', color: LH_RED,     label: 'Cobro en destino no rendido' + _refsDeItems('cobros', conductor, rangoImput), val: descuentos.cobros || 0 },
   ];
   let dY = descY + 17 + kmOffset + respOffset + vjOffset + advOffset + extOffset;
   descItems.forEach(item => {

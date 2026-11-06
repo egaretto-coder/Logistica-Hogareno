@@ -40,6 +40,11 @@ function limiteRendicion(fechaEntregaDMY) {
 //   recibido  → la empresa tiene la plata, falta devolvérsela al cliente
 //   rendido   → devuelta al cliente
 function estadoRendicion(r) {
+  // Descontado de liquidación: el cobro se saldó contra la factura del
+  // cliente en vez de devolverle la plata. Cierra igual que "rendido" —no
+  // queda nada esperando— pero es OTRO hecho y por eso se cuenta aparte.
+  // NO toca la liquidación del cliente: solo deja registrado que se saldó así.
+  if (r.estado === 'descontado') return 'descontado';
   if (r.estado === 'rendido') return 'rendido';
   if (r.estado === 'recibido') return 'recibido';
   if (r.estado === 'anulado') return 'anulado';
@@ -68,6 +73,7 @@ const REND_ESTADOS = {
   vencido:   { label: 'Atrasado',           color: '#b91c1c', bg: '#fee2e2', borde: '#fca5a5' },
   recibido:  { label: 'En la empresa',      color: '#1d4ed8', bg: '#dbeafe', borde: '#bfdbfe' },
   rendido:   { label: 'Devuelto al cliente',color: '#166534', bg: '#dcfce7', borde: '#bbf7d0' },
+  descontado:{ label: 'Descontado de liquidación', color: '#5b21b6', bg: '#ede9fe', borde: '#ddd6fe' },
   anulado:   { label: 'Anulado',            color: '#6b7280', bg: '#f3f4f6', borde: '#e5e7eb' }
 };
 function rendBadge(est) {
@@ -82,7 +88,7 @@ function persistirRendicionesLocal() {
 // Deuda de cada conductor: lo que cobró y todavía no trajo.
 function deudaPorConductor() {
   const m = new Map();
-  rendicionesDelRango().forEach(r => {
+  rendicionesDelPeriodo().forEach(r => {
     if (!enLaCalle(r)) return;
     const k = conductorCanonico(r.conductor) || r.conductor;
     let x = m.get(k);
@@ -97,7 +103,7 @@ function deudaPorConductor() {
 // Lo que hay que devolverle a cada cliente: cobros que ya están en la empresa.
 function aDevolverPorCliente() {
   const m = new Map();
-  rendicionesDelRango().forEach(r => {
+  rendicionesDelPeriodo().forEach(r => {
     if (!enLaEmpresa(r)) return;
     const k = String(r.cliente || '(sin cliente)').trim();
     let x = m.get(k);
@@ -115,23 +121,28 @@ let rendFiltroEstado = 'abiertas';   // abiertas | calle | vencido | recibido | 
 // Rango por fecha de ENTREGA. Vacío = todo, para no esconder deuda vieja sin
 // querer: si arrancara filtrado por el mes, un cobro atrasado de hace dos meses
 // no aparecería en ningún lado.
-let rendDesde = '';
-let rendHasta = '';
+// El período se maneja con el MISMO navegador de mes que el resto de
+// Imputaciones (‹ noviembre de 2026 › + "Todos"). Antes había un rango
+// desde/hasta con atajos propios: dos filtros de fecha en el mismo panel se
+// pelean, y uno que parece puesto y no manda ya fue un bug en esta app.
 
 // ¿Cae el cobro en el rango elegido?
-function _rendEnRango(r) {
-  if (!rendDesde && !rendHasta) return true;
-  const f = parseFechaReg(r.fecha_entrega);
-  if (!f) return false;
-  if (rendDesde) { const d = new Date(rendDesde + 'T00:00:00'); if (f < d) return false; }
-  if (rendHasta) { const h = new Date(rendHasta + 'T23:59:59'); if (f > h) return false; }
-  return true;
+// El mes se mide por la fecha de ENTREGA, que es cuando el conductor cobró.
+function _rendEnMes(r) {
+  const mes = (typeof _panelMesActivo === 'function') ? _panelMesActivo('rendiciones') : '';
+  if (!mes) return true;
+  // Un cobro cargado sobre un envío que TODAVÍA NO SE ENTREGÓ no tiene
+  // fecha de entrega, y es plata abierta: se muestra en cualquier mes.
+  // Esconderla detrás del filtro la convertiría en un punto ciego, que es
+  // justo por lo que el rango viejo arrancaba vacío.
+  if (!r.fecha_entrega) return true;
+  return String(dmyToISO(r.fecha_entrega) || '').slice(0, 7) === mes;
 }
 
-// Los cobros del rango: es la base de TODO el panel (totales, listas y tabla),
+// Los cobros del mes: es la base de TODO el panel (totales, listas y tabla),
 // así se puede cerrar un mes como en la planilla.
-function rendicionesDelRango() {
-  return (AppData.rendiciones || []).filter(_rendEnRango);
+function rendicionesDelPeriodo() {
+  return (AppData.rendiciones || []).filter(_rendEnMes);
 }
 
 // Las 6 solapas de estado (Abiertos · En la calle · Atrasados · En la empresa ·
@@ -146,38 +157,10 @@ function setFiltroRendicion(estado) {
 // Marca cuál de las 6 está activa. Sin esto, aunque el filtro funcione, la
 // solapa resaltada sigue siendo la primera y no se sabe qué se está mirando.
 function _pintarSolapasRendicion() {
-  ['abiertas', 'calle', 'vencido', 'recibido', 'rendido', 'todas'].forEach(f => {
+  ['abiertas', 'calle', 'vencido', 'recibido', 'rendido', 'descontado', 'todas'].forEach(f => {
     const b = document.getElementById('rend-f-' + f);
     if (b) b.classList.toggle('active', f === rendFiltroEstado);
   });
-}
-
-function setRendFechas() {
-  rendDesde = document.getElementById('rend-desde')?.value || '';
-  rendHasta = document.getElementById('rend-hasta')?.value || '';
-  renderRendiciones();
-}
-
-// Atajo: mes en curso, mes pasado o todo.
-function setRendPreset(cual) {
-  const hoy = new Date();
-  let d = '', h = '';
-  if (cual === 'mes') {
-    d = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
-    h = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
-  } else if (cual === 'mespasado') {
-    d = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1));
-    h = isoLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 0));
-  } else if (cual === 'semana') {
-    const ini = new Date(hoy); ini.setDate(hoy.getDate() - 6);
-    d = isoLocal(ini);
-    h = hoyISO();
-  }
-  const elD = document.getElementById('rend-desde'), elH = document.getElementById('rend-hasta');
-  if (elD) elD.value = d;
-  if (elH) elH.value = h;
-  rendDesde = d; rendHasta = h;
-  renderRendiciones();
 }
 
 function renderRendiciones() {
@@ -185,7 +168,7 @@ function renderRendiciones() {
   if (!cont) return;
   _pintarSolapasRendicion();
   _renderCobrosPendientes();
-  const lista = rendicionesDelRango();
+  const lista = rendicionesDelPeriodo();
 
   // ── Resumen: dónde está la plata ──
   const enCalle = lista.filter(enLaCalle);
@@ -240,6 +223,7 @@ function renderRendiciones() {
             '</div>' +
             '<strong class="mono" style="white-space:nowrap">' + fmtPeso(c.monto) + '</strong>' +
             '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + jsAttr(c.cliente) + '\')">Devolver</button>' +
+            '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="descontarDeLiquidacion(\'' + jsAttr(c.cliente) + '\')" title="Se tomó como parte de pago en la factura del cliente">Descontar</button>' +
           '</div>').join('')
       : '<div class="muted" style="padding:14px;text-align:center;font-size:12px">No hay plata en la empresa esperando devolución</div>';
   }
@@ -250,6 +234,7 @@ function renderRendiciones() {
     const e = estadoRendicion(r);
     if (rendFiltroEstado === 'abiertas') return e === 'pendiente' || e === 'vencido' || e === 'recibido';
     if (rendFiltroEstado === 'calle') return e === 'pendiente' || e === 'vencido';
+    if (rendFiltroEstado === 'descontado') return e === 'descontado';
     if (rendFiltroEstado === 'todas') return true;
     return e === rendFiltroEstado;
   }).filter(r => !q ||
@@ -266,10 +251,9 @@ function renderRendiciones() {
 
   const info = document.getElementById('rend-info');
   if (info) {
-    const rango = (rendDesde || rendHasta)
-      ? ' · entregas del ' + (rendDesde ? isoToDMY(rendDesde) : '…') + ' al ' + (rendHasta ? isoToDMY(rendHasta) : '…')
-      : '';
-    info.textContent = filtradas.length + ' de ' + lista.length + ' cobro(s)' + rango;
+    const mes = (typeof _panelMesActivo === 'function') ? _panelMesActivo('rendiciones') : '';
+    info.textContent = filtradas.length + ' de ' + lista.length + ' cobro(s)' +
+      (mes ? ' · entregas de ' + mes : '');
   }
 
   if (!filtradas.length) {
@@ -295,13 +279,23 @@ function renderRendiciones() {
       '<td style="font-size:11px">' +
         (r.fecha_recibido ? '<div>Recibido ' + r.fecha_recibido + '</div>' : '') +
         (r.fecha_rendicion ? '<div style="color:#166534">Devuelto ' + r.fecha_rendicion + '</div>' : '') +
-        (!r.fecha_recibido && !r.fecha_rendicion ? '—' : '') + '</td>' +
+        (!r.fecha_recibido && !r.fecha_rendicion && !descuentoDeCobro(r.id) ? '—' : '') +
+        (function () {
+          const d = descuentoDeCobro(r.id);
+          if (!d) return '';
+          const pend = (typeof esAutorizado === 'function') && !esAutorizado(d);
+          return '<div style="margin-top:2px;color:#0f766e">Imputado ' + fmtPeso(_num(d.monto)) +
+            (pend ? ' <span style="color:#9a3412">(falta autorizar)</span>' : '') +
+            ' <button class="btn btn-sm" style="padding:0 5px;font-size:10px" onclick="quitarImputacionCobro(' + r.id + ')" title="Sacarle el descuento">✕</button></div>';
+        })() + '</td>' +
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">' +
-        (enLaCalle(r)
-          ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="openRendirModal(' + r.id + ')" title="El chofer trajo la plata"><i class="ic ic-check"></i> Recibir</button>'
+        (enLaCalle(r) && !descuentoDeCobro(r.id)
+          ? '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="openRendirModal(' + r.id + ')" title="El chofer trajo la plata"><i class="ic ic-check"></i> Recibir</button>' +
+            '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="imputarCobroAlConductor(' + r.id + ')" title="No lo rindió: descontárselo de su liquidación">Imputar</button>'
           : '') +
         (enLaEmpresa(r)
-          ? '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + jsAttr(r.cliente || '') + '\')" title="Devolverle la plata al cliente">Devolver</button>'
+          ? '<button class="btn btn-sm btn-primary" style="padding:3px 7px;font-size:10px" onclick="abrirDevolucionCliente(\'' + jsAttr(r.cliente || '') + '\')" title="Devolverle la plata al cliente">Devolver</button>' +
+            '<button class="btn btn-sm" style="padding:3px 7px;font-size:10px" onclick="descontarDeLiquidacion(\'' + jsAttr(r.cliente || '') + '\')" title="Se tomó como parte de pago en la factura del cliente">Descontar</button>'
           : '') +
         '<button class="btn btn-sm" style="padding:3px 6px;font-size:10px" onclick="editRendicion(' + r.id + ')"><i class="ic ic-edit"></i></button>' +
         (est !== 'pendiente' && est !== 'vencido'
@@ -529,6 +523,141 @@ async function confirmarDevolucionCliente() {
     alert('No se pudo registrar la devolución: ' + (e.message || e));
   }
 }
+// IMPUTARLE EL COBRO AL CONDUCTOR
+//   El cobro lo tiene el chofer y no lo trajo: lo DEBE, y si no lo entrega se
+//   le descuenta. Eso NO pasa solo —lo decide el operador— pero cuando lo
+//   decide tiene que poder hacerlo desde acá, que es donde está la deuda.
+//
+//   Va como tipo PROPIO (`cobros`) y no dentro de extravíos ni de
+//   proveedores: el conductor firma el PDF de su liquidación y ahí el
+//   descuento tiene que decir de qué es. Metido en otro concepto, el papel
+//   diría que se le cobró un extravío que no existió.
+//
+//   SE FECHA HOY, no el día de la entrega: la fecha decide en qué semana cae
+//   el descuento, y la de la entrega lo metería en una liquidación que puede
+//   estar cerrada hace semanas —o en ninguna—. Hoy lo pone en la que se está
+//   pagando, que es cuando se recupera la plata.
+//
+//   Y pasa por el régimen de autorización como los adelantos y los extravíos
+//   (`estadoNuevaOperacion`): es plata que se le saca a una persona, así que
+//   la carga uno y la aprueba otro.
+function descuentoDeCobro(idRendicion) {
+  return (AppData.descItems || []).find(x => x.origen_rendicion_id === idRendicion) || null;
+}
+
+async function imputarCobroAlConductor(id) {
+  const r = (AppData.rendiciones || []).find(x => x.id === id);
+  if (!r) { showToast('Ese cobro ya no está'); return; }
+  if (descuentoDeCobro(id)) {
+    showToast('Ese cobro ya está imputado al conductor'); renderRendiciones(); return;
+  }
+  // Sin chofer no hay a quién descontarle: el envío se entregó igual y la
+  // plata la cobró alguien, pero eso se resuelve averiguando quién fue.
+  const cond = String(r.conductor || '').trim();
+  if (!cond || cond === 'SIN ASIGNAR') {
+    alert('Este cobro no tiene conductor asignado, así que no hay a quién descontárselo.' +
+      String.fromCharCode(10,10) +
+      'Primero hay que saber quién llevó el envío.'); return;
+  }
+  if (!enLaCalle(r)) {
+    alert('Este cobro ya no lo debe el chofer: la plata entró a la empresa.' +
+      String.fromCharCode(10,10) +
+      'Si querés volver a reclamárselo, reabrilo primero con ↩.'); return;
+  }
+  const monto = _num(r.monto);
+  if (!(monto > 0)) { alert('El cobro no tiene monto: no hay nada que descontar.'); return; }
+  const pend = (typeof estadoNuevaOperacion === 'function') ? estadoNuevaOperacion() : 'autorizado';
+  if (!confirm('¿Descontarle ' + fmtPeso(monto) + ' a ' + cond + ' por el cobro que no rindió?' +
+    String.fromCharCode(10,10) +
+    'Se le imputa con fecha de hoy, así cae en la semana que se está liquidando.' +
+    String.fromCharCode(10) +
+    (pend === 'pendiente'
+      ? 'Queda pendiente hasta que un supervisor lo autorice.'
+      : 'Queda imputado y se descuenta en su próxima liquidación.'))) return;
+
+  const fila = {
+    tipo: 'cobros', conductor: cond,
+    fecha: isoToDMY(hoyISO()), fecha_date: hoyISO(),
+    monto: monto,
+    referencia: String(r.tracking || '').trim(),
+    detalle: 'Cobro en destino no rendido' + (r.cliente ? ' · ' + r.cliente : '') +
+      (r.fecha_entrega ? ' · entrega ' + r.fecha_entrega : ''),
+    cuotas_total: 1, monto_cuota: 0, imputar: true,
+    beneficiario_tipo: 'conductor', cliente_cod: '', acredita_cliente: false,
+    estado: pend,
+    origen_rendicion_id: id
+  };
+  try {
+    const row = await DB.insertRow('descuentos_items', fila);
+    AppData.descItems = AppData.descItems || [];
+    AppData.descItems.push(Object.assign({ id: row && row.id }, fila));
+    renderRendiciones();
+    showToast((pend === 'pendiente' ? '⏳ ' : '✅ ') + fmtPeso(monto) + ' imputado' +
+      (pend === 'pendiente' ? ' (falta autorizar)' : '') + ' a ' + cond);
+  } catch (e) {
+    console.warn('imputarCobroAlConductor', e);
+    // Si la base todavía no tiene el tipo, el insert muere con un error de
+    // Postgres que del otro lado de la pantalla no se entiende.
+    const m = String((e && e.message) || e);
+    alert(/check constraint|origen_rendicion_id|column/.test(m)
+      ? 'La base todavía no tiene el concepto "Cobro no rendido".' + String.fromCharCode(10,10) +
+        'Hay que correr una vez la migración supabase/migracion-2026-11-05-cobro-no-rendido.sql.'
+      : 'No se pudo imputar: ' + m);
+  }
+}
+
+async function quitarImputacionCobro(id) {
+  const d = descuentoDeCobro(id);
+  if (!d) { renderRendiciones(); return; }
+  if (!confirm('¿Sacarle el descuento de ' + fmtPeso(_num(d.monto)) + ' a ' + d.conductor + '?' +
+    String.fromCharCode(10,10) +
+    'El cobro vuelve a quedar sin imputar y se le puede volver a imputar después.')) return;
+  try {
+    await DB.deleteWhere('descuentos_items', 'id', d.id);
+    AppData.descItems = (AppData.descItems || []).filter(x => x.id !== d.id);
+    renderRendiciones();
+    showToast('Descuento quitado · el cobro queda sin imputar');
+  } catch (e) {
+    console.warn('quitarImputacionCobro', e);
+    alert('No se pudo quitar: ' + ((e && e.message) || e));
+  }
+}
+
+// DESCONTADO DE LIQUIDACIÓN: la otra forma de cerrar la segunda etapa. En vez
+// de devolverle la plata al cliente, se le toma como parte de pago en su
+// factura. El cobro queda CERRADO igual que una devolución, pero es otro
+// hecho y se cuenta aparte, porque la plata no salió de la empresa.
+//
+// NO TOCA LA LIQUIDACIÓN DEL CLIENTE, a propósito: acá solo se registra cómo
+// se saldó. Que el importe entre en la factura lo decide y lo carga quien la
+// arma — si la app lo hiciera sola y además alguien lo cargara a mano, al
+// cliente se le descontaría dos veces y eso no se ve en ningún total.
+async function descontarDeLiquidacion(cliente) {
+  const cli = String(cliente || '').trim();
+  const items = (AppData.rendiciones || []).filter(r => enLaEmpresa(r) && String(r.cliente || '').trim() === cli);
+  if (!items.length) { showToast('No hay cobros de ' + cli + ' en la empresa'); return; }
+  const total = items.reduce((a, r) => a + _num(r.monto), 0);
+  if (!confirm('¿Marcar ' + items.length + ' cobro(s) de ' + cli + ' por ' + fmtPeso(total) +
+    ' como descontados de su liquidación?' + String.fromCharCode(10,10) +
+    'Queda registrado que se saldaron así, en vez de devolverle la plata.' + String.fromCharCode(10) +
+    'NO se toca su liquidación: el importe lo carga quien la arma.')) return;
+  const campos = {
+    estado: 'descontado',
+    fecha_rendicion: isoToDMY(hoyISO()), fecha_rendicion_date: hoyISO(),
+    medio: 'descuento_liquidacion',
+    rendido_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || ''
+  };
+  let ok = 0;
+  for (const r of items) {
+    try { await DB.updateWhere('rendiciones', 'id', r.id, campos); Object.assign(r, campos); ok++; }
+    catch (e) { console.warn('descontarDeLiquidacion', r.id, e); }
+  }
+  persistirRendicionesLocal();
+  renderRendiciones();
+  if (ok < items.length) alert('Se marcaron ' + ok + ' de ' + items.length + ' cobros. Reintentá los que faltan.');
+  else showToast('✅ ' + fmtPeso(total) + ' de ' + cli + ' marcados como descontados de su liquidación');
+}
+
 // Vuelve UN paso atrás: lo devuelto vuelve a la empresa, lo recibido vuelve a
 // la calle (a la deuda del chofer).
 async function reabrirRendicion(id) {
@@ -537,7 +666,7 @@ async function reabrirRendicion(id) {
   const est = estadoRendicion(r);
   // Un paso atrás, no al principio: lo devuelto vuelve a la empresa; lo que
   // estaba en la empresa vuelve a la deuda del chofer.
-  const campos = (est === 'rendido')
+  const campos = (est === 'rendido' || est === 'descontado')
     ? { estado: 'recibido', fecha_rendicion: '', fecha_rendicion_date: null, medio: '', comprobante: '', rendido_por: '', lote_id: null }
     : { estado: 'pendiente', fecha_recibido: '', fecha_recibido_date: null, medio_recibido: '', recibido_por: '' };
   const aDonde = (est === 'rendido') ? 'a la empresa (sin devolver al cliente)' : 'a la deuda del chofer';
@@ -734,13 +863,8 @@ function _renderCobrosPendientes() {
   const pend = cobrosSinRendir(AppData.records);
   const desdeTxt = isoToDMY(rendControlDesde());
   const ventana = (typeof textoVentanaCargada === 'function') ? textoVentanaCargada() : '';
-  if (!pend.length) {
-    box.innerHTML = '<div class="alert" style="margin:0 0 14px;font-size:12px">' +
-      '<i class="ic ic-check"></i><div>Los cobros del listado están todos registrados. ' +
-      '<span style="opacity:.75">Se controlan las entregas desde el <strong>' + desdeTxt + '</strong>: ' +
-      'lo anterior son operaciones ya cerradas, que se rindieron por fuera del sistema.</span></div></div>';
-    return;
-  }
+  // Sin pendientes no se dice nada: el panel ya muestra lo que hay.
+  if (!pend.length) { box.innerHTML = ''; return; }
   const total = pend.reduce((s, r) => s + _num(r.cobro_destino), 0);
   box.innerHTML =
     '<div class="alert" style="margin:0 0 14px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412">' +
@@ -767,8 +891,31 @@ function _renderCobrosPendientes() {
 //  el tracking de un extravío se ELIGE y no se escribe.
 let _cobroEnvioElegido = null;
 
+// El cliente sale del LISTADO —maestro más los que ya aparecen en los
+// envíos—, igual que en el modal de extravíos. Escrito a mano no matchea
+// ningún código y no se podría acotar la búsqueda a sus envíos, que es
+// justamente para lo que sirve elegirlo primero.
+function _poblarClientesCobro() {
+  const sel = document.getElementById('mcob-cliente');
+  if (!sel) return;
+  const m = new Map();
+  (AppData.clientes || []).forEach(c => {
+    const k = (typeof clienteKey === 'function') ? clienteKey(c.codigo) : c.codigo;
+    if (k && (typeof esClienteValido !== 'function' || esClienteValido(k))) m.set(k, c.nombre || k);
+  });
+  (AppData.records || []).forEach(r => {
+    const k = (typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '';
+    if (k && (typeof esClienteValido !== 'function' || esClienteValido(k)) && !m.has(k)) m.set(k, String(r.cliente || '').trim() || k);
+  });
+  const lista = Array.from(m.entries()).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  sel.innerHTML = '<option value="">— Elegí el cliente —</option>' +
+    lista.map(([k, nom]) => '<option value="' + jsAttr(k) + '">' + jsAttr(nom) + '</option>').join('');
+  sel.value = '';
+}
+
 function openCobroEnvioModal() {
   _cobroEnvioElegido = null;
+  _poblarClientesCobro();
   ['mcob-buscar', 'mcob-monto', 'mcob-obs'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
   const el = document.getElementById('mcob-elegido'); if (el) el.innerHTML = '';
   buscarEnvioCobro();
@@ -778,21 +925,31 @@ function closeCobroEnvioModal(e) {
   if (!e || e.target.id === 'modal-cobro-backdrop') document.getElementById('modal-cobro-backdrop').style.display = 'none';
 }
 
-// Solo envíos ENTREGADOS y que todavía no tengan rendición: ofrecer uno que ya
-// está registrado invita a cobrarlo dos veces.
-function _candidatosCobro(q) {
+// Los envíos de ESE cliente que todavía no tengan rendición: ofrecer uno que
+// ya está registrado invita a cobrarlo dos veces.
+// Entran los ENTREGADOS y también los PENDIENTES: el cliente avisa del cobro
+// cuando quiere, muchas veces antes de que el envío llegue, y negarle al
+// operador registrarlo ahí haría que el dato se pierda. El estado se muestra
+// en cada fila, y un envío sin entregar se registra sin fecha límite —el
+// chofer todavía no cobró nada y no hay qué reclamarle.
+function _candidatosCobro(q, cod) {
   const yaClave = new Set((AppData.rendiciones || []).map(r => r.envio_clave).filter(Boolean));
   const desde = rendControlDesde();
   const t = String(q || '').toLowerCase().trim();
+  const cli = String(cod || '');
   const out = [];
   for (const r of (AppData.records || [])) {
-    if (!contabilizaRegistro(r) || !r.clave || yaClave.has(r.clave)) continue;
+    if (!r.clave || yaClave.has(r.clave)) continue;
+    if (cli && ((typeof clienteCodDeRegistro === 'function') ? clienteCodDeRegistro(r) : '') !== cli) continue;
     // Mismo corte que el automático: un envío de una operación ya cerrada no se
     // ofrece, porque registrarlo inventaría una deuda que nadie tiene. Para ese
     // caso excepcional queda el alta libre ("+ Nuevo cobro"), que no cuelga de
     // ningún envío y por eso no se confunde con lo que trae el listado.
+    const entregado = contabilizaRegistro(r);
     const iso = fechaISOde(r.fecha);
-    if (!iso || iso < desde) continue;
+    // El corte mide operaciones CERRADAS, y eso es por fecha de entrega: un
+    // envío todavía sin entregar no puede ser una de agosto.
+    if (entregado && (!iso || iso < desde)) continue;
     if (t) {
       const hay = [r.tracking, r.destinatario, r.cliente, r.direccion, r.cadete]
         .map(v => String(v || '').toLowerCase()).join(' ');
@@ -806,17 +963,25 @@ function _candidatosCobro(q) {
 
 function buscarEnvioCobro() {
   const q = (document.getElementById('mcob-buscar') || {}).value || '';
+  const cod = (document.getElementById('mcob-cliente') || {}).value || '';
   const box = document.getElementById('mcob-resultados');
   if (!box) return;
-  if (!q.trim()) {
+  // El cliente va primero: sin él la lista son todos los envíos de todos, y
+  // el cobro terminaría colgado del envío de otro.
+  if (!cod) {
     box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">' +
-      'Buscá el envío por tracking, destinatario, cliente o dirección.</div>';
+      'Elegí primero el cliente.</div>';
     return;
   }
-  const lista = _candidatosCobro(q);
+  if (!q.trim()) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">' +
+      'Escribí el tracking, la dirección o el destinatario para ver sus envíos.</div>';
+    return;
+  }
+  const lista = _candidatosCobro(q, cod);
   if (!lista.length) {
     box.innerHTML = '<div style="font-size:12px;color:#9a3412;padding:8px">' +
-      'Ningún envío entregado coincide. Puede estar <strong>fuera de los días cargados</strong>, ' +
+      'Ningún envío de ese cliente coincide. Puede estar <strong>fuera de los días cargados</strong>, ' +
       'ser <strong>anterior al ' + isoToDMY(rendControlDesde()) + '</strong> (operaciones ya cerradas), ' +
       'o ya tener su cobro registrado. ' +
       'Si el envío no está en el listado, usá <strong>“+ Nuevo cobro”</strong>.</div>';
@@ -829,6 +994,9 @@ function buscarEnvioCobro() {
           (r.destinatario || '') + '</div></td>' +
         '<td style="font-size:12px">' + (r.cliente || '—') + '<div style="color:var(--text-muted)">' + (r.zona || '') + '</div></td>' +
         '<td style="font-size:12px">' + (r.fecha || '') + '<div style="color:var(--text-muted)">' + (r.cadete || 'sin chofer') + '</div></td>' +
+        '<td style="font-size:11px">' + (contabilizaRegistro(r)
+          ? '<span style="color:#166534">entregado</span>'
+          : '<span style="color:#9a3412">pendiente</span>') + '</td>' +
       '</tr>').join('') + '</tbody></table></div>' +
     (lista.length >= 40 ? '<div style="font-size:11px;color:var(--text-muted);padding:4px 8px">Se muestran los primeros 40 — afiná la búsqueda.</div>' : '');
 }
@@ -842,8 +1010,15 @@ function elegirEnvioCobro(clave) {
     '<div class="alert" style="margin:0;background:var(--surface-1);border:1px solid var(--border);font-size:12px">' +
       '<i class="ic ic-check"></i><div><strong>' + (r.tracking || 'sin tracking') + '</strong> · ' +
       (r.destinatario || 's/d') + '<br>' +
-      (r.cliente || 'sin cliente') + ' · entregado el ' + (r.fecha || 's/f') + ' por <strong>' +
-      (r.cadete || 'SIN CHOFER') + '</strong></div></div>';
+      (r.cliente || 'sin cliente') + ' · ' +
+      (contabilizaRegistro(r)
+        ? 'entregado el ' + (r.fecha || 's/f')
+        : '<span style="color:#9a3412">todavía NO entregado</span>') +
+      ' por <strong>' + (r.cadete || 'SIN CHOFER') + '</strong>' +
+      (contabilizaRegistro(r) ? '' :
+        '<div style="margin-top:3px;color:var(--text-muted)">Se registra sin fecha límite: el chofer' +
+        ' todavía no cobró nada, así que no hay qué reclamarle.</div>') +
+      '</div></div>';
   const m = document.getElementById('mcob-monto'); if (m) m.focus();
 }
 
@@ -856,9 +1031,18 @@ async function guardarCobroEnvio() {
   if ((AppData.rendiciones || []).some(x => x.envio_clave === r.clave)) {
     alert('Ese envío ya tiene su cobro registrado.'); return;
   }
+  const entregado = contabilizaRegistro(r);
   const fila = rendicionDeEnvio(Object.assign({}, r, { cobro_destino: monto }));
   fila.origen = 'manual';
-  fila.obs = (document.getElementById('mcob-obs') || {}).value.trim() || 'Cobro informado por el cliente fuera del listado';
+  // El estado se calcula desde `fecha_entrega`: dejarle la del último
+  // movimiento a un envío que no se entregó lo mostraría ATRASADO al día
+  // siguiente, reclamándole al chofer una plata que todavía no cobró.
+  if (!entregado) {
+    fila.fecha_entrega = ''; fila.fecha_entrega_date = null; fila.fecha_limite = null;
+  }
+  const obsTxt = (document.getElementById('mcob-obs') || {}).value.trim();
+  fila.obs = (obsTxt || 'Cobro informado por el cliente fuera del listado') +
+    (entregado ? '' : ' · el envío todavía no estaba entregado');
   _btnGuardando('mcob-guardar', true);
   try {
     const ids = await DB.insertRows('rendiciones', [fila]);
@@ -872,97 +1056,3 @@ async function guardarCobroEnvio() {
     alert('No se pudo registrar el cobro: ' + (e.message || e));
   } finally { _btnGuardando('mcob-guardar', false); }
 }
-
-// ── PDF / export ─────────────────────────────────────────────────────────────
-// PDF de control: los dos cortes que se miran todos los días —
-//   1) lo que cada CHOFER tiene que traer (para reclamarle)
-//   2) lo que hay que DEVOLVERLE a cada cliente (para pagarle)
-// más el detalle de los cobros abiertos. Respeta el filtro de fechas.
-function exportRendicionesPDF() {
-  const lista = rendicionesDelRango();
-  const enCalle = lista.filter(enLaCalle);
-  const enEmpresa = lista.filter(enLaEmpresa);
-  if (!enCalle.length && !enEmpresa.length) { alert('No hay cobros abiertos en el período elegido.'); return; }
-
-  const suma = arr => arr.reduce((a, r) => a + _num(r.monto), 0);
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-
-  doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.setTextColor(26, 39, 68);
-  doc.text('Cobros en destino', 14, 18);
-  doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(110);
-  const rangoTxt = (rendDesde || rendHasta)
-    ? 'Entregas del ' + (rendDesde ? isoToDMY(rendDesde) : '…') + ' al ' + (rendHasta ? isoToDMY(rendHasta) : '…')
-    : 'Todas las fechas';
-  doc.text(rangoTxt + ' · generado ' + new Date().toLocaleString('es-AR'), 14, 25);
-
-  // Resumen: dónde está la plata
-  doc.setFontSize(9); doc.setTextColor(40, 50, 70); doc.setFont(undefined, 'bold');
-  doc.text('En la calle: ' + fmtPeso(suma(enCalle)) + '  (' + enCalle.length + ')', 14, 33);
-  doc.text('En la empresa: ' + fmtPeso(suma(enEmpresa)) + '  (' + enEmpresa.length + ')', 80, 33);
-
-  let y = 40;
-
-  // ── CORTE 1: lo que debe cada chofer ──
-  if (enCalle.length) {
-    const porCond = deudaPorConductor();
-    doc.autoTable({
-      startY: y,
-      head: [['Chofer', 'Cobros', 'Atraso', 'Debe traer']],
-      body: porCond.map(d => [d.conductor, d.cobros, d.atraso ? d.atraso + ' día(s)' : 'al día', fmtPeso(d.monto)]),
-      foot: [[{ content: 'TOTAL EN LA CALLE', colSpan: 3, styles: { halign: 'right' } }, fmtPeso(suma(enCalle))]],
-      theme: 'striped',
-      headStyles: { fillColor: [180, 83, 9], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
-      footStyles: { fillColor: [120, 53, 15], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-      bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
-      columnStyles: { 1: { halign: 'center' }, 3: { halign: 'right' } },
-      margin: { left: 14, right: 14 },
-      didDrawPage: () => {},
-    });
-    y = doc.lastAutoTable.finalY + 8;
-  }
-
-  // ── CORTE 2: lo que hay que devolverle a cada cliente ──
-  if (enEmpresa.length) {
-    const porCli = aDevolverPorCliente();
-    doc.autoTable({
-      startY: y,
-      head: [['Cliente', 'Cobros', 'A devolver']],
-      body: porCli.map(c => [c.cliente, c.cobros, fmtPeso(c.monto)]),
-      foot: [[{ content: 'TOTAL A DEVOLVER', colSpan: 2, styles: { halign: 'right' } }, fmtPeso(suma(enEmpresa))]],
-      theme: 'striped',
-      headStyles: { fillColor: [29, 78, 216], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
-      footStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-      bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
-      columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' } },
-      margin: { left: 14, right: 14 }
-    });
-    y = doc.lastAutoTable.finalY + 8;
-  }
-
-  // ── Detalle de los cobros abiertos ──
-  const abiertos = enCalle.concat(enEmpresa)
-    .sort((a, b) => String(a.conductor).localeCompare(String(b.conductor)) ||
-                    String(a.cliente).localeCompare(String(b.cliente)));
-  doc.autoTable({
-    startY: y,
-    head: [['Chofer', 'Cliente', 'Tracking', 'Entrega', 'Situación', 'Monto']],
-    body: abiertos.map(r => {
-      const e = estadoRendicion(r);
-      const sit = e === 'vencido' ? 'Atrasado ' + diasAtraso(r) + ' d'
-                : e === 'recibido' ? 'En la empresa' : 'En la calle';
-      return [r.conductor, r.cliente || '—', r.tracking || '—', r.fecha_entrega || '—', sit, fmtPeso(_num(r.monto))];
-    }),
-    theme: 'striped',
-    headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
-    bodyStyles: { fontSize: 7.5, textColor: [40, 50, 70] },
-    alternateRowStyles: { fillColor: [244, 247, 252] },
-    columnStyles: { 5: { halign: 'right' } },
-    margin: { left: 14, right: 14 }
-  });
-
-  const sufijo = (rendDesde || rendHasta) ? '_' + (rendDesde || 'inicio') + '_a_' + (rendHasta || 'hoy') : '';
-  doc.save('Cobros_en_destino' + sufijo + '.pdf');
-  showToast('📥 Listado descargado: por chofer, por cliente y el detalle');
-}
-

@@ -728,9 +728,14 @@ function imputacionesConductor(conductor, rango, descuentosOverride) {
   const d = descuentosOverride || {
     combustible: descItemDescuentoConductor('combustible', conductor, rango).monto,
     extraviados: descItemDescuentoConductor('extraviados', conductor, rango).monto,
-    proveedores: descItemDescuentoConductor('proveedores', conductor, rango).monto
+    proveedores: descItemDescuentoConductor('proveedores', conductor, rango).monto,
+    // Cobro en destino que el conductor no rindió: lo DEBE, así que se le
+    // descuenta. Va por el mismo camino que los otros ítems —entra en
+    // `items` y de ahí al neto— pero con tipo propio, porque en el PDF que
+    // firma el descuento tiene que decir de qué es.
+    cobros: descItemDescuentoConductor('cobros', conductor, rango).monto
   };
-  const items = _num(d.combustible) + _num(d.extraviados) + _num(d.proveedores);
+  const items = _num(d.combustible) + _num(d.extraviados) + _num(d.proveedores) + _num(d.cobros);
   const km  = kmAdicionalConductor(conductor, rango).monto;
   const especial = recorridoEspecialConductor(conductor, rango).monto;
   // Viajes particulares del período: rutas cotizadas a valor fijo. SUMAN al

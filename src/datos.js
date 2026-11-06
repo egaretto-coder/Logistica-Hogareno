@@ -497,6 +497,9 @@ async function _hydrateFromSupabaseReal(opts) {
     dano: x.dano || '', beneficiario_tipo: x.beneficiario_tipo || 'conductor',
     empleado_id: x.empleado_id || null, cliente_cod: (x.cliente_cod || '').toUpperCase(),
     acredita_cliente: !!x.acredita_cliente,
+    // De qué cobro en destino salió este descuento. Es lo que impide
+    // imputarle dos veces el mismo al conductor.
+    origen_rendicion_id: x.origen_rendicion_id || null,
     estado: x.estado || 'autorizado', autorizado_por: x.autorizado_por || '', autorizado_en: x.autorizado_en || ''
   }));
   // Cuotas de extravíos cuoteados (descuento_cuotas)

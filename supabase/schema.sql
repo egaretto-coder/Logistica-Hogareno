@@ -134,7 +134,7 @@ create table if not exists public.descuentos_conductores (
 -- tracking (extraviados) o el proveedor (proveedores); vacío en combustible.
 create table if not exists public.descuentos_items (
   id bigint generated always as identity primary key,
-  tipo text not null check (tipo in ('combustible','extraviados','proveedores')),
+  tipo text not null check (tipo in ('combustible','extraviados','proveedores','cobros')),
   conductor text not null,
   fecha text default '',
   fecha_date date,
@@ -158,6 +158,16 @@ create table if not exists public.descuentos_items (
   -- cliente al que se le acredita la mercadería.
   cliente_cod text default '',
   acredita_cliente boolean not null default false,
+  -- De qué COBRO EN DESTINO salió este descuento (tipo='cobros'). Es lo que
+  -- impide imputarle dos veces el mismo al conductor: el índice único lo
+  -- prohíbe en la base y no solo en el navegador —dos pestañas abiertas son
+  -- dos operadores—. Sin sucursal a propósito, al revés que el resto de las
+  -- claves únicas: rendiciones.id lo numera la base y es único en todo el
+  -- proyecto, así que incluirla permitiría dos descuentos del mismo cobro en
+  -- bocas distintas, que es justo lo que hay que impedir.
+  -- El FK y su indice unico se agregan despues de crear `rendiciones`:
+  -- esa tabla se declara mas abajo en este mismo archivo.
+  origen_rendicion_id bigint,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_desc_items_tipo_cond on public.descuentos_items (tipo, conductor);
@@ -951,7 +961,7 @@ create table if not exists public.rendiciones (
   fecha_entrega text default '',
   fecha_entrega_date date,
   fecha_limite date,
-  estado text not null default 'pendiente',   -- pendiente | rendido | anulado
+  estado text not null default 'pendiente',   -- pendiente | recibido | rendido | descontado | anulado
   fecha_rendicion text default '',
   fecha_rendicion_date date,
   medio text default '',                      -- efectivo | transferencia
@@ -966,6 +976,26 @@ create index if not exists idx_rendiciones_conductor on public.rendiciones (cond
 create unique index if not exists idx_rendiciones_trk on public.rendiciones (tracking) where tracking <> '';
 alter table public.rendiciones enable row level security;
 create policy rendiciones_all on public.rendiciones for all to authenticated using (true) with check (true);
+-- Ahora que existe `rendiciones`, se ata el descuento a su cobro. UN cobro,
+-- UN descuento: el indice unico lo impide en la BASE y no solo en el
+-- navegador --dos pestañas abiertas son dos operadores--. Y borrar el cobro
+-- se lleva su descuento (`on delete cascade`): un descuento sin el cobro que
+-- lo origino es plata sacada sin nada detras.
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint c
+    join pg_attribute at on at.attrelid = c.conrelid and at.attnum = any(c.conkey)
+    where c.conrelid = 'public.descuentos_items'::regclass
+      and c.contype = 'f' and at.attname = 'origen_rendicion_id'
+  ) then
+    alter table public.descuentos_items add constraint descuentos_items_origen_rendicion_fk
+      foreign key (origen_rendicion_id) references public.rendiciones(id) on delete cascade;
+  end if;
+end $$;
+create unique index if not exists descuentos_items_origen_rendicion_uq
+  on public.descuentos_items(origen_rendicion_id)
+  where origen_rendicion_id is not null;
+
 -- registros/registros_historico: columna cobro_destino (monto a cobrar en destino).
 
 -- ---------- BARRERA DE SEGURIDAD DE ACCESO ----------
