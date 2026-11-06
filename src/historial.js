@@ -478,8 +478,9 @@ async function pdfDesdeHistorial(tipo, clave, semanaISO) {
   try {
     const row = await _histDetalle(tipo, clave, semanaISO);
     if (!row || !row.detalle) {
-      alert('Esta liquidación no tiene detalle guardado: se cerró antes de que existiera el historial.' +
-        String.fromCharCode(10) + 'Probá "Reconstruir las que se puedan".');
+      alert('De esta liquidación solo consta el TOTAL: se cerró antes de que se empezara a guardar el detalle (18/09/2026), así que no hay con qué rearmar el papel.' +
+        String.fromCharCode(10, 10) +
+        'El importe sí es el que se facturó —no se recalcula nunca— y se ve con "Ver", junto con el período y quién la armó.');
       return;
     }
     const snap = row.detalle;
