@@ -1,0 +1,52 @@
+      <div id="page-costos" class="page">
+
+        <div class="section-head" style="margin-bottom:8px">
+          <span class="section-title"><i class="ic ic-dollar"></i> Tabla de Costos</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="abrirCostoModal(null)"><i class="ic ic-plus"></i> Nuevo costo</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:14px">
+          <i class="ic ic-alert"></i>
+          <div>Cada costo de la empresa, con su <strong>categoría</strong> y su <strong>detalle</strong>. El
+          <strong>tipo</strong> —Fijos, Variables o Varios— <strong>lo decide ese par</strong>, no se elige:
+          así dos personas no clasifican distinto el mismo gasto y los meses se pueden comparar.
+          <em>Operaciones y oficina</em> tiene <em>Alquiler</em> (Fijos) y <em>Librería</em> (Varios), así que
+          la categoría sola no alcanza.
+          <br>Lo carga el operador y <strong>lo aprueba un supervisor</strong>. Hasta que no está aprobado
+          <strong>no suma en ningún total</strong> —no se puede dar por buena una plata que nadie verificó—
+          pero se avisa arriba, porque esconderla sería peor.</div>
+        </div>
+
+        <!-- Lo que espera decisión: de TODOS los meses, no sigue al navegador.
+             Es el trabajo pendiente del supervisor, y esconderlo detrás de un
+             filtro de mes es exactamente como se pasa de largo. -->
+        <div id="cos-pendientes"></div>
+
+        <!-- El mes que se está mirando. Arranca en el corriente, con "Todos"
+             al lado para no esconder lo viejo sin una salida de un clic. -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+          <span style="font-size:13px;font-weight:600;color:var(--text-secondary)"><i class="ic ic-calendar"></i> Mes</span>
+          <div class="date-range" id="costos-mes-nav">
+            <button class="btn btn-sm" onclick="panelMoverMes('costos',-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+            <input type="month" id="costos-mes" onchange="panelElegirMes('costos',this.value)" aria-label="Mes a ver">
+            <button class="btn btn-sm" onclick="panelMoverMes('costos',1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+          </div>
+          <button class="btn btn-sm panel-mes-btn" id="costos-mes-todos" onclick="panelTodosLosMeses('costos')" title="Ver todo, de cualquier mes">Todos</button>
+        </div>
+
+        <div class="tabs" id="cos-tabs" style="margin-bottom:14px">
+          <button class="tab active" id="cos-tab-resumen" onclick="switchCostosTab('resumen')"><i class="ic ic-bar-chart"></i> Análisis</button>
+          <button class="tab" id="cos-tab-registro" onclick="switchCostosTab('registro')"><i class="ic ic-file"></i> Registro</button>
+        </div>
+
+        <div id="cos-pane-resumen">
+          <div id="cos-resumen"></div>
+        </div>
+
+        <div id="cos-pane-registro" style="display:none">
+          <div id="cos-registro"></div>
+        </div>
+
+      </div>

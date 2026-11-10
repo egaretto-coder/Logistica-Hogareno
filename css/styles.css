@@ -351,10 +351,39 @@
   .dash-bar-row .lbl { font-size: 12.5px; display: flex; align-items: center; gap: 7px; }
   .dash-bar-row .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
   .dash-bar-track { height: 8px; border-radius: 6px; background: var(--surface-0); overflow: hidden; }
-  .dash-bar-fill { height: 100%; border-radius: 6px; transition: width .4s ease; }
+  /* display:block es obligatorio: el fill es un <span> dentro del track y no
+     es hijo directo del grid, así que NO se blockea solo. Inline ignora width
+     y height, y la barra se dibujaba vacía en el Dashboard, en Compras y acá. */
+  .dash-bar-fill { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
   .dash-bar-row .meta { font-size: 12px; white-space: nowrap; text-align: right; }
   .dash-bar-row .meta b { font-weight: 700; }
   .dash-bar-row .meta span { color: var(--text-muted); font-size: 11px; margin-left: 5px; }
+
+  /* ── Tabla de Costos: tipo y estado ──
+     Van como CLASE y no inline: estos azules y violetas quedan por debajo
+     del mínimo legible sobre el fondo oscuro (medido: 3,37 el violeta y
+     3,80 el azul contra el 4,5 que hace falta). Mismo criterio que el
+     semáforo de renta. El relleno de la barra sí va inline: es un bloque
+     macizo sobre su track, no texto. */
+  .cos-t { font-size: 11px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+  .cos-fijo     { color: #1d4ed8; background: #3b82f61f; }
+  .cos-variable { color: #b45309; background: #f59e0b1f; }
+  .cos-varios   { color: #6d28d9; background: #8b5cf61f; }
+  .cos-sinclas  { color: #4b5563; background: #9ca3af2b; }
+  .cos-pendiente  { color: #b45309; background: #f59e0b1f; }
+  .cos-autorizado { color: #047857; background: #10b9811f; }
+  .cos-rechazado  { color: #b91c1c; background: #ef44441f; }
+  .cos-ojo    { color: #b45309; }   /* avisos: categoría fuera de la lista */
+  .cos-motivo { color: #b91c1c; }   /* por qué se rechazó */
+  :root[data-theme="dark"] .cos-fijo       { color: #93c5fd; background: #3b82f629; }
+  :root[data-theme="dark"] .cos-variable   { color: #fcd34d; background: #f59e0b29; }
+  :root[data-theme="dark"] .cos-varios     { color: #c4b5fd; background: #8b5cf629; }
+  :root[data-theme="dark"] .cos-sinclas    { color: #d1d5db; background: #9ca3af33; }
+  :root[data-theme="dark"] .cos-pendiente  { color: #fcd34d; background: #f59e0b29; }
+  :root[data-theme="dark"] .cos-autorizado { color: #6ee7b7; background: #10b98129; }
+  :root[data-theme="dark"] .cos-rechazado  { color: #fca5a5; background: #ef444429; }
+  :root[data-theme="dark"] .cos-ojo        { color: #fcd34d; }
+  :root[data-theme="dark"] .cos-motivo     { color: #fca5a5; }
 
   /* ── Dashboard: ranking facturación ── */
   .dash-rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }

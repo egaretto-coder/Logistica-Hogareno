@@ -998,6 +998,55 @@ create unique index if not exists descuentos_items_origen_rendicion_uq
 
 -- registros/registros_historico: columna cobro_destino (monto a cobrar en destino).
 
+-- ---------- TABLA DE COSTOS ----------
+-- Cada costo de la empresa, con su categoría y su aprobación. Reemplaza la
+-- planilla que se cargaba a mano.
+--   El TIPO (Fijos | Variables | Varios) NO es una columna: lo decide el PAR
+--   categoria+detalle (costoTipoDe en src/costos.js). La categoría sola no
+--   alcanza: 7 de las 11 tienen mas de un tipo -- "Operaciones y oficina"
+--   contiene Alquiler (Fijos) y Libreria (Varios).
+--   El MES tampoco se guarda: se deriva de la columna fecha. Guardar el resultado
+--   ademas del factor es la forma de que queden en desacuerdo.
+create table if not exists public.costos (
+  id bigint generated always as identity primary key,
+  fecha date not null,                        -- el dia AL QUE CORRESPONDE el costo
+  categoria text not null,                    -- nivel 1 del catalogo cerrado
+  detalle text not null,                      -- nivel 2; el par decide el tipo
+  descripcion text not null default '',         -- texto libre (la planilla: "DETALLES B")
+  proveedor text not null default '',
+  comprobante text not null default '',
+  monto numeric not null default 0,
+  -- Maker-checker como adelantos y extravios: lo carga uno y lo aprueba otro.
+  -- Lo PENDIENTE no suma en ningun total, pero se avisa.
+  estado text not null default 'pendiente'
+    check (estado in ('pendiente','autorizado','rechazado')),
+  motivo text not null default '',              -- obligatorio al rechazar
+  cargado_por text not null default '',
+  decidido_por text not null default '',
+  decidido_en timestamptz,
+  obs text not null default '',
+  created_at timestamptz not null default now(),
+  sucursal text not null default coalesce(public.sucursal_pedida(), 'BA')
+    references public.sucursales(codigo)
+);
+create index if not exists idx_costos_fecha on public.costos (sucursal, fecha);
+create index if not exists idx_costos_categoria on public.costos (sucursal, categoria, detalle);
+create index if not exists idx_costos_estado on public.costos (sucursal, estado)
+  where estado = 'pendiente';
+alter table public.costos enable row level security;
+-- OJO: es_usuario_activo() NO mira la fila, asi que va en SUBSELECT ESCALAR
+-- (InitPlan: una vez por consulta). Suelta tiro la app entera el 04/11/2026.
+drop policy if exists costos_sucursal_all on public.costos;
+create policy costos_sucursal_all on public.costos
+  for all to authenticated
+  using ((select public.es_usuario_activo()) and public.es_de_sucursal(sucursal))
+  with check ((select public.es_usuario_activo()) and public.es_de_sucursal(sucursal));
+-- Realtime: sin esto, lo que aprueba un supervisor no le llega al operador.
+-- alter publication supabase_realtime add table public.costos;
+-- Permisos: supervisor y tesorero TIENEN filas en rol_permisos, y ahi el
+-- default del codigo deja de aplicar. Ver migracion-2026-11-06-tabla-costos.sql,
+-- que inserta la fila SOLO para los roles que ya tienen alguna.
+
 -- ---------- BARRERA DE SEGURIDAD DE ACCESO ----------
 -- Dos controles, ambos en la BASE (no en el navegador): borrar los datos del
 -- sitio o cambiar de equipo no los saltea.

@@ -502,6 +502,7 @@ const DB = {
       ['viajes_particulares', () => this.selectAll('viajes_particulares', 'id')],
       ['viaje_tarifas', () => this.selectAll('viaje_tarifas', 'id')],
       ['compras', () => this.selectAll('compras', 'id')],
+      ['costos', () => this.selectAll('costos', 'id')],
       ['sucursales', () => this.selectAll('sucursales', 'orden')],
     ];
     if (!sinRegistros) defs.push(['registros', () => this.selectRegistrosVentana(desdeISO)]);

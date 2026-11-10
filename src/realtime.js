@@ -33,6 +33,7 @@ const RT_TABLAS = [
   'cliente_liquidaciones', 'proveedores',
   'viajes_particulares', 'viaje_tarifas',
   'compras',
+  'costos',
 ];
 
 let _rtCanal = null;
@@ -88,6 +89,7 @@ const RT_PANTALLA_TABLAS = {
   'gestion-permisos':       ['rol_permisos', 'roles'],
   'viajes-particulares':    ['viajes_particulares', 'viaje_tarifas', 'clientes', 'panel_conductores', 'cliente_cargos'],
   'compras':                ['compras'],
+  'costos':                 ['costos'],
 };
 
 // Marca que la app acaba de escribir en la nube: evita que el "eco" de Realtime

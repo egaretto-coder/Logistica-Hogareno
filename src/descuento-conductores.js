@@ -115,6 +115,10 @@ function _panelMesRepintar(id) {
     if (typeof renderRendiciones === 'function') renderRendiciones();
     return;
   }
+  if (id === 'costos') {
+    if (typeof renderCostos === 'function') renderCostos();
+    return;
+  }
   if (id.indexOf('descitem-') === 0 && typeof renderDescItems === 'function') {
     renderDescItems(id.slice('descitem-'.length));
   }

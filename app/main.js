@@ -78,6 +78,10 @@ function showPage(id) {
   if (id === 'rendiciones' && typeof renderRendiciones === 'function') renderRendiciones();
   if (id === 'viajes-particulares' && typeof renderViajesParticularesPagina === 'function') renderViajesParticularesPagina();
   if (id === 'compras' && typeof renderComprasPagina === 'function') renderComprasPagina();
+  // Entra por renderCostosPagina y no por renderCostos: reabre LA SOLAPA QUE
+  // ESTABA. La sincronización en vivo re-renderiza la pantalla activa pasando
+  // por acá, y con la primera hardcodeada al operador se le cerraba sola.
+  if (id === 'costos' && typeof renderCostosPagina === 'function') renderCostosPagina();
   if (id === 'gestion-permisos') renderGestionPermisos();
   if (id === 'upload') { renderArchivoPanel(); if (typeof renderHistorialImportaciones === 'function') renderHistorialImportaciones();
     if (typeof renderCierrePanel === 'function') renderCierrePanel(); }
@@ -105,7 +109,7 @@ const PANTALLAS = [
   'tarifas', 'super-sla',
   'panel-conductores', 'monotributos', 'dimensiones-especiales',
   'extraviados', 'beneficios', 'km-desvio', 'adelantos',
-  'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'viajes-particulares', 'comisiones', 'empleados', 'vacaciones', 'rendiciones', 'compras', 'gestion-permisos'
+  'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'viajes-particulares', 'comisiones', 'empleados', 'vacaciones', 'rendiciones', 'compras', 'costos', 'gestion-permisos'
 ];
 
 async function fetchText(url) {

@@ -22,7 +22,7 @@ const ROL_PERMISOS = {
       'viajes-particulares',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales',
       'empleados', 'vacaciones', 'comisiones',
-      'compras',
+      'compras', 'costos',
       'gestion-permisos'
     ]
   },
@@ -35,7 +35,7 @@ const ROL_PERMISOS = {
       'dimensiones-especiales',
       'extraviados', 'beneficios', 'km-desvio', 'adelantos',
       'clientes', 'detalle-cliente', 'cliente-liquidaciones', 'comisiones', 'empleados', 'vacaciones', 'rendiciones',
-      'viajes-particulares'
+      'viajes-particulares', 'costos'
     ]
   },
 
@@ -78,7 +78,7 @@ const ROL_PERMISOS = {
       'clientes', 'detalle-cliente', 'viajes-particulares',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales',
       'empleados', 'vacaciones', 'comisiones',
-      'compras'
+      'compras', 'costos'
     ]
   },
   // El tesorero es el único, además del analista, que ve Monotributos: por la
@@ -93,7 +93,7 @@ const ROL_PERMISOS = {
       'beneficios', 'km-desvio', 'adelantos', 'extraviados', 'rendiciones',
       'cliente-liquidaciones', 'viajes-particulares',
       'config-tarifas', 'config-supersla', 'dimensiones-especiales',
-      'compras'
+      'compras', 'costos'
     ]
   }
 };

@@ -21,6 +21,8 @@ function loadSavedConfig() {
   if (vpj) { try { AppData.viajesParticulares = JSON.parse(vpj) || []; } catch(e) {} }
   const vpt = localStorage.getItem('liq_viaje_tarifas');
   if (vpt) { try { AppData.viajeTarifas = JSON.parse(vpt) || []; } catch(e) {} }
+  const cos = localStorage.getItem('liq_costos');
+  if (cos) { try { AppData.costos = JSON.parse(cos) || []; } catch(e) {} }
   const cpr = localStorage.getItem('liq_compras');
   if (cpr) { try { AppData.compras = JSON.parse(cpr) || []; } catch(e) {} }
   const kmd = localStorage.getItem('liq_km_desvio');
@@ -543,6 +545,18 @@ async function _hydrateFromSupabaseReal(opts) {
     decidido_por: c.decidido_por || '', decidido_en: c.decidido_en || '',
     created_at: c.created_at || ''
   }));
+  // TABLA DE COSTOS. El TIPO no viene de la base: lo decide la categoría
+  // (costoTipoDe). Y el mes tampoco se guarda: se deriva de la fecha.
+  AppData.costos = (data.costos || []).map(c => ({
+    id: c.id, fecha: String(c.fecha || '').slice(0, 10),
+    categoria: c.categoria || '', detalle: c.detalle || '',
+    descripcion: c.descripcion || '',
+    proveedor: c.proveedor || '', comprobante: c.comprobante || '',
+    monto: _num(c.monto), estado: c.estado || 'pendiente', motivo: c.motivo || '',
+    cargado_por: c.cargado_por || '', decidido_por: c.decidido_por || '',
+    decidido_en: c.decidido_en || '', obs: c.obs || '',
+    created_at: c.created_at || ''
+  }));
   AppData.viajeTarifas = (data.viaje_tarifas || []).map(t => ({
     id: t.id, vehiculo: t.vehiculo, modalidad: t.modalidad || 'km', tramo: _num(t.tramo),
     costo: _num(t.costo), venta: _num(t.venta),
@@ -930,6 +944,7 @@ async function _hydrateFromSupabaseReal(opts) {
     ['liq_viajes_particulares', AppData.viajesParticulares || []],
     ['liq_viaje_tarifas', AppData.viajeTarifas || []],
     ['liq_compras', AppData.compras || []],
+    ['liq_costos', AppData.costos || []],
     ['liq_km_tarifas', AppData.kmTarifas],
     ['liq_config', AppData.config],
     ['liq_rol_permisos', AppData.rolPermisos || null],

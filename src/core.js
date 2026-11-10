@@ -1526,6 +1526,7 @@ const PAGE_TITLES = {
   'vacaciones': ['Vacaciones', 'Días que corresponden, licencias y superposiciones del personal'],
   'rendiciones': ['Rendición de envíos', 'Cobros en destino que el conductor debe rendir'],
   'compras': ['Compras', 'Solicitudes de cada sector, su decisión y en qué gasta la empresa'],
+  'costos': ['Tabla de Costos', 'Cada costo del mes, su categoría y su aprobación'],
   'gestion-permisos': ['Gestión de permisos', 'Qué pantallas ve cada rol y usuarios asignados'],
 };
 
