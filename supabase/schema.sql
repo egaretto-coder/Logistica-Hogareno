@@ -1013,8 +1013,6 @@ create table if not exists public.costos (
   categoria text not null,                    -- nivel 1 del catalogo cerrado
   detalle text not null,                      -- nivel 2; el par decide el tipo
   descripcion text not null default '',         -- texto libre (la planilla: "DETALLES B")
-  proveedor text not null default '',
-  comprobante text not null default '',
   monto numeric not null default 0,
   -- Maker-checker como adelantos y extravios: lo carga uno y lo aprueba otro.
   -- Lo PENDIENTE no suma en ningun total, pero se avisa.
@@ -1024,7 +1022,6 @@ create table if not exists public.costos (
   cargado_por text not null default '',
   decidido_por text not null default '',
   decidido_en timestamptz,
-  obs text not null default '',
   created_at timestamptz not null default now(),
   sucursal text not null default coalesce(public.sucursal_pedida(), 'BA')
     references public.sucursales(codigo)
@@ -1046,6 +1043,40 @@ create policy costos_sucursal_all on public.costos
 -- Permisos: supervisor y tesorero TIENEN filas en rol_permisos, y ahi el
 -- default del codigo deja de aplicar. Ver migracion-2026-11-06-tabla-costos.sql,
 -- que inserta la fila SOLO para los roles que ya tienen alguna.
+
+-- EL CATALOGO DE COSTOS. Una fila por PAR categoria+detalle, con su tipo:
+-- eso es lo que hace que el tipo sea del par y no de quien carga. Es tabla y
+-- no una constante del codigo porque el negocio crea categorias y detalles
+-- desde el panel -- mismo criterio que `proveedores`.
+--   La semilla son los 52 pares de la planilla de septiembre de 2026, en
+--   supabase/migracion-2026-11-10-catalogo-costos.sql.
+--   La baja es LOGICA (activo=false): deja de ofrecerse para cargas nuevas
+--   pero los costos que ya lo usan se conservan y se clasifican igual.
+--   OJO: cambiar el `tipo` de una fila RECLASIFICA los costos ya cargados,
+--   incluidos los de meses cerrados -- el tipo no se guarda en el costo, se
+--   deriva. Es lo correcto, y el panel avisa cuanta plata mueve antes.
+create table if not exists public.costos_catalogo (
+  id bigint generated always as identity primary key,
+  categoria text not null,
+  detalle text not null,
+  tipo text not null check (tipo in ('Fijos','Variables','Varios')),
+  activo boolean not null default true,
+  creado_por text not null default '',
+  created_at timestamptz not null default now(),
+  sucursal text not null default coalesce(public.sucursal_pedida(), 'BA')
+    references public.sucursales(codigo)
+);
+create unique index if not exists costos_catalogo_par_uq
+  on public.costos_catalogo (sucursal, categoria, detalle);
+create index if not exists idx_costos_catalogo_cat
+  on public.costos_catalogo (sucursal, categoria);
+alter table public.costos_catalogo enable row level security;
+drop policy if exists costos_catalogo_sucursal_all on public.costos_catalogo;
+create policy costos_catalogo_sucursal_all on public.costos_catalogo
+  for all to authenticated
+  using ((select public.es_usuario_activo()) and public.es_de_sucursal(sucursal))
+  with check ((select public.es_usuario_activo()) and public.es_de_sucursal(sucursal));
+-- alter publication supabase_realtime add table public.costos_catalogo;
 
 -- ---------- BARRERA DE SEGURIDAD DE ACCESO ----------
 -- Dos controles, ambos en la BASE (no en el navegador): borrar los datos del

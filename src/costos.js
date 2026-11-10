@@ -30,94 +30,38 @@ const COSTOS_TIPOS = ['Fijos', 'Variables', 'Varios'];
 // criterio que "Fuera del tarifario" en el reporte de zonas.
 const COSTOS_SIN_CLASIFICAR = 'Sin clasificar';
 
-// EL CATÁLOGO REAL, derivado de la planilla de septiembre de 2026 (144
-// movimientos, $239.305.354 — los totales por tipo dan exactamente los de sus
-// tablas dinámicas). Es una LISTA CERRADA por el mismo motivo que los puestos
-// de RRHH, los proveedores y los sectores de Compras: escrita a mano, la misma
-// categoría entra como "Obra social", "OBRA SOCIAL" y "O. Social" — la propia
-// planilla ya traía `Suplente` y `suplente` como dos detalles distintos.
+// EL CATÁLOGO VIVE EN LA TABLA `costos_catalogo`, no acá. El negocio pidió
+// poder crear una categoría o un detalle desde el panel, y un catálogo
+// editable no puede vivir en una constante — es el mismo criterio que
+// `proveedores`, que es tabla justamente porque se da de alta desde la
+// pantalla. La semilla son los 52 pares de la planilla de septiembre de 2026
+// y está en supabase/migracion-2026-11-10-catalogo-costos.sql.
 //
-// Los 4 pares que en septiembre vinieron con dos tipos se cierran con el
-// DOMINANTE medido en plata (lo decidió el negocio): Suplente=Variables,
-// Cargas sociales=Fijos, Publicidad=Fijos, Horas Extras=Variables. Son
-// $1.378.175 sobre $239 M — el 0,58%. Si alguno de verdad tiene dos
-// naturalezas, se parte en dos detalles y no se reabre la excepción.
-const COSTOS_CATEGORIAS = [
-  { nombre: 'Conductor', detalles: [
-    { nombre: 'Titular', tipo: 'Variables' },
-    { nombre: 'Suplente', tipo: 'Variables' },
-    { nombre: 'Semititular', tipo: 'Variables' },
-    { nombre: 'Beneficios', tipo: 'Variables' },
-    { nombre: 'Prestamos', tipo: 'Variables' },
-  ] },
-  { nombre: 'Personal', detalles: [
-    { nombre: 'Salario', tipo: 'Fijos' },
-    { nombre: 'Comisiones', tipo: 'Variables' },
-    { nombre: 'Cargas sociales', tipo: 'Fijos' },
-    { nombre: 'Indemnizaciones', tipo: 'Variables' },
-    { nombre: 'Ropa de trabajo', tipo: 'Variables' },
-    { nombre: 'Horas Extras', tipo: 'Variables' },
-    { nombre: 'Bono', tipo: 'Fijos' },
-    { nombre: 'Vacaciones', tipo: 'Fijos' },
-    { nombre: 'Beneficios', tipo: 'Variables' },
-    { nombre: 'Viatico', tipo: 'Variables' },
-    { nombre: 'Autonomo', tipo: 'Variables' },
-    { nombre: 'Farmacia', tipo: 'Variables' },
-  ] },
-  { nombre: 'Impuestos', detalles: [
-    { nombre: 'Iva', tipo: 'Variables' },
-    { nombre: 'Iva YPF', tipo: 'Variables' },
-    { nombre: 'Iva Pancho', tipo: 'Variables' },
-    { nombre: 'Ley 25413', tipo: 'Variables' },
-    { nombre: 'Iva German', tipo: 'Variables' },
-    { nombre: 'IIBB', tipo: 'Varios' },
-    { nombre: 'Ganancias', tipo: 'Varios' },
-  ] },
-  { nombre: 'Colecta', detalles: [
-    { nombre: 'Colecta Maxi', tipo: 'Variables' },
-    { nombre: 'Particulares', tipo: 'Variables' },
-  ] },
-  { nombre: 'Servicios generales', detalles: [
-    { nombre: 'Lighdata', tipo: 'Fijos' },
-    { nombre: 'Alquiler', tipo: 'Fijos' },
-    { nombre: 'Publicidad', tipo: 'Variables' },
-    { nombre: 'Edenor', tipo: 'Fijos' },
-    { nombre: 'Aysa', tipo: 'Fijos' },
-    { nombre: 'Internet', tipo: 'Fijos' },
-    { nombre: 'TGS Moron', tipo: 'Fijos' },
-    { nombre: 'Arba', tipo: 'Fijos' },
-  ] },
-  { nombre: 'Mantenimiento', detalles: [
-    { nombre: 'Reparaciones', tipo: 'Varios' },
-    { nombre: 'Limpieza', tipo: 'Fijos' },
-  ] },
-  { nombre: 'Honorarios', detalles: [
-    { nombre: 'Contador', tipo: 'Variables' },
-    { nombre: 'Abogado', tipo: 'Variables' },
-  ] },
-  { nombre: 'Operaciones y oficina', detalles: [
-    { nombre: 'Alquiler', tipo: 'Fijos' },
-    { nombre: 'Insumos refrigerio', tipo: 'Varios' },
-    { nombre: 'Agua', tipo: 'Fijos' },
-    { nombre: 'Librería', tipo: 'Varios' },
-    { nombre: 'Reparaciones', tipo: 'Varios' },
-    { nombre: 'Articulos de higiene', tipo: 'Varios' },
-    { nombre: 'Farmacia', tipo: 'Varios' },
-  ] },
-  { nombre: 'Marketing', detalles: [
-    { nombre: 'Publicidad', tipo: 'Fijos' },
-  ] },
-  { nombre: 'Seguros', detalles: [
-    { nombre: 'Auto', tipo: 'Fijos' },
-    { nombre: 'Local', tipo: 'Fijos' },
-    { nombre: 'Moto', tipo: 'Fijos' },
-  ] },
-  { nombre: 'Gastos generales', detalles: [
-    { nombre: 'Ferreteria', tipo: 'Varios' },
-    { nombre: 'Reparaciones', tipo: 'Varios' },
-    { nombre: 'Equipamiento', tipo: 'Varios' },
-  ] },
-];
+// Se deriva en cada lectura y NO se cachea por índice: una categoría recién
+// creada tiene que aparecer en el selector del modal que está abierto, y un
+// índice viejo mostraría el catálogo de hace un rato. Cuesta una pasada
+// sobre ~50 filas.
+//
+// El orden es el de INSERCIÓN (id): preserva el orden por peso de la
+// planilla y deja lo nuevo al final, que es predecible. Alfabético mezclaría
+// "Conductor" ($126 M) entre categorías de $300.000.
+function costosCategorias(incluirBajas) {
+  const porCat = new Map();
+  (AppData.costosCatalogo || []).forEach(f => {
+    if (!incluirBajas && f.activo === false) return;
+    const cat = _cosTxt(f.categoria);
+    const det = _cosTxt(f.detalle);
+    if (!cat || !det) return;
+    if (!porCat.has(cat)) porCat.set(cat, { nombre: cat, detalles: [] });
+    porCat.get(cat).detalles.push({ id: f.id, nombre: det, tipo: f.tipo, activo: f.activo !== false });
+  });
+  return Array.from(porCat.values());
+}
+// Una categoría EXISTE mientras tenga al menos un detalle: no hay fila propia
+// de categoría, porque una categoría sin detalles no puede clasificar nada.
+function costosNombresCategorias(incluirBajas) {
+  return costosCategorias(incluirBajas).map(c => c.nombre);
+}
 
 const COSTOS_ESTADOS = {
   pendiente:  { label: 'Esperando aprobación', color: '#f59e0b', corto: 'Sin aprobar' },
@@ -178,7 +122,7 @@ function _cosMesVecino(mes, n) {
 const _cosNorm = s => _cosTxt(s).toLowerCase();
 function costoCategoria(nombre) {
   const n = _cosNorm(nombre);
-  return COSTOS_CATEGORIAS.find(c => _cosNorm(c.nombre) === n) || null;
+  return costosCategorias(true).find(c => _cosNorm(c.nombre) === n) || null;
 }
 // Los detalles de una categoría, para el segundo selector.
 function costoDetallesDe(categoria) {
@@ -326,9 +270,7 @@ function costosFiltrados() {
     filas = filas.filter(c =>
       _cosTxt(c.categoria).toLowerCase().includes(q) ||
       _cosTxt(c.detalle).toLowerCase().includes(q) ||
-      _cosTxt(c.descripcion).toLowerCase().includes(q) ||
-      _cosTxt(c.proveedor).toLowerCase().includes(q) ||
-      _cosTxt(c.comprobante).toLowerCase().includes(q));
+      _cosTxt(c.descripcion).toLowerCase().includes(q));
   }
   if (cosFiltroTipo) filas = filas.filter(c => costoTipoDe(c.categoria, c.detalle) === cosFiltroTipo);
   if (cosFiltroCat) filas = filas.filter(c => _cosNorm(c.categoria) === _cosNorm(cosFiltroCat));
@@ -361,8 +303,8 @@ function renderCostosPagina() {
 }
 
 function switchCostosTab(t) {
-  cosTab = (t === 'registro') ? 'registro' : 'resumen';
-  ['resumen', 'registro'].forEach(k => {
+  cosTab = (t === 'registro' || t === 'catalogo') ? t : 'resumen';
+  ['resumen', 'registro', 'catalogo'].forEach(k => {
     const pane = _cosEl('cos-pane-' + k);
     const tab = _cosEl('cos-tab-' + k);
     if (pane) pane.style.display = (k === cosTab) ? '' : 'none';
@@ -375,6 +317,7 @@ function renderCostos() {
   if (typeof _pintarPanelMes === 'function') _pintarPanelMes('costos');
   _renderCostosPendientes();
   if (cosTab === 'registro') _renderCostosRegistro();
+  else if (cosTab === 'catalogo') _renderCostosCatalogo();
   else _renderCostosResumen();
 }
 
@@ -586,7 +529,7 @@ function _renderCostosRegistro() {
   // marcando solo el clickeado, un grupo queda diciendo una cosa mientras el
   // panel filtra otra (ya pasó con el filtro por condición del Dashboard).
   let h = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
-    '<input type="text" id="cos-busca" class="input" placeholder="Buscar por categoría, detalle, proveedor o comprobante…" ' +
+    '<input type="text" id="cos-busca" class="input" placeholder="Buscar por categoría, detalle o descripción…" ' +
       'style="max-width:340px" value="' + _cosEsc(cosBusca) + '" oninput="cosBuscar(this.value)">' +
     '<span style="font-size:12px;color:var(--text-secondary)">' +
       (filas.length === totalMes ? filas.length + ' registro(s)'
@@ -601,7 +544,7 @@ function _renderCostosRegistro() {
     '</div>' +
     '<div style="margin-bottom:12px"><select class="form-input" style="max-width:260px;font-size:12px" onchange="cosFiltrar(\'cat\',this.value)">' +
       '<option value="">Todas las categorías</option>' +
-      COSTOS_CATEGORIAS.map(c => '<option value="' + _cosEsc(c.nombre) + '"' +
+      costosCategorias().map(c => '<option value="' + _cosEsc(c.nombre) + '"' +
         (_cosNorm(c.nombre) === _cosNorm(cosFiltroCat) ? ' selected' : '') + '>' + _cosEsc(c.nombre) + '</option>').join('') +
       '</select></div>';
 
@@ -615,7 +558,7 @@ function _renderCostosRegistro() {
   }
 
   h += '<div style="overflow-x:auto"><table class="table"><thead><tr>' +
-    '<th>Fecha</th><th>Categoría › Detalle</th><th>Descripción</th><th>Proveedor</th>' +
+    '<th>Fecha</th><th>Categoría › Detalle</th><th>Descripción</th>' +
     '<th style="text-align:right">Monto</th><th>Estado</th><th></th>' +
     '</tr></thead><tbody>';
   let sumaVista = 0, sumaAprob = 0;
@@ -631,8 +574,6 @@ function _renderCostosRegistro() {
         (costoFueraDeLista(c.categoria, c.detalle) ? ' <span class="cos-ojo" style="font-size:10px">— fuera del catálogo</span>' : '') +
         '<div class="' + _cosClaseTipo(tipo) + '" style="font-size:10px;background:none;padding:0">' + _cosEsc(tipo) + '</div></td>' +
       '<td style="font-size:12px">' + _cosEsc(c.descripcion || '—') + '</td>' +
-      '<td style="font-size:12px">' + _cosEsc(c.proveedor || '—') +
-        (c.comprobante ? '<div style="font-size:10px;color:var(--text-secondary)">' + _cosEsc(c.comprobante) + '</div>' : '') + '</td>' +
       '<td style="text-align:right;font-family:monospace">' + fmtPeso(m) + '</td>' +
       '<td><span class="cos-t ' + _cosClaseEstado(_cosTxt(c.estado)) + '">' + _cosEsc(est.corto) + '</span>' +
         (c.decidido_por ? '<div style="font-size:10px;color:var(--text-secondary)">' + _cosEsc(c.decidido_por) + '</div>' : '') +
@@ -644,10 +585,10 @@ function _renderCostosRegistro() {
   // las filas de arriba es la peor forma de mostrar un número. Y separa lo
   // aprobado, que es lo único que entra en los análisis.
   h += '</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--border)">' +
-    '<td colspan="4">' + (filas.length === totalMes ? 'TOTAL' : 'TOTAL DE LO FILTRADO') + '</td>' +
+    '<td colspan="3">' + (filas.length === totalMes ? 'TOTAL' : 'TOTAL DE LO FILTRADO') + '</td>' +
     '<td style="text-align:right;font-family:monospace">' + fmtPeso(sumaVista) + '</td><td colspan="2"></td></tr>';
   if (sumaAprob !== sumaVista) {
-    h += '<tr><td colspan="4" style="font-size:11px;color:var(--text-secondary)">Aprobado (lo que entra en los análisis)</td>' +
+    h += '<tr><td colspan="3" style="font-size:11px;color:var(--text-secondary)">Aprobado (lo que entra en los análisis)</td>' +
       '<td style="text-align:right;font-family:monospace;font-size:12px">' + fmtPeso(sumaAprob) + '</td><td colspan="2"></td></tr>';
   }
   h += '</tfoot></table></div>';
@@ -704,27 +645,14 @@ function abrirCostoModal(id) {
   // que ya no está en el catálogo SE CONSERVA marcada: si se borrara, abrir
   // la ficha para corregir un importe le cambiaría la categoría al costo.
   // Mismo criterio que los puestos de RRHH.
-  const sel = _cosEl('mcos-categoria');
-  if (sel) {
-    let h = '<option value="">— Elegí la categoría —</option>' +
-      COSTOS_CATEGORIAS.map(x => '<option value="' + _cosEsc(x.nombre) + '">' + _cosEsc(x.nombre) +
-        ' (' + x.detalles.length + ')</option>').join('');
-    if (c && _cosTxt(c.categoria) && !costoCategoria(c.categoria)) {
-      h += '<option value="' + _cosEsc(c.categoria) + '">' + _cosEsc(c.categoria) +
-        ' — ya no está en el catálogo</option>';
-    }
-    sel.innerHTML = h;
-    sel.value = c ? _cosTxt(c.categoria) : '';
-  }
+  _cosPoblarCategorias(c ? _cosTxt(c.categoria) : '');
   _cosPoblarDetalles(c ? _cosTxt(c.detalle) : '');
+  _cosMostrarNuevo(null);
 
   const v = (k, val) => { const e = _cosEl(k); if (e) e.value = val; };
   v('mcos-fecha', c ? String(c.fecha || '').slice(0, 10) : hoyISO());
   v('mcos-descripcion', c ? (c.descripcion || '') : '');
-  v('mcos-proveedor', c ? (c.proveedor || '') : '');
-  v('mcos-comprobante', c ? (c.comprobante || '') : '');
   v('mcos-monto', c ? _num(c.monto) : '');
-  v('mcos-obs', c ? (c.obs || '') : '');
 
   const t = _cosEl('mcos-titulo');
   if (t) t.textContent = c ? 'Editar costo' : 'Nuevo costo';
@@ -740,10 +668,11 @@ function _cosPoblarDetalles(elegido) {
   const sel = _cosEl('mcos-detalle');
   if (!sel) return;
   const cat = _cosTxt((_cosEl('mcos-categoria') || {}).value);
-  const dets = costoDetallesDe(cat);
+  const dets = costoDetallesDe(cat).filter(d => d.activo !== false);
   let h = '<option value="">— Elegí el detalle —</option>' +
     dets.map(d => '<option value="' + _cosEsc(d.nombre) + '">' + _cosEsc(d.nombre) +
-      ' · ' + _cosEsc(d.tipo) + '</option>').join('');
+      ' · ' + _cosEsc(d.tipo) + '</option>').join('') +
+    (cat ? '<option value="__nuevo__">➕ Crear un detalle nuevo en ' + _cosEsc(cat) + '…</option>' : '');
   // Un detalle viejo que ya no pertenece a esa categoría se conserva
   // marcado, por lo mismo que la categoría.
   if (elegido && cat && !costoDetalle(cat, elegido)) {
@@ -755,10 +684,44 @@ function _cosPoblarDetalles(elegido) {
   _cosPintarTipo();
 }
 
+// El selector de categorías. Una que ya no está en el catálogo SE CONSERVA
+// marcada: si se borrara, abrir la ficha para corregir un importe le
+// cambiaría la categoría al costo.
+function _cosPoblarCategorias(elegida) {
+  const sel = _cosEl('mcos-categoria');
+  if (!sel) return;
+  let h = '<option value="">— Elegí la categoría —</option>' +
+    costosCategorias().map(x => '<option value="' + _cosEsc(x.nombre) + '">' + _cosEsc(x.nombre) +
+      ' (' + x.detalles.filter(d => d.activo !== false).length + ')</option>').join('');
+  if (elegida && !costoCategoria(elegida)) {
+    h += '<option value="' + _cosEsc(elegida) + '">' + _cosEsc(elegida) + ' — ya no está en el catálogo</option>';
+  }
+  // La última opción: crear. Va acá porque es donde nace la necesidad —
+  // mandar al operador a otra pantalla a mitad de una carga es donde se
+  // abandona.
+  h += '<option value="__nueva__">➕ Crear una categoría nueva…</option>';
+  sel.innerHTML = h;
+  sel.value = elegida || '';
+}
+
 // Cambiar de categoría repuebla los detalles y limpia el elegido: el que
 // estaba casi nunca pertenece a la nueva, y dejarlo puesto haría que el par
 // quede fuera del catálogo sin que nadie lo pida.
-function cosCambioCategoria() { _cosPoblarDetalles(''); }
+function cosCambioCategoria() {
+  const v = _cosTxt((_cosEl('mcos-categoria') || {}).value);
+  if (v === '__nueva__') { _cosPoblarDetalles(''); _cosMostrarNuevo('cat'); return; }
+  _cosMostrarNuevo(null);
+  _cosPoblarDetalles('');
+}
+
+// Elegir "➕ Crear un detalle nuevo" abre el bloque en vez de dejar el
+// selector con un valor que no existe.
+function cosCambioDetalle() {
+  const v = _cosTxt((_cosEl('mcos-detalle') || {}).value);
+  if (v === '__nuevo__') { _cosMostrarNuevo('det'); return; }
+  _cosMostrarNuevo(null);
+  _cosPintarTipo();
+}
 
 function closeCostoModal() {
   const bd = _cosEl('modal-costo-backdrop');
@@ -775,7 +738,7 @@ function _cosPintarTipo() {
   const cat = _cosTxt((_cosEl('mcos-categoria') || {}).value);
   const det = _cosTxt((_cosEl('mcos-detalle') || {}).value);
   const fecha = _cosTxt((_cosEl('mcos-fecha') || {}).value);
-  if (!cat || !det) { cont.innerHTML = ''; return; }
+  if (!cat || !det || cat === '__nueva__' || det === '__nuevo__') { cont.innerHTML = ''; return; }
   const tipo = costoTipoDe(cat, det);
   const mes = fecha.slice(0, 7);
   const puede = (typeof puedeAutorizar === 'function') && puedeAutorizar();
@@ -796,9 +759,9 @@ async function guardarCostoModal() {
   const fecha = _cosTxt((_cosEl('mcos-fecha') || {}).value);
   const monto = _num((_cosEl('mcos-monto') || {}).value);
   const det = _cosTxt((_cosEl('mcos-detalle') || {}).value);
-  if (!cat) { alert('Elegí la categoría.'); return; }
+  if (!cat || cat === '__nueva__') { alert('Elegí la categoría.'); return; }
   // Sin detalle no hay tipo: el par es lo que lo decide.
-  if (!det) { alert('Elegí el detalle: de la categoría MÁS el detalle sale el tipo, y de ahí todos los reportes.'); return; }
+  if (!det || det === '__nuevo__') { alert('Elegí el detalle: de la categoría MÁS el detalle sale el tipo, y de ahí todos los reportes.'); return; }
   if (!fecha) { alert('Poné la fecha del costo: de ella sale el mes en el que pesa.'); return; }
   if (!(monto > 0)) { alert('El monto tiene que ser mayor que cero.'); return; }
 
@@ -806,10 +769,7 @@ async function guardarCostoModal() {
     fecha: fecha, categoria: cat,
     detalle: _cosTxt((_cosEl('mcos-detalle') || {}).value),
     descripcion: _cosTxt((_cosEl('mcos-descripcion') || {}).value),
-    proveedor: _cosTxt((_cosEl('mcos-proveedor') || {}).value),
-    comprobante: _cosTxt((_cosEl('mcos-comprobante') || {}).value),
-    monto: monto,
-    obs: _cosTxt((_cosEl('mcos-obs') || {}).value)
+    monto: monto
   };
 
   _cosGuardando = true;
@@ -950,18 +910,18 @@ function exportCostosExcel() {
   // baja justamente para sumarlo y cruzarlo contra otra planilla.
   const aoa = [
     ['Tabla de costos · ' + costosFiltrosTxt() + ' · Generado el ' + new Date().toLocaleString('es-AR')],
-    ['FECHA', 'CATEGORÍA', 'DETALLE', 'TIPO', 'DESCRIPCIÓN', 'PROVEEDOR', 'COMPROBANTE', 'MONTO', 'ESTADO', 'DECIDIÓ', 'OBSERVACIONES']
+    ['FECHA', 'CATEGORÍA', 'DETALLE', 'TIPO', 'DESCRIPCIÓN', 'MONTO', 'ESTADO', 'DECIDIÓ']
   ];
   filas.forEach(c => aoa.push([
     isoToDMY(c.fecha), c.categoria || '', c.detalle || '', costoTipoDe(c.categoria, c.detalle),
-    c.descripcion || '', c.proveedor || '', c.comprobante || '', _num(c.monto),
+    c.descripcion || '', _num(c.monto),
     (COSTOS_ESTADOS[_cosTxt(c.estado)] || {}).corto || c.estado || '',
-    c.decidido_por || '', c.obs || ''
+    c.decidido_por || ''
   ]));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 11 }, { wch: 22 }, { wch: 20 }, { wch: 11 }, { wch: 28 }, { wch: 18 },
-    { wch: 15 }, { wch: 14 }, { wch: 13 }, { wch: 18 }, { wch: 24 }];
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+  ws['!cols'] = [{ wch: 11 }, { wch: 22 }, { wch: 20 }, { wch: 11 }, { wch: 30 },
+    { wch: 15 }, { wch: 13 }, { wch: 18 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }];
 
   // Hoja 2: el análisis. Es lo que se lleva a los reportes, y rehacerlo a
   // mano desde las filas es justo el trabajo que este panel viene a sacar.
@@ -1019,19 +979,266 @@ function exportCostosPDF() {
 
   doc.autoTable({
     startY: r.pendientes.n ? 38 : 33,
-    head: [['Fecha', 'Categoría', 'Detalle', 'Tipo', 'Descripción', 'Proveedor', 'Monto', 'Estado']],
+    head: [['Fecha', 'Categoría', 'Detalle', 'Tipo', 'Descripción', 'Monto', 'Estado']],
     body: filas.map(c => [
       isoToDMY(c.fecha), c.categoria || '', c.detalle || '', costoTipoDe(c.categoria, c.detalle),
-      c.descripcion || '', c.proveedor || '', fmtPeso(_num(c.monto)),
+      c.descripcion || '', fmtPeso(_num(c.monto)),
       (COSTOS_ESTADOS[_cosTxt(c.estado)] || {}).corto || ''
     ]),
     theme: 'striped',
     headStyles: { fillColor: [26, 39, 68], textColor: 255, fontSize: 8, fontStyle: 'bold' },
     bodyStyles: { fontSize: 8, textColor: [40, 50, 70] },
     alternateRowStyles: { fillColor: [244, 247, 252] },
-    columnStyles: { 6: { halign: 'right' } },
+    columnStyles: { 5: { halign: 'right' } },
     margin: { left: 14, right: 14 }
   });
   doc.save('Tabla_de_costos_' + (mes || hoyISO()) + '.pdf');
   showToast('📥 Tabla de costos descargada');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+//  EL CATÁLOGO SE EDITA DESDE EL PANEL
+//  ------------------------------------------------------------------------
+//  Lo pidió el negocio. Dos cuidados que lo hacen seguro:
+//
+//  1) CREAR UNA CATEGORÍA EXIGE SU PRIMER DETALLE. No hay fila propia de
+//     categoría —una categoría existe mientras tenga detalles— y sobre todo:
+//     una categoría sin detalles no puede clasificar nada, así que dejarla
+//     crear sola sería ofrecerla en el selector para que el costo siguiente
+//     quede sin tipo.
+//
+//  2) CAMBIAR EL TIPO DE UN PAR RECLASIFICA LO YA CARGADO, incluidos los
+//     meses cerrados: el tipo no se guarda en el costo, se deriva. Eso es lo
+//     correcto —corregir un error tiene que arreglar el pasado— pero mueve
+//     plata entre Fijos y Variables, así que se dice cuántos costos y cuánta
+//     plata antes de aplicar.
+// ════════════════════════════════════════════════════════════════════════
+
+// Cuántos costos usan un par. Es lo que decide si se puede borrar o si
+// corresponde una baja lógica.
+function costosQueUsan(categoria, detalle) {
+  const c = _cosNorm(categoria), d = _cosNorm(detalle);
+  const filas = (AppData.costos || []).filter(x =>
+    _cosNorm(x.categoria) === c && _cosNorm(x.detalle) === d);
+  return { n: filas.length, monto: filas.reduce((s, x) => s + _num(x.monto), 0) };
+}
+
+// El par ya existe (activo o de baja). Dos filas del mismo par romperían la
+// regla de que el tipo lo decide el par: habría dos respuestas.
+function _cosParExiste(categoria, detalle) {
+  const c = _cosNorm(categoria), d = _cosNorm(detalle);
+  return (AppData.costosCatalogo || []).find(f =>
+    _cosNorm(f.categoria) === c && _cosNorm(f.detalle) === d) || null;
+}
+
+async function _cosGuardarPar(categoria, detalle, tipo) {
+  const fila = {
+    categoria: _cosTxt(categoria), detalle: _cosTxt(detalle), tipo: tipo,
+    activo: true,
+    creado_por: (typeof _operadorActual === 'function') ? _operadorActual()
+      : ((currentUser && (currentUser.nombre || currentUser.usuario)) || '')
+  };
+  if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+  const row = await DB.insertRow('costos_catalogo', fila);
+  AppData.costosCatalogo = AppData.costosCatalogo || [];
+  AppData.costosCatalogo.push(Object.assign({ id: row && row.id }, fila));
+  return fila;
+}
+
+// ── Crear desde el modal de carga ────────────────────────────────────────
+// El selector ofrece "➕ Crear…" como última opción: es donde nace la
+// necesidad, y mandar al operador a otra pantalla a mitad de una carga es
+// donde se abandona.
+function _cosMostrarNuevo(modo) {
+  const cont = _cosEl('mcos-nuevo');
+  if (!cont) return;
+  if (!modo) { cont.style.display = 'none'; cont.innerHTML = ''; return; }
+  const cat = _cosTxt((_cosEl('mcos-categoria') || {}).value);
+  const opts = COSTOS_TIPOS.map(t => '<option value="' + _cosEsc(t) + '">' + _cosEsc(t) + '</option>').join('');
+  cont.style.display = '';
+  cont.innerHTML =
+    '<div style="padding:10px;border:1px dashed var(--border);border-radius:8px;background:var(--surface-0)">' +
+    '<div style="font-size:12px;font-weight:600;margin-bottom:8px">' +
+      (modo === 'cat' ? 'Nueva categoría' : 'Nuevo detalle en ' + _cosEsc(cat)) + '</div>' +
+    (modo === 'cat'
+      ? '<input type="text" id="mcos-nueva-cat" class="form-input" placeholder="Nombre de la categoría" style="width:100%;margin-bottom:8px">'
+      : '') +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">' +
+      '<div style="flex:2;min-width:160px">' +
+        '<label class="form-label" style="font-size:11px">' +
+          (modo === 'cat' ? 'Su primer detalle' : 'Detalle') + '</label>' +
+        '<input type="text" id="mcos-nuevo-det" class="form-input" placeholder="Ej.: Telefono" style="width:100%">' +
+      '</div>' +
+      '<div style="flex:1;min-width:130px">' +
+        '<label class="form-label" style="font-size:11px">Tipo</label>' +
+        '<select id="mcos-nuevo-tipo" class="form-input" style="width:100%">' + opts + '</select>' +
+      '</div>' +
+      '<button class="btn btn-primary btn-sm" onclick="crearParCosto(\'' + jsAttr(modo) + '\')">Crear</button>' +
+      '<button class="btn btn-sm" onclick="cosCancelarNuevo()">Cancelar</button>' +
+    '</div>' +
+    // Una categoría sin detalles no clasifica nada: por eso se piden juntos.
+    (modo === 'cat'
+      ? '<div class="muted" style="font-size:11px;margin-top:6px">Una categoría sin detalles no puede clasificar ningún costo, ' +
+        'así que se crea con el primero. Después le agregás los que quieras.</div>'
+      : '<div class="muted" style="font-size:11px;margin-top:6px">El <strong>tipo</strong> queda pegado a este par ' +
+        'y es el que van a tener todos los costos que se carguen acá.</div>') +
+    '</div>';
+}
+function cosCancelarNuevo() {
+  _cosMostrarNuevo(null);
+  const sc = _cosEl('mcos-categoria');
+  if (sc && sc.value === '__nueva__') sc.value = '';
+  _cosPoblarDetalles('');
+}
+
+async function crearParCosto(modo) {
+  const cat = (modo === 'cat')
+    ? _cosTxt((_cosEl('mcos-nueva-cat') || {}).value)
+    : _cosTxt((_cosEl('mcos-categoria') || {}).value);
+  const det = _cosTxt((_cosEl('mcos-nuevo-det') || {}).value);
+  const tipo = _cosTxt((_cosEl('mcos-nuevo-tipo') || {}).value);
+  if (!cat) { alert('Poné el nombre de la categoría.'); return; }
+  if (!det) { alert('Poné el detalle: una categoría sin detalles no puede clasificar ningún costo.'); return; }
+  if (COSTOS_TIPOS.indexOf(tipo) < 0) { alert('Elegí el tipo.'); return; }
+  // Dos filas del mismo par darían DOS tipos para el mismo gasto, que es
+  // justo lo que el catálogo viene a impedir.
+  const ya = _cosParExiste(cat, det);
+  if (ya) {
+    alert('Ese par ya existe: ' + ya.categoria + ' › ' + ya.detalle + ' (' + ya.tipo + ')' +
+      (ya.activo === false ? String.fromCharCode(10, 10) + 'Está dado de baja; se reactiva desde la solapa Catálogo.' : ''));
+    return;
+  }
+  try {
+    await _cosGuardarPar(cat, det, tipo);
+    _cosMostrarNuevo(null);
+    // Queda elegido lo que se acaba de crear: es a lo que el operador venía.
+    const sc = _cosEl('mcos-categoria');
+    if (sc) { _cosPoblarCategorias(cat); sc.value = cat; }
+    _cosPoblarDetalles(det);
+    showToast('✅ ' + cat + ' › ' + det + ' (' + tipo + ')');
+  } catch (e) {
+    console.warn('crearParCosto', e);
+    const m = String((e && e.message) || e);
+    alert(/relation .*costos_catalogo.* does not exist|schema cache/i.test(m)
+      ? 'La base todavía no tiene el catálogo.' + String.fromCharCode(10, 10) +
+        'Hay que correr una vez la migración supabase/migracion-2026-11-10-catalogo-costos.sql.'
+      : 'No se pudo crear: ' + m);
+  } finally {
+    if (typeof finEscrituraNube === 'function') finEscrituraNube();
+  }
+}
+
+// ── La solapa Catálogo ───────────────────────────────────────────────────
+function _renderCostosCatalogo() {
+  const cont = _cosEl('cos-catalogo');
+  if (!cont) return;
+  const cats = costosCategorias(true);
+  if (!cats.length) {
+    cont.innerHTML = '<div class="alert alert-alert"><div>El catálogo está vacío. ' +
+      'Si acabás de crear la tabla, falta correr la semilla de ' +
+      '<code>migracion-2026-11-10-catalogo-costos.sql</code>.</div></div>';
+    return;
+  }
+  const pares = cats.reduce((s, c) => s + c.detalles.length, 0);
+  let h = '<div class="muted" style="font-size:12px;margin-bottom:12px">' +
+    cats.length + ' categoría(s) · ' + pares + ' par(es). ' +
+    'El <strong>tipo</strong> es del par: cambiarlo <strong>reclasifica los costos ya cargados</strong>, ' +
+    'también los de meses cerrados — el tipo no se guarda en el costo, se deriva.</div>';
+  cats.forEach(c => {
+    const vivos = c.detalles.filter(d => d.activo !== false).length;
+    h += '<div class="card" style="margin-bottom:10px"><div class="card-header">' +
+      '<span class="card-title">' + _cosEsc(c.nombre) + '</span>' +
+      '<span class="muted" style="font-size:11px">' + vivos + ' de ' + c.detalles.length + ' en uso</span></div>' +
+      '<div style="overflow-x:auto"><table class="table"><tbody>';
+    c.detalles.forEach(d => {
+      const uso = costosQueUsan(c.nombre, d.nombre);
+      h += '<tr' + (d.activo === false ? ' style="opacity:.55"' : '') + '>' +
+        '<td>' + _cosEsc(d.nombre) +
+          (d.activo === false ? ' <span class="muted" style="font-size:10px">— de baja</span>' : '') + '</td>' +
+        '<td style="width:150px"><select class="form-input" style="font-size:11px;padding:3px 6px" ' +
+          'onchange="cosCatCambiarTipo(' + d.id + ', this.value)">' +
+          COSTOS_TIPOS.map(t => '<option value="' + _cosEsc(t) + '"' +
+            (t === d.tipo ? ' selected' : '') + '>' + _cosEsc(t) + '</option>').join('') +
+          '</select></td>' +
+        '<td style="font-size:11px;color:var(--text-secondary);white-space:nowrap">' +
+          (uso.n ? uso.n + ' costo(s) · ' + fmtPeso(uso.monto) : 'sin uso') + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+          (d.activo === false
+            ? '<button class="btn btn-sm" style="padding:3px 8px;font-size:11px" onclick="cosCatReactivar(' + d.id + ')">Reactivar</button>'
+            : '<button class="btn btn-sm" style="padding:3px 8px;font-size:11px" onclick="cosCatBaja(' + d.id + ')">Dar de baja</button>') +
+        '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+  });
+  cont.innerHTML = h;
+}
+
+function _cosParPorId(id) {
+  const n = _num(id);
+  return (AppData.costosCatalogo || []).find(f => f.id === n) || null;
+}
+
+// CAMBIAR EL TIPO RECLASIFICA LO YA CARGADO. Es lo correcto —el tipo se
+// deriva, así que corregir un error arregla el pasado— pero mueve plata entre
+// Fijos y Variables en meses que ya se reportaron, así que se dice cuánta.
+async function cosCatCambiarTipo(id, tipo) {
+  const f = _cosParPorId(id);
+  if (!f) { showToast('Ese par ya no está'); renderCostos(); return; }
+  if (COSTOS_TIPOS.indexOf(tipo) < 0 || tipo === f.tipo) return;
+  const uso = costosQueUsan(f.categoria, f.detalle);
+  const aviso = '¿Pasar ' + f.categoria + ' › ' + f.detalle + ' de ' + f.tipo + ' a ' + tipo + '?' +
+    String.fromCharCode(10, 10) +
+    (uso.n
+      ? 'RECLASIFICA ' + uso.n + ' costo(s) ya cargado(s) por ' + fmtPeso(uso.monto) + ', también los de meses cerrados: ' +
+        'esa plata se mueve de ' + f.tipo + ' a ' + tipo + ' en todos los reportes.'
+      : 'Todavía no hay costos con este par, así que no se reclasifica nada.');
+  if (!confirm(aviso)) { renderCostos(); return; }
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.updateWhere('costos_catalogo', 'id', f.id, { tipo: tipo });
+    f.tipo = tipo;
+    renderCostos();
+    showToast('✅ ' + f.detalle + ' ahora es ' + tipo + (uso.n ? ' · ' + uso.n + ' costo(s) reclasificado(s)' : ''));
+  } catch (e) {
+    console.warn('cosCatCambiarTipo', e);
+    alert('No se pudo cambiar: ' + ((e && e.message) || e));
+    renderCostos();
+  } finally {
+    if (typeof finEscrituraNube === 'function') finEscrituraNube();
+  }
+}
+
+// BAJA LÓGICA, como los proveedores: deja de ofrecerse para cargas nuevas
+// pero los costos que ya lo usan se conservan y se siguen clasificando igual.
+// Borrarlo los dejaría "fuera del catálogo" de golpe y sin tipo.
+async function cosCatBaja(id) {
+  const f = _cosParPorId(id);
+  if (!f) { showToast('Ese par ya no está'); renderCostos(); return; }
+  const uso = costosQueUsan(f.categoria, f.detalle);
+  if (!confirm('¿Dar de baja ' + f.categoria + ' › ' + f.detalle + '?' +
+    String.fromCharCode(10, 10) +
+    'Deja de ofrecerse para cargas nuevas.' +
+    (uso.n ? ' Los ' + uso.n + ' costo(s) que ya lo usan (' + fmtPeso(uso.monto) + ') se conservan y siguen contando como ' + f.tipo + '.'
+           : ' Todavía no lo usa ningún costo.'))) return;
+  await _cosCatActivo(f, false, 'dado de baja');
+}
+async function cosCatReactivar(id) {
+  const f = _cosParPorId(id);
+  if (!f) { showToast('Ese par ya no está'); renderCostos(); return; }
+  await _cosCatActivo(f, true, 'reactivado');
+}
+async function _cosCatActivo(f, activo, txt) {
+  try {
+    if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal();
+    await DB.updateWhere('costos_catalogo', 'id', f.id, { activo: activo });
+    f.activo = activo;
+    renderCostos();
+    showToast(f.detalle + ' ' + txt);
+  } catch (e) {
+    console.warn('_cosCatActivo', e);
+    alert('No se pudo guardar: ' + ((e && e.message) || e));
+  } finally {
+    if (typeof finEscrituraNube === 'function') finEscrituraNube();
+  }
 }

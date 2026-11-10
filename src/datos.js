@@ -21,6 +21,8 @@ function loadSavedConfig() {
   if (vpj) { try { AppData.viajesParticulares = JSON.parse(vpj) || []; } catch(e) {} }
   const vpt = localStorage.getItem('liq_viaje_tarifas');
   if (vpt) { try { AppData.viajeTarifas = JSON.parse(vpt) || []; } catch(e) {} }
+  const ccos = localStorage.getItem('liq_costos_catalogo');
+  if (ccos) { try { AppData.costosCatalogo = JSON.parse(ccos) || []; } catch(e) {} }
   const cos = localStorage.getItem('liq_costos');
   if (cos) { try { AppData.costos = JSON.parse(cos) || []; } catch(e) {} }
   const cpr = localStorage.getItem('liq_compras');
@@ -557,6 +559,13 @@ async function _hydrateFromSupabaseReal(opts) {
     decidido_en: c.decidido_en || '', obs: c.obs || '',
     created_at: c.created_at || ''
   }));
+  // EL CATÁLOGO: una fila por par categoría+detalle, con su tipo. Es lo que
+  // hace que el tipo sea del par y no de quien carga.
+  AppData.costosCatalogo = (data.costos_catalogo || []).map(c => ({
+    id: c.id, categoria: c.categoria || '', detalle: c.detalle || '',
+    tipo: c.tipo || '', activo: c.activo !== false,
+    creado_por: c.creado_por || '', created_at: c.created_at || ''
+  }));
   AppData.viajeTarifas = (data.viaje_tarifas || []).map(t => ({
     id: t.id, vehiculo: t.vehiculo, modalidad: t.modalidad || 'km', tramo: _num(t.tramo),
     costo: _num(t.costo), venta: _num(t.venta),
@@ -945,6 +954,7 @@ async function _hydrateFromSupabaseReal(opts) {
     ['liq_viaje_tarifas', AppData.viajeTarifas || []],
     ['liq_compras', AppData.compras || []],
     ['liq_costos', AppData.costos || []],
+    ['liq_costos_catalogo', AppData.costosCatalogo || []],
     ['liq_km_tarifas', AppData.kmTarifas],
     ['liq_config', AppData.config],
     ['liq_rol_permisos', AppData.rolPermisos || null],

@@ -359,6 +359,14 @@
   .dash-bar-row .meta b { font-weight: 700; }
   .dash-bar-row .meta span { color: var(--text-muted); font-size: 11px; margin-left: 5px; }
 
+  /* Un input[type=number] en un campo de PLATA no lleva spinner: invita a
+     corregir un importe a clics de a un peso, y el campo es tipeable igual.
+     Va como clase y no global para no cambiar los contadores de otros
+     paneles, donde el spinner sí tiene sentido. */
+  input[type=number].sin-flechas::-webkit-outer-spin-button,
+  input[type=number].sin-flechas::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number].sin-flechas { -moz-appearance: textfield; appearance: textfield; }
+
   /* ── Tabla de Costos: tipo y estado ──
      Van como CLASE y no inline: estos azules y violetas quedan por debajo
      del mínimo legible sobre el fondo oscuro (medido: 3,37 el violeta y
