@@ -654,6 +654,20 @@ function abrirCostoModal(id) {
   v('mcos-descripcion', c ? (c.descripcion || '') : '');
   v('mcos-monto', c ? _num(c.monto) : '');
 
+  // UN SELECTOR VACÍO SIN EXPLICACIÓN SE LEE COMO QUE EL PANEL SE ROMPIÓ.
+  // Pasa en dos situaciones distintas y desde acá NO se pueden distinguir
+  // (las dos dejan el catálogo en []): la tabla todavía no existe, o es una
+  // sucursal nueva que no cargó el suyo. Así que el aviso no afirma una
+  // causa: dice qué hacer, que es lo mismo en los dos casos.
+  const vac = _cosEl('mcos-vacio');
+  if (vac) {
+    vac.innerHTML = costosCategorias(true).length ? '' :
+      '<div class="alert alert-alert"><div>Esta sucursal todavía no tiene catálogo de costos, ' +
+      'así que no hay categorías para elegir. Creá la primera con <strong>➕ Crear una categoría nueva…</strong> ' +
+      '(pide su primer detalle, porque una categoría sola no puede clasificar nada). ' +
+      'La solapa <strong>Catálogo</strong> muestra lo que haya cargado.</div></div>';
+  }
+
   const t = _cosEl('mcos-titulo');
   if (t) t.textContent = c ? 'Editar costo' : 'Nuevo costo';
   _cosPintarTipo();
