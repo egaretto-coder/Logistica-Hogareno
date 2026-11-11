@@ -46,7 +46,22 @@ try {
 // error— se perdía la carga COMPLETA. Medido en produccion: 21 respuestas 500 y
 // 17 respuestas 522 en los dos minutos en que se apretó "Cargar historial
 // completo"; el boton volvia a su estado normal y parecia que no hacia nada.
-const DB_MAX_EN_VUELO = 6;
+// CUÁNTAS CONSULTAS A LA VEZ. Eran 6, heredado de cuando cada página era un
+// LIMIT/OFFSET que el servidor resolvía recorriendo y descartando decenas de
+// miles de filas (hasta 1,4 s una sola): ahí seis simultáneas lo saturaban y
+// contestaba 500. Desde el cursor, una página son ~5-25 ms, así que ese techo
+// dejó de proteger de algo y pasó a ser el cuello: el arranque son ~51 tablas
+// y de a 6 son nueve tandas de ida y vuelta. Medido con los volúmenes reales
+// (ver scratchpad/medir-arranque.html): de 6 a 12 el arranque baja a la mitad.
+// El guardarraíl no se toca: ante un 429/500/503 la ventana se ACHICA sola
+// (_dbAchicarVentana) y se recupera tras 8 páginas seguidas sin error.
+// CUÁNTAS FILAS SE PIDEN POR REQUEST. PostgREST puede devolver MENOS de lo
+// pedido (db-max-rows), y por eso el paso real de la paginación sale de lo que
+// el servidor devolvió y no de esta constante: pedir de más nunca rompe, solo
+// deja de ahorrar viajes. Medido con los volúmenes de producción, la ventana
+// de envíos pasa de 20 requests a 4 y el arranque entero de ~88 a ~57.
+const DB_PAGE = 5000;
+const DB_MAX_EN_VUELO = 12;
 let _dbMaxEnVuelo = DB_MAX_EN_VUELO;
 let _dbEnVuelo = 0;
 let _dbExitosSeguidos = 0;
@@ -104,6 +119,19 @@ function _dbTablaNoExiste(err) {
   if (String(err.code) === 'PGRST205') return true;
   return /could not find the table|does not exist/i.test(String(err.message || ''));
 }
+// CUÁNTAS FILAS DEVUELVE DE VERDAD EL SERVIDOR. Se le piden DB_PAGE pero
+// PostgREST puede dar menos (db-max-rows), y eso cambia el arranque de 5
+// tandas a 8. Queda anotado en window.__dbPaso y se dice UNA vez: con esto no
+// hace falta que nadie corra una consulta a mano para saber en qué mundo está.
+function _dbAnotarPaso(paso) {
+  if (!paso || paso >= DB_PAGE) {
+    if (window.__dbPaso == null) { window.__dbPaso = DB_PAGE; console.info('[DB] el servidor sirve las ' + DB_PAGE + ' filas que se le piden'); }
+    return;
+  }
+  if (window.__dbPaso === paso) return;
+  window.__dbPaso = paso;
+  console.info('[DB] el servidor corta en ' + paso + ' filas por request (se le piden ' + DB_PAGE + '): el arranque paga más viajes, pero no se pierde ni una fila.');
+}
 function _dbEsperar(ms) { return new Promise(res => setTimeout(res, ms)); }
 
 // Pide UNA página, con turno y con reintentos.
@@ -132,7 +160,7 @@ const DB = {
   // en las cargas largas — sin eso, "Cargar historial completo" son 90 páginas
   // sin una sola señal de que algo está pasando.
   async _fetchAllParallel(table, { orderCol = null, filter = null, onProgress = null, cols = '*' } = {}) {
-    const PAGE = 1000;
+    const PAGE = DB_PAGE;
     const mk = (withCount) => {
       let q = withCount
         ? sb.from(table).select(cols, { count: 'exact' })
@@ -145,7 +173,14 @@ const DB = {
     const first = await _dbPedirPagina(() => mk(true), 0, PAGE - 1);
     let out = first.data || [];
     const total = (first.count != null) ? first.count : out.length;
-    const paginas = (out.length >= PAGE && total > PAGE) ? Math.ceil(total / PAGE) : 1;
+    // EL TAMAÑO DE PÁGINA LO DECIDE EL SERVIDOR, NO LA CONSTANTE. Se pide
+    // PAGE, pero PostgREST puede devolver menos (db-max-rows). Calculando los
+    // saltos con PAGE, pedir 5.000 contra un servidor que corta en 1.000 daba
+    // `out.length >= PAGE` falso, una sola página, y el resto de la tabla se
+    // perdía EN SILENCIO. Con el paso real la cuenta cierra en los dos mundos.
+    const paso = out.length || PAGE;
+    if (total > paso) _dbAnotarPaso(paso);
+    const paginas = (total > paso) ? Math.ceil(total / paso) : 1;
     if (onProgress) { try { onProgress(1, paginas); } catch (e) {} }
     if (paginas > 1) {
       let hechas = 1;
@@ -153,7 +188,7 @@ const DB = {
       // semáforo deja pasar de a DB_MAX_EN_VUELO.
       const reqs = [];
       for (let p = 1; p < paginas; p++) {
-        reqs.push(_dbPedirPagina(() => mk(false), p * PAGE, p * PAGE + PAGE - 1)
+        reqs.push(_dbPedirPagina(() => mk(false), p * paso, p * paso + paso - 1)
           .then(r => { hechas++; if (onProgress) { try { onProgress(hechas, paginas); } catch (e) {} } return r; }));
       }
       const results = await Promise.all(reqs);
@@ -198,7 +233,7 @@ const DB = {
   //  que tardaba UNA de las profundas. Y de paso deja de haber 6 consultas
   //  pesadas simultáneas, que es lo que tiraba al servidor.
   async _fetchAllSeek(table, { desdeISO = null, hastaISO = null, onProgress = null, cols = '*' } = {}) {
-    const PAGE = 1000;
+    const PAGE = DB_PAGE;
     const porFecha = !!desdeISO || !!hastaISO;   // sin filtro de fecha el cursor es el id solo
     let piso = desdeISO || null, ultimoId = null, ultimaFecha = null;
 
@@ -223,15 +258,25 @@ const DB = {
     };
 
     const out = [];
-    let paginas = 1, hechas = 0;
+    let paginas = 1, hechas = 0, paso = 0, total = null;
     for (;;) {
       const r = await _dbPedirPagina(() => armar(hechas === 0), 0, PAGE - 1);
       const filas = r.data || [];
-      if (hechas === 0 && r.count != null) paginas = Math.max(1, Math.ceil(r.count / PAGE));
+      if (hechas === 0) {
+        if (r.count != null) total = r.count;
+        // El paso REAL, por lo mismo que arriba: cortar por `< PAGE` contra un
+        // servidor que devuelve menos de lo pedido termina la paginación en la
+        // primera página y descarta el resto sin decir nada.
+        paso = filas.length || PAGE;
+        if (total != null && total > paso) _dbAnotarPaso(paso);
+        paginas = Math.max(1, Math.ceil((total != null ? total : filas.length) / paso));
+      }
       hechas++;
       if (onProgress) { try { onProgress(Math.min(hechas, paginas), paginas); } catch (e) {} }
       for (const f of filas) out.push(f);
-      if (filas.length < PAGE) break;
+      if (!filas.length) break;
+      if (total != null && out.length >= total) break;
+      if (filas.length < paso) break;
       const ult = filas[filas.length - 1];
       ultimoId = ult.id;
       if (porFecha) {
@@ -530,9 +575,22 @@ const DB = {
 
     const out = {};
     const noExisten = [];
+    // AVANCE DE LA PRIMERA FASE. Son ~51 tablas y antes la pantalla de carga
+    // no tenía nada que medir ahí: la barra se paseaba varios segundos, que es
+    // lo que se lee como que la app se colgó. Cuenta TABLAS TERMINADAS, que es
+    // un número real y no uno inventado — el mismo criterio que el avance de
+    // los envíos.
+    const avisar = (opts && opts.onProgress) || null;
+    let listas = 0;
+    const marcar = () => {
+      listas++;
+      if (avisar) { try { avisar(listas, defs.length); } catch (e) {} }
+    };
     let pend = defs.map((d, i) => i);
     for (let vuelta = 0; vuelta < 2 && pend.length; vuelta++) {
-      const res = await Promise.allSettled(pend.map(i => defs[i][1]()));
+      const res = await Promise.allSettled(pend.map(i =>
+        Promise.resolve(defs[i][1]()).then(v => { marcar(); return v; },
+                                           e => { marcar(); throw e; })));
       const quedan = [];
       res.forEach((r, k) => {
         const i = pend[k];

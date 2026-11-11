@@ -441,9 +441,25 @@ async function _hydrateFromSupabaseReal(opts) {
   const _t0 = (window.performance && performance.now()) || 0;
   let data;
   try {
-    data = await DB.loadAll(registrosDesdeISO(), { sinRegistros });
+    // La primera fase son ~51 tablas y la pantalla de carga no tenía nada que
+    // medir mientras bajaban: la barra se paseaba varios segundos, que es
+    // justo lo que se lee como un cuelgue. Ahora lleva el avance REAL (tablas
+    // terminadas) y se reserva el tramo final para los envíos, que es la fase
+    // siguiente — así la barra nunca retrocede.
+    // El callback NO pinta: anota y delega en actualizarEstadoCarga(), que es
+    // la ÚNICA que escribe la pantalla de carga. Las dos fases corren EN
+    // PARALELO, así que con dos pinceles la barra saltaría de 30% a 80% y de
+    // vuelta — y una barra que va y viene se lee peor que ninguna.
+    const avisar = sinRegistros
+      ? (hechas, total) => {
+          AppData._cargaConfigProgreso = { hechas: hechas, total: total };
+          actualizarEstadoCarga();
+        }
+      : null;
+    data = await DB.loadAll(registrosDesdeISO(), { sinRegistros, onProgress: avisar });
   } finally {
     AppData._hidratando = false;
+    if (sinRegistros) AppData._cargaConfigProgreso = null;
   }
   if (window.__perfLog) window.__perfLog('hydrate' + (sinRegistros ? '(sin registros)' : '(completa)'), _t0);
   // Se deja dicho si la configuración llegó COMPLETA. Sin esta marca un
@@ -1077,8 +1093,18 @@ function actualizarEstadoCarga() {
   // La pantalla de carga sigue el MISMO progreso que el resto: una sola
   // fuente, así no puede decir "listo" mientras el menú dice que falta.
   if (typeof splashEstado === 'function') {
-    if (cargando) {
-      const pct = (p && p.total > 1) ? 70 + Math.round(p.hechas / p.total * 29) : null;
+    // DOS FASES, UNA BARRA. La configuración (~51 tablas) y los envíos bajan
+    // EN PARALELO, pero se muestran en orden: mientras la config no terminó
+    // manda ella (0-65%) y después los envíos (65-99%). Así el número que se
+    // ve es siempre uno MEDIDO y la barra no retrocede. Antes la config no
+    // tenía nada que medir y la barra se paseaba varios segundos, que es
+    // exactamente lo que se lee como que la app se colgó.
+    const cfg = AppData._cargaConfigProgreso;
+    if (cfg && cfg.total > 0) {
+      splashEstado('Trayendo la configuración · ' + cfg.hechas + ' de ' + cfg.total + '…',
+        Math.round(cfg.hechas / cfg.total * 65));
+    } else if (cargando) {
+      const pct = (p && p.total > 1) ? 65 + Math.round(p.hechas / p.total * 34) : null;
       splashEstado('Trayendo los envíos' + (partes ? ' · ' + partes : '') + '…', pct);
     } else if (AppData._trayendoDesde) {
       // Falta el pedazo que pidió el panel que está en pantalla. No hay un
