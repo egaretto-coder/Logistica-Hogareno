@@ -1125,6 +1125,37 @@ function actualizarEstadoCarga() {
     if (t && cargando) t.innerHTML = '<strong>Cargando los envíos de los últimos ' + VENTANA_DIAS_REGISTROS + ' días' +
       (partes ? ' (' + partes + ')' : '') + '…</strong> Los números de abajo se completan solos cuando termina: no hace falta recargar la app.';
   }
+  // UNA TABLA QUE FALTA EN LA BASE SE DICE, SIEMPRE. Se hidrata vacía —que es
+  // lo que es— y el resto de la app entra normalmente; pero vacío NO es lo
+  // mismo que "no hay nada que facturar": si la ausente fuera `cliente_tarifas`
+  // el vacío FACTURA $0 sin que nadie lo note. Este renglón es lo que hace que
+  // hidratar vacío sea seguro, así que va al lado del contador —que está a la
+  // vista en todas las pantallas— y no en un console.warn que nadie lee.
+  // Pasó de verdad: el 10/11/2026 se desplegó el código que lee
+  // `costos_catalogo` antes de correr su migración, loadAll trató ese 404 como
+  // "la red falló" y la app pasó un día entero sin hidratar NINGUNA de las 52
+  // tablas, sirviendo solo caché local, en silencio.
+  _pintarTablasFaltantes();
+}
+
+function _pintarTablasFaltantes() {
+  const faltan = (typeof window !== 'undefined' && window.__tablasFaltantes) || null;
+  let av = document.getElementById('sidebar-tablas-faltan');
+  if (!faltan || !faltan.length) { if (av) av.remove(); return; }
+  const cont = document.getElementById('sidebar-record-count');
+  if (!cont || !cont.parentNode) return;
+  if (!av) {
+    av = document.createElement('div');
+    av.id = 'sidebar-tablas-faltan';
+    av.style.cssText = 'margin-top:6px;padding:6px 8px;border-radius:6px;font-size:11px;line-height:1.35;' +
+      'background:rgba(217,119,6,.14);color:#b45309;border:1px solid rgba(217,119,6,.35)';
+    cont.parentNode.insertBefore(av, cont.nextSibling);
+  }
+  // Nombra las tablas: sin eso no se sabe qué quedó vacío ni qué migración
+  // falta, y un aviso que no se puede accionar se deja de mirar.
+  av.textContent = '⚠ Falta' + (faltan.length > 1 ? 'n' : '') + ' en la base: ' +
+    faltan.join(', ') + '. Se ve' + (faltan.length > 1 ? 'n' : '') +
+    ' vacía' + (faltan.length > 1 ? 's' : '') + ' hasta correr su migración.';
 }
 
 // Que ventana de dias hay cargada. Decir "ultimos 14 dias" cuando ya se

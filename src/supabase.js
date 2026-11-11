@@ -91,6 +91,19 @@ function _dbValeReintentar(err) {
   const msg = String(err.message || '').toLowerCase();
   return !code && (msg.includes('fetch') || msg.includes('network') || msg.includes('timeout'));
 }
+// UNA TABLA QUE NO EXISTE NO ES UNA TABLA QUE NO LLEGÓ, y confundirlas tiró
+// la app entera: PostgREST contesta PGRST205 / 404, eso TIRA, y loadAll
+// trataba cualquier rechazo como "la red falló" y devolvía null, o sea NO
+// HIDRATABA NINGUNA de las 52 tablas. Pasó de verdad: el 10/11/2026 se
+// desplegó el código que lee `costos_catalogo` y la migración que la crea es
+// un paso manual aparte, así que durante un día la app sirvió SOLO caché
+// local — sin un aviso, porque el único rastro era un console.warn.
+// No se reintenta: un 404 de esquema no va a dejar de serlo.
+function _dbTablaNoExiste(err) {
+  if (!err) return false;
+  if (String(err.code) === 'PGRST205') return true;
+  return /could not find the table|does not exist/i.test(String(err.message || ''));
+}
 function _dbEsperar(ms) { return new Promise(res => setTimeout(res, ms)); }
 
 // Pide UNA página, con turno y con reintentos.
@@ -516,14 +529,22 @@ const DB = {
     const defs = this._defsHidratacion(desdeISO, sinRegistros);
 
     const out = {};
+    const noExisten = [];
     let pend = defs.map((d, i) => i);
     for (let vuelta = 0; vuelta < 2 && pend.length; vuelta++) {
       const res = await Promise.allSettled(pend.map(i => defs[i][1]()));
       const quedan = [];
       res.forEach((r, k) => {
         const i = pend[k];
-        if (r.status === 'fulfilled') out[defs[i][0]] = r.value;
-        else { quedan.push(i); if (vuelta) console.warn('[Supabase] ' + defs[i][0] + ':', r.reason); }
+        if (r.status === 'fulfilled') { out[defs[i][0]] = r.value; return; }
+        // La tabla no está en la base: hidrata VACÍA, que es lo que es, y el
+        // resto de la app entra normalmente. Falta una migración, no datos.
+        if (_dbTablaNoExiste(r.reason)) {
+          out[defs[i][0]] = [];
+          if (noExisten.indexOf(defs[i][0]) < 0) noExisten.push(defs[i][0]);
+          return;
+        }
+        quedan.push(i); if (vuelta) console.warn('[Supabase] ' + defs[i][0] + ':', r.reason);
       });
       pend = quedan;
     }
@@ -534,6 +555,15 @@ const DB = {
       try { window.__loadAllFaltaron = faltan; } catch (e) {}
       return null;
     }
+    // ESTO NO PUEDE SER SILENCIOSO. Hidratar vacío es correcto para una tabla
+    // que todavía no existe, pero si la tabla ausente fuera `cliente_tarifas`
+    // el vacío FACTURA $0 sin que nadie lo note. El aviso del menú es lo que
+    // hace que esto sea seguro: va siempre y nombra las tablas.
+    if (noExisten.length) {
+      console.warn('[Supabase] falta(n) en la base: ' + noExisten.join(', ') +
+        '. Se hidratan vacías — falta correr su migración.');
+    }
+    try { window.__tablasFaltantes = noExisten.length ? noExisten : null; } catch (e) {}
     try { window.__loadAllFaltaron = null; } catch (e) {}
     if (sinRegistros) out.registros = null;
     return out;
