@@ -60,6 +60,11 @@ try {
 // el servidor devolvió y no de esta constante: pedir de más nunca rompe, solo
 // deja de ahorrar viajes. Medido con los volúmenes de producción, la ventana
 // de envíos pasa de 20 requests a 4 y el arranque entero de ~88 a ~57.
+// DE A CUÁNTOS DÍAS SE PARTE LA VENTANA DE ENVÍOS. Ver selectRegistrosVentana:
+// el cursor es serial por definición, así que la única forma de acortar la
+// fila es tener VARIAS filas a la vez. Un día son ~1.500-2.600 envíos, o sea
+// 1 a 3 páginas por tramo.
+const DB_TRAMO_DIAS = 2;
 const DB_PAGE = 5000;
 const DB_MAX_EN_VUELO = 12;
 let _dbMaxEnVuelo = DB_MAX_EN_VUELO;
@@ -131,6 +136,32 @@ function _dbAnotarPaso(paso) {
   if (window.__dbPaso === paso) return;
   window.__dbPaso = paso;
   console.info('[DB] el servidor corta en ' + paso + ' filas por request (se le piden ' + DB_PAGE + '): el arranque paga más viajes, pero no se pierde ni una fila.');
+}
+// Parte [desde, fin) en tramos de n días. El ÚLTIMO queda abierto: un envío
+// con fecha de mañana —o el de hoy mismo, según la hora— tiene que entrar
+// igual, y un tope cerrado lo dejaría afuera sin que nada lo diga.
+// Las fechas se mueven ancladas al MEDIODÍA: a medianoche cualquier huso
+// corre el día, y acá un día corrido es un pedazo de la ventana que no se
+// pide o que se pide dos veces.
+function _dbTramosDeDias(desdeISO, n) {
+  const tramos = [];
+  const fin = new Date(); fin.setHours(12, 0, 0, 0); fin.setDate(fin.getDate() + 1);
+  let d = new Date(String(desdeISO) + 'T12:00:00');
+  if (isNaN(d)) return [{ desde: desdeISO, hasta: null }];
+  let guarda = 0;
+  while (d < fin && guarda++ < 400) {
+    const sig = new Date(d); sig.setDate(sig.getDate() + n);
+    tramos.push({
+      desde: _dbISO(d),
+      hasta: sig < fin ? _dbISO(sig) : null       // el último, abierto
+    });
+    d = sig;
+  }
+  return tramos.length ? tramos : [{ desde: desdeISO, hasta: null }];
+}
+function _dbISO(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+    '-' + String(d.getDate()).padStart(2, '0');
 }
 function _dbEsperar(ms) { return new Promise(res => setTimeout(res, ms)); }
 
@@ -332,10 +363,46 @@ const DB = {
     // el id solo y cada página es un salto en la clave primaria (5,9 ms medidos
     // contra los 1.399 ms de la última página por offset).
     if (!desdeISO) return this._fetchAllSeek('registros', { onProgress: onProgress || null });
-    const [enVentana, sinFecha] = await Promise.all([
-      this._fetchAllSeek('registros', { desdeISO: desdeISO, onProgress: onProgress || null }),
-      this._fetchAllParallel('registros', { orderCol: 'id', filter: q => q.is('fecha_date', null) }),
-    ]);
+    // LA VENTANA VA EN TRAMOS DE DÍAS, CADA UNO CON SU PROPIO CURSOR.
+    //
+    //   El cursor es serial POR DEFINICIÓN: cada página necesita la última fila
+    //   de la anterior para saber desde dónde seguir. Con 19.753 envíos en la
+    //   ventana y el servidor cortando en 1.000, eso son 20 idas EN FILA —y
+    //   subir la concurrencia no las toca, porque no hay dos que puedan salir
+    //   juntas—. Medido en producción: la pantalla de carga mostraba
+    //   "14 de 20", o sea casi todo el arranque esperando esa fila.
+    //
+    //   Partiendo la ventana por fecha, cada tramo es una fila INDEPENDIENTE y
+    //   salen todas a la vez: con tramos de DB_TRAMO_DIAS días la fila más
+    //   larga pasa de 20 a 2 o 3. Los tramos son disjuntos —[desde, hasta) con
+    //   gte/lt— así que no se pierde ni se repite una fila, y cada uno sigue
+    //   usando el índice de fecha_date igual que antes.
+    const tramos = _dbTramosDeDias(desdeISO, DB_TRAMO_DIAS);
+    // El avance se suma entre tramos: son páginas de la misma carga y al
+    // operador le da igual de cuál vienen.
+    const porTramo = new Array(tramos.length).fill(null).map(() => ({ h: 0, t: 1 }));
+    const avisar = onProgress ? (i) => (h, t) => {
+      porTramo[i] = { h: h, t: t };
+      let H = 0, T = 0;
+      porTramo.forEach(x => { H += x.h; T += x.t; });
+      try { onProgress(H, Math.max(T, H)); } catch (e) {}
+    } : () => null;
+    const partes = await Promise.all(tramos.map((tr, i) =>
+      this._fetchAllSeek('registros', {
+        desdeISO: tr.desde, hastaISO: tr.hasta, onProgress: onProgress ? avisar(i) : null
+      })));
+    // El tick final: un tramo puede cortar antes de su ultima pagina estimada
+    // (el count exacto deja cortar justo), asi que la suma quedaria en 11/12 y
+    // la barra no llegaria nunca al final de su fase. Terminado el trabajo, lo
+    // que corresponde decir es que esta todo.
+    if (onProgress) {
+      let T = 0; porTramo.forEach(x => { T += x.t; });
+      try { onProgress(T, T); } catch (e) {}
+    }
+    const [enVentana, sinFecha] = [
+      [].concat.apply([], partes),
+      await this._fetchAllParallel('registros', { orderCol: 'id', filter: q => q.is('fecha_date', null) })
+    ];
     const out = enVentana.concat(sinFecha);
     out.sort((a, b) => a.id - b.id);
     return out;
