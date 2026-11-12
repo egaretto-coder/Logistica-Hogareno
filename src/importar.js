@@ -456,9 +456,10 @@ function processUpload() {
   }
 
   // Registrar esta importación en el historial (solo si vino de un archivo real).
+  let _filaHist = null;
   if (AppData._importPend) {
     const fechasD = nuevos.map(r => parseFechaReg(r.fecha)).filter(Boolean).sort((a, b) => a - b);
-    registrarImportacion({
+    _filaHist = registrarImportacion({
       archivo: AppData._importPend.archivo,
       hash: AppData._importPend.hash,
       fecha_carga: fechaCarga,
@@ -528,6 +529,10 @@ function processUpload() {
   // trackings de ESTA carga (no se reescribe la base entera — con ~2.000
   // registros diarios eso no escala). El banner refleja el resultado.
   guardarImportacionEnNube(nuevos).then(ok => {
+    // El historial dice lo que PASÓ: confirmado si los envíos entraron,
+    // descartado si no — así el reintento no choca contra el candado del hash.
+    if (ok) confirmarImportacion(_filaHist);
+    else { descartarImportacion(_filaHist); importPendienteHist = _filaHist; }
     const est = document.getElementById('upload-nube-estado');
     // El reparto: cuántos envíos quedaron en cada boca. Los de otra sucursal
     // ya salieron de la memoria de esta pantalla (los guardó allá), así que el
@@ -545,7 +550,7 @@ function processUpload() {
                 ' queda en <strong>' + AppData.records.length + '</strong> registros.</span>'
               : '')
           : '')
-      : '<strong style="color:#b91c1c"><i class="ic ic-alert"></i> No se pudo guardar en la nube — usá el botón "Reintentar".</strong>';
+      : '<strong style="color:#b91c1c"><i class="ic ic-alert"></i> No se pudo guardar en la nube — los envíos están SOLO en esta pantalla. Usá "Reintentar" antes de recargar; si recargás, volvé a arrastrar el archivo (ya no queda bloqueado).</strong>';
     // Los cobros en destino se registran ACÁ, en la carga de todos los días.
     // Antes dependían de que alguien entrara al panel y apretara "Traer de los
     // envíos": existió desde el primer día, nunca se apretó, y la tabla estuvo
@@ -668,10 +673,39 @@ function persistirImportacionesLocal() {
   try { localStorage.setItem('liq_importaciones', JSON.stringify(AppData.importaciones)); } catch (e) {}
 }
 
-// Registra una importación (optimista en memoria + insert en la nube).
-async function registrarImportacion(meta) {
-  const local = Object.assign({ id: 'tmp-' + Date.now(), created_at: new Date().toISOString() }, meta);
+// EL HISTORIAL SE ESCRIBE RECIÉN CUANDO LOS ENVÍOS ENTRARON.
+//
+//   Antes se registraba ANTES de guardarlos, y ese orden convirtió un fallo
+//   recuperable en un operador bloqueado: el 12/11/2026 la carga de los días
+//   10 y 11 no entró (timeout de la base), pero el archivo ya figuraba
+//   importado — y el candado por hash existe justamente para no cargar dos
+//   veces el mismo documento, así que reintentar daba "⛔ Este documento ya
+//   fue importado". El alert mandaba a borrarlo del historial a mano, o sea
+//   a desarmar un registro para poder reintentar.
+//
+//   Ahora la fila nace SOLO en memoria —así el panel la muestra mientras la
+//   carga está en curso— y se confirma con `confirmarImportacion()` cuando el
+//   guardado salió bien. Si falló, `descartarImportacion()` la saca: sin fila
+//   no hay candado, y el reintento es volver a arrastrar el archivo.
+function registrarImportacion(meta) {
+  const local = Object.assign({ id: 'tmp-' + Date.now(), created_at: new Date().toISOString(), _sinConfirmar: true }, meta);
   AppData.importaciones = (AppData.importaciones || []).concat(local);
+  persistirImportacionesLocal();
+  renderHistorialImportaciones();
+  return local;
+}
+
+async function confirmarImportacion(local) {
+  if (!local) return;
+  delete local._sinConfirmar;
+  // Puede venir DESCARTADA: el primer intento falló, se la sacó del panel
+  // para que el hash no bloqueara el reintento, y ese reintento entró. Sin
+  // esto la carga queda guardada y sin figurar en ningún lado — y el mismo
+  // archivo se podría cargar de nuevo, que es justo lo que el candado evita.
+  AppData.importaciones = AppData.importaciones || [];
+  if (AppData.importaciones.indexOf(local) < 0) AppData.importaciones.push(local);
+  const meta = {};
+  Object.keys(local).forEach(k => { if (k !== 'id' && k !== 'created_at' && k[0] !== '_') meta[k] = local[k]; });
   persistirImportacionesLocal();
   renderHistorialImportaciones();
   try {
@@ -679,7 +713,14 @@ async function registrarImportacion(meta) {
       const row = await DB.insertRow('importaciones', meta);
       if (row && row.id) { local.id = row.id; local.created_at = row.created_at || local.created_at; persistirImportacionesLocal(); renderHistorialImportaciones(); }
     }
-  } catch (e) { console.warn('registrarImportacion nube:', e); }
+  } catch (e) { console.warn('confirmarImportacion nube:', e); }
+}
+
+function descartarImportacion(local) {
+  if (!local) return;
+  AppData.importaciones = (AppData.importaciones || []).filter(i => i !== local);
+  persistirImportacionesLocal();
+  renderHistorialImportaciones();
 }
 
 // Etiqueta "día de semana + fecha de carga + hora".

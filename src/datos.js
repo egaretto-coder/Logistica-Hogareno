@@ -1488,13 +1488,32 @@ function _sacarDeMemoria(filas) {
 }
 
 // Última importación que no llegó a la nube (para el botón "Reintentar").
+// La carga que no se pudo guardar, y SU fila del historial: si el reintento
+// sale bien hay que confirmarla, si no la importación queda sin registrar.
 let importPendiente = null;
+let importPendienteHist = null;
 
 // Guarda UNA importación en la nube de forma QUIRÚRGICA: borra en el servidor
 // solo los trackings que esta carga reemplaza e inserta las filas nuevas.
 // No reescribe la base entera (con ~2.000 registros/día eso no escala y
 // pisaría cargas de otros usuarios). Asigna a cada registro su id de nube.
 // Devuelve true si se sincronizó.
+// CUÁNTOS ENVÍOS POR TRANSACCIÓN. El rol `authenticated` tiene
+// statement_timeout = 8 s, y `reemplazar_registros` resuelve la sucursal
+// LLAMANDO A `sucursal_de_cliente` UNA VEZ POR FILA —dos veces por carga, en
+// el borrado y en el insert—: con 4.591 envíos son ~9.000 llamadas a una
+// función SECURITY DEFINER que además escanea `clientes` entera, porque su
+// único índice es sobre `upper(btrim(codigo))` y la función compara `codigo`
+// pelado. Pasó de verdad el 12/11/2026: la carga de los días 10 y 11 murió
+// con `canceling statement due to statement timeout`, la transacción se
+// deshizo ENTERA y no entró una sola fila — el operador trabajó 30 minutos
+// sobre memoria y la primera re-hidratación se lo llevó todo.
+// En lotes, cada uno es su propia transacción y entra MUY por debajo del
+// tope. Se pierde que la carga entera sea atómica, pero lo que esa atomicidad
+// protegía sigue en pie: ningún lote borra sin reponer en el mismo viaje. Y
+// una transacción que NO PUEDE TERMINAR no es atómica: es siempre "nada".
+const LOTE_IMPORT = 800;
+
 async function guardarImportacionEnNube(nuevos) {
   if (!window.DB || !DB.ready) { showToast('Sin conexión: la carga quedó solo local'); importPendiente = nuevos; return false; }
   // Import grande: silenciar el eco de Realtime un rato más largo.
@@ -1504,35 +1523,56 @@ async function guardarImportacionEnNube(nuevos) {
     // Además de la clave propia, la de la fila ABIERTA que esta entrega cierra:
     // en la nube esa fila sigue guardada con la clave vieja (sin fecha) y sin
     // esto quedaría duplicada al lado de la entrega.
-    const _cl = [];
-    nuevos.forEach(n => {
-      const k = n.clave || claveRegistro(n);
-      if (k) _cl.push(k);
-      if (typeof claveAbiertaRegistro === 'function' && esEstadoEntregado(n.estado)) {
-        const b = claveAbiertaRegistro(n);
-        if (b && b !== k) _cl.push(b);
-      }
-    });
-    const claves = Array.from(new Set(_cl));
     // Borrar las filas que esta carga reemplaza e insertar las nuevas, en UNA
     // transaccion. Antes eran dos viajes: el delete corria primero y, si el
     // insert fallaba —un corte de red, un 500—, los envios quedaban borrados y
     // sin reponer. Se perdian sin que nadie se enterara, que es exactamente lo
     // que no puede pasar con los recorridos ya pagados.
     const filas = nuevos.map(filaRegistroNube);
-    let ids;
-    try {
-      ids = await DB.reemplazarRegistros(claves, filas);
-    } catch (e) {
-      // Solo si la base todavia no tiene la funcion se cae al camino viejo. Un
-      // error de otro tipo NO se reintenta borrando: seria perder lo mismo que
-      // esto viene a evitar.
-      const falta = /reemplazar_registros/i.test(String(e && (e.message || e.hint || ''))) ||
-                    String(e && e.code) === 'PGRST202';
-      if (!falta) throw e;
-      console.warn('reemplazar_registros no disponible, se usa el camino viejo');
-      await DB.deleteIn('registros', 'clave', claves);
-      ids = await DB.insertRows('registros', filas);
+    // EN LOTES, cada uno su propia transacción (ver LOTE_IMPORT). Las claves
+    // de cada lote salen de SUS filas: así ningún lote borra algo que no vaya
+    // a reponer en el mismo viaje.
+    const ids = [];
+    for (let i = 0; i < filas.length; i += LOTE_IMPORT) {
+      const trozo = filas.slice(i, i + LOTE_IMPORT);
+      const dela = nuevos.slice(i, i + LOTE_IMPORT);
+      const kk = [];
+      dela.forEach(n => {
+        const k = n.clave || claveRegistro(n);
+        if (k) kk.push(k);
+        if (typeof claveAbiertaRegistro === 'function' && esEstadoEntregado(n.estado)) {
+          const b = claveAbiertaRegistro(n);
+          if (b && b !== k) kk.push(b);
+        }
+      });
+      // El avance se dice: 6 lotes sin una señal parecen un cuelgue, y es
+      // justo el rato en que el operador cree que ya está guardado.
+      if (filas.length > LOTE_IMPORT) {
+        showToast('Guardando ' + Math.min(i + trozo.length, filas.length) + ' de ' + filas.length + '…');
+      }
+      let parte;
+      try {
+        parte = await DB.reemplazarRegistros(Array.from(new Set(kk)), trozo);
+      } catch (e) {
+        // Solo si la base todavia no tiene la funcion se cae al camino viejo. Un
+        // error de otro tipo NO se reintenta borrando: seria perder lo mismo que
+        // esto viene a evitar.
+        const falta = /reemplazar_registros/i.test(String(e && (e.message || e.hint || ''))) ||
+                      String(e && e.code) === 'PGRST202';
+        if (!falta) {
+          // LO QUE YA ENTRÓ, ENTRÓ. Se dice cuántos, porque un "no se pudo
+          // guardar" a secas sobre una carga a medias hace reimportar todo y
+          // no explica por qué la base tiene algunos.
+          e._guardados = ids.length;
+          e._total = filas.length;
+          throw e;
+        }
+        console.warn('reemplazar_registros no disponible, se usa el camino viejo');
+        await DB.deleteIn('registros', 'clave', Array.from(new Set(kk)));
+        parte = await DB.insertRows('registros', trozo);
+      }
+      (parte || []).forEach(x => ids.push(x));
+      if (typeof marcarEscrituraLocal === 'function') marcarEscrituraLocal(8000);
     }
     nuevos.forEach((n, i) => { n.id = ids[i]; });
     importPendiente = null;
@@ -1545,7 +1585,18 @@ async function guardarImportacionEnNube(nuevos) {
   } catch(e) {
     console.warn('guardarImportacionEnNube:', e);
     importPendiente = nuevos;
-    showToast('⚠️ No se pudo guardar la carga en la nube: ' + (e.message || e));
+    const parcial = (e && e._guardados)
+      ? ' (entraron ' + e._guardados + ' de ' + e._total + ')' : '';
+    // ALERT Y NO TOAST: un aviso que se va solo deja al operador trabajando
+    // sobre envíos que en la nube no están, y la primera re-hidratación se los
+    // lleva sin que entienda por qué. Pasó: 30 minutos de trabajo perdidos.
+    alert('⚠️ NO se pudo guardar la carga en la nube' + parcial + '.' +
+      String.fromCharCode(10, 10) +
+      'Los envíos están SOLO en esta pantalla: si recargás, se pierden.' +
+      String.fromCharCode(10) +
+      'Usá el botón "Reintentar" antes de hacer otra cosa.' +
+      String.fromCharCode(10, 10) + (e.message || e));
+    showToast('⚠️ No se pudo guardar la carga en la nube' + parcial);
     return false;
   }
 }
@@ -1553,7 +1604,11 @@ async function guardarImportacionEnNube(nuevos) {
 // Reintenta el guardado de la última importación fallida.
 async function reintentarGuardadoNube() {
   if (!importPendiente) { showToast('No hay ninguna carga pendiente de guardar'); return; }
+  const hist = importPendienteHist;
   const ok = await guardarImportacionEnNube(importPendiente);
+  // El historial sigue al guardado también acá: sin esto, una carga que entra
+  // al segundo intento no queda registrada en ningún lado.
+  if (ok && hist && typeof confirmarImportacion === 'function') confirmarImportacion(hist);
   const est = document.getElementById('upload-nube-estado');
   if (est) est.innerHTML = ok
     ? '<strong style="color:#166534">☁️✅ Guardado en la nube.</strong>'
