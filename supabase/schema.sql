@@ -2461,3 +2461,35 @@ create unique index if not exists rendiciones_envio_clave_key
 --   · Proteccion contra contrasenas filtradas (HaveIBeenPwned): desactivada.
 --   · MFA: 0 factores configurados.
 -- ───────────────────────────────────────────────────────────────────────
+
+-- ════════════════════════════════════════════════════════════════════════
+-- 12/11/2026 — La sucursal, UNA VEZ POR CÓDIGO (incidente de la carga)
+-- ════════════════════════════════════════════════════════════════════════
+
+-- La carga de los días 10 y 11 —4.591 envíos— murió con
+-- `canceling statement due to statement timeout` y la transacción se deshizo
+-- ENTERA: no entró una sola fila. El operador trabajó media hora sobre los
+-- envíos que tenía en memoria hasta que la primera re-hidratación se los
+-- llevó de los dos paneles a la vez.
+--
+-- CAUSA: el rol `authenticated` tiene statement_timeout = 8 s, y
+-- `reemplazar_registros` llamaba a `sucursal_de_cliente` UNA VEZ POR FILA
+-- —dos veces por carga, en el borrado y en el insert—: ~9.000 llamadas. Es
+-- SECURITY DEFINER con SET search_path, así que Postgres no puede inlinearla
+-- ni memoizarla, y además escaneaba `clientes` entera porque el único índice
+-- era sobre upper(btrim(codigo)) y la función compara `codigo` pelado.
+--
+-- ARREGLO (migración: sucursal_una_vez_por_codigo):
+--   1) create index idx_clientes_codigo_plano on clientes (codigo)
+--   2) reemplazar_registros arma UN MAPA jsonb {codigo -> sucursal} con los
+--      códigos DISTINTOS de la carga y las dos pasadas lo consultan.
+--      Medido sobre 4.591 envíos reales: 124 códigos distintos, o sea de
+--      9.182 llamadas a 124.
+--   Verificado antes de aplicarla resolviendo por los dos caminos los 201
+--   códigos de toda la base: 0 discrepancias.
+--
+-- La app además guarda en lotes de 800 (v324), así que esto no es lo que
+-- evita el timeout: es sacarle a cada carga un trabajo que nunca hizo falta.
+-- Las dos cosas juntas son las que hacen que no vuelva.
+--
+-- El archivo completo: supabase/migracion-2026-11-12-sucursal-una-vez-por-codigo.sql
