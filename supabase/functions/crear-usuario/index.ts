@@ -8,17 +8,37 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+// EL NAVEGADOR PREGUNTA PRIMERO, Y SI UNA CABECERA NO ESTA EN LA LISTA EL
+// PEDIDO NO SALE. Paso de verdad: el 21/10 el cliente de Supabase se empezo a
+// crear con `x-sucursal`, y el SDK la manda TAMBIEN a las Edge Functions, asi
+// que el alta de usuarios quedo muerta desde ese dia — con un cartel que dice
+// "Failed to send a request to the Edge Function", que no nombra CORS y manda
+// a buscar el problema a la red. En el log se ve exacto: OPTIONS 200 y ningun
+// POST detras.
+//
+// Por eso la lista NO se escribe a mano: se devuelve la que el navegador pide,
+// con la fija como piso. Una cabecera global nueva no puede volver a romper
+// esto en silencio. Y no afloja nada: el corte de esta funcion es el JWT que
+// se verifica abajo, no el CORS — y sin `Allow-Credentials` el navegador no
+// manda la cookie de nadie, asi que permitir una cabecera no autoriza a nadie.
+const CORS_FIJAS = 'authorization, x-client-info, apikey, content-type';
+function corsDe(req: Request) {
+  const pedidas = req.headers.get('Access-Control-Request-Headers');
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': pedidas ? CORS_FIJAS + ', ' + pedidas : CORS_FIJAS,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    // Sin esto, un cache intermedio podria servir la respuesta de un preflight
+    // que pidio OTRAS cabeceras.
+    'Vary': 'Access-Control-Request-Headers',
+  };
+}
 
 Deno.serve(async (req: Request) => {
   const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+    new Response(JSON.stringify(body), { status, headers: { ...corsDe(req), 'Content-Type': 'application/json' } });
 
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsDe(req) });
   if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405);
 
   try {
