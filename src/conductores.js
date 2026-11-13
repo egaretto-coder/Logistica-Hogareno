@@ -1384,6 +1384,78 @@ function _textoYaCargados(repetidos, total) {
     'Aceptar = guardarlos igual · Cancelar = volver y sacarlos';
 }
 
+// EL MISMO ENVÍO, CARGADO CON OTRO TRACKING — y el aviso de arriba no lo ve.
+//
+// Aquel compara por CLAVE, y dos trackings distintos dan dos claves distintas,
+// así que el envío pasa como nuevo. Bug real (SANITARIOS GARCIA, 10/11/2026):
+// el listado lo trajo con el tracking `915` —el IDML llegó incompleto— y el
+// operador, que en Light veía `48478200915`, lo cargó a mano 70 minutos
+// después de la importación. Dos filas, dos claves, ningún aviso, y el cliente
+// facturado dos veces. Es el mismo final que los otros 56 duplicados, pero por
+// una causa distinta: acá el operador tenía razón en no encontrarlo.
+//
+// Lo que SÍ se puede comparar es lo que el alta captura: CLIENTE, FECHA y
+// CONDUCTOR. Un mismo cliente con el mismo chofer el mismo día son uno o dos
+// envíos, así que la lista es corta y el operador reconoce el suyo. Y cuando
+// el tracking de uno está CONTENIDO en el del otro —justo el caso `915` dentro
+// de `48478200915`— se señala aparte: ahí no hay que adivinar nada.
+//
+// Mira SOLO la ventana que está en memoria. Para un alta manual —casi siempre
+// de los últimos días— alcanza, y el aviso de arriba sí pregunta a la nube.
+// No frena nada: avisa, y se puede seguir.
+function _enviosParecidos(recs, yaAvisados) {
+  const avisados = new Set((yaAvisados || []).map(x => x && x.nuevo));
+  const out = [];
+  (recs || []).forEach(nuevo => {
+    if (avisados.has(nuevo)) return;            // ya se avisó por clave
+    const cod = String(nuevo.cliente_cod || '').trim();
+    const cad = typeof conductorKey === 'function' ? conductorKey(nuevo.cadete) : '';
+    const fecha = String(nuevo.fecha || '').trim();
+    if (!cod || !cad || !fecha) return;         // sin las tres puntas no hay con qué comparar
+    const k = claveRegistro(nuevo);
+    const t = String(nuevo.tracking || '').trim();
+    const ya = (AppData.records || []).filter(r =>
+      r !== nuevo &&
+      String(r.cliente_cod || '').trim() === cod &&
+      String(r.fecha || '').trim() === fecha &&
+      conductorKey(r.cadete) === cad &&
+      claveRegistro(r) !== k);
+    if (!ya.length) return;
+    // El caso fuerte: el tracking de uno está adentro del otro.
+    const contenido = t ? ya.filter(r => {
+      const o = String(r.tracking || '').trim();
+      return o && o !== t && (t.indexOf(o) >= 0 || o.indexOf(t) >= 0);
+    }) : [];
+    out.push({ nuevo, ya, contenido });
+  });
+  return out;
+}
+
+function _textoParecidos(parecidos, total) {
+  const nl = String.fromCharCode(10);
+  const linea = r => '    ' + (String(r.tracking || '').trim() || '(sin tracking)') +
+    ' — "' + (String(r.estado || '').trim() || 'sin estado') + '"' +
+    (r.destinatario ? ' — ' + r.destinatario : '') + (r.zona ? ' · ' + r.zona : '');
+  const bloques = parecidos.slice(0, 4).map(x => {
+    let b = '· ' + (String(x.nuevo.tracking || '').trim() || '(sin tracking)') +
+      ' — ese cliente y ese chofer ya tienen ' + x.ya.length + ' envío(s) ese día:' + nl +
+      x.ya.slice(0, 3).map(linea).join(nl) +
+      (x.ya.length > 3 ? nl + '    …y ' + (x.ya.length - 3) + ' más' : '');
+    if (x.contenido.length) {
+      b += nl + '    /!\\ el tracking "' + String(x.contenido[0].tracking || '').trim() +
+        '" está ADENTRO del que estás cargando: casi seguro es el mismo envío.';
+    }
+    return b;
+  }).join(nl + nl);
+  return 'Ojo: ' + parecidos.length + ' de los ' + total + ' envíos pueden YA ESTAR cargados con OTRO tracking.' + nl + nl +
+    bloques + (parecidos.length > 4 ? nl + nl + '…y ' + (parecidos.length - 4) + ' más' : '') + nl + nl +
+    'El aviso de "ya está cargado" compara por tracking, así que si el listado lo' + nl +
+    'trajo con otro número no lo ve.' + nl +
+    'Si es el mismo envío, CORREGILE EL TRACKING en su fila en vez de cargarlo de' + nl +
+    'nuevo: si lo cargás, quedan los dos y se cobra y se paga dos veces.' + nl + nl +
+    'Aceptar = guardarlos igual · Cancelar = volver y revisar';
+}
+
 async function guardarEnviosModal() {
   const desdeCliente = _aeOrigen === 'cliente';
   const conductor = desdeCliente ? '' : document.getElementById('cond-select').value;
@@ -1472,6 +1544,13 @@ async function guardarEnviosModal() {
   // pero esta mal, por eso lo estoy cargando" y acepta igual.
   const repetidos = await _enviosYaCargados(recs);
   if (repetidos.length && !confirm(_textoYaCargados(repetidos, recs.length))) return;
+
+  // Y el cuarto: EL MISMO ENVÍO CON OTRO TRACKING, que el aviso de arriba no
+  // puede ver porque compara por clave. Va después y no antes: si ya se avisó
+  // por clave, ese envío no se vuelve a nombrar acá (dos carteles seguidos
+  // sobre lo mismo se leen como uno solo y el segundo se acepta de corrido).
+  const parecidos = _enviosParecidos(recs, repetidos);
+  if (parecidos.length && !confirm(_textoParecidos(parecidos, recs.length))) return;
 
   const btn = document.getElementById('addenvio-guardar');
   const est = document.getElementById('addenvio-estado');

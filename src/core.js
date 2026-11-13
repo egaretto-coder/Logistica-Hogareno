@@ -1400,6 +1400,19 @@ function trackingDeTransporte(t) {
   return _reTrackingTransporte.test(String(t || '').trim());
 }
 
+// EXCEL ARRUINA LOS NÚMEROS LARGOS, Y EL TRACKING ENTRA ROTO SIN QUE NADIE LO
+// VEA. El IDML tiene 16 dígitos (2000015960767133); abierto como número, Excel
+// lo redondea y lo exporta como `2.00002E+15`. Eso no es el tracking de nadie
+// —y lo peor: es el MISMO texto para todos los que caen en el mismo redondeo—.
+// Medido: 48 envíos, y **41 de ellos comparten `2.00002E+15`**, de 8 clientes,
+// desde el 26/08. El operador busca el envío por su tracking real, no lo
+// encuentra, y lo carga a mano: de ahí salen duplicados que parecen descuido y
+// no lo son. Se detecta para poder DECIRLO en el resumen de la carga, que es
+// el único momento en que alguien puede volver a exportar el listado bien.
+function trackingArruinado(t) {
+  return /[0-9][eE]\+[0-9]/.test(String(t || '').trim());
+}
+
 // Clave de deduplicación de un registro. Determina cuándo una carga REEMPLAZA
 // a un registro anterior (superposición) y cuándo son envíos DISTINTOS:
 //   - Tracking real  -> por tracking (dos envíos nunca comparten un tracking real).

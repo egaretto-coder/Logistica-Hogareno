@@ -497,6 +497,15 @@ function processUpload() {
   // a nadie. Un envío que entra en silencio sin chofer es igual de invisible que
   // uno que se descarta en silencio.
   const sinChofer = nuevos.filter(r => !String(r.cadete || '').trim()).length;
+  // EL TRACKING QUE EXCEL ARRUINÓ. Llega como `2.00002E+15` —el IDML de 16
+  // dígitos redondeado— y entra así, en silencio. No sirve para buscar el
+  // envío, y además 41 de los 48 que hay en la base comparten EXACTAMENTE ese
+  // texto, así que tampoco distingue a uno de otro. Es una de las razones por
+  // las que el operador no encuentra un envío y lo termina cargando a mano.
+  // Se avisa acá porque es el único momento en que se puede volver a exportar
+  // el listado con la columna como TEXTO y cargarlo bien.
+  const trackRoto = nuevos.filter(r => trackingArruinado(r.tracking));
+  const cliTrackRoto = Array.from(new Set(trackRoto.map(r => String(r.cliente || '').trim()).filter(Boolean)));
   // COBRO EN DESTINO: se dice SIEMPRE, traiga o no traiga. Que el número sea
   // cero es justamente la señal que faltó durante dos meses — con el aviso
   // callado cuando no hay nada, la columna se puede caer otra vez y nadie se
@@ -523,6 +532,9 @@ function processUpload() {
           `. Se tomaron como cobro igual. <span style="opacity:.8">Si alguno NO era un cobro al destinatario, sacalo de Rendición de envíos antes de reclamárselo al chofer.</span>` : "")
       : `<br><i class="ic ic-alert"></i> <strong>Este listado no trajo ningún cobro en destino.</strong> Si debería traerlos, la columna "Total a cobrar" no quedó mapeada: volvé a importar y elegila a mano. <span style="opacity:.8">Sin ella los envíos entran en $0 y no se le reclama a ningún chofer.</span>`) +
     `${sinChofer ? `<br><i class="ic ic-alert"></i> <strong>${sinChofer} envío(s) vinieron SIN chofer en el listado.</strong> Se cargan igual y se le facturan al cliente —todo lo entregado se cobra— pero no entran en la liquidación de ningún conductor. El Dashboard los lista en <strong>“se cobra y no se paga”</strong>.` : ''}` +
+    `${trackRoto.length ? `<br><i class="ic ic-alert"></i> <strong>${trackRoto.length} envío(s) traen el tracking ARRUINADO por Excel</strong> (${Array.from(new Set(trackRoto.map(r => String(r.tracking || '').trim()))).slice(0, 3).join(' · ')}${new Set(trackRoto.map(r => String(r.tracking || '').trim())).size > 3 ? '…' : ''})` +
+      (cliTrackRoto.length ? ` — ${cliTrackRoto.slice(0, 4).join(' · ')}${cliTrackRoto.length > 4 ? '…' : ''}` : '') +
+      `. Es el número largo convertido a notación científica: <strong>no sirve para buscar el envío y varios comparten el mismo texto</strong>. <span style="opacity:.8">Volvé a exportar el listado con esa columna como TEXTO y reimportalo; si no, cuando alguien no encuentre uno de estos lo va a cargar a mano y se va a duplicar.</span>` : ''}` +
     `${diasFueraDeRango ? `<br><i class="ic ic-alert"></i> ${diasFueraDeRango} registros con fecha de domingo — la liquidación es de lunes a sábado, revisá si corresponde excluirlos.` : ''}` +
     `${faltantesDias.length ? `<br><i class="ic ic-alert"></i> <strong>Ojo:</strong> ${faltantesDias.length} día(s) hábil(es) sin registros dentro del rango cargado (${faltantesDias.slice(0, 6).map(diaLabel).join(' · ')}${faltantesDias.length > 6 ? '…' : ''}). ¿Te faltó cargar alguna fecha?` : ''}` +
     ` La base total queda en <strong>${AppData.records.length}</strong> registros. <span id="upload-nube-estado">☁️ Guardando en la nube…</span>`;
