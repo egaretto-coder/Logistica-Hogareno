@@ -389,7 +389,12 @@ function processUpload() {
     (r.fecha || '—') + ' · ' + (r.estado || '—') + ' · ' + (r.cadete || '—') +
     (r.direccion ? ' · ' + r.direccion : '') +
     (carga ? ' — cargado el ' + carga : '');
-  const tipoClave = c => c.startsWith('T:') ? 'tracking real' : c.startsWith('D:') ? 'dirección' : 'huella';
+  // Qué distinguió a ese envío, para que el aviso de reemplazo diga por qué dos
+  // filas eran la misma. "I:" es el número interno del cliente: sin nombrarlo
+  // aparte caería en "huella" y el operador leería otra cosa de la que pasó.
+  const tipoClave = c => c.startsWith('T:') ? 'tracking de transporte'
+    : c.startsWith('I:') ? 'número interno del cliente'
+    : c.startsWith('D:') ? 'dirección' : 'huella';
   const clavesExist = new Set(AppData.records.map(claveRegistro));
   // Una fila ENTREGADA cierra el envío (su clave lleva la fecha), así que ya no
   // matchea la fila ABIERTA que dejaron los estados intermedios. Se la busca

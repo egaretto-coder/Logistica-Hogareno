@@ -1364,9 +1364,40 @@ function _normTxt(s) {
     .trim();
 }
 
-// ¿El tracking "parece real"? (numérico de 8+ dígitos, ej. Mercado Libre).
+// ¿El listado trae un número utilizable? (numérico de 8+ dígitos). Dice que HAY
+// un identificador, no DE QUIÉN es — eso lo contesta `trackingDeTransporte`.
 function trackingValido(t) {
   return /^[0-9]{8,}$/.test(String(t || '').trim());
+}
+
+// UN TRACKING IDENTIFICA UN ENVÍO SOLO DENTRO DE QUIEN LO EMITIÓ, y confundir
+// las dos cosas costó envíos. El de transporte (Mercado Libre, 11 dígitos) es
+// único en el mundo; el número INTERNO de un cliente lo es solo para ese
+// cliente — y muchos numeran POR FECHA, así que el mismo número aparece el
+// mismo día en dos clientes distintos.
+//
+// Bug real (12/11/2026): DEVANA TUS SUEÑOS numera 10112026, 11112026,
+// 12112026… y SANITARIOS GARCIA numera igual. Los dos tuvieron un `12112026`
+// el 12/11, los dos vinieron en el mismo archivo, y como la clave era
+// `T:12112026` —GLOBAL, sin el cliente adentro— el import los tomó por "el
+// mismo envío repetido", se quedó con el último y tiró el de DEVANA. El
+// operador vio 4 envíos donde su sistema tenía 5 y lo cargó a mano.
+//
+// Es el bug de DISDEC un escalón más arriba: ahí el dato que faltaba en la
+// clave era la REFERENCIA, acá es el CLIENTE. Medido al corregirlo: 155 envíos
+// tienen tracking de 8 a 10 dígitos (numeración interna que la app tomaba por
+// tracking de transporte) y DEVANA ya había chocado CINCO veces —con
+// SANITARIOS GARCIA, LA FERRETERIA, TECNOPAINT, FERRETERIA y LAS PALABRAS
+// LIBRERIA—. Esas cinco son las que SOBREVIVIERON: un envío que nunca entró no
+// deja rastro, así que no hay forma de contar los que se perdieron.
+//
+// El corte va en 11 y no en otro lado porque es lo que dicen los datos: los
+// 117.776 envíos con tracking de transporte tienen 11 dígitos, y abajo de eso
+// no hay ninguno — lo de 8 a 10 es todo numeración de clientes.
+const TRACKING_TRANSPORTE_MIN = 11;
+const _reTrackingTransporte = new RegExp('^[0-9]{' + TRACKING_TRANSPORTE_MIN + ',}$');
+function trackingDeTransporte(t) {
+  return _reTrackingTransporte.test(String(t || '').trim());
 }
 
 // Clave de deduplicación de un registro. Determina cuándo una carga REEMPLAZA
@@ -1396,7 +1427,14 @@ function claveRegistro(r) {
   // claves T: y V: que ya están en la base no se mueven.
   const ref = _normTxt(t);
   if (r && r.contabiliza_manual && ref) return 'V:' + ref + '|' + String(r.fecha || '').trim();
-  if (trackingValido(t)) return 'T:' + t;
+  if (trackingDeTransporte(t)) return 'T:' + t;
+  // NÚMERO INTERNO DEL CLIENTE: vale solo dentro de él, así que la clave lo
+  // lleva adentro. Sin el cliente, dos clientes que numeran por fecha chocan
+  // el mismo día y el import tira uno (ver `trackingDeTransporte`). Va con
+  // prefijo propio y no como un `T:` con un pedazo más: así una clave interna
+  // no puede coincidir nunca con una de transporte, y al migrar se ve de una
+  // cuál es cuál.
+  if (trackingValido(t)) return 'I:' + _normTxt(r.cliente_cod) + '|' + t;
   const dir = _normTxt(r.direccion);
   const dest = _normTxt(r.destinatario);
   if (dir) {
