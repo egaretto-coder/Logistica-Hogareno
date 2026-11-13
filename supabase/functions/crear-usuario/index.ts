@@ -26,7 +26,11 @@ function corsDe(req: Request) {
   const pedidas = req.headers.get('Access-Control-Request-Headers');
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': pedidas ? CORS_FIJAS + ', ' + pedidas : CORS_FIJAS,
+    // Sin juntar, la lista sale repetida: el navegador PIDE tambien las fijas,
+    // y una respuesta que nombra todo dos veces se lee como un error.
+    'Access-Control-Allow-Headers': [...new Set(
+      (CORS_FIJAS + (pedidas ? ', ' + pedidas : '')).split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    )].join(', '),
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     // Sin esto, un cache intermedio podria servir la respuesta de un preflight
     // que pidio OTRAS cabeceras.
