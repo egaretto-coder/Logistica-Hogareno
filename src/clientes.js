@@ -1101,7 +1101,9 @@ function renderClientes() {
     const pendientes = clientesPendientesCodigo();
     if (pendientes.length) {
       html += '<div class="alert" style="margin:0 0 12px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74">' +
-        '<i class="ic ic-alert"></i><div><strong>' + pendientes.length + ' de ' + (AppData.clientes || []).length +
+        // El denominador son los ACTIVOS, como la lista: con el total decía
+        // "1 de 134" mientras el padrón que se mira tiene 117.
+        '<i class="ic ic-alert"></i><div><strong>' + pendientes.length + ' de ' + (AppData.clientes || []).filter(c => c.activo !== false).length +
         (pendientes.length === 1 ? ' cliente no tiene' : ' clientes no tienen') + ' ningún envío con ese nombre</strong> — su tarifario no se está aplicando. ' +
         'Puede ser que no hayan operado en el período cargado, o que en el listado figuren con otro nombre: ' +
         'en ese caso abrí su ficha (<strong>Card</strong>) y sumale esa cuenta. ' +
@@ -1790,7 +1792,11 @@ function vincularClienteReconocido(i) {
   document.getElementById('vcli-nombre').textContent = c.nombre + ' (' + c.envios + ' envíos)';
   const sel = document.getElementById('vcli-select');
   sel.innerHTML = '<option value="">Elegí un cliente…</option>' +
-    (AppData.clientes || []).slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
+    // Un cliente DADO DE BAJA no se ofrece como destino: pegarle una cuenta
+    // nueva a alguien que dejó de operar es lo contrario de lo que se quiere.
+    // Si el destino correcto fuera uno de baja, primero se lo reactiva.
+    (AppData.clientes || []).filter(x => x.activo !== false)
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
       .map(x => '<option value="' + clienteKey(x.codigo) + '">' + x.nombre +
         ' — ' + clienteNZonas(x.codigo) + ' zonas con tarifa</option>').join('');
   sel.value = '';
@@ -1836,6 +1842,15 @@ function clientesPendientesCodigo() {
   const sabemos = hayEnviosConCodigo();
   const cods = new Set(clientesDeRegistros().map(c => clienteKey(c.cod)));
   return (AppData.clientes || []).filter(c => {
+    // EL DADO DE BAJA NO ES UN PENDIENTE. Dejó de operar: no hay nada que
+    // corregirle, no se le va a facturar nada, y su código no matchee envíos
+    // es lo ESPERABLE. Mandarlo a esta lista es mandar al operador a arreglar
+    // algo que ya no existe — y encima la baja suele ser justamente porque el
+    // nombre estaba mal cargado (ESTUDIO ER, 03/11/2026: "Esta mal la carga
+    // del nombre del cliente"), o sea que el aviso le reclama exactamente lo
+    // que la baja ya resolvió. Vive en la solapa Bajas, que es su lugar; si
+    // vuelve a operar se lo reactiva y recién ahí vuelve a ser un pendiente.
+    if (c.activo === false) return false;
     // El que solo contrata viajes no tiene tarifario que aplicar, así que no
     // tener envíos con su nombre es lo esperable y no un pendiente.
     if (clienteSoloViajes(c)) return false;
@@ -2370,6 +2385,7 @@ function clientesPorVincular() {
   const codsMaestro = new Set((AppData.clientes || []).map(c => clienteKey(c.codigo)).filter(Boolean));
   const out = [];
   (AppData.clientes || []).forEach(c => {
+    if (c.activo === false) return;                // dejó de operar: no hay nada que re-codificarle
     const cod = clienteKey(c.codigo);
     if (cod && codsEnvios.has(cod)) return;        // su código ya matchea envíos: no se toca
     const env = porNombre.get(normCliente(c.nombre));
