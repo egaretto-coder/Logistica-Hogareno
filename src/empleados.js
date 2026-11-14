@@ -2742,10 +2742,25 @@ function vacArt155(base, dias) {
 //  AGUINALDO — SAC (Sueldo Anual Complementario)
 //
 //  Se paga en DOS cuotas: 30 de junio y 18 de diciembre (art. 122 LCT, texto
-//  de la ley 27.073). Cada una es el **50% de la MAYOR remuneración mensual
-//  devengada dentro de ese semestre** (ley 23.041 art. 1) — no del último
-//  sueldo, ni del promedio: del MEJOR mes. Y si el empleado no trabajó el
-//  semestre entero, se paga **proporcional al tiempo trabajado** (art. 123).
+//  de la ley 27.073). Cada una es **medio SUELDO: el 50% del sueldo más alto
+//  de los seis meses del semestre** — no del último, ni del promedio: del
+//  MEJOR mes. Y si el empleado no trabajó el semestre entero, se paga
+//  **proporcional al tiempo trabajado** (art. 123).
+//
+//  LA BASE ES EL SUELDO, NADA MÁS, y eso lo decidió el negocio: "si gana
+//  $1.000.000, es $500.000, independientemente de que un mes haya hecho horas
+//  extras y ganado el doble". No entran las horas extras, los bonos ni las
+//  comisiones, no entra el plus de vacaciones del art. 155, y no entran los
+//  viáticos. Los descuentos (adelantos, extravíos) tampoco lo bajan: son
+//  descuentos, no sueldo. Y el aguinaldo no se cuenta a sí mismo.
+//
+//  OJO, PORQUE NO ES LO QUE DICE LA LEY. La ley 23.041 art. 1 toma la **mayor
+//  REMUNERACIÓN mensual devengada** del semestre, que incluye horas extras y
+//  bonos: calculado sobre el básico, el aguinaldo sale MÁS BAJO que el legal
+//  en todo mes que tenga algo además del sueldo, y esa diferencia es
+//  reclamable. Es una decisión tomada del lado del negocio y está escrita acá
+//  para que el día que alguien la revise sepa que no es un error de cálculo.
+//  El panel lo dice en pantalla por el mismo motivo.
 //
 //  POR QUÉ IMPORTA PROYECTARLO. Es el único mes del año en que la nómina
 //  cuesta una vez y media, y llega siempre igual: un sueldo y medio en
@@ -2754,17 +2769,10 @@ function vacArt155(base, dias) {
 //  Verlo recién al liquidar es enterarse el día que hay que pagarlo.
 //
 //  LA PROYECCIÓN ES UN PISO, Y SE DICE. Para los meses que todavía no se
-//  liquidaron la remuneración sale de la nómina (el sueldo que rige + lo
-//  registrado), así que si alguien recibe un aumento antes del cierre del
-//  semestre su mejor mes sube y el aguinaldo también. Un número proyectado
-//  que no aclara de qué lado puede moverse se lee como una promesa.
-//
-//  QUÉ CUENTA COMO REMUNERACIÓN: el sueldo del mes, las horas extras, los
-//  bonos y el plus de vacaciones (art. 155) — todo lo que se devengó por el
-//  trabajo. Los VIÁTICOS no: son el reintegro de un gasto de traslado, no el
-//  precio del trabajo, mismo criterio por el que el km de desvío no entra en
-//  el costo del conductor. Los descuentos (adelantos, extravíos) tampoco:
-//  son descuentos, no remuneración. Y el aguinaldo no se cuenta a sí mismo.
+//  liquidaron el sueldo sale de la nómina (el que regía ese mes), así que si
+//  alguien recibe un aumento antes del cierre del semestre su mejor mes sube
+//  y el aguinaldo también. Un número proyectado que no aclara de qué lado
+//  puede moverse se lee como una promesa.
 // ════════════════════════════════════════════════════════════════════════
 
 // Qué cuota toca y cuándo vence. El mes de pago es el que manda: en junio y en
@@ -2796,25 +2804,22 @@ function sacSemestreTxt(sem) {
   return sem ? sem.label + ' ' + sem.anio + ' (' + (sem.nro === 1 ? 'enero a junio' : 'julio a diciembre') + ')' : '';
 }
 
-// La remuneración DEVENGADA en un mes. Si la liquidación está cargada manda
-// ella —es lo que se pagó—; si no, se reconstruye de la nómina igual que
-// calcMesEmpleados, para que el mes que todavía no se liquidó también cuente.
-function remuneracionMesEmpleado(e, periodo) {
+// El SUELDO de un mes, que es la base del aguinaldo. Si la liquidación está
+// cargada manda ella —es lo que se pagó—; si no, sale del historial de ajustes
+// igual que calcMesEmpleados, para que el mes que todavía no se liquidó cuente.
+//
+// Es `sueldo_base` A SECAS, sin ninguno de los conceptos que la liquidación le
+// suma alrededor. Y ojo con las vacaciones: en el mes que alguien las toma, la
+// liquidación PARTE el sueldo en dos renglones —lo trabajado a ÷30 y los días
+// de vacaciones a ÷25— pero `sueldo_base` sigue siendo el sueldo mensual
+// entero, que es lo que esa persona gana. Restarle `vac_descuento` haría que
+// el mes de las vacaciones parezca un mes de sueldo más bajo y pudiera perder
+// contra otro, bajando el aguinaldo por haberse tomado licencia.
+function sueldoMesEmpleado(e, periodo) {
   const s = sueldoDe(e.id, periodo);
-  if (s) {
-    return {
-      monto: Math.round(_num(s.sueldo_base) - _num(s.vac_descuento) + _num(s.monto_vacaciones) +
-        _num(s.monto_horas_extra) + _num(s.bono_eficiencia)),
-      fuente: 'liquidado', estimado: false
-    };
-  }
+  if (s) return { monto: Math.round(_num(s.sueldo_base)), fuente: 'liquidado', estimado: false };
   const v = sueldoVigenteEn(e, periodo);
-  const hh = (typeof horasExtraDelMes === 'function') ? horasExtraDelMes(e.id, periodo) : 0;
-  const hc = hh ? Math.round(hh * valorHoraEn(e, periodo, v.sueldo)) : 0;
-  const bo = bonosDelMes(e.id, periodo);
-  const vd = (typeof vacacionesDiasDelMes === 'function') ? vacacionesDiasDelMes(e.id, periodo) : 0;
-  const vp = vacArt155(v.sueldo, vd).plus;
-  return { monto: Math.round(_num(v.sueldo) + hc + bo + vp), fuente: 'nomina', estimado: !!v.estimado };
+  return { monto: Math.round(_num(v.sueldo)), fuente: 'nomina', estimado: !!v.estimado };
 }
 
 function _sacFecha(iso) {
@@ -2850,7 +2855,7 @@ function sacDeEmpleado(e, sem) {
   let mejor = 0, mejorMes = '', hayEstimado = false, hayProyectado = false;
   sem.meses.forEach(m => {
     if (!empleadoActivoEnMes(e, m)) return;     // antes de entrar o después de irse no devengó nada
-    const r = remuneracionMesEmpleado(e, m);
+    const r = sueldoMesEmpleado(e, m);
     meses.push({ periodo: m, monto: r.monto, fuente: r.fuente, estimado: r.estimado });
     if (r.estimado) hayEstimado = true;
     if (r.fuente !== 'liquidado') hayProyectado = true;
@@ -2858,8 +2863,11 @@ function sacDeEmpleado(e, sem) {
   });
   const medio = Math.round(mejor / 2);
   const monto = d.completo ? medio : Math.round(medio * d.dias / d.diasSemestre);
+  // La cuenta dice "del sueldo de" y no "de": el importe que aparece solo no
+  // se puede auditar, y acá además hay que poder ver de un vistazo que la base
+  // NO lleva las horas extras ni los bonos de ese mes.
   const detalle = mejor > 0
-    ? 'SAC ' + sacSemestreTxt(sem) + ' · 50% de ' + fmtPeso(mejor) +
+    ? 'SAC ' + sacSemestreTxt(sem) + ' · 50% del sueldo de ' + fmtPeso(mejor) +
       (mejorMes ? ' (' + _mesTexto(mejorMes) + ')' : '') +
       (d.completo ? '' : ' · ' + d.dias + ' de ' + d.diasSemestre + ' días trabajados')
     : '';
@@ -2980,12 +2988,15 @@ function _renderSacPanel(periodo) {
         // La cuenta, siempre a la vista: un importe que aparece solo no se puede
         // auditar ni deja ver que un sueldo está mal cargado.
         '<div style="font-size:11.5px;color:var(--text-secondary);line-height:1.65">' +
-          'Es el <strong>50% de la mayor remuneración mensual</strong> del semestre (ley 23.041), y proporcional al tiempo trabajado si no se ' +
-          'trabajó entero (art. 123 LCT). Cuentan el sueldo, las horas extras, los bonos y el plus de vacaciones; <strong>los viáticos no</strong>, ' +
-          'porque son el reintegro de un gasto y no el precio del trabajo.' +
+          'Es el <strong>50% del sueldo más alto</strong> de los seis meses del semestre, y proporcional al tiempo trabajado si no se ' +
+          'trabajó entero (art. 123 LCT). Cuenta <strong>solo el sueldo</strong>: no entran las horas extras, los bonos, las comisiones, ' +
+          'el plus de vacaciones ni los viáticos. Si gana ' + fmtPeso(1000000) + ', son ' + fmtPeso(500000) + ', aunque ese mes haya ' +
+          'ganado el doble por horas extras.' +
+          '<div style="margin-top:6px;color:var(--text-muted)">La ley 23.041 toma la mayor <em>remuneración</em> del semestre, que sí incluye ' +
+          'las horas extras y los bonos: este criterio es una decisión de la empresa y da un importe más bajo que el legal.</div>' +
           (d.proyectados
             ? '<div style="margin-top:6px;color:#b45309"><strong>Es un piso.</strong> Para ' + d.proyectados +
-              ' empleado(s) hay meses del semestre que todavía no se liquidaron, así que su mejor mes sale de la nómina: ' +
+              ' empleado(s) hay meses del semestre que todavía no se liquidaron, así que su mejor sueldo sale de la nómina: ' +
               'si reciben un aumento antes de ' + _mesTexto(sem.mesPago) + ', el aguinaldo sube con él.</div>'
             : '') +
           // Quien se fue a mitad del semestre cobra su parte con la liquidación
@@ -3006,7 +3017,7 @@ function _renderSacPanel(periodo) {
         '</div>' +
         (_sacDetalleAbierto
           ? '<div class="table-wrap" style="margin-top:12px"><table><thead><tr>' +
-            '<th>Empleado</th><th style="text-align:right">Mejor remuneración</th>' +
+            '<th>Empleado</th><th style="text-align:right">Mejor sueldo</th>' +
             '<th style="text-align:right">Días trabajados</th><th style="text-align:right">Aguinaldo</th><th>Estado</th>' +
             '</tr></thead><tbody>' + filasHTML + '</tbody>' +
             '<tfoot><tr><td><strong>TOTAL</strong></td><td></td><td></td>' +
@@ -3041,14 +3052,15 @@ function _pintarAguinaldo(e, periodo, s) {
   const difiere = calc.monto > 0 && Math.abs(actual - calc.monto) > 0.5;
   info.innerHTML =
     (calc.mejor > 0
-      ? '<strong>' + sacSemestreTxt(sem) + '</strong> · 50% de ' + fmtPeso(calc.mejor) +
+      ? '<strong>' + sacSemestreTxt(sem) + '</strong> · 50% del sueldo de ' + fmtPeso(calc.mejor) +
         ' (' + (calc.mejorMes ? _mesTexto(calc.mejorMes) : 'el mejor mes') + ') = <strong>' + fmtPeso(calc.medio) + '</strong>' +
         (calc.completo ? ''
           : '<div class="muted">proporcional: ' + calc.dias + ' de ' + calc.diasSemestre + ' días trabajados = <strong>' +
-            fmtPeso(calc.monto) + '</strong></div>')
-      : '<span style="color:#b45309">No hay remuneración registrada en el semestre: no se puede calcular solo.</span>') +
+            fmtPeso(calc.monto) + '</strong></div>') +
+        '<div class="muted">solo el sueldo: sin horas extras, bonos ni viáticos</div>'
+      : '<span style="color:#b45309">No hay sueldo registrado en el semestre: no se puede calcular solo.</span>') +
     (calc.proyectado
-      ? '<div style="color:#b45309;margin-top:4px">Hay meses del semestre sin liquidar: el mejor mes sale de la nómina y puede subir.</div>'
+      ? '<div style="color:#b45309;margin-top:4px">Hay meses del semestre sin liquidar: el mejor sueldo sale de la nómina y puede subir.</div>'
       : '') +
     (difiere
       ? '<div style="margin-top:5px;color:#b45309">El calculado es <strong>' + fmtPeso(calc.monto) + '</strong>. ' +
